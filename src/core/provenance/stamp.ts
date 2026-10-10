@@ -1,12 +1,13 @@
 /**
  * The stamp vocabulary: what `loam vouch` computes for a frontmatter stamp and
  * what a later check reads back out of one — `sources_digest` and the per-file
- * `sources_files` index beside it, the document's own `content_digest`, and
- * the local calendar day `last_verified` carries.
+ * `sources_files` index beside it, and the local calendar day `last_verified`
+ * carries. The document's own `content_digest` lived here too; it moved to
+ * core/document/frontmatter.ts, beside the body cut it hashes, when the fleet
+ * enumeration needed it (`contentDigest`'s docblock says why).
  */
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { rawBody } from "../document/frontmatter.js";
 import { collectSources, type SkippedSource } from "./walk.js";
 
 /**
@@ -22,7 +23,7 @@ export function today(now: Date): string {
 }
 
 /* ------------------------------------------------------------------ */
-/* The content digest                                                  */
+/* The sources digest                                                  */
 /* ------------------------------------------------------------------ */
 
 /** How much of the sha256 is written into the document. */
@@ -144,20 +145,6 @@ export async function expandSourceFiles(
  */
 export function emptySourcesMessage(label: string, sources: string[]): string {
   return `${label}: the sources listed match no files — ${sources.join(", ")}. A digest over nothing would read as current forever.`;
-}
-
-/**
- * The stamp `loam vouch` writes into `content_digest`: sha256 of the
- * document's own BODY — every byte after the frontmatter block (below the
- * closing `---` line and its newline; `rawBody` is the one definition of that
- * cut) — first 16 hex characters, the sources recipe's length.
- *
- * Byte-exact, no normalization. Body-only is load-bearing: vouch itself
- * rewrites the frontmatter as it stamps, and a later frontmatter-only edit
- * (another vouch, a corrected owner) must not read as the document moving.
- */
-export function contentDigest(source: string): string {
-  return createHash("sha256").update(rawBody(source), "utf8").digest("hex").slice(0, DIGEST_LENGTH);
 }
 
 /* ------------------------------------------------------------------ */

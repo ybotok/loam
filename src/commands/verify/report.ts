@@ -13,12 +13,14 @@ import { type AnsweredBy } from "../../core/verify/answers.js";
 import { type Checklist } from "../../core/verify/checklist.js";
 import { type EvidencePin } from "../../core/verify/pins/pin.js";
 import {
+  countedAnswers,
   openClaimsNotice,
   tallyAnswers,
+  type RecordedClaim,
   type Verification,
-  verificationPath,
   verificationVerdict,
 } from "../../core/verify/record.js";
+import { recordLocation, verificationDir } from "../../core/verify/location.js";
 import { EXPLAIN_FOOTER, plural } from "../policy/format.js";
 import { answeredMark, contestedNotices, contractReportLine, forkedChecklistNotices, MARK, noticesFor, reportLine } from "./frozen.js";
 
@@ -36,20 +38,7 @@ export interface ClaimStatus {
 }
 
 export function statuses(checklist: Checklist, claims: Checklist["claims"], recorded: Verification | null): ClaimStatus[] {
-  const subjects = new Map(checklist.claims.map((claim) => [claim.id, claim.subject]));
-  const attested =
-    recorded?.schema !== 2
-      ? null
-      : new Set(
-          (recorded.attestations ?? []).flatMap((attestation) =>
-            attestation.claims.filter((id) => subjects.get(id) === attestation.service),
-          ),
-        );
-  const byId = new Map(
-    (recorded?.claims ?? [])
-      .filter((claim) => attested === null || attested.has(claim.id))
-      .map((claim) => [claim.id, claim]),
-  );
+  const byId = recorded === null ? new Map<string, RecordedClaim>() : countedAnswers(checklist.claims, recorded);
   return claims.map((c) => {
     const answer = byId.get(c.id);
     return {
@@ -161,7 +150,7 @@ export function report(
         recorded === null
           ? null
           : {
-              path: repoPath(docsDir, verificationPath(featureDir)),
+              path: repoPath(docsDir, recordLocation(featureDir)),
               recorded: recorded.recorded,
               checklist: recorded.checklist,
               stale,
@@ -196,7 +185,10 @@ export function report(
 
   console.log("");
   if (recorded === null) {
-    console.log(`  Not verified — no ${repoPath(docsDir, verificationPath(featureDir))}.`);
+    // Both places a record can be, because which one the next record lands in
+    // depends on the form that writes it — a service's attestation goes to its
+    // own file under verification/, the all-at-once form to verification.yaml.
+    console.log(`  Not verified — no ${repoPath(docsDir, verificationDir(featureDir))}/ or verification.yaml yet.`);
   } else {
     console.log(
       `  Recorded ${recorded.recorded} — ${summary.confirmed} confirmed, ${summary.unconfirmed} unconfirmed, ${summary.unanswered} unanswered.`,

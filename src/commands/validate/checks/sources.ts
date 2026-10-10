@@ -7,7 +7,6 @@ import { listField, readFrontmatter } from "../../../core/document/frontmatter.j
 import { type Finding } from "../../../core/vocabulary/report.js";
 import { missingSources, patternSources, unsafeSources } from "../../../core/provenance/sources.js";
 import { emptySourcesMessage, expandSourceFiles } from "../../../core/provenance/stamp.js";
-import { UNVERIFIABLE } from "./vocabulary.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 
 /**
@@ -51,9 +50,14 @@ export async function sourceScopeFindings(
     // arch axis. The refusal and the finding must be the same sentence.
     const label = file === "spec.md" ? service : `${service}: ${file}`;
     if (repoDir === undefined) {
+      // A literal, as at the rollup's counting site (../report.ts), and for
+      // the reason given there: the stable-code collector reads only literal
+      // `code:` slots. This used to be a shared constant, which kept the two
+      // spellings equal but hid the emission itself from the collector — the
+      // code was guarded only because the rollup's text marker spelled it.
       out.push({
         severity: "ok",
-        code: UNVERIFIABLE,
+        code: "sources.unverifiable-from-here",
         subject: service,
         message: `${label}: ${sources.length} source(s) declared, but this is not ${service}'s repository — nothing here can resolve them. Run \`loam validate --service ${service}\` from inside it.`,
       });

@@ -27,6 +27,7 @@ import {
   binaryBehindFinding,
   agentsStampLine,
   agentsStampVersion,
+  restamped,
   versionTrails,
 } from "../agent/agents-stamp.js";
 import { type AgentSurface, type DoctorFinding } from "./report.js";
@@ -82,24 +83,38 @@ export function heldDeliveries(
 
 /**
  * Of the planned files that ARE here, the ones whose stamp is missing or older
- * than this binary.
+ * than this binary AND whose body is not the one this binary writes.
  *
- * The STALENESS check reads only the stamp, never the body. Safe refresh is a
- * separate decision made by `init`: the current bytes must match the digest
- * recorded when loam wrote them. That proof lets an unchanged pointer refresh
- * without turning a differing body into an offer to overwrite it. A stamp is a
- * different claim — it says which loam wrote these instructions — and it can
- * be false while every edit around it is legitimate. Same doctrine as
- * AGENTS.md (agents-stamp.ts); a customized file is repaired only when a human
- * reviews it and bumps the stamp or deletes it for `loam init` to recreate.
+ * Both halves, and the second is what makes the finding mean something. The
+ * stamp sits inside the bytes, so every release moves it in every generated
+ * file — and while the stamp was the whole test, every pointer in every repo
+ * of a fleet went stale on every upgrade, even when the release had not
+ * changed a word of the pointer. A warning that is always on is one people
+ * learn to read past, and it then hid the one release where a pointer's body
+ * really had moved. So a file whose bytes, its stamp line aside, are exactly
+ * what this binary would write is current: it instructs an agent with this
+ * binary's text, whichever release happened to write it. Line endings are
+ * compared the same way, because a Windows checkout with `core.autocrlf`
+ * hands back CRLF for a body nobody touched.
+ *
+ * A file that differs in its body falls back to the stamp, which is the claim
+ * it always was — which loam a person last checked these instructions
+ * against. That is why a CURRENT stamp over a customized body stays quiet:
+ * somebody reviewed it and said so. Safe refresh is a separate decision made by
+ * `init`: the current bytes must match the digest recorded when loam wrote
+ * them, which lets an unchanged pointer refresh without turning a differing
+ * body into an offer to overwrite it. Same doctrine as AGENTS.md
+ * (agents-stamp.ts); a customized file is repaired only when a human reviews it
+ * and bumps the stamp or deletes it for `loam init` to recreate.
  *
  * Absence of a stamp counts, because that is what every file written before
  * stamping existed looks like — precisely the "initialized by an older loam"
- * population this check is for.
+ * population this check is for — and such a file cannot match the current
+ * body, which opens with the stamp.
  */
 export async function staleAgentFiles(
   repoRoot: string,
-  planned: Array<{ path: string }>,
+  planned: Array<{ path: string; content: string }>,
 ): Promise<string[]> {
   // Read them together rather than one after another. `planned` is bounded by
   // the tool registry — every delivery of every tool loam knows, a couple of
@@ -116,10 +131,10 @@ export async function staleAgentFiles(
       return null;
     }
     const stamp = agentsStampVersion(text);
-    if (stamp === null || versionTrails(stamp, LOAM_VERSION)) {
-      return relative(repoRoot, file.path).split(/[\\/]/).join("/");
-    }
-    return null;
+    if (stamp !== null && !versionTrails(stamp, LOAM_VERSION)) return null;
+    const lf = (s: string): string => s.replace(/\r\n/g, "\n");
+    if (lf(restamped(text, LOAM_VERSION)) === lf(file.content)) return null;
+    return relative(repoRoot, file.path).split(/[\\/]/).join("/");
   }));
   return graded.filter((p) => p !== null);
 }
@@ -181,9 +196,9 @@ export async function inspectAgentSurface(
       severity: "warning",
       code: "doctor.agent-files-stale",
       message:
-        `${staleFiles.length} of the ${planned.length} command and skill files here carry no `
-        + `\`${agentsStampLine(LOAM_VERSION)}\` stamp, or one older than this loam — the protocol and `
-        + `code tables they instruct an agent with may describe a loam that no longer exists: `
+        `${staleFiles.length} of the ${planned.length} command and skill files here differ from the body `
+        + `loam v${LOAM_VERSION} writes and carry no \`${agentsStampLine(LOAM_VERSION)}\` stamp, or one older `
+        + `than this loam — what they instruct an agent with may describe a loam that no longer exists: `
         + `${staleFiles.join(", ")}`,
       fix:
         "Read each against the body this loam writes, then set its stamp line to "

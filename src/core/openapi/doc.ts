@@ -11,7 +11,7 @@
  */
 import { isUtf8 } from "node:buffer";
 import { danglingRefs, failureCodesOf, responseUndescribed } from "./depth.js";
-import { operationBaselineOf, operationDigest } from "./digest.js";
+import { closureDigester, operationBaselineOf, operationDigest } from "./digest.js";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { parse } from "yaml";
@@ -53,6 +53,16 @@ export interface Operation {
    * computed here so every caller compares content the one way the merge does.
    */
   digest: string;
+  /**
+   * `closureDigester`'s answer for this operation: its own node PLUS every
+   * internal `$ref` it reaches, transitively. What `loam diff` compares to say
+   * an operation changed — `digest` above stops at the node, so a component-only
+   * edit (a renamed field of a shared schema) never moves it. Never a pin: pins
+   * stay on `digest`, because a component carries its own baseline. The
+   * path item's own keys (shared `parameters`, `servers`) are outside it, as
+   * they are outside `digest`: a change there moves no operation's identity.
+   */
+  closureDigest: string;
   /**
    * The living version this operation was written against, from
    * `x-loam-based-on`. Feature deltas only: a living contract never carries one
@@ -197,6 +207,7 @@ export function openapiFromText(text: string): OpenapiDoc {
   const anonymousRemovals: AnonymousRemoval[] = [];
   const pathLevelRemovals: string[] = [];
   const seen = new Map<string, number>();
+  const closureDigest = closureDigester(doc);
   for (const [path, item] of Object.entries(paths as Record<string, unknown>)) {
     if (!item || typeof item !== "object") continue;
     if ((item as Record<string, unknown>)["x-loam-remove"] === true) pathLevelRemovals.push(path);
@@ -218,6 +229,7 @@ export function openapiFromText(text: string): OpenapiDoc {
         path,
         method,
         digest: operationDigest(op),
+        closureDigest: closureDigest(op),
         ...(basedOn === undefined ? {} : { basedOn }),
         ...(responseUndescribed(op) ? { undescribed: true as const } : {}),
         failureCodes: failureCodesOf(op),

@@ -10,6 +10,7 @@
  * is that it fires only for real ones.
  */
 import { createHash } from "node:crypto";
+import { collectRefs, resolvePointer } from "./depth.js";
 
 /**
  * The baseline marker: which living version of this operation a FEATURE delta
@@ -158,6 +159,53 @@ export function valueDigest(node: unknown): string {
 /** The identity of an operation's CONTENT: sha256 of its canonical form, pin excluded. */
 export function operationDigest(node: unknown): string {
   return valueDigest(withoutOperationBaseline(node));
+}
+
+/**
+ * The identity of what a node PROMISES rather than of its own bytes: the
+ * `operationDigest` input plus every internal `$ref` it reaches, transitively,
+ * each paired with the digest of what it resolves to in `root`. One digester per
+ * document; call it once per operation or message.
+ *
+ * `operationDigest` stops at the node on purpose — a pin says which version of
+ * THIS slot a delta was written against, and components carry their own pins.
+ * But a reviewer asking "did this operation change?" means the contract a
+ * consumer codes against, and in a factored document that is mostly somewhere
+ * else: renaming a required field of `#/components/schemas/Payment` leaves every
+ * operation returning it byte-identical, and `loam diff` reported exactly that
+ * PR as "no fleet-meaningful changes". This digest is what diff compares.
+ *
+ * The memo is per document and per ref, so a schema twenty operations reference
+ * is resolved, walked and hashed once. A ref that resolves to nothing still
+ * contributes — as a marker no 16-hex digest can equal — so a dangling ref that
+ * starts resolving reads as a change. External refs (anything not `#/`) are not
+ * followed, matching every other reader here; the ref string itself is part of
+ * the node's own bytes, so re-pointing one still moves the digest.
+ */
+export function closureDigester(root: unknown): (node: unknown) => string {
+  const targets = new Map<string, { digest: string; refs: string[] }>();
+  const target = (ref: string): { digest: string; refs: string[] } => {
+    let hit = targets.get(ref);
+    if (hit === undefined) {
+      const resolved = resolvePointer(root, ref);
+      hit = resolved.found ? { digest: valueDigest(resolved.value), refs: collectRefs(resolved.value) } : { digest: "unresolved", refs: [] };
+      targets.set(ref, hit);
+    }
+    return hit;
+  };
+  return (node) => {
+    const reached = new Map<string, string>();
+    const queue = collectRefs(node);
+    while (queue.length > 0) {
+      const ref = queue.pop()!;
+      if (!ref.startsWith("#/") || reached.has(ref)) continue;
+      const hit = target(ref);
+      reached.set(ref, hit.digest);
+      queue.push(...hit.refs);
+    }
+    // canonicalJson sorts keys, so the walk order above never reaches the digest.
+    return valueDigest({ node: withoutOperationBaseline(node), refs: Object.fromEntries(reached) });
+  };
 }
 
 /**

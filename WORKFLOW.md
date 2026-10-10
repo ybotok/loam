@@ -97,7 +97,10 @@ no fleet manifest, deliberately — the wiring is one file per repo, and it is r
    entry, in one journaled transaction, and guesses nothing: a human stated every fact in the file,
    which is what keeps seed on the same side of the no-extractor line as `loam new`. Re-running is
    safe — once the landscape has been hand-edited, seed refuses (`seed-landscape-edited`) rather
-   than overwrite it.
+   than overwrite it. That makes seed a day-zero step: list every service id you already know in
+   `fleet.yaml` up front, because the first `metadata { op }` below has no spelling in
+   `fleet.yaml`. From then on the map grows without seed — `loam adopt --service <id>` briefs the
+   element and edges a new service adds, and a feature's C4 delta carries every other change.
 
    Drawing it by hand instead is entirely legal, and the landscape is a **required** artifact
    either way, not an optional one: `loam validate --all` reports `landscape.missing` as an error
@@ -137,7 +140,8 @@ no fleet manifest, deliberately — the wiring is one file per repo, and it is r
    stamping the source and content digests that make later staleness detectable. `loam list --json`
    in the docs repo then grades the whole fleet on the presence ladder
    `empty → partial → documented → sourced → vouched`, and `loam list --needs-work` is the remaining
-   worklist.
+   worklist — including any vouched service whose spec moved after the vouch (`vouched (stale)`,
+   missing a re-vouch), which `loam status` names as `next.revouch`.
 
 Steps 3–6 repeat per service and are independent — no ordering, no lock, no shared state between two
 services' runs — so ten services can be onboarded by ten people in parallel. The one file they all
@@ -157,7 +161,7 @@ configurable graph, because a governed system needs one lifecycle and one meanin
 | `specs/<svc>/arch.spec.md` | service | no | The architectural obligations a business spec never mentions: outbox, retries, idempotency, alerts. Same grammar, plus `Covers:` lines tying each to the C4 elements it accounts for |
 | `specs/<svc>/openapi.yaml` | service | conditional | The contract delta. Required where the fleet map shows somebody calls this service |
 | `specs/<svc>/asyncapi.yaml` | service | no | The event-contract delta: a complete AsyncAPI 3.0 document restating the living contract around the changed slots. `loam rebase` pins restated slots (`x-loam-based-on`), `x-loam-remove: true` retires one |
-| `verification.yaml` | feature | yes | The done-check record: every claim, its answer, its evidence, and who gave it |
+| `verification/<svc>.yaml` | feature | yes | The done-check record, one file per attesting service: every claim, its answer, its evidence, and who gave it. The all-at-once form writes the one file `verification.yaml` instead |
 
 Two fleet/living axes sit beside this feature graph. `services/<svc>/asyncapi.yaml` joins
 `publishes`/`consumes` edges to `Publishes:`/`Consumes:` requirements, and the event axis carries
@@ -175,7 +179,7 @@ present and fine. Marking everything required is how an axis that is optional ev
 reported as missing everywhere and then ignored.
 
 **Dependencies are enablers, not gates — with one real exception.** You can author these in any
-order. `verification.yaml` is the exception, and it is a genuine impossibility rather than a
+order. The verification record is the exception, and it is a genuine impossibility rather than a
 preference: its checklist is *derived* from the delta and the per-service specs, so with none of
 them written there is no question set to answer. That artifact alone comes back `blocked`, naming
 what it is waiting on.
@@ -265,16 +269,39 @@ runs already recorded (the join partners' documentation state, staleness, the ve
 of the features touching the service, an interrupted docs commit). Its verdict is advice to a
 pipeline loam does not own — advisory by default, `--strict` the per-invocation CI lever — and it
 deliberately changes nothing about what gates the archive: verify still never gates the merge, and
-archive still reads no verification record.
+archive still reads no verification record. Know what `--strict` buys before wiring it: its
+freshness check reads `content.stale` over the gated service **and every documented join partner**,
+so one partner whose spec moved under its vouch — every archive into a vouched spec does that —
+turns this service's `gate --strict` red until that partner's owner re-vouches from their own repo.
+That is the question asked honestly (a deploy joins documents nobody has re-read), but it is
+another team's queue: a pipeline that must not wait on it runs `gate` without `--strict` and
+branches on the `content.stale` findings in `checks[]` itself.
+
+Which features it grades is the one thing a pipeline has to say. Without `--since`, the gate reads
+**in-flight features only**: a feature leaves the check the moment it is archived, so a slice that
+deploys after its feature shipped is gated without it — and under `--strict`, archiving would be
+the cheapest way past an unverified-feature warning. `loam gate --since <ref>` closes that: pass
+the docs-repo commit your last deploy recorded, and every feature archived after it (its
+`features/archive/<FEAT>/` directory absent at the ref, or changed since — a feature unarchived,
+edited and archived again ships again) that touches the service is graded too, under the same
+`gate.feature-unverified`, its `features[]` row carrying `archived: true`. Its record is frozen, but
+held to the checklist `loam archive` captured as the feature merged (`checklistAtArchive` on the
+row): a record that had stopped answering the feature before it shipped reads `stale`, so archiving
+is no longer a way past the warning. A feature archived by a loam that captured no checklist is read
+as frozen history, and the row says so (`checklistAtArchive: null`). The ref is
+read from the docs repo's own git exactly as `loam diff --base` reads its base, with the same
+refusals when git cannot answer. loam stores nothing for it — the pipeline already knows which docs
+commit it deployed from.
 
 **`loam diff` does not add one either — it is the review lens.** On a docs-repo PR,
 `loam diff --base origin/main` says what the branch *changes* in fleet-meaningful terms: services,
 requirements (by identity and content digest, so a rebase pin is not a change), operations,
-messages, and the cross-service joins between them — with the current consumers of every removal
-named, which is what a reviewer actually needs to know. `validate --all` remains the fleet gate;
-diff exits 1 on a removal the fleet still consumes (`diff.op-removed-consumed`,
-`diff.message-removed-consumed`) — and also whenever a document on either side could not be read,
-because a suspended axis is reported, never graded as "nothing changed" — so a PR job gets those
+messages, and the cross-service joins between them — with the authored consumers of every removal,
+deprecation and contract modification named, which is what a reviewer actually needs to know.
+`validate --all` remains the fleet gate; diff exits 1 on a removal the fleet still consumes
+(`diff.op-removed-consumed`, `diff.message-removed-consumed`) — and also whenever a document on
+either side could not be read, because a suspended axis is reported, never graded as "nothing
+changed" — so a PR job gets those
 checks for free, but a green diff is not a valid fleet: run both. For the byte-level OpenAPI
 breaking-change catalogue, use oasdiff on the two states of one contract; [the `loam diff` command
 note](#command-notes) below has the exact invocation, and loam deliberately does not reimplement
@@ -312,11 +339,11 @@ repository, while the runtime page cannot go out of date the same way.
 
 `AGENTS.md` — the one file `init` lays down that every host auto-loads, and so the first thing an
 agent reads — now works the same way, which changes the reading order. It is orientation only (the
-layout, the cycle, what gates and what only advises, at 8,762 bytes rather than 109,399), and the
-four **reference pages** it used to carry inline come out of the binary at the moment the question
-arises: `loam instructions loam-codes`, `loam-spine`, `loam-authoring` and `loam-done-check`, each
-taking no arguments and printing whole, listed beside the six workflows by a bare
-`loam instructions`. `init` writes no file for any of them, so nothing new landed in the repo.
+layout, the cycle, what gates and what only advises, held under a 12,000-byte ceiling a test enforces
+where it used to be 109,399 bytes), and the four **reference pages** it used to carry inline come
+out of the binary at the moment the question arises: `loam instructions loam-codes`, `loam-spine`,
+`loam-authoring` and `loam-done-check`, each taking no arguments and printing whole, listed beside
+the six workflows by a bare `loam instructions`. `init` writes no file for any of them, so nothing new landed in the repo.
 
 | Workflow | When | What it drives |
 |---|---|---|
@@ -405,15 +432,15 @@ Every command takes `--json`, and the contract is built so an agent never has to
 - **Findings carry stable codes** — `c4.valid`, `spine.op-undefined`, `coherence.ok`. Branch on the
   code. Prose gets reworded; codes do not.
 - **The protocol has a narrowed form, and one code is answerable as data** —
-  `loam instructions loam-check` is 84,151 bytes, almost all of it the per-code fix tables, and
-  `--no-fix-tables` prints the same page at 3,541 with each table's scope paragraph kept. Branch on
-  the code, then `loam explain <code> --json` for the two or three a run reported (473 bytes each),
-  or `loam explain --codes --json` once for the whole vocabulary — 293 finding codes and 46 refusal
-  codes, 339 of the 390 loam emits. The four families no fix table grades (`doctor.*`, `next.*`,
-  `diff.*`, `gate.*`) are among them, so a code read out of a `status`, `doctor`, `diff` or `gate`
-  payload is answerable as data like any other; the 51 that are not are the OpenSpec migration
-  surface (`openspec.*`, `mapping.*`), which an agent meets once before the repository is governed
-  at all, and two `ok`-severity confirmations.
+  `loam instructions loam-check` is almost all per-code fix tables, and `--no-fix-tables` prints the
+  same page in a few kilobytes with each table's scope paragraph kept. Branch on the code, then
+  `loam explain <code> --json` for the two or three a run reported, or `loam explain --codes --json`
+  once for the whole vocabulary — every finding and refusal code `loam explain` answers. The four
+  families no fix table grades (`doctor.*`, `next.*`, `diff.*`, `gate.*`) are among them, so a code
+  read out of a `status`, `doctor`, `diff` or `gate` payload is answerable as data like any other;
+  the codes that are not are the OpenSpec migration surface (`openspec.*`, `mapping.*`), which an
+  agent meets once before the repository is governed at all, and a couple of `ok`-severity
+  confirmations.
 - **`validate --json` already carries the fix for every code it raised** — `fixes` is a map keyed by
   code, so joining `findings[].code` to `fixes[code]` answers "what now" out of the payload you are
   holding: no `loam explain` round trip per code, and no fix table loaded into context to read one.
@@ -509,7 +536,7 @@ read forwards — the same claims under the same ids, one unit per promise, each
 closes it — recomputed on every run from the delta, the generated suite and the verification record.
 It is still not a file: nothing to tick, nothing to commit, nothing that can disagree with the
 documents it was derived from, and so the reason there is no `tasks.md` is unchanged. A unit leaves
-the list only when a confirmed claim in a non-stale `verification.yaml` retires it, and an
+the list only when a confirmed claim in a non-stale verification record retires it, and an
 agent-attested scenario stays on it at `attested` rather than being ticked off — the work list must
 not be able to say more than the record does.
 
@@ -592,7 +619,15 @@ there. What it reports is the *joined*, fleet-meaningful delta — a removed ope
 against the landscape edges and living requirements that still name it (`diff.op-removed-consumed`,
 exit 1), a removed message against its `Consumes:` lines and consumes-edges — and an artifact
 unreadable on either side suspends that subject's axis and exits 1, because "nobody could look" must
-never read as "nothing changed". `validate --all` remains the fleet gate; diff is the review lens.
+never read as "nothing changed". The exception is an `openapi.yaml` or `asyncapi.yaml` that cannot be
+read but is byte-identical at the base (an AsyncAPI 2.x file nobody has converted yet): the branch did
+not touch it, so it is skipped rather than failing every PR. A spec file stays suspended even then,
+because another service's removal may be the one that could not be checked against it.
+A landscape edge into the provider drawn with no `metadata { op }`
+is the same doubt at warning strength: it is listed as a consumer nobody could check, never dropped.
+An operation or message whose own node or `$ref` closure moved is `diff.op-modified` /
+`diff.message-modified` — a warning that names the same consumers and does not say whether the
+change breaks them. `validate --all` remains the fleet gate; diff is the review lens.
 For the byte-level OpenAPI breaking-change catalogue, run oasdiff on the two states of one contract:
 `git -C <docs> show <ref>:./services/<id>/openapi.yaml > base.yaml && oasdiff breaking base.yaml <docs>/services/<id>/openapi.yaml`
 (the `./` resolves the path relative to the docs directory rather than the git root, so this holds
@@ -606,7 +641,11 @@ landscape the branch changed since a base git ref of the docs repo — which is 
 both passing on the first day of adoption and tightening after it, and which for that reason
 grades nothing outside the branch: the consumer whose living requirement still names an operation
 this branch removed is not in scope, so that finding is `loam diff`'s and never this run's, and a
-scope holding no target says it graded nothing rather than reporting the word valid.
+scope holding no target says it graded nothing rather than reporting the word valid. The landscape
+is graded by what in it the branch changed: a call edge the branch added or edited is checked
+against its provider's contract even when the provider is out of scope, and the fleet-wide
+vocabulary warnings (a permission, capability, obligation or glossary term nothing cites) and the
+AGENTS.md stamp ride the run only when the file that carries them changed.
 
 **`loam gherkin`** — a feature's changed requirements, or (without a feature) the full living suite.
 Deterministic, digest-stamped, regeneration-owned; run in the service's own repo.
@@ -620,16 +659,28 @@ complete document, so without the pin the merge upserts operations you only rest
 whatever landed on them. Restamping is the last step of resolving a collision, not the resolution —
 the output says which pins moved.
 
-**`loam verify`** — `--results <report.json>` answers the scenario claims from a cucumber JSON run,
+**`loam verify`** — `--results <report.json>` answers the scenario claims from a test run,
 digest-matched, so only a green run confirms one, and the record writes down which file it read
-(path, sha256, mtime). It answers *only* those claims, so on a feature with open `service.exists` /
-`api.exposes` claims it is passed alongside `--record` or refused (`answers-mismatch`).
-`--record <answers.json>` takes the agent's answers, refusing anything unevidenced — under
-`--service`, refusing a `file:line` that does not resolve in that repo at the attested commit — and
-a scenario claim answered that way makes the record `attested` rather than `verified`. A
-cross-service feature is recorded **once per service repo** with `--service <id>`, each run adding
-its own commit-bound attestation to one shared record; the `--service`-less `--record` form writes
-the whole record from one place and is refused (`record-federated`) once anyone else has attested.
+(path, sha256, mtime). It reads two shapes: a cucumber JSON report (cucumber-js, cucumber-jvm,
+behave, SpecFlow/Reqnroll, pytest-bdd `--cucumberjson` and godog's cucumber formatter all write
+one), in which a matched scenario must also have run exactly the stamped scenario's number of
+steps — a hand-tagged stub is not that scenario's run — or loam's runner-neutral
+`{"loamScenarioReport": 1, "results": [{"digest": "…", "status": "passed"}]}`, which a JUnit,
+pytest, Vitest or house runner's report is adapted into. Anything else, JUnit XML included, is
+refused naming both (`answers-unreadable`). It answers *only* those claims, so on a feature with
+open `service.exists` / `api.exposes` claims it is passed alongside `--record` or refused
+(`answers-mismatch`). `--record <answers.json>` takes the agent's answers, refusing anything
+unevidenced — a `file:line` that does not resolve to a real line in this repository, and under
+`--service` one that does not resolve at the attested commit — and a scenario claim answered that
+way makes the record `attested` rather than `verified`. A
+cross-service feature is recorded **once per service repo** with `--service <id>`, each run writing
+its own commit-bound attestation to a file of its own, `features/<FEAT>/verification/<id>.yaml` —
+the directory is the record, so two teams' attestations on two docs-repo branches merge cleanly. The
+`--service`-less `--record` form writes the whole record from one place, into the one file
+`verification.yaml`, and is refused (`record-federated`) once anyone else has attested. A record
+file that will not read (`record-unreadable`, git conflict markers included) is named with its safe
+repair: a service's own file may be deleted and recorded again by that service; the one-file
+`verification.yaml` may hold other services' attestations and is restored, never deleted.
 
 **`loam unarchive`** — it refuses rather than guesses: `snapshot-stale` when a merged file moved
 since (`--force` says that was meant), and `snapshot-corrupt` when a pre-image no longer hashes to

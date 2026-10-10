@@ -12,9 +12,8 @@
  * away, which is the fleet loam exists for — the record marks it attested, and
  * `attestedNotice` says so on every surface that reads the record.
  */
-import { join } from "node:path";
 import { type ClaimKind } from "./claims/identity.js";
-import { type AnsweredBy, type Verdict } from "./answers.js";
+import { ANSWERED_BY, type AnsweredBy, type Verdict } from "./answers.js";
 import { type EvidencePin } from "./pins/pin.js";
 
 export interface RecordedClaim {
@@ -84,7 +83,7 @@ export interface ConsumedContractReport {
    * documented `loamContractReport: 1` shape, the only one v1 accepts. loam
    * always writes it, but the READ shape keeps it optional: no reader
    * dereferences it, so a hand-written pin without it stays a readable record
-   * (`isConsumedContractReport` in ./file.ts says why) — and it is a string
+   * (`isConsumedContractReport` in ./read/shape.ts says why) — and it is a string
    * rather than a closed union so a format a NEWER loam learned to read stays
    * readable here too.
    */
@@ -203,6 +202,21 @@ export function confirmedProvenance(claims: readonly AnsweredClaim[]): Record<An
   return { ...ran, agent: done.length - ran.runner - ran["external-runner"] };
 }
 
+/**
+ * The confirmed split as the per-feature human views print it — `13 runner · 6 agent`, empty
+ * buckets left out. `loam status <FEAT>` and `list`'s verification column print it beside the
+ * verdict because the verdict turns on the scenario claims alone ({@link verificationVerdict}), so
+ * `verified 19/19 confirmed` read as nineteen runs over a record where six were an agent's word —
+ * the split `--json` and the fleet scorecard already carried. The scorecard keeps all three keys
+ * for its stable-shape reason (validate's scorecard/print.ts); a one-feature line has no shape to
+ * keep, and a column of zeros is width the reader pays for nothing.
+ */
+export function answeredSplit(answered: Record<AnsweredBy, number>): string {
+  return ANSWERED_BY.filter((who) => answered[who] > 0)
+    .map((who) => `${answered[who]} ${who}`)
+    .join(" · ");
+}
+
 /** How a set of answers counts up — recounted from the answers, never read off a `summary`. */
 export interface RecordTally {
   /** Questions asked: answered, plus the ones a federated record leaves for other repos. */
@@ -240,6 +254,31 @@ export function tallyAnswers(claims: readonly AnsweredClaim[], unanswered = 0): 
  */
 export function tallyRecord(v: Verification): RecordTally {
   return tallyAnswers(v.claims, v.summary.unanswered ?? 0);
+}
+
+/**
+ * The recorded rows that may answer a checklist, keyed by claim id — the one
+ * spelling of the attestation-scoping rule. A legacy (no `schema`) record is
+ * all-at-once, so every row answers. In a federated record a row only counts
+ * where an attestation from the claim's OWN subject (per `claims`, the live
+ * checklist) listed it, so one repository cannot answer another's claims by
+ * writing their ids into its own attestation. `verify`'s read view and `loam
+ * tasks` each used to carry a copy, the second labelled "a deliberate mirror"
+ * because core could not import the command module the first lived in; the
+ * rule lives here now and both import it.
+ */
+export function countedAnswers(
+  claims: readonly { id: string; subject: string }[],
+  recorded: Verification,
+): Map<string, RecordedClaim> {
+  const subjects = new Map(claims.map((claim) => [claim.id, claim.subject]));
+  const attested =
+    recorded.schema !== 2
+      ? null
+      : new Set(
+          (recorded.attestations ?? []).flatMap((a) => a.claims.filter((id) => subjects.get(id) === a.service)),
+        );
+  return new Map(recorded.claims.filter((c) => attested === null || attested.has(c.id)).map((c) => [c.id, c]));
 }
 
 /**
@@ -283,7 +322,8 @@ export function attestedNotice(claims: readonly AnsweredClaim[], feature: string
     severity: "warn",
     message:
       `${ids.length} scenario claim(s) are confirmed on an agent's word, not on a test run: ${ids.join(", ")}. ` +
-      `Answer them mechanically once the suite runs: \`loam verify ${feature} --results <cucumber.json>\`.`,
+      `Answer them mechanically once the suite runs: \`loam verify ${feature} --results <report.json>\` — ` +
+      "a cucumber JSON report, or loam's runner-neutral loamScenarioReport shape for any other runner.",
     claims: ids,
   };
 }
@@ -313,14 +353,3 @@ export function openClaimsNotice(tally: RecordTally, feature: string): VerifyNot
       `treat ${feature} as unverified until every claim is answered and confirmed.`,
   };
 }
-
-/**
- * Where the record lives: inside the feature, so `archive` carries it into
- * `features/archive/` with everything else and a reviewer finds it next to the
- * delta it is about. YAML rather than frontmatter or JSON — it is data, it has
- * to survive without loam, and one claim per block is a diff a person can read.
- */
-export function verificationPath(featureDir: string): string {
-  return join(featureDir, "verification.yaml");
-}
-

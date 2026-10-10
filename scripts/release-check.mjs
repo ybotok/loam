@@ -1,36 +1,17 @@
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
 import { appendFile, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
+import { lockfileInSync, resolveNpm } from "./lockfile-check.mjs";
 import { REVIEWED_PACKAGE_FILES } from "./package-docs.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
-// Node >= 20.12 refuses to spawn npm.cmd without a shell (the CVE-2024-27980
-// mitigation), and `shell: true` would change quoting for every argument. Run
-// npm's own JS entry through this Node instead: npm_execpath is set whenever
-// the script runs under `npm run`, and the two layout probes cover a direct
-// `node scripts/...` invocation on Windows and on POSIX.
-function resolveNpm() {
-  const nodeDir = dirname(process.execPath);
-  const candidates = [
-    process.env.npm_execpath,
-    join(nodeDir, "node_modules", "npm", "bin", "npm-cli.js"),
-    join(nodeDir, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
-  ];
-  for (const candidate of candidates) {
-    if (typeof candidate === "string" && candidate.endsWith("npm-cli.js") && existsSync(candidate)) {
-      return [process.execPath, candidate];
-    }
-  }
-  if (process.platform === "win32") {
-    throw new Error("cannot locate npm-cli.js, and npm.cmd is not spawnable without a shell on Node >= 20.12");
-  }
-  return ["npm"];
-}
+// How npm is spawned on each platform, and why never npm.cmd through a shell,
+// is `resolveNpm`'s comment in ./lockfile-check.mjs — it moved there with the
+// lockfile check, which spawns npm too.
 const [npmCommand, ...npmPrefix] = resolveNpm();
 const MIN_NODE = [22, 22, 3];
 const MIN_OIDC_NPM = [11, 5, 1];
@@ -116,6 +97,17 @@ check(
   lockfile.version === manifest.version && lockfile.packages?.[""]?.version === manifest.version,
   "package-lock root version matches package.json",
   `package-lock root version (${lockfile.version ?? "missing"}/${lockfile.packages?.[""]?.version ?? "missing"}) does not match package.json ${manifest.version}`,
+);
+// The version fields above were RIGHT on cafb4d8 and its tag still died at the
+// release runner's `npm ci`, because the packages were wrong: npm on Windows
+// had dropped another platform's optional dependencies while syncing the bump.
+// So ask npm whether it will install this lockfile, offline, before the tag —
+// ./lockfile-check.mjs has the measurement on both commits.
+const lockInstall = await lockfileInSync(root);
+check(
+  lockInstall.ok,
+  "npm ci accepts package-lock.json (offline dry run)",
+  `npm ci would refuse package-lock.json — ${lockInstall.detail}. Re-sync it on Linux or macOS (npm install --package-lock-only), or restore it from the last commit CI installed, and re-run`,
 );
 
 // The single reviewed package-file list lives in scripts/package-docs.mjs; the

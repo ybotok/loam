@@ -6,7 +6,8 @@
 # `action: send|receive`, which is what makes a message's direction legible;
 # 2.x spells the same thing as publish/subscribe under a channel, where the two
 # words are ambiguous about whose perspective they take — and a 2.x document
-# reads here as a contract with no messages at all.
+# is refused as one `asyncapi.invalid` naming its version, with nothing graded
+# against it (`asyncapi convert --target-version=3.0.0` upgrades it).
 #
 # The name is the spine: the landscape edge's `metadata { consumes }`, the
 # requirement's `Consumes:` line and `name` below are one name spelled three

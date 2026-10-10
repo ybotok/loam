@@ -155,11 +155,15 @@ describe("the ring", () => {
         { service: "checkout-web", op: "authorizePayment", title: "Calls authorizePayment" },
         { service: "api-gateway", op: "capturePayment", title: "Calls capturePayment" },
       ]);
+      // In the one order every loader hands edges back in (by source id, then
+      // target id, then title — `compareRels` in src/core/c4/parsed/values.ts), never
+      // the order they were declared in, which LikeC4 does not keep stable
+      // across runs.
       expect(svc.outbound).toEqual([
-        { service: "ledger-service", op: "postEntry", title: "Posts entries" },
         // An edge nobody tied to an operation still counts as a neighbour; it
         // just cannot be checked against a contract, and `op: null` says so.
         { service: "audit-service", op: null, title: "Emits audit events" },
+        { service: "ledger-service", op: "postEntry", title: "Posts entries" },
       ]);
     });
   });

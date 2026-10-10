@@ -20,7 +20,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
-import { chmod, mkdir, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   coherentFixture,
@@ -32,9 +32,9 @@ import {
   SERVICE_MODEL,
   type Project,
 } from "./helpers/harness.js";
-import { parseFrontmatter, listField, stringField } from "../src/core/document/frontmatter.js";
+import { contentDigest, parseFrontmatter, listField, stringField } from "../src/core/document/frontmatter.js";
 import { patternSources } from "../src/core/provenance/sources.js";
-import { contentDigest, sourcesDigest } from "../src/core/provenance/stamp.js";
+import { sourcesDigest } from "../src/core/provenance/stamp.js";
 import { gitIdentity, gitIgnoredPaths, gitTrackedFiles } from "../src/core/provenance/git.js";
 
 const SVC = "payment-service";
@@ -75,6 +75,28 @@ Operations: authorizePayment
 - **Given** a valid card
 - **When** authorization is requested
 - **Then** the payment is authorized
+`;
+}
+
+/** An architecture spec for payment-service, its owner line spelled by the caller. */
+function archSpec(ownerLine: string): string {
+  return `---
+service: ${SVC}
+status: draft
+${ownerLine}
+---
+
+# ${SVC} — architecture
+
+## Requirements
+
+### Requirement: Authorizations are idempotent
+The service SHALL treat a repeated authorization request as the original.
+
+#### Scenario: A retry arrives
+- **Given** an authorization already recorded
+- **When** the same request arrives again
+- **Then** the recorded outcome is returned
 `;
 }
 
@@ -244,6 +266,35 @@ The service SHALL authorize.
         expect(finding.message).toContain("verifed");
       },
     );
+  });
+
+  it("spec.md and arch.spec.md naming two owners is one warning naming both — never an error", async () => {
+    // `loam show` and `loam context` print spec.md's owner alone, so a second
+    // value in arch.spec.md was an answer nobody saw and nothing flagged.
+    const files = fixtureWith("service: payment-service\nstatus: draft\nowner: payments-team");
+    files[`services/${SVC}/arch.spec.md`] = archSpec("owner: some-departed-team");
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      const found = JSON.parse(res.stdout).targets[0].findings.filter(
+        (f: { code: string }) => f.code === "frontmatter.owner-mismatch",
+      );
+      expect(found).toHaveLength(1);
+      expect(found[0].severity).toBe("warn");
+      expect(found[0].details).toEqual(["spec.md: payments-team", "arch.spec.md: some-departed-team"]);
+      expect(found[0].message).toContain("some-departed-team");
+    });
+  });
+
+  it("agreeing owners, or an arch.spec.md that names none, say nothing about ownership", async () => {
+    // Absence is frontmatter.field-missing's finding; one fact gets one code.
+    for (const archOwner of ["owner: payments-team", "owner: ''", ""]) {
+      const files = fixtureWith("service: payment-service\nstatus: draft\nowner: payments-team");
+      files[`services/${SVC}/arch.spec.md`] = archSpec(archOwner);
+      await withProject(files, { service: SVC }, async (p) => {
+        const json = JSON.parse((await runLoam(p.workDir, "validate", "--json")).stdout);
+        expect(codesOf(json)).not.toContain("frontmatter.owner-mismatch");
+      });
+    }
   });
 
   it("a feature's intent is held to the feature vocabulary, not the service one", async () => {
@@ -421,17 +472,24 @@ describe("sources — the tie to the code", () => {
       expect(f?.severity).toBe("warn");
       // Sorted, de-duplicated, and top-level: `src/` is touched even though only
       // one of its two files was read, because the granularity is the directory.
-      // `loam.json` rides along as a tracked root FILE, which is the same shape.
-      expect(f?.details).toEqual([".github", "deploy", "loam.json"]);
-      // The dial: the honest intersection, not "every file under a touched dir".
-      expect(f?.message).toContain("1 of 5 tracked file(s)");
+      // `loam.json` is tracked too and is NOT listed: it is loam's own file, and
+      // it used to ride along here as an unread root path no sources list could
+      // honestly claim — the warning fired in every repo straight after a vouch.
+      expect(f?.details).toEqual([".github", "deploy"]);
+      // The dial: the honest intersection, not "every file under a touched dir"
+      // — over the service's files, so loam.json is outside the denominator too.
+      expect(f?.message).toContain("1 of 4 tracked file(s)");
     } finally {
       await p.destroy();
     }
   });
 
   it("confirms the walk when every top-level path is reached — an ok finding, never work", async () => {
-    const p = await trackedRepoProject("sources:\n  - src/\n  - loam.json", [
+    // `sources: [src/]` alone. This fixture used to list `loam.json` as a
+    // source purely to buy the ok — padding the list with a file nobody reads
+    // for the service, which the explain text forbids — because loam counted
+    // its own config as part of the service.
+    const p = await trackedRepoProject("sources:\n  - src/", [
       "src/payment.ts",
       "src/scheduler/reconcile.ts",
     ]);
@@ -470,10 +528,43 @@ describe("sources — the tie to the code", () => {
       await writeFile(join(p.workDir, ".gitignore"), "target/\nloam.json\n", "utf8");
       execFileSync("git", ["init", "-q"], { cwd: p.workDir });
       execFileSync("git", ["add", "-A"], { cwd: p.workDir });
+      const codes = (await findingsOf(p)).map((x) => x.code);
+      // `target/` is not tracked at all, and that is the whole reason git is
+      // the denominator. `.gitignore` IS tracked and unread, and is still not
+      // unwalked: it is the file that defines the denominator — the measuring
+      // instrument, not a part of the service. It used to be the one path this
+      // case listed, in every repository that has one.
+      expect(codes).toContain("sources.walked");
+      expect(codes).not.toContain("sources.unwalked");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("leaves loam's own files out of the denominator — loam.json and the agent files it recorded", async () => {
+    // A freshly initialized service repo: loam.json, the agent files `loam
+    // init` wrote and recorded in it, a .gitignore, and the code. Before, this
+    // was `sources.unwalked` over `.claude`, `.gitignore` and `loam.json` — a
+    // warning `--strict` turned red the moment a person vouched, which nothing
+    // could honestly clear.
+    const p = await repoProject("sources:\n  - src/", ["src/payment.ts", ".claude/commands/loam-check.md"]);
+    try {
+      const config = JSON.parse(await readFile(join(p.workDir, "loam.json"), "utf8"));
+      config.agentFiles = { ".claude/commands/loam-check.md": "a".repeat(64) };
+      await writeFile(join(p.workDir, "loam.json"), JSON.stringify(config, null, 2) + "\n", "utf8");
+      await writeFile(join(p.workDir, ".gitignore"), "node_modules/\n", "utf8");
+      execFileSync("git", ["init", "-q"], { cwd: p.workDir });
+      execFileSync("git", ["add", "-A"], { cwd: p.workDir });
+      const findings = await findingsOf(p);
+      expect(findings.map((x) => x.code)).not.toContain("sources.unwalked");
+      expect(findings.find((x) => x.code === "sources.walked")?.message).toContain("1 of 1 tracked file(s)");
+
+      // A file the author put beside the recorded ones is theirs, not loam's:
+      // the exclusion is the manifest's exact paths, never the directory.
+      await writeFile(join(p.workDir, ".claude/settings.json"), "{}\n", "utf8");
+      execFileSync("git", ["add", "-A"], { cwd: p.workDir });
       const f = (await findingsOf(p)).find((x) => x.code === "sources.unwalked");
-      // `.gitignore` is itself tracked and unread; `target/` is not tracked at
-      // all, and that is the whole reason git is the denominator.
-      expect(f?.details).toEqual([".gitignore"]);
+      expect(f?.details).toEqual([".claude"]);
     } finally {
       await p.destroy();
     }
@@ -745,6 +836,106 @@ describe("doc staleness — has the DOCUMENT moved since anyone vouched?", () =>
     await withProject(fixtureWith(`${head}\ncontent_digest: "0000000000000000"`), {}, async (p) => {
       const res = await runLoam(p.workDir, "validate", "--service", SVC, "--json");
       expect(codesOf(JSON.parse(res.stdout))).not.toContain("content.stale");
+    });
+  });
+});
+
+describe("doc staleness on every fleet readout — what validate warns, list, status and the scorecard say", () => {
+  /**
+   * The fact needs nothing but the document, so the docs repo can compute it
+   * for every service, and `validate` always did. The readouts beside it did
+   * not: the scorecard of the same run said "1 vouched — 0 stale digest(s)"
+   * with no field for it, `loam list` printed a plain `vouched`, `list
+   * --needs-work` said "nothing to do", and `loam status` advised
+   * `next.fleet-clean`. Each case pins one surface against a twin fleet whose
+   * stamp still matches, so every assertion is a difference the stamp makes.
+   * The rung never moves: a person did stamp the document, exactly as with a
+   * sampled vouch (vouch-sample.test.ts).
+   *
+   * coherentFixture's feature is dropped — `next.fleet-clean` is reachable
+   * only with nothing in flight — and payment-service is stamped the way
+   * `loam vouch` leaves it: sources declared and digested, and a
+   * `content_digest` that matches the body or does not.
+   */
+  const VOUCHED = `service: ${SVC}\nstatus: verified\nowner: payments-team\nsources:\n  - src/\nsources_digest: 0123456789abcdef`;
+  const fleet = (stale: boolean): Record<string, string> => {
+    const stamp = stale ? "0000000000000000" : contentDigest(spec(VOUCHED));
+    const files = fixtureWith(`${VOUCHED}\ncontent_digest: "${stamp}"`);
+    return Object.fromEntries(Object.entries(files).filter(([path]) => !path.startsWith("features/")));
+  };
+
+  it("validate --all's scorecard counts it beside the digest count — the run that warns it must count it", async () => {
+    await withProject(fleet(true), {}, async (p) => {
+      const payload = JSON.parse((await runLoam(p.workDir, "validate", "--all", "--json")).stdout);
+      const warned = payload.targets.flatMap((t: { findings: { code: string }[] }) => t.findings.map((f) => f.code));
+      expect(warned).toContain("content.stale");
+      // Additive beside `vouched`, never subtracted from it: the rung is real.
+      expect(payload.scorecard.provenance).toMatchObject({ vouched: 1, contentStale: 1, staleDigests: 0 });
+      expect((await runLoam(p.workDir, "validate", "--all")).out).toContain(
+        "1 vouched — 1 stale content · 0 stale digest(s)",
+      );
+    });
+    await withProject(fleet(false), {}, async (p) => {
+      const payload = JSON.parse((await runLoam(p.workDir, "validate", "--all", "--json")).stdout);
+      expect(payload.scorecard.provenance).toMatchObject({ vouched: 1, contentStale: 0 });
+    });
+  });
+
+  it("list says `vouched (stale)` and owes the row a re-vouch, while the rung stays `vouched`", async () => {
+    await withProject(fleet(true), {}, async (p) => {
+      const text = (await runLoam(p.workDir, "list", "services")).out;
+      expect(text).toMatch(new RegExp(`${SVC}\\s+vouched \\(stale\\)`));
+      expect(text).toContain("maturity: 1 vouched (1 stale)");
+      const row = JSON.parse((await runLoam(p.workDir, "list", "services", "--json")).stdout).services[0];
+      expect(row.maturity).toBe("vouched");
+      expect(row.missing).toEqual(["re-vouch (spec.md changed since the vouch)"]);
+      // The worklist used to filter on the rung alone and answer "nothing to do".
+      const work = (await runLoam(p.workDir, "list", "--needs-work")).out;
+      expect(work).toContain("1 of 1 service(s) need work");
+      expect(work).toContain("missing: re-vouch (spec.md changed since the vouch)");
+      const ranked = JSON.parse((await runLoam(p.workDir, "list", "--needs-work", "--review-order", "--json")).stdout);
+      expect(ranked.services.map((s: { id: string; reviewRank: number }) => [s.id, s.reviewRank])).toEqual([[SVC, 1]]);
+    });
+    await withProject(fleet(false), {}, async (p) => {
+      expect((await runLoam(p.workDir, "list", "services")).out).toMatch(new RegExp(`${SVC}\\s+vouched\\n`));
+      expect((await runLoam(p.workDir, "list", "--needs-work")).out).toContain(
+        "nothing to do — all 1 service(s) are vouched",
+      );
+    });
+  });
+
+  it("status emits next.revouch — a person's step — instead of next.fleet-clean", async () => {
+    await withProject(fleet(true), {}, async (p) => {
+      const payload = JSON.parse((await runLoam(p.workDir, "status", "--json")).stdout);
+      expect(payload.services).toMatchObject({ vouched: 1, contentStale: 1 });
+      expect(payload.next.map((s: { code: string }) => s.code)).toEqual(["next.revouch", "next.fleet-gate"]);
+      const step = payload.next[0];
+      expect(step.statement).toContain(`services/${SVC}/spec.md`);
+      expect(step.command).toBe(`loam vouch --service ${SVC}`);
+      // Never handed to an agent as runnable: a vouch is a person's act.
+      expect(step.execution).toMatchObject({ kind: "human-review", runnable: false, cwd: "service-repo" });
+      expect(step.execution.command).toBeUndefined();
+      // The narrowed question about the service gets the same answer.
+      const narrowed = JSON.parse((await runLoam(p.workDir, "status", "--service", SVC, "--json")).stdout);
+      expect(narrowed.next.map((s: { code: string }) => s.code)).toContain("next.revouch");
+      expect((await runLoam(p.workDir, "status")).out).toContain("1 vouched (1 stale)");
+    });
+    await withProject(fleet(false), {}, async (p) => {
+      const payload = JSON.parse((await runLoam(p.workDir, "status", "--json")).stdout);
+      expect(payload.services.contentStale).toBe(0);
+      expect(payload.next.map((s: { code: string }) => s.code)).toEqual(["next.fleet-clean"]);
+    });
+  });
+
+  it("names arch.spec.md when that is the axis that moved — the stamp is per file", async () => {
+    const files = fleet(false);
+    files[`services/${SVC}/arch.spec.md`] =
+      `---\nservice: ${SVC}\nstatus: verified\ncontent_digest: "0000000000000000"\n---\n\n# ${SVC} — architecture\n`;
+    await withProject(files, {}, async (p) => {
+      const step = JSON.parse((await runLoam(p.workDir, "status", "--json")).stdout).next[0];
+      expect(step.code).toBe("next.revouch");
+      expect(step.statement).toContain(`services/${SVC}/arch.spec.md`);
+      expect(step.statement).not.toContain(`services/${SVC}/spec.md`);
     });
   });
 });

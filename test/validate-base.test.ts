@@ -17,7 +17,9 @@
  */
 import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
+import { cp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   coherentFixture,
   LANDSCAPE,
@@ -26,6 +28,9 @@ import {
   runLoam,
   type Project,
 } from "./helpers/harness.js";
+
+const EXAMPLES = fileURLToPath(new URL("../examples/docs", import.meta.url));
+const FLEET_FILE = fileURLToPath(new URL("../examples/fleet.yaml", import.meta.url));
 
 function git(cwd: string, ...args: string[]): void {
   const res = spawnSync("git", args, { cwd, encoding: "utf8", timeout: 30_000 });
@@ -55,7 +60,7 @@ interface ValidatePayload {
   scope?: ScopePayload;
   scorecard?: unknown;
   summary?: { services: number; features: number; errors: number; warnings: number };
-  targets?: { kind: string; id: string }[];
+  targets?: { kind: string; id: string; findings?: { severity: string; code: string; message: string }[] }[];
 }
 
 async function validateJson(p: Project, ...args: string[]): Promise<{ code: number; payload: ValidatePayload }> {
@@ -66,6 +71,64 @@ async function validateJson(p: Project, ...args: string[]): Promise<{ code: numb
 /** Every target this run graded, by id — the answer every scope case is really about. */
 function graded(payload: ValidatePayload): string[] {
   return (payload.targets ?? []).map((t) => t.id).sort();
+}
+
+/** Every non-`ok` finding the run raised, with the target it was filed on. */
+function raised(payload: ValidatePayload): { target: string; code: string; message: string }[] {
+  return (payload.targets ?? []).flatMap((t) =>
+    (t.findings ?? []).filter((f) => f.severity !== "ok").map((f) => ({ target: t.id, code: f.code, message: f.message })),
+  );
+}
+
+/** Every finding code the run raised at any severity — `ok` included, which is how a grade that PASSED shows. */
+function codes(payload: ValidatePayload): string[] {
+  return (payload.targets ?? []).flatMap((t) => (t.findings ?? []).map((f) => f.code));
+}
+
+/** The shipped example fleet, copied rather than graded in place — see test/examples.test.ts for why. */
+async function exampleFleet(): Promise<Project> {
+  const p = await makeProject({});
+  await cp(EXAMPLES, p.docsDir, { recursive: true });
+  return p;
+}
+
+/**
+ * payment-service's contract cut to the one operation README's spine-first
+ * example names — spelled the American way, test/spine-first.test.ts's own
+ * fixture, so the misspelling below is the README's one letter exactly.
+ */
+const PAYMENT_OPENAPI = `openapi: 3.1.0
+info:
+  title: payment-service
+  version: 1.0.0
+paths:
+  /payments:
+    post:
+      operationId: authorizePayment
+      responses:
+        "201":
+          description: Authorized
+`;
+
+/** The edge `loam seed` writes bare, and what naming its operation turns it into. */
+const BARE_EDGE = "  svc_order_service -> svc_payment_service\n";
+const namedEdge = (op: string): string =>
+  `  svc_order_service -> svc_payment_service 'Authorises' {\n    metadata { op '${op}' }\n  }\n`;
+
+/**
+ * A freshly seeded spine-first fleet — README's "Start from the fleet spine",
+ * from the shipped `examples/fleet.yaml` — with payment-service's contract
+ * dropped in. No service has a model.likec4, so every service target would be
+ * red on `service.no-model`; that is what makes it the fleet where grading the
+ * PROVIDER rather than the EDGE would be the wrong fix.
+ */
+async function seededFleet(): Promise<Project> {
+  const p = await makeProject({ "services/.gitkeep": "" });
+  await writeFile(join(p.workDir, "fleet.yaml"), await readFile(FLEET_FILE, "utf8"), "utf8");
+  const seeded = await runLoam(p.workDir, "seed", "--from", "fleet.yaml");
+  if (seeded.code !== 0) throw new Error(`seed failed: ${seeded.out}`);
+  await p.write("services/payment-service/openapi.yaml", PAYMENT_OPENAPI);
+  return p;
 }
 
 /**
@@ -190,6 +253,135 @@ describe("loam validate --all --base — what lands in scope", () => {
       const { payload } = await validateJson(p, "--all", "--base", "main");
       expect(payload.scope?.services).toEqual(["ledger-service"]);
       expect(payload.scope?.totals.services).toBe(3);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("loam validate --all --base — a call edge the branch edited is graded against its provider", () => {
+  // The defect: `spine.op-undefined` is graded on the PROVIDER's service
+  // target, and an architecture/ change only ever put the landscape in scope,
+  // so README's own one-letter example — the payoff the spine-first path is
+  // sold on — merged green through both PR gates, on an adopted fleet and on a
+  // seeded one alike. Only the unscoped run, red for other reasons on a fleet
+  // mid-adoption, ever named it.
+  it("README's misspelt op on the examples fleet fails, with the provider still out of scope", async () => {
+    const p = await exampleFleet();
+    try {
+      commitBase(p.docsDir);
+      const map = "architecture/landscape.likec4";
+      const before = await p.read(map);
+      expect(before).toContain("op 'authorizePayment'");
+      await p.write(map, before.replace("op 'authorizePayment'", "op 'authorisePayment'"));
+      const { code, payload } = await validateJson(p, "--all", "--base", "main");
+      expect(code).toBe(1);
+      const spine = raised(payload).filter((f) => f.code === "spine.op-undefined");
+      expect(spine).toHaveLength(1);
+      expect(spine[0]?.target).toBe("landscape");
+      expect(spine[0]?.message).toContain("authorisePayment");
+      // The EDGE is graded, not the provider: payment-service's own documents
+      // are not what this branch touched, and grading them would hand the PR
+      // every finding they already carry.
+      expect(payload.scope?.services).toEqual([]);
+      expect(graded(payload)).toEqual(["landscape"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("the same misspelling on a freshly seeded spine-first fleet fails — even under --strict it used to be green", async () => {
+    const p = await seededFleet();
+    try {
+      const map = await p.read("architecture/landscape.likec4");
+      expect(map).toContain(BARE_EDGE);
+      await p.write("architecture/landscape.likec4", map.replace(BARE_EDGE, namedEdge("authorizePayment")));
+      commitBase(p.docsDir);
+      await p.write("architecture/landscape.likec4", map.replace(BARE_EDGE, namedEdge("authorisePayment")));
+      const { code, payload } = await validateJson(p, "--all", "--base", "main", "--strict");
+      expect(code).toBe(1);
+      expect(raised(payload).map((f) => f.code)).toEqual(["spine.op-undefined"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("naming the op correctly on a seeded fleet is graded and green — the provider's missing model is not the branch's", async () => {
+    const p = await seededFleet();
+    try {
+      commitBase(p.docsDir);
+      const map = await p.read("architecture/landscape.likec4");
+      await p.write("architecture/landscape.likec4", map.replace(BARE_EDGE, namedEdge("authorizePayment")));
+      const { code, payload } = await validateJson(p, "--all", "--base", "main", "--strict");
+      // Five un-adopted services each carry `service.no-model`; pulling the
+      // provider into scope would have reddened exactly the labour README's
+      // spine-first path asks for.
+      expect(code).toBe(0);
+      expect(raised(payload)).toEqual([]);
+      // ...and the green is a grade, not a skip: the edge was resolved.
+      expect(codes(payload)).toContain("spine.resolved");
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("loam validate --all --base — a fleet-wide vocabulary is re-graded only when its file changed", () => {
+  // The defect: the landscape target is one coarse subject, so ANY
+  // architecture/ branch re-graded every fleet-wide vocabulary warning, and
+  // under --strict a one-line map edit on the adopted example fleet went red on
+  // four warnings that were all there at the base.
+  it("a map edit on the examples fleet is green under --strict; the vocabulary's own branch still sees its warning", async () => {
+    const p = await exampleFleet();
+    try {
+      commitBase(p.docsDir);
+      const map = await p.read("architecture/landscape.likec4");
+      await p.write("architecture/landscape.likec4", `${map}\n`);
+      const mapOnly = await validateJson(p, "--all", "--base", "main", "--strict");
+      expect(raised(mapOnly.payload)).toEqual([]);
+      expect(mapOnly.code).toBe(0);
+
+      // The permission vocabulary itself changed: its warning is this
+      // branch's business again — and only its, not its neighbours'.
+      const permissions = await p.read("architecture/permissions.yaml");
+      await p.write("architecture/permissions.yaml", `${permissions}# reviewed\n`);
+      const vocabulary = await validateJson(p, "--all", "--base", "main", "--strict");
+      expect(raised(vocabulary.payload).map((f) => f.code)).toEqual(["permissions.unenforced"]);
+      expect(vocabulary.code).toBe(1);
+
+      // Unscoped, nothing moved: every fleet-wide warning is still reported.
+      const fleet = await validateJson(p, "--all");
+      expect(raised(fleet.payload).map((f) => f.code)).toEqual(
+        expect.arrayContaining([
+          "permissions.unenforced",
+          "capability.unrealized",
+          "capability.requirement-unrealized",
+          "obligation.unapplied",
+        ]),
+      );
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("agents.stale rides a scoped run only when AGENTS.md itself changed", async () => {
+    const p = await makeProject({
+      ...twoServices(),
+      "AGENTS.md": "<!-- generated by loam v0.0.1 -->\n# Agents\n",
+    });
+    try {
+      commitBase(p.docsDir);
+      await p.write("architecture/landscape.likec4", `${LANDSCAPE}\n`);
+      const mapOnly = await validateJson(p, "--all", "--base", "main");
+      expect(graded(mapOnly.payload)).toContain("landscape");
+      expect(codes(mapOnly.payload)).not.toContain("agents.stale");
+
+      await p.write("AGENTS.md", "<!-- generated by loam v0.0.1 -->\n# Agents\n\nEdited.\n");
+      const both = await validateJson(p, "--all", "--base", "main");
+      expect(codes(both.payload)).toContain("agents.stale");
+
+      const fleet = await validateJson(p, "--all");
+      expect(codes(fleet.payload)).toContain("agents.stale");
     } finally {
       await p.destroy();
     }

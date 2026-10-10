@@ -11,68 +11,26 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { repoPath } from "../envelope/json.js";
-import { resolvePortableFileInsideLexically, UnsafePathError } from "../kernel/path-safety.js";
+import { repoPath } from "../../envelope/json.js";
+import { resolvePortableFileInsideLexically, UnsafePathError } from "../../kernel/path-safety.js";
 // Every `isRecord` below guards a record loam itself wrote and is reading back
 // — the lock, the snapshot manifest — whose fields are asked for on the very
 // next line, inside a REFUSAL path. `JSON.parse` answers with any JSON value,
 // not with an object, and that is where a thrown `TypeError` costs the most: it
 // does not make the command fail safely, it replaces a designed refusal with
 // `internal`.
-import { isRecord } from "../kernel/records.js";
-import { isDigest, sha256, type StagedWrite } from "./writes.js";
-import { message, quietRm } from "./commit.js";
-
-/** Where archive parks the pre-images, inside the feature directory so they travel with it — the module doc above says why. */
-export const SNAPSHOT_DIR = ".loam-before";
-export const SNAPSHOT_MANIFEST = "manifest.json";
-/**
- * Bumped only when the layout changes in a way `unarchive` must refuse to guess
- * at. 2 added `before`: a version-1 snapshot says nothing about the bytes it
- * would RESTORE, so an edited pre-image read back as an intact one. 3 re-keys
- * `services/` entries by `(service, artifact)`: a literal path pins the service
- * directory where it stood on the day of the archive, and once the subsystem
- * tree lets it move — re-cutting is expected to be routine — an undo addressed
- * by path restores into a location that is gone. The service id never moves.
- */
-export const SNAPSHOT_VERSION = 3;
-/**
- * Version 2 is still READ, forever: version-2 snapshots already sit inside
- * archived features, which carry them across loam upgrades, and each must keep
- * restoring — and keep being graded for staleness by a retried archive — under
- * its own literal-path rules. Only version 1 is refused (no restore digests).
- */
-export const SNAPSHOT_COMPAT_VERSION = 2;
-
-export interface SnapshotEntry {
-  /**
-   * Docs-repo-relative path, forward slashes, AS ARCHIVED. Load-bearing even
-   * beside the key below: it names the pre-image under `.loam-before/files/`,
-   * and it is the literal fallback when the id stops being enumerated.
-   */
-  path: string;
-  /**
-   * For a `services/` entry: the service id (the leaf directory name — the one
-   * thing a re-cut never changes) and the artifact's path inside its directory,
-   * resolved through the CURRENT enumeration at restore time. Absent on
-   * landscape and `features/` entries, which do not move.
-   */
-  service?: string;
-  artifact?: string;
-  /** False when archive CREATED the file: restoring it means deleting it again. */
-  existed: boolean;
-  /** sha256 of what archive wrote, so unarchive can tell its own merge from later edits. */
-  after: string;
-  /**
-   * sha256 of the pre-image beside this manifest — the bytes `unarchive` will
-   * RESTORE. Null when archive created the file (there is no pre-image).
-   * `after` only describes what archive wrote; while nothing described the
-   * restore source, a pre-image edited in the archived feature directory — a
-   * bad merge, a rebase, a stray editor — was written back verbatim and every
-   * loam surface certified the result.
-   */
-  before: string | null;
-}
+import { isRecord } from "../../kernel/records.js";
+import { isDigest, sha256, type StagedWrite } from "../writes.js";
+import { message, quietRm } from "../commit.js";
+import {
+  SNAPSHOT_COMPAT_VERSION,
+  SNAPSHOT_DIR,
+  SNAPSHOT_MANIFEST,
+  SNAPSHOT_VERSION,
+  snapshotDir,
+  type SnapshotEntry,
+  type SnapshotManifest,
+} from "./manifest.js";
 
 /** A snapshot directory that must not be replaced, because it is the only copy of the true pre-images. */
 export class SnapshotClobberError extends Error {
@@ -86,18 +44,6 @@ export class SnapshotClobberError extends Error {
         `after restoring the living docs from version control, or delete ${SNAPSHOT_DIR}/ if you know the merge never landed.`,
     );
   }
-}
-
-export interface SnapshotManifest {
-  version: number;
-  feature: string;
-  dirName: string;
-  archivedAt: string;
-  files: SnapshotEntry[];
-}
-
-export function snapshotDir(featureDir: string): string {
-  return join(featureDir, SNAPSHOT_DIR);
 }
 
 /** The (service, artifact) key a `services/` path decomposes into. */
@@ -121,6 +67,12 @@ export interface SnapshotRequest {
   serviceKeyOf: (rel: string) => ServiceKey | null;
   /** Service id → its CURRENT docs-relative directory; null when not enumerated. */
   serviceDirOf: (service: string) => string | null;
+  /**
+   * Recorded verbatim as the manifest's `checklist` when given. Opaque here —
+   * this module parks bytes and never learns what a checklist is; `archive`
+   * derives it and `gate --since` reads it back (`./manifest.ts`).
+   */
+  checklist?: string;
 }
 
 export async function writeSnapshot(request: SnapshotRequest): Promise<void> {
@@ -157,6 +109,7 @@ export async function writeSnapshot(request: SnapshotRequest): Promise<void> {
     feature: featureId,
     dirName,
     archivedAt: new Date().toISOString(),
+    ...(request.checklist === undefined ? {} : { checklist: request.checklist }),
     files,
   };
   // Manifest last: its presence is what says the pre-images beside it are complete.

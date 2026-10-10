@@ -40,6 +40,7 @@
  * `subsystem move` never touches a join key.
  */
 import { isUtf8 } from "node:buffer";
+import { createHash } from "node:crypto";
 import { inOrder } from "../kernel/concurrency.js";
 import { parseRequirements } from "../document/parse.js";
 import type { Requirement } from "../document/spec.js";
@@ -56,14 +57,25 @@ import { listBaseTree, showBaseFile, type ResolvedBase } from "./base-git.js";
  * containment arm: the file exists but could not be read as its kind, so
  * every finding on this axis for this subject is SUSPENDED — "nobody could
  * look" must never grade as "nothing is there", in either direction.
+ *
+ * `bytes` is the sha256 of the raw file when there WERE bytes and they refused
+ * to parse — absent when the bytes themselves could not be had (a failed
+ * `git show`, a directory where the file belongs). It is the one fact an
+ * unreadable side can still prove: that it is the same file the other side
+ * holds, which `./semantic.ts`'s `comparable` turns into "the branch did not
+ * touch this contract" (an AsyncAPI 2.x document is unreadable by policy, and
+ * suspending it on every run failed every `loam diff` over a fleet that holds
+ * one, whatever the branch changed).
  */
 export type AxisState<T> =
   | { kind: "absent" }
   | { kind: "read"; value: T }
-  | { kind: "unreadable"; path: string; error: string };
+  | { kind: "unreadable"; path: string; error: string; bytes?: string };
 
-/** The keys of a service state that hold requirement-bearing documents. */
-export type SpecAxisKey = "spec" | "archSpec";
+/** The `bytes` identity of an unreadable side — the same hash on both sides, so equal means byte-identical. */
+export function bytesDigest(bytes: Buffer): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
 
 /**
  * One service on one side of the diff — the same shape for the base ref and
@@ -207,12 +219,15 @@ type Fetched = { rel: string; read: Awaited<ReturnType<typeof showBaseFile>> } |
 /**
  * Lift one fetched file into an axis state through its parser. Absence is the
  * listing's answer, a `show` failure is per-subject containment, and only
- * then do the bytes reach a parser.
+ * then do the bytes reach a parser. A parser's refusal carries the hash of
+ * the bytes it refused (`AxisState`'s `bytes`); a `show` failure has none to
+ * hash.
  */
 function axisFrom<T>(raw: Fetched, parse: (path: string, bytes: Buffer) => AxisState<T>): AxisState<T> {
   if (raw === null) return { kind: "absent" };
   if (raw.read.kind === "failed") return { kind: "unreadable", path: raw.rel, error: raw.read.detail };
-  return parse(raw.rel, raw.read.bytes);
+  const state = parse(raw.rel, raw.read.bytes);
+  return state.kind === "unreadable" ? { ...state, bytes: bytesDigest(raw.read.bytes) } : state;
 }
 
 /**

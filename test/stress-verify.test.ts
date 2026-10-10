@@ -17,11 +17,12 @@ import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import { coherentFixture, makeProject, treeHashes } from "./helpers/harness.js";
-import { readVerificationState } from "../src/core/verify/file.js";
+import { readVerificationState } from "../src/core/verify/read/file.js";
 import {
   DIR,
   PAYMENT,
-  RECORD,
+  RECORD_DIR,
+  serviceRecord,
   SPLIT,
   answersFile,
   serviceClaims,
@@ -82,10 +83,12 @@ describe("four simultaneous federated records", () => {
         }
       }
 
-      // The tree delta is confined to the record; no lock, no temp survives.
+      // The tree delta is confined to the record — one file per service that
+      // had a winner, and nothing else; no lock, no temp survives.
       const after = await treeHashes(p.docsDir);
       const changed = Object.keys({ ...before, ...after }).filter((k) => before[k] !== after[k]);
-      expect(changed).toEqual([RECORD]);
+      const landed = [SPLIT, PAYMENT].filter((svc) => results.some((r, i) => r.code === 0 && runs[i]!.service === svc));
+      expect(changed.sort()).toEqual([`${RECORD_DIR}/`, ...landed.map(serviceRecord)].sort());
       expect(existsSync(join(p.docsDir, ".loam-lock"))).toBe(false);
       expect(Object.keys(after).filter((k) => k.endsWith(".tmp"))).toEqual([]);
     } finally {

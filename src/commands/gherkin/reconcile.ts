@@ -21,7 +21,7 @@ import { dirname, join, relative } from "node:path";
 import { type PlannedFeature } from "../../core/gherkin/emit.js";
 import { parseStampedFeature, type StampedFeature } from "../../core/gherkin/read.js";
 import { featureFilesUnder } from "../../core/gherkin/stale.js";
-import { isPathInside, resolveInside, UnsafePathError } from "../../core/kernel/path-safety.js";
+import { isPathInside, resolveInside } from "../../core/kernel/path-safety.js";
 
 /**
  * The run's scope as ONE value, not a mode with an id lying beside it that only
@@ -145,20 +145,16 @@ export async function reconcile(
   // or the requirement renamed.
   const actions: ActionRow[] = [];
   for (const f of plan) {
-    let path: string;
-    try {
-      // Check the final file as well as the owned root: a pre-planted
-      // `<slug>.feature` symlink must not turn writeFile into an overwrite
-      // outside the repository.
-      path = resolveInside(
-        repoDir,
-        relative(repoDir, join(root, f.fileName)),
-        `gherkin file '${f.fileName}'`,
-      );
-    } catch (err) {
-      if (!(err instanceof UnsafePathError)) throw err;
-      throw err;
-    }
+    // Check the final file as well as the owned root: a pre-planted
+    // `<slug>.feature` symlink must not turn writeFile into an overwrite
+    // outside the repository. The UnsafePathError is left to escape: the one
+    // caller (./gherkin.ts) refuses it as `invalid-option`, and a catch here
+    // could only rethrow it.
+    const path = resolveInside(
+      repoDir,
+      relative(repoDir, join(root, f.fileName)),
+      `gherkin file '${f.fileName}'`,
+    );
     if (!existsSync(path)) {
       actions.push({ ...f, path, action: "written" });
       continue;

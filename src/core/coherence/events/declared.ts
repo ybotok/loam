@@ -186,7 +186,7 @@ export async function declaredEvents(
         severity: "error",
         code: "asyncapi.invalid",
         subject: svc,
-        message: `${svc}: this feature's asyncapi.yaml does not parse${featDoc.error === undefined ? "" : ` (${featDoc.error})`} — the event axis is unchecked and the merge would have nothing true to write. Fix the YAML first.`,
+        message: `${svc}: this feature's asyncapi.yaml does not read as AsyncAPI 3.0${featDoc.error === undefined ? "" : ` (${featDoc.error})`} — the event axis is unchecked and the merge would have nothing true to write. Fix the document first.`,
       });
       continue;
     }

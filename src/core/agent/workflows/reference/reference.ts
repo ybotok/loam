@@ -24,10 +24,12 @@
  *    reported something"), so the page can be fetched then, and paying for it on
  *    every invocation of every session bought nothing.
  *
- * That rule is why `## Which element IS which service` stayed behind in
- * ../../agents-md/spine.ts while the rest of the ID spine left, and why the
- * per-invocation code inventory left while the three facts about the `--json`
- * envelope stayed. Size followed from the rule; it did not drive it.
+ * That rule is why the binding rule — which element IS which service — stayed
+ * in AGENTS.md while the rest of the ID spine left (it is ORIENTATION's
+ * `## The identity rule` in ../../agents-md.ts now, condensed from the section
+ * that used to stay behind), and why the per-invocation code inventory left
+ * while the facts about the `--json` envelope stayed. Size followed from the
+ * rule; it did not drive it.
  *
  * WHAT A PAGE COSTS AND WHAT IT BUYS. A page printed by the binary describes
  * the loam you are about to run, not the one that scaffolded the repository —
@@ -35,7 +37,7 @@
  * refreshes, and is why `agents.stale` exists at all. What it costs is
  * discoverability: a reference nobody can find is content deleted with extra
  * steps. Three things pay that back, and all three are asserted rather than
- * hoped for — AGENTS.md's own "The reference pages" section names each page
+ * hoped for — AGENTS.md's own "Reference pages" section names each page
  * with the exact command (test/agents.test.ts), bare `loam instructions` lists
  * them beside the workflows (test/instructions.test.ts), and every stable code
  * that left is still in the corpus test/codes-drift.test.ts reads, because

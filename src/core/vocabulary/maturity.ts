@@ -71,6 +71,13 @@ export function serviceMaturity(v: MaturityInput): Maturity {
  * What stands between this service and `vouched`, named as the thing to go and
  * do. One rung's worth at a time: telling somebody at `empty` that they also
  * need a vouch is noise, and the vouch is not even possible yet.
+ *
+ * At the top rung, the one thing a vouch can still owe: a re-vouch, when a
+ * stamped document's words moved after the person read them
+ * (`ServiceEntry.contentStale`). The RUNG does not move — the stamp is real —
+ * but "nothing missing" over words nobody has read since is the false green
+ * this list exists to prevent, and `list --needs-work`, `explore` and the
+ * context pack all read their worklist from here.
  */
 export function maturityGaps(v: MaturityInput): string[] {
   const s = v.entry;
@@ -82,6 +89,7 @@ export function maturityGaps(v: MaturityInput): string[] {
   if (files.length > 0) return files;
   if (!s.sources.declared) return ["sources: in the spec.md frontmatter"];
   if (!(s.status === "verified" && s.sources.stamped)) return [`\`loam vouch --service ${s.id}\``];
+  if (s.contentStale.length > 0) return [`re-vouch (${s.contentStale.join(", ")} changed since the vouch)`];
   return [];
 }
 
@@ -103,8 +111,9 @@ export function maturityRollup(graded: readonly { maturity: Maturity }[]): Recor
  * asks both questions, and `INFRA_KINDS` below is the third they now ask
  * beside them.
  *
- * Extracted on the third strike: `commands/validate/checks/vocabulary.ts`,
- * `core/gate/partners.ts` and `core/verify/checklist.ts` each carried a copy.
+ * Extracted on the third strike: `commands/validate/checks/vocabulary.ts` (a
+ * module since deleted), `core/gate/partners.ts` and `core/verify/checklist.ts`
+ * each carried a copy.
  * Their real home is `core/c4/likec4.ts` beside the model they describe, but
  * that file sits against the 300-line limit and its package holds five files
  * — so the trio lives here, beside `landscapeEvidence`, which reads the same

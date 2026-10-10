@@ -80,6 +80,17 @@ export function sectionHeadings(md: string): Array<{ text: string; line: number 
  *   next `## ` heading, or EOF). Empty when the section holds no requirements.
  * - `tail` — everything from the section's end onward.
  *
+ * `requirements` is the run cut again at every `### Requirement:` heading —
+ * one raw slice per requirement, from its heading up to the next one (or the
+ * run's end), so `requirements.join("") === run`. A slice therefore carries
+ * whatever the author wrote below the requirement before the next heading,
+ * blank lines included, which is exactly the text parseRequirements attributes
+ * to that requirement. It exists so archive can keep the bytes of every
+ * requirement a delta did not touch instead of re-serializing the whole run:
+ * one ADDED requirement used to reflow every untouched requirement written
+ * without a blank line under its heading, and every one of those moves landed
+ * under the document's vouch stamp.
+ *
  * Returns null when the document has no `## Requirements` heading at all.
  * Only the FIRST matching heading opens the section; a caller that must not
  * lose content behind a duplicate (archive) counts matches via
@@ -89,11 +100,11 @@ export function sectionHeadings(md: string): Array<{ text: string; line: number 
  */
 export function splitRequirementsSection(
   text: string,
-): { head: string; run: string; tail: string } | null {
+): { head: string; run: string; tail: string; requirements: string[] } | null {
   const fenced = fenceTracker();
   let inSection = false;
   let sectionStart = -1;
-  let runStart = -1;
+  const starts: number[] = [];
   let sectionEnd = text.length;
   let offset = 0;
   while (offset < text.length) {
@@ -112,15 +123,20 @@ export function splitRequirementsSection(
           sectionStart = offset;
           inSection = true;
         }
-      } else if (inSection && runStart === -1 && REQ_RE.test(line)) {
-        runStart = offset;
+      } else if (inSection && REQ_RE.test(line)) {
+        starts.push(offset);
       }
     }
     offset = lineEnd;
   }
   if (sectionStart === -1) return null;
-  const cut = runStart === -1 ? sectionEnd : runStart;
-  return { head: text.slice(0, cut), run: text.slice(cut, sectionEnd), tail: text.slice(sectionEnd) };
+  const cut = starts[0] ?? sectionEnd;
+  return {
+    head: text.slice(0, cut),
+    run: text.slice(cut, sectionEnd),
+    tail: text.slice(sectionEnd),
+    requirements: starts.map((at, i) => text.slice(at, starts[i + 1] ?? sectionEnd)),
+  };
 }
 
 /**

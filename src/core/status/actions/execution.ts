@@ -44,6 +44,17 @@ function execution(step: NextStep): NextExecution {
       needs: ["compare the living docs with version control"],
     };
   }
+  // A vouch is a person's act, never an agent's (`loam vouch` refuses without a
+  // terminal or `--yes`), so the step is NOT runnable: an agent prepares the
+  // reading list with `loam vouch --pack` and hands the stamp to a person.
+  if (step.code === "next.revouch") {
+    return {
+      kind: "human-review",
+      runnable: false,
+      cwd: "service-repo",
+      needs: ["a person who re-reads the moved document and vouches for it from the service's own repository"],
+    };
+  }
   const needs = placeholders(step.command);
   const serviceRepo = SERVICE_REPO_STEPS.has(step.code);
   return {

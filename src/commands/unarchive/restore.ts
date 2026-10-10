@@ -24,7 +24,7 @@ import {
 } from "../../core/staging/commit.js";
 import { clearCommitIntent, writeCommitIntent } from "../../core/staging/recovery/intent.js";
 import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
-import { SNAPSHOT_DIR } from "../../core/staging/snapshot.js";
+import { SNAPSHOT_DIR } from "../../core/staging/snapshot/manifest.js";
 import { planWrite, sha256, type PlannedWrite } from "../../core/staging/writes.js";
 import { readManifest, RestoreFailure } from "./manifest.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";

@@ -43,7 +43,7 @@ export async function gate(
   say: (line?: string) => void,
 ): Promise<Gated | null> {
   const json = opts.json === true;
-  const dryRun = opts.dryRun === true;
+  // Before anything is read: a commit that was killed between two renames left
   // the living docs half-written, and every other command in loam would have
   // planned against them as if they were the truth. Under the same lock, so the
   // repair cannot race a writer. It refuses when the half-merged files have been
@@ -121,7 +121,7 @@ export async function gate(
   // Git conflict markers in a LIVING document this merge would rewrite, before
   // anything else is asked of it. Both sides of somebody's merge are in the
   // file, so nothing it says is anyone's text — and the requirements rewrite
-  // deletes whichever marker lines fall inside the section it owns, turning a
+  // deletes whichever marker lines fall inside a requirement it replaces, turning a
   // conflict anyone can see into a file nobody can tell is wrong. Checked ahead
   // of the coherence gate for `inspectLandscape`'s reason: a conflicted
   // document parses, so every verdict downstream of it is an opinion about half
@@ -316,8 +316,6 @@ export async function gate(
     fail(json, "archive-exists", `archive ${id} — BLOCKED: features/archive/${dirName} already exists. Remove or rename it, then re-run.`);
     return null;
   }
-
-  say(`archive ${id}${dryRun ? "  (dry run)" : ""}\n`);
 
   return {
     id,

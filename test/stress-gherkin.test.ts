@@ -1,12 +1,18 @@
 /**
- * The generated-suite emitter under concurrency. Gherkin is the one writer
- * with no lock and no staging (crash-consistent staged writes for it are the
- * NEXT roadmap item, "P0 — crash-consistent multi-file writers"), so this
- * suite draws the boundary of what today's writer honestly guarantees:
- * byte-deterministic output, idempotent re-runs, and concurrent runs of the
- * SAME living plan converging on the same bytes — because identical plans are
- * same-content whole-buffer overwrites with no orphan deletions. A red here
- * is a found product race to report into that next item, never to retry.
+ * The generated-suite emitter under concurrency. This suite was written when
+ * gherkin was the one writer with no lock and no staging, so it drew the line
+ * at what that writer could honestly guarantee: byte-deterministic output,
+ * idempotent re-runs, and concurrent runs of the SAME living plan converging
+ * on the same bytes, because identical plans were same-content whole-buffer
+ * overwrites with no orphan deletions. The writer has since gained both, in
+ * src/commands/gherkin/commit.ts: the root's lock is held across recovery,
+ * staging and the journaled swap, so the four runs below now take turns
+ * instead of overwriting one another. The claims are unchanged. A red here is
+ * a found product race, never to retry, and it has found one. Under CPU load,
+ * a waiter breaking the lock as stale deleted a successor's live lock. Two runs
+ * then shared one commit window, and one run's recovery swept the other's
+ * staged temps (breakStaleLock in src/core/staging/lock.ts; every window it
+ * had is opened deterministically in test/lock-break.test.ts).
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { join } from "node:path";

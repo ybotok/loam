@@ -9,11 +9,12 @@
  *   - the envelope invariant survives commander-level usage errors: unknown
  *     option or command WITH --json still yields {ok:false, error.code:
  *     "invalid-option"} on stdout (the exitOverride handler in src/cli.ts).
- *   - without --json, usage errors stay plain text on stderr, stdout empty.
+ *   - without --json, usage errors stay plain text on stderr, stdout empty,
+ *     and end on a fix line and the `invalid-option` code line.
  *   - `--json` after a `--` terminator does NOT count as asking for JSON
  *     (the jsonRequested() heuristic stops at the terminator).
  *
- * Each spawn costs about a second, so the six invocations are kicked off in
+ * Each spawn costs about a second, so the seven invocations are kicked off in
  * parallel at module scope and each test just awaits its own result.
  */
 import { describe, it, expect, afterAll } from "vitest";
@@ -46,6 +47,7 @@ const runs = {
   unknownFlagJson: runCli("list", "--json", "--bogus"),
   unknownCommandJson: runCli("frobnicate", "--json"),
   unknownFlagText: runCli("list", "--bogus"),
+  missingBaseText: runCli("diff"),
   jsonAfterTerminator: runCli("list", "--bogus", "--", "--json"),
 };
 
@@ -85,6 +87,18 @@ describe("real CLI entry", () => {
     expect(r.code).toBe(1);
     expect(r.stderr).toContain("unknown option");
     expect(r.stdout.trim()).toBe("");
+  });
+
+  it("a missing mandatory option without --json refuses like every other command: fix line, then the stable code", async () => {
+    // `loam diff` with no --base used to print commander's one sentence and
+    // nothing else — no code to look up, while --json already said
+    // invalid-option. Text mode now ends on the same two lines `fail` prints.
+    const r = await runs.missingBaseText;
+    expect(r.code).toBe(1);
+    expect(r.stdout.trim()).toBe("");
+    expect(r.stderr).toContain("required option '--base <ref>' not specified");
+    expect(r.stderr).toContain("`loam diff --help`");
+    expect(r.stderr).toContain("invalid-option  ·  loam explain invalid-option");
   });
 
   it("`--json` only after a -- terminator does not switch to JSON", async () => {

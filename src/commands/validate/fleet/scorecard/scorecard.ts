@@ -74,6 +74,15 @@ export interface Scorecard {
     staleDigests: number;
     /** Services whose declared `sources` only their own repos can check. */
     unverifiableFromHere: number;
+    /**
+     * Services with a stamped document whose WORDS moved after the vouch, by
+     * subject off this run's `content.stale` findings. The doc-side half of
+     * staleness, so unlike `staleDigests` it is complete from the docs repo —
+     * and its absence was the scorecard saying "1 vouched — 0 stale" in the
+     * same run that warned `content.stale` one line above it. Additive beside
+     * `vouched` for `sampledVouched`'s reason.
+     */
+    contentStale: number;
   };
   verification: {
     /**
@@ -243,10 +252,12 @@ async function derive(input: ScorecardInput): Promise<Scorecard> {
 
   // Verification: `list`'s own cells, so the two commands cannot disagree
   // about a record's verdict. Active features only — an archived record is
-  // frozen history, not fleet debt. This fan-out is NOT memo hits:
-  // readVerification is one small file read per feature, and a recorded cell
-  // additionally derives its checklist (the same cost `list` pays for the same
-  // column) — real filesystem work, so it runs through the bounded pool.
+  // frozen history, not fleet debt. This fan-out is NOT memo hits: reading a
+  // feature's record is a directory listing plus a small read per record file
+  // (the one-file `verification.yaml` and one `verification/<svc>.yaml` per
+  // attesting service), and a recorded cell additionally derives its checklist
+  // (the same cost `list` pays for the same column) — real filesystem work, so
+  // it runs through the bounded pool.
   const features = await fleet.listFeatures(docsDir);
   const cells = await inOrder(features, (f) => featureVerification(docsDir, f));
   const recorded = cells.filter((c): c is VerificationCell => c !== null);
@@ -268,18 +279,21 @@ async function derive(input: ScorecardInput): Promise<Scorecard> {
     maturity,
     provenance: {
       vouched: maturity.vouched,
-      // Both counts join through `subjectsWith` on the run's OWN findings, so
+      // Every count joins through `subjectsWith` on the run's OWN findings, so
       // each is structurally the same number as the report beside it — the
       // unverifiable count is the footer's (unverifiableSubjects is the same
       // call on the same code; this package cannot import the parent back).
-      // Both codes are LITERALS — provenance/sources.ts's own spellings —
-      // because the stable-code collector reads counting sites and refuses a
-      // slot it cannot read; the collector is also what convicts a typo here.
+      // Every code is a LITERAL — the emitter's own spelling — because the
+      // stable-code collector reads counting sites and refuses a slot it
+      // cannot read; the collector is also what convicts a typo here.
       staleDigests: subjectsWith(targets, "sources.stale"),
       unverifiableFromHere: subjectsWith(targets, "sources.unverifiable-from-here"),
-      // Doc-side, so unlike `staleDigests` this one is complete even from the
-      // docs repo: `sources.sampled-vouch` needs no service repo to fire.
+      // Doc-side, so unlike `staleDigests` these two are complete even from
+      // the docs repo: neither `sources.sampled-vouch` nor `content.stale`
+      // needs a service repo to fire. `content.stale` names no subject, and
+      // `subjectsWith` falls back to the target id — the service, here.
       sampledVouched: subjectsWith(targets, "sources.sampled-vouch"),
+      contentStale: subjectsWith(targets, "content.stale"),
     },
     verification: {
       recorded: recorded.length,

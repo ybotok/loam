@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { parse } from "yaml";
 import { danglingRefs, deref, payloadUndeclared } from "./depth.js";
 import { isSlotRemoval, removalMarkerPaths } from "./digest.js";
+import { closureDigester } from "../openapi/digest.js";
 import type { AsyncapiDoc, EventMessage } from "./model.js";
 import type { FleetContext } from "../fleet-context.js";
 
@@ -18,9 +19,20 @@ import type { FleetContext } from "../fleet-context.js";
  * `action: send|receive`, which is the exact analog of an `operationId`; 2.x
  * spells the same thing as `publish`/`subscribe` nested under a channel, where
  * the two words are notoriously ambiguous about whose perspective they take.
- * Supporting one dialect is cheaper than supporting two, and a 2.x document
- * declares no `operations` at all — so it reads as a contract with no messages
- * rather than as a silently mis-parsed one.
+ * Supporting one dialect is cheaper than supporting two. A 2.x (or 1.x)
+ * document declares no `operations` at all, and it used to read as a contract
+ * with no messages: one `asyncapi.yaml` copied in from an older service turned
+ * into a `spine.message-undefined` per landscape edge, a
+ * `spec-event.message-undefined` per requirement and a knock-on
+ * `spine.message-unproduced` on every consumer, none of them naming the
+ * version and every fix text saying "declare the operation" about a file that
+ * does declare it, as `publish`/`subscribe`. That is exactly the false
+ * diagnosis the unreadable policy below exists to prevent, so an older
+ * version now reads as UNREADABLE (`asyncapiDocOf`): one `asyncapi.invalid`
+ * naming the version and the upgrade command, and nothing graded against it.
+ * `loam diff` skips such a document when the base ref holds the same bytes
+ * (core/diff/semantic.ts's `UNTOUCHED_SKIPS`); without that, one unconverted
+ * file suspended the event axis on every run and failed every PR's diff.
  *
  * WHAT THIS READER MUST NEVER DO: join on anything inside a message's `payload`.
  * The payload is JSON Schema today and may be Avro later, and that switch is
@@ -35,7 +47,9 @@ import type { FleetContext } from "../fleet-context.js";
  * slot digests (./digest.ts) are COMPATIBLE with it, not an exception: they
  * hash payload bytes as content equality — a changed payload moves the slot's
  * identity — and content equality is not a join; nothing a digest reads ever
- * contributes a name to the spine.
+ * contributes a name to the spine. The per-message `closureDigest` `loam diff`
+ * compares is the same kind of read followed through `$ref`s: it hashes what
+ * the payload points at, transitively, and still never names a field.
  */
 
 /*
@@ -128,8 +142,24 @@ export function asyncapiDocOf(doc: unknown): AsyncapiDoc {
   if (doc === null) return empty();
 
   const root = doc as Record<string, unknown>;
+  // A pre-3.0 document is not a 3.0 document with nothing in it, so it takes
+  // the unreadable path rather than the empty one (see the module header).
+  // Only a version that SAYS 1.x or 2.x is refused: a file with no `asyncapi:`
+  // key at all (a hand-trimmed feature delta that restates slots and not the
+  // header) keeps reading as 3.0, and so does any later major, which is a
+  // question for the day it exists rather than a guess made now. A bare `2`
+  // or `2.6` parses as a YAML number, hence the String() and the `$`.
+  const version = root["asyncapi"];
+  if ((typeof version === "string" || typeof version === "number") && /^[12](\.|$)/.test(String(version))) {
+    return {
+      ...empty(),
+      unreadable: true,
+      error: `AsyncAPI ${String(version)}: loam reads AsyncAPI 3.0 only; \`asyncapi convert --target-version=3.0.0\` upgrades it`,
+    };
+  }
   const messages: EventMessage[] = [];
   const seen = new Map<string, string[]>();
+  const closureDigest = closureDigester(root);
   const declare = (name: string, slot: string, node: unknown): void => {
     // A declaration carrying the removal marker asserts a slot rather than
     // declaring a message: it is listed (with `remove`) so the gate can see
@@ -138,7 +168,7 @@ export function asyncapiDocOf(doc: unknown): AsyncapiDoc {
       messages.push({ name, slot, remove: true as const });
       return;
     }
-    messages.push({ name, slot, ...(payloadUndeclared(root, node) ? { payloadEmpty: true as const } : {}) });
+    messages.push({ name, slot, closureDigest: closureDigest(node), ...(payloadUndeclared(root, node) ? { payloadEmpty: true as const } : {}) });
     seen.set(name, [...(seen.get(name) ?? []), slot]);
   };
 

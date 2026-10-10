@@ -60,10 +60,11 @@ export function summary(targets: TargetReport[]): ValidateSummary {
  * arch.spec.md both name `sources` raises two findings and is one service) is
  * `subjectsWith`'s, spelled once for every findings-derived rollup — the
  * fleet scorecard counts through the same function on the same code, so its
- * number and this one are structurally the same number. The code is a LITERAL
- * rather than checks/vocabulary.ts's UNVERIFIABLE constant because the
- * stable-code collector reads counting sites too, and it refuses a slot it
- * cannot read — the collector is also what convicts a typo here.
+ * number and this one are structurally the same number. The code is a LITERAL,
+ * as it is at the emission site (checks/sources.ts), rather than a shared
+ * constant, because the stable-code collector reads counting sites too, and it
+ * refuses a slot it cannot read — the collector is also what convicts a typo
+ * here.
  */
 export function unverifiableSubjects(targets: TargetReport[]): number {
   return subjectsWith(targets, "sources.unverifiable-from-here");

@@ -175,6 +175,12 @@ export async function capabilityRollup(input: CapabilityRollupInput): Promise<Ca
         for (const capability of r.capabilities) claim(rows, claimed, capability, where);
         for (const target of r.realizes.map(splitRealizesEntry)) {
           if (target === null) continue; // malformed — capability.realizes-unknown's business
+          // The capability is claimed BEFORE asking whether the requirement id
+          // resolves, and that is deliberate: an entry naming an undeclared id
+          // already earns `capability.realizes-unknown`, and letting it also
+          // leave its capability `capability.unrealized` would be two findings
+          // for one mistake — the second pointing at the analyst's document
+          // rather than at the typo.
           claim(rows, claimed, target.capability, where);
           // The requirement-level half. An entry naming an id the document does
           // not declare lands nowhere, which is exactly right: it is already

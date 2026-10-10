@@ -39,6 +39,7 @@ import { parse } from "yaml";
 import { scenarioDigest } from "../src/core/gherkin/stamp.js";
 import { parseRequirements } from "../src/core/document/parse.js";
 import {
+  citeable,
   coherentFixture,
   makeProject,
   makeTmpDir,
@@ -49,7 +50,7 @@ import {
   type Project,
   type RunResult,
 } from "./helpers/harness.js";
-import { DIR, FEAT, RECORD, serviceRepo, SPLIT } from "./helpers/federated.js";
+import { anyRecord, DIR, FEAT, RECORD, serviceRecord, serviceRepo, SPLIT } from "./helpers/federated.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -59,6 +60,9 @@ afterEach(async () => {
 async function project(files: Record<string, string> = coherentFixture()): Promise<Project> {
   const p = await makeProject(files);
   cleanups.push(() => p.destroy());
+  // The citations this file's all-at-once answer sets make, made real: that
+  // form resolves every agent citation in the repository it records from.
+  await citeable(p.workDir, "src/split/Service.ts:12", "src/x.ts:12", "a.ts:1");
   return p;
 }
 
@@ -127,6 +131,17 @@ interface Run {
   status?: string;
 }
 
+/**
+ * How many steps the fixtures' scenarios have, by name — what a real run of
+ * each reports. `--results` holds a cucumber run to the stamped scenario's step
+ * count, so a run left at a default count would model a different scenario.
+ */
+const FIXTURE_STEPS: Record<string, number> = {
+  "Split across two payees": 3,
+  "Reject a split that does not sum": 2,
+  "Duplicate delivery": 2,
+};
+
 /** A standard cucumber JSON report: one feature, one element per run — extra fields included on purpose. */
 function cucumberReport(runs: Run[], uri = "features/loam/split-a-payment.feature"): unknown {
   return [
@@ -148,7 +163,7 @@ function cucumberReport(runs: Run[], uri = "features/loam/split-a-payment.featur
         ...(r.after === undefined
           ? {}
           : { after: r.after.map((status) => ({ result: { status, error_message: "hook failed" } })) }),
-        steps: (r.steps ?? ["passed", "passed", "passed"]).map((status) => ({
+        steps: (r.steps ?? Array<string>(FIXTURE_STEPS[r.name ?? "Split across two payees"] ?? 3).fill("passed")).map((status) => ({
           keyword: "Then ",
           result: { status, duration: 1 },
         })),
@@ -648,7 +663,7 @@ describe("answering from the runner (--results)", () => {
     const p = await project(scenarioOnlyFixture());
     const report = await writeReport(p, [
       { digest: d1, steps: ["passed", "failed", "skipped"] },
-      { digest: d2 },
+      { digest: d2, name: "Reject a split that does not sum" },
     ]);
     const res = await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json");
     expect(res.code, res.out).toBe(0);
@@ -697,7 +712,7 @@ describe("answering from the runner (--results)", () => {
     const report = await writeReport(p, [
       { digest: d1 },
       { digest: d1, steps: ["failed"] },
-      { digest: d2 },
+      { digest: d2, name: "Reject a split that does not sum" },
     ]);
     const res = await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json");
     expect(res.code).toBe(0);
@@ -712,7 +727,7 @@ describe("answering from the runner (--results)", () => {
     const p = await project(scenarioOnlyFixture());
     const report = await writeReport(p, [
       { digest: d1, steps: ["skipped", "skipped"] },
-      { digest: d2 },
+      { digest: d2, name: "Reject a split that does not sum" },
     ]);
     const res = await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json");
     expect(res.code).toBe(0);
@@ -917,7 +932,7 @@ describe("composing --results with --record", () => {
       expect(json.error.message).toContain(c.id);
     }
     // and nothing was recorded
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 
   it("an archived feature's record is frozen against --results too", async () => {
@@ -1448,7 +1463,7 @@ describe("federated service verification", () => {
     const err = JSON.parse(result.stdout).error;
     expect(err.code).toBe("repository-unavailable");
     expect(err.message).toContain("git");
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 
   it.each([
@@ -1461,7 +1476,7 @@ describe("federated service verification", () => {
     const attempt = await recordService(repo, SPLIT, evidence);
     expect(attempt.result.code).toBe(1);
     expect(attempt.json.error.code).toBe("answers-unevidenced");
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 
   it("refuses evidence through a symlink that escapes the service repository", async () => {
@@ -1473,7 +1488,7 @@ describe("federated service verification", () => {
     const attempt = await recordService(repo, SPLIT, "escape.ts:1");
     expect(attempt.result.code).toBe(1);
     expect(attempt.json.error.message).toContain("symlink");
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 
   it("refuses evidence changed after the commit being attested", async () => {
@@ -1483,7 +1498,7 @@ describe("federated service verification", () => {
     const attempt = await recordService(repo, SPLIT, "proof.ts:1");
     expect(attempt.result.code).toBe(1);
     expect(attempt.json.error.message).toContain("uncommitted changes");
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 
   it("refuses to attest when git cannot finish the committed-report check", async () => {
@@ -1519,7 +1534,7 @@ describe("federated service verification", () => {
     expect(err.message).toContain(`Cannot tell whether the test report '${report}' is bound to`);
     expect(err.message).toContain("git could not be run to completion");
     // The whole point: no attestation was written on an unchecked binding.
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 
   it("refuses to attest when git never answers the evidence check, and stops waiting at its deadline", async () => {
@@ -1556,7 +1571,7 @@ describe("federated service verification", () => {
     expect(err.message).toContain("git did not answer within");
     // The shim sleeps for a minute; anything near that means loam waited on it.
     expect(elapsed).toBeLessThan(40_000);
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   }, 90_000);
 
   it("refuses to attest when git answers past the output cap, rather than buffering it", async () => {
@@ -1586,16 +1601,22 @@ describe("federated service verification", () => {
 
     expect(result.code).toBe(1);
     expect(JSON.parse(result.stdout).error.code).toBe("answers-unevidenced");
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   }, 90_000);
 
-  it("prunes stale claims and their attestation when another service records against a changed checklist", async () => {
+  it("a service behind a changed checklist stops counting, and its own file is left exactly as it stood", async () => {
+    // The shared record used to settle this by REWRITING: the next writer
+    // pruned the stale claim and its attestation out of everybody's file. Each
+    // service's file is its own now, so nothing prunes it — and the union
+    // counts only the files that answered the newest checklist, so the stale
+    // answer cannot fill the slot of the question that replaced it.
     const p = await project();
     const splitRepo = await serviceRepo(p, SPLIT, "primary");
     const paymentRepo = await serviceRepo(p, "payment-service", "payment-work");
     await recordService(splitRepo, SPLIT);
     const payment = await recordService(paymentRepo, "payment-service");
     const staleId = payment.local[0]!.id;
+    const paymentFile = await p.read(serviceRecord("payment-service"));
 
     await p.write(
       `${DIR}/delta.likec4`,
@@ -1603,14 +1624,25 @@ describe("federated service verification", () => {
     );
     const refreshed = await recordService(splitRepo, SPLIT);
     expect(refreshed.result.code, refreshed.result.out).toBe(0);
-    const record = parse(await p.read(RECORD)) as Record<string, any>;
-    expect(record.claims.some((claim: Record<string, unknown>) => claim.id === staleId)).toBe(false);
-    expect(record.attestations.map((a: Record<string, unknown>) => a.service)).toEqual([SPLIT]);
+    expect(await p.read(serviceRecord("payment-service"))).toBe(paymentFile);
     expect(refreshed.json.verified).toBe(false);
     expect(refreshed.json.summary.unanswered).toBe(1);
+    // Nothing was taken off disk, so nothing is reported discarded.
+    expect(refreshed.json.discarded).toBeUndefined();
+
+    const read = JSON.parse((await runLoam(p.workDir, "verify", FEAT, "--json")).stdout) as Record<string, any>;
+    expect(read.claims.some((claim: Record<string, unknown>) => claim.id === staleId)).toBe(false);
+    expect(read.summary.unanswered).toBe(1);
+    // The service that is behind is named, with the version it answered.
+    const forked = (read.notices as Array<Record<string, any>>).find((n) => n["code"] === "verify.checklist-forked")!;
+    expect(forked["message"]).toContain("payment-service");
   });
 
-  it("keeps legacy global --record compatible with arbitrary non-empty evidence", async () => {
+  it("keeps legacy global --record writing the one-file schema-1 record, with no commit to bind", async () => {
+    // It used to accept ANY non-empty evidence, a file that does not exist
+    // included; it now resolves each citation in this repository like the
+    // federated form does (test/verify-matching-run.test.ts) — and is
+    // otherwise the same record it always wrote.
     const p = await project();
     const result = await runLoam(p.workDir, "verify", FEAT, "--record", await confirmAll(p), "--json");
     expect(result.code, result.out).toBe(0);

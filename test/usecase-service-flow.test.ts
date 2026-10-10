@@ -264,9 +264,11 @@ describe("a #req- flow beside model.likec4 is graded by the service target", () 
       const [contested] = codeFor(res.stdout, "usecase.step-contested");
       expect(contested?.severity).toBe("warn");
       expect(contested?.message).toContain(`${SVC}: ${DIR}/views.likec4 — dynamic view 'uc_authorize' step 2 'records'`);
+      // Candidates in the stable relationship order (same endpoints, so by
+      // title), not declaration order — `compareRels` in src/core/c4/parsed/values.ts.
       expect(contested?.details).toEqual([
-        'paymentService.workflow -> paymentService.ledger "writes" (op: writeLedger)',
         'paymentService.workflow -> paymentService.ledger "audits" (no op)',
+        'paymentService.workflow -> paymentService.ledger "writes" (op: writeLedger)',
       ]);
       expect(useCaseFindings(res.stdout)).toHaveLength(1);
     } finally {

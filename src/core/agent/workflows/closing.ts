@@ -41,10 +41,14 @@ reads the service, so a verdict is worth exactly what its evidence is worth.
    must change.
 2. The \`scenario.tested\` claims are the runner's to answer, not yours. In the
    service's repo, run the generated suite with a JSON report —
-   \`npx cucumber-js --format json:report.json\` (cucumber-jvm, behave and
-   SpecFlow emit the same format). The generated scenarios carry
-   \`@loam-digest-…\` tags that ride into the report; that digest is the match,
-   so never retitle or hand-edit a generated scenario to make one pass.
+   \`npx cucumber-js --format json:report.json\` (cucumber-jvm, behave,
+   SpecFlow/Reqnroll, pytest-bdd \`--cucumberjson\` and godog emit the same
+   format). The generated scenarios carry \`@loam-digest-…\` tags that ride into
+   the report; that digest is the match, and the run must have executed every
+   step of the stamped scenario, so never retitle or hand-edit a generated
+   scenario to make one pass. A runner with no cucumber formatter answers
+   through loam's runner-neutral shape instead, keyed by the same digests:
+   \`{"loamScenarioReport": 1, "results": [{"digest": "…", "status": "passed"}]}\`.
    If there is no runnable suite yet you MAY answer them yourself, and the record
    will say so: \`answered_by: agent\` makes the feature **attested**, not verified
    (\`verified: false\`, \`verdict: "attested"\`, the \`verify.scenario-attested\`
@@ -109,29 +113,36 @@ reads the service, so a verdict is worth exactly what its evidence is worth.
    \`\`\`
 
    \`--service <id>\` narrows the checklist to that service's claims and binds the
-   answers to this repository's commit, writing ONE attestation into a shared
-   \`schema: 2\` \`verification.yaml\`. Running it in the next repo adds that repo's
-   attestation and leaves the others standing. In a repo whose ./loam.json
+   answers to this repository's commit, writing that service's attestation to
+   its OWN file, \`features/$1/verification/<id>.yaml\` — the directory is the
+   record, and loam adds the files up when it reads. Running it in the next repo
+   writes that repo's file and touches no other, so two teams' docs PRs never
+   conflict over the record. In a repo whose ./loam.json
    declares a \`service\`, \`--service\` may be omitted — it is substituted, and the
    run still federates. \`--results report.json\` alone is legal when the
    checklist is all scenarios.
 
    ⚠ **Never run \`loam verify $1 --record answers.json\` without \`--service\`.**
    That is the legacy all-at-once form: it writes the WHOLE record from one place,
-   and over a record that already carries other services' attestations it is
-   refused (\`record-federated\`, naming them) precisely because it would erase
-   them. If you meet that refusal, re-run with \`--service\`; do not work around it.
+   into the one file \`verification.yaml\`, and over a record that already carries
+   other services' attestations it is refused (\`record-federated\`, naming them)
+   precisely because it would put one unattested answer set over them. If you
+   meet that refusal, re-run with \`--service\`; do not work around it.
 
    The other refusals: \`answers-mismatch\` (an id
    nobody asked about, a claim you left out — re-run step 1, the feature moved —
    or an answers entry for a \`scenario.tested\` claim: the runner owns those),
    \`answers-unevidenced\` (a \`confirmed\` with nothing behind it),
    \`answers-unreadable\` (a report or answers file it cannot read),
-   \`record-unreadable\` (a \`verification.yaml\` that exists but cannot be read as a
-   record — it is never overwritten; a human repairs it, and
-   \`verify.record-miscounted\` is the reason when its \`summary\` block contradicts
-   its own \`claims[]\`: neither half can be believed, so re-record rather than
-   editing the counts),
+   \`record-unreadable\` (a record file that exists but cannot be read — broken
+   YAML, git conflict markers a merge left, or \`verify.record-miscounted\` when
+   its \`summary\` block contradicts its own \`claims[]\`. It is never overwritten,
+   and the message names the file and the safe repair: a service's own
+   \`verification/<id>.yaml\` holds only that service's word, so that service
+   may delete it and record again; the one-file \`verification.yaml\` may hold
+   other services' attestations, so it is repaired or restored from version
+   control — after a merge, the copy on the branch you merged into — and
+   **never deleted**. Never edit the counts to make them agree),
    \`service-mismatch\` (\`--service\` names a service this repo does not declare) and
    \`repository-unavailable\` (\`--service\` from a repo that declares none, or whose
    commit cannot be read — an attestation must be bound to the code it is about).
@@ -165,8 +176,8 @@ gathered from the steps above; branch on the code, never the prose:
 | \`verify.scenario-attested\` (warn) | scenario claims were answered on an agent's word (\`answered_by: agent\`), so the verdict is **attested**, not verified — nothing gates on it, but say so when you hand back | run the generated suite with a JSON report and re-record with \`--results report.json\` the moment a suite exists |
 | \`verify.digest-contested\` (warn) | two or more services word a scenario identically, so they share one \`@loam-digest-…\` tag and no single cucumber report can say whose suite ran it — those scenario claims stay unconfirmed | each service records its own claims from its own repository with \`--service <id>\` |
 | \`verify.operation-contested\` (warn) | two services on the checklist expose the same operationId, so a contract report — which names no service — cannot say whose suite exercised it; those claims stay unconfirmed | each service records its own with \`--service <id>\`, passing its own contract report |
-| \`verify.checklist-forked\` (warn) | one or more services answered a DIFFERENT version of the feature's question set than the one it now asks — each attestation carries the \`checklist\` digest it answered, and the notice names the ones that do not match the current checklist. Measured against the present, not pairwise: services that all attested against a since-rewritten delta agree with each other perfectly and are all stale. Normal mid-rollout, since services attest as they finish. Attestations written before the field existed carry no digest and are never called stale | re-record the services on the older version from their own repositories (\`loam verify <FEAT> --service <id> --record\`), or accept the split knowingly — nothing gates on it |
-| \`verify.record-miscounted\` (error) | a verification.yaml whose \`summary\` block contradicts its own \`claims[]\` — neither half can be believed, so the record is refused as unreadable rather than trusted in either direction | re-record from the service's repo; never edit the counts by hand |
+| \`verify.checklist-forked\` (warn) | one or more services answered a DIFFERENT version of the feature's question set than the one it now asks — each attestation carries the \`checklist\` digest it answered, and the notice names the ones that do not match the current checklist. Measured against the present, not pairwise: services that all attested against a since-rewritten delta agree with each other perfectly and are all stale. Normal mid-rollout, since services attest as they finish. Attestations written before the field existed carry no digest and are never called stale. In a per-service record the answers of the services named do not count until they record again | re-record the services on the older version from their own repositories (\`loam verify <FEAT> --service <id> --record\`) — nothing gates on it |
+| \`verify.record-miscounted\` (error) | a record file whose \`summary\` block contradicts its own \`claims[]\` — neither half can be believed, so the record is refused as unreadable rather than trusted in either direction | a service's own \`verification/<id>.yaml\`: delete it and re-record from that service's repo; the one-file \`verification.yaml\`: restore it from version control, then re-record — never delete it, and never edit the counts by hand |
 | \`verify.evidence-token-missing\` (warn) | a just-confirmed citation's file at the attested commit does not contain the claim's own token (the operationId, message name or edge op) — the evidence may not show what the answer says | re-read that evidence while the answer can still be corrected; verdict-neutral, it gates nothing |
 | \`cross.agree-confirmed\` / \`cross.agree-unconfirmed\` (ok) | a \`--diff-answers\` row where both blind answer sets reach the same verdict — the cheap-to-skip review queue, though same-model agreement is correlated and proves nothing | nothing on its own; record only the answer set you stand behind, in a separate run |
 | \`cross.disagree\` (the rows a human reads first) | a \`--diff-answers\` row where the two blind answer sets contradict each other — one of them is wrong about the code | read both cited evidences and decide; the diff writes nothing and never moves a verdict |
@@ -187,6 +198,7 @@ export const LOAM_SHIP: CommandContent = {
     "`loam validate --feature $1` must come back valid; if it says nothing pinned the delta, rebase and re-validate first",
     "`loam archive $1 --dry-run` — read the whole plan and every warning before the merge touches anything",
     "`loam archive $1` for real, and read what it reports it did",
+    "every vouched spec on `revouchOwed[]` owes its owner's re-vouch — tell them; it lands in this same PR",
     "`loam unarchive $1` is the undo if the plan turns out to have been wrong",
   ],
   body: `Archive a shipped feature.
@@ -221,7 +233,11 @@ export const LOAM_SHIP: CommandContent = {
    elements and edges into \`architecture/landscape.likec4\` and, for an addition nested
    under a service whose model EXTENDS the map, into that
    \`services/<…>/<svc>/model.likec4\` instead — then moves the feature
-   under \`features/archive/\`. Success is \`ok: true\`; on \`ok: false\`, branch on
+   under \`features/archive/\`, whole: its verification record travels with it,
+   the per-service \`verification/<id>.yaml\` files and any one-file
+   \`verification.yaml\` alike, and \`loam verify $1\` reads it back afterwards as
+   frozen history. Verification never gates the archive — an open or missing
+   record ships as exactly that. Success is \`ok: true\`; on \`ok: false\`, branch on
    \`error.code\`:
    - \`not-coherent\` — gating coherence issues; \`issues[]\` in the envelope lists them,
      each with \`gates\` and \`overridable\` resolved (advisory warnings do not block).
@@ -256,6 +272,16 @@ export const LOAM_SHIP: CommandContent = {
      name the same state) and hand it to a human — re-running does not help.
    - \`rollback-incomplete\` — the merge failed AND some files could not be restored.
      Stop and hand it to a human; the message lists the files to check.
+5. Re-vouches are owed. \`revouchOwed[]\` — on the dry run and the real merge alike —
+   names every VOUCHED spec the merge moves under its vouch stamp, with the
+   document's \`owner\`. \`content.stale\` follows on each, and honestly: the merged
+   text is words nobody has yet read against the code. You cannot clear it — a
+   vouch is a person's, run in that service's own repo (\`loam vouch --service <id>\`,
+   after \`loam vouch --pack --service <id>\` for what to re-read). Name the
+   documents and owners in your hand-back, and say the re-vouches belong in the
+   SAME PR as this archive: a docs repo gated on
+   \`loam validate --all --base <ref> --strict\` keeps the archive's PR red until they
+   land. Never edit a stamp by hand to turn it green.
 
 Archived by mistake? \`loam unarchive $1\` restores the living docs from the snapshot
 archive left in \`features/archive/$1*/.loam-before/\` and re-opens the feature. Do not

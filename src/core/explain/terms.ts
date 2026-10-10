@@ -16,26 +16,25 @@
  * with them, and `vouch`'s pin went with the text rather than being reworded
  * to something still in the file — the pairing is with whatever loam SHIPS as
  * the teaching, not with one delivery of it.
+ *
+ * The converse failure is a source that ships NOWHERE, and it happened: once
+ * AGENTS.md became the one ORIENTATION literal (../agent/agents-md.ts), the old
+ * section constants this file still imported — the long cycle, the layout
+ * opening, the binding rule — were assembled into nothing, so the pins on them
+ * guarded prose no reader could see and the drift test passed vacuously. Those
+ * sources were deleted with the constants; a pin now names a page the binary
+ * prints or the AGENTS.md it writes, never a constant that merely compiles.
  */
-import { ARTIFACTS } from "../agent/agents-md/artifacts.js";
-import { CYCLE } from "../agent/agents-md/cycle.js";
+import { AGENTS_MD } from "../agent/agents-md.js";
 import { REFUSALS } from "../agent/agents-md/refusals.js";
-import { SPINE } from "../agent/agents-md/spine.js";
 import { LOAM_AUTHORING } from "../agent/workflows/reference/authoring.js";
 import { LOAM_DONE_CHECK } from "../agent/workflows/reference/done-check.js";
 import { LOAM_SPINE } from "../agent/workflows/reference/spine.js";
 
-export type PinSource =
-  | "SPINE"
-  | "SPINE_PAGE"
-  | "REFUSALS"
-  | "CYCLE"
-  | "ARTIFACTS"
-  | "AUTHORING"
-  | "DONE_CHECK";
+export type PinSource = "AGENTS_MD" | "SPINE_PAGE" | "REFUSALS" | "AUTHORING" | "DONE_CHECK";
 
 /**
- * The section constants the pins point at, for the drift test and for anyone
+ * The shipped texts the pins point at, for the drift test and for anyone
  * auditing a pairing.
  *
  * `REFUSALS` is still listed and still pinned against, and it is no longer a
@@ -44,11 +43,9 @@ export type PinSource =
  * delivery did.
  */
 export const PIN_SOURCE_TEXT: Record<PinSource, string> = {
-  SPINE,
+  AGENTS_MD,
   SPINE_PAGE: LOAM_SPINE.body,
   REFUSALS,
-  CYCLE,
-  ARTIFACTS,
   AUTHORING: LOAM_AUTHORING.body,
   DONE_CHECK: LOAM_DONE_CHECK.body,
 };
@@ -133,8 +130,13 @@ export const TERMS: readonly TermEntry[] = [
       "`loam archive` folds the delta into the living state. The `delta.*` findings grade that algebra — whether the " +
       "diff still applies to the living document it claims to change.",
     pins: [
-      { source: "ARTIFACTS", phrase: "is a diff against it, reviewed as a diff" },
-      { source: "ARTIFACTS", phrase: "`loam archive` folds the delta into the living state." },
+      // Both used to pin the long layout opening, which stopped shipping when
+      // AGENTS.md was condensed; ORIENTATION's "What is where" teaches the same
+      // two facts in its own words. Re-paired on the clauses the two texts
+      // already share rather than by rewording either side, so `loam explain
+      // delta` prints exactly what it printed before.
+      { source: "AGENTS_MD", phrase: "the complete current state" },
+      { source: "AGENTS_MD", phrase: "reviewed as a diff" },
     ],
   },
   {

@@ -10,6 +10,7 @@
  */
 import { stringify as stringifyYaml } from "yaml";
 import { REQUIREMENT_ID_RE } from "../../core/document/spec.js";
+import { serviceElementId } from "../../core/c4/seed/template.js";
 import {
   ARCH_REQUIREMENT_SENTINEL,
   ARCH_SHALL_SENTINEL,
@@ -24,17 +25,27 @@ import {
   WHEN_SENTINEL,
 } from "../../core/coherence/authoring/sentinels.js";
 
-function identifier(name: string, taken: Set<string>): string {
-  const parts = name.split(/[^A-Za-z0-9]+/).filter((p) => p.length > 0);
-  const head = (parts[0] ?? "svc").replace(/^\d+/, "") || "svc";
-  const base =
-    head[0]!.toLowerCase() +
-    head.slice(1) +
-    parts.slice(1).map((p) => p[0]!.toUpperCase() + p.slice(1)).join("");
+/**
+ * The LikeC4 identifier the delta declares a service under: the id the fleet
+ * map already draws it as (`drawn`), since a context id the map lacks lines up
+ * with nothing at archive, else `serviceElementId` — seed's `svc_<id>`, where
+ * this used to camel-case the name into a third spelling beside the seed's and
+ * the map's. A collision inside one delta takes the seed's `_<n>` suffix.
+ */
+function identifier(name: string, taken: Set<string>, drawn?: string): string {
+  if (drawn !== undefined) return drawn;
+  const base = serviceElementId(name);
   let id = base;
-  for (let n = 2; taken.has(id); n += 1) id = `${base}${n}`;
+  for (let n = 2; taken.has(id); n += 1) id = `${base}_${n}`;
   taken.add(id);
   return id;
+}
+
+/** One context line. A nested id (`a.b`) is no top-level declaration, so it names its parent instead. */
+function contextLine(id: string, name: string): string {
+  const dot = id.lastIndexOf(".");
+  if (dot < 0) return `  // ${id} = softwareSystem '${name}'`;
+  return `  // ${id.slice(dot + 1)} = softwareSystem '${name}'  // inside ${id.slice(0, dot)} { }, as the map draws it; edges name it ${id}`;
 }
 
 /** `FEAT-101` -> `feat_101`: LikeC4 view names take no dashes. */
@@ -82,9 +93,10 @@ ${frontmatter}
 `;
 }
 
-export function deltaTemplate(featureId: string, touched: string[], created: string[]): string {
-  const taken = new Set<string>();
-  const touchedIds = touched.map((s) => [identifier(s, taken), s] as const);
+export function deltaTemplate(featureId: string, touched: string[], created: string[], drawn: ReadonlyMap<string, string> = new Map()): string {
+  // The map's ids are claimed first: a new service's id never collides with a box quoted as context.
+  const taken = new Set<string>(drawn.values());
+  const touchedIds = touched.map((s) => [identifier(s, taken, drawn.get(s)), s] as const);
   const createdIds = created.map((s) => [identifier(s, taken), s] as const);
 
   const lines: string[] = [];
@@ -96,10 +108,11 @@ export function deltaTemplate(featureId: string, touched: string[], created: str
     // which teaches people that the validator is noise. Uncomment a line when an
     // edge below actually needs the identifier.
     lines.push("  // Services this feature touches, as context for the diagram. Uncomment the");
-    lines.push("  // ones an edge below names, and reuse the identifiers from");
-    lines.push("  // architecture/landscape.likec4 so the merge lines up. They stay UNTAGGED:");
+    lines.push("  // ones an edge below names. A service the fleet map already draws keeps the");
+    lines.push("  // identifier architecture/ gives it, so the merge lines up; one it does not");
+    lines.push("  // draw yet gets svc_<id>, the convention `loam seed` writes. They stay UNTAGGED:");
     lines.push(`  // only #${featureId} is the change, and everything else here is context.`);
-    for (const [id, name] of touchedIds) lines.push(`  // ${id} = softwareSystem '${name}'`);
+    for (const [id, name] of touchedIds) lines.push(contextLine(id, name));
     lines.push("");
   }
   if (createdIds.length > 0) {

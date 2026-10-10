@@ -7,8 +7,7 @@ import { acquireDocsLockWaiting, DocsBusyError, LOCK_WAIT_MS } from "../../core/
 import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
 import { docsRepoReady } from "../policy/gate.js";
 import { featureChecklist } from "../../core/verify/checklist.js";
-import { readVerificationState } from "../../core/verify/file.js";
-import { verificationPath } from "../../core/verify/record.js";
+import { readVerificationState } from "../../core/verify/read/file.js";
 import { report } from "./report.js";
 import { reportFrozen } from "./frozen.js";
 import { record } from "./record.js";
@@ -24,7 +23,7 @@ export function registerVerify(program: Command): void {
     .option("--record <file>", "record a JSON answer set against the current checklist")
     .option(
       "--results <file>",
-      "answer the scenario.tested claims mechanically from a cucumber JSON test report",
+      "answer the scenario.tested claims mechanically from a test report: cucumber JSON, or loam's runner-neutral loamScenarioReport JSON for any other runner",
     )
     .option(
       "--contract-results <file>",
@@ -194,20 +193,34 @@ export function registerVerify(program: Command): void {
           return;
         }
 
-        // Before anything else: a verification.yaml that exists but will not read
+        // Before anything else: a record file that exists but will not read
         // is a refusal, not an absence. It holds somebody's answers and — in a
         // fleet — other repositories' attestations; treating it as "not verified"
         // let the next --record silently overwrite all of it, and made the read
         // view say "no record" about a file sitting right there.
-        const existing = await readVerificationState(feature.dir);
+        //
+        // The path is the one FILE that failed, and the advice is that file's:
+        // the record is several files now, and the recipe that is safe for a
+        // service's own attestation file (delete it, record that service again)
+        // is the one that erases a fleet's evidence when the file is the shared
+        // one-file record — which is what this refusal used to tell everyone,
+        // and what a miscounted record's "record again" looped back into.
+        //
+        // An in-flight feature's checklist is derived FIRST, because which of
+        // those files count depends on it: a record kept as per-service files
+        // answers the question being asked now, and only the caller knows what
+        // that is (`core/verify/read/union.ts`). Read without it, a service
+        // that recorded the current checklist could lose a same-day tie to one
+        // that recorded an older one, and this view called the whole record
+        // stale. An archived feature derives nothing — see below.
+        const checklist = feature.archived ? null : await featureChecklist(docsDir, feature.dir, feature.id);
+        const existing = await readVerificationState(feature.dir, checklist?.digest);
         if (existing.state === "unreadable") {
           return fail(
             json,
             "record-unreadable",
-            `${repoPath(docsDir, verificationPath(feature.dir))} exists but cannot be read as a verification record: ${existing.reason}. ` +
-              (existing.code === "verify.record-miscounted"
-                ? "Record the answers again rather than editing the counts: a summary made to agree by hand still says nothing about what was checked."
-                : "It is plain YAML — repair it by hand, or delete it and record again. loam will not overwrite a record it could not read."),
+            `${repoPath(docsDir, existing.path)} exists but cannot be read as a verification record: ${existing.reason}. ` +
+              `${existing.advice} loam will not overwrite a record it could not read.`,
           );
         }
         const recorded = existing.state === "ok" ? existing.verification : null;
@@ -217,8 +230,10 @@ export function registerVerify(program: Command): void {
         // alike: the code is `invalid-option` rather than `answers-mismatch`
         // because the answers were never compared to anything — there is no
         // current checklist to answer, so the wrong thing here is the option,
-        // not the answer set.
-        if (feature.archived) {
+        // not the answer set. (`checklist` is null exactly when the feature is
+        // archived — the test is spelled on it so the compiler knows the
+        // in-flight path below has one.)
+        if (checklist === null) {
           if (recording) {
             return fail(
               json,
@@ -229,8 +244,6 @@ export function registerVerify(program: Command): void {
           reportFrozen({ docsDir, featureDir: feature.dir, json }, feature.id, recorded);
           return;
         }
-
-        const checklist = await featureChecklist(docsDir, feature.dir, feature.id);
 
         if (recording) {
           // Standing in a service repo, `--service` is what the repo already
@@ -245,13 +258,21 @@ export function registerVerify(program: Command): void {
           // subdirectory, `--results` had to live in it, and `git rev-parse` ran
           // there — a submodule or nested checkout under it would have named
           // somebody else's commit on this repository's attestation.
+          //
+          // `config.service` and not `opts.service ?? config.service`, though
+          // the two are the same value: the binding refusal above lets a
+          // recording `--service` through only when it EQUALS the configured
+          // service. Taking the configured one keeps its brand — loam.json's
+          // reader validated it against the id grammar — and that brand is
+          // what `serviceRecordPath` demands before it joins the id into a
+          // file name. The raw flag never reaches the join.
           await record(
             { docsDir, featureDir: feature.dir, json, recovered },
             checklist,
             {
-              service: opts.service ?? config.service,
+              service: config.service,
               repoDir: config.root ?? process.cwd(),
-              previous: existing.state === "ok" ? { verification: existing.verification, raw: existing.raw } : null,
+              previous: existing.state === "ok" ? { verification: existing.verification, files: existing.files } : null,
             },
             opts,
           );

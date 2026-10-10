@@ -91,7 +91,7 @@ export function printEvents(events: EventSlice): void {
   if (events.unreadable) {
     // Same wording stance as printApi above, `asyncapi.invalid` being the
     // validate finding on this file.
-    console.log("Events: asyncapi.yaml does not parse");
+    console.log("Events: asyncapi.yaml does not read as AsyncAPI 3.0");
     if (events.error !== undefined) console.log(`  ${events.error}`);
     console.log();
     return;

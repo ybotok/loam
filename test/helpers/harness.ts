@@ -13,7 +13,7 @@
  * narrower subject: it is pinned to `coherentFixture()`'s one feature, while
  * everything here is fixture-agnostic.
  */
-import { mkdtemp, mkdir, writeFile, rm, readFile, readdir } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, readFile, readdir, realpath } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -132,9 +132,20 @@ export function pinAsyncapi(featureYaml: string, livingYaml: string): string {
   return pinAsyncapiSlots(featureYaml, livingYaml, "fixture").text ?? featureYaml;
 }
 
-/** Create a temp dir (caller owns cleanup unless using makeProject().destroy()). */
+/**
+ * Create a temp dir (caller owns cleanup unless using makeProject().destroy()).
+ *
+ * The path returned is CANONICAL — every symlink in it resolved. On macOS
+ * `os.tmpdir()` is `/var/folders/…`, and `/var` is a symlink to `/private/var`;
+ * the CLI realpaths what it reports (a workspace member, a written file, a
+ * found loam.json), so a test comparing that output against the spelling
+ * `tmpdir()` handed back failed on every Mac and passed on every Linux runner.
+ * Resolving the root once, here, makes every fixture path under it already the
+ * spelling the CLI prints — instead of each test realpathing its own
+ * expectations, or the gate needing a TMPDIR override to be green on a laptop.
+ */
 export async function makeTmpDir(prefix = "loam-test-"): Promise<string> {
-  return mkdtemp(join(tmpdir(), prefix));
+  return mkdtemp(join(await realpath(tmpdir()), prefix));
 }
 
 /** Write a map of relPath → content under root, creating parent dirs. */
@@ -181,6 +192,24 @@ export async function makeProject(
     exists: (rel) => existsSync(join(docsDir, rel)),
     destroy: () => rm(root, { recursive: true, force: true }),
   };
+}
+
+/**
+ * Make each `file:line` citation real under `dir`: the file exists and has at
+ * least that many lines. `loam verify --record` resolves every agent citation
+ * in the repository it records from — the all-at-once form too, since it
+ * stopped accepting a line that does not exist — so a fixture whose answers
+ * cite evidence has to have it. Existing files are left alone.
+ */
+export async function citeable(dir: string, ...citations: string[]): Promise<void> {
+  for (const citation of citations) {
+    const match = /^(.+):(\d+)$/.exec(citation);
+    if (match === null) throw new Error(`citeable: '${citation}' is not file:line`);
+    const path = join(dir, match[1]!);
+    if (existsSync(path)) continue;
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, Array.from({ length: Number(match[2]) }, (_, i) => `// evidence line ${i + 1}`).join("\n") + "\n", "utf8");
+  }
 }
 
 /**

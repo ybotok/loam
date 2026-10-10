@@ -21,13 +21,21 @@ function asLiving(d: Requirement): Requirement {
   return { ...rest, kind: "BASE" };
 }
 
-/** Apply a feature's ADDED/MODIFIED/REMOVED requirements onto a living requirement set. */
+/**
+ * Apply a feature's ADDED/MODIFIED/REMOVED requirements onto a living requirement set.
+ *
+ * A living requirement the delta does not touch comes back as the SAME object
+ * it went in as (a living spec's requirements are already BASE), and that
+ * identity is load-bearing: archive keys each requirement's raw bytes on it, so
+ * an untouched requirement is written back exactly as its author wrote it and
+ * only the ones this function replaced or added are serialized.
+ */
 export function applyRequirementDelta(living: Requirement[], delta: Requirement[]): Requirement[] {
   const malformed = [...requirementIdProblems(living), ...requirementIdProblems(delta)];
   if (malformed.length > 0) {
     throw new Error("cannot merge requirements with invalid, repeated, or duplicate Requirement-ID declarations");
   }
-  let result: Requirement[] = living.map((r) => ({ ...r, kind: "BASE" as DeltaKind }));
+  let result: Requirement[] = living.map((r) => (r.kind === "BASE" ? r : { ...r, kind: "BASE" as DeltaKind }));
   for (const d of delta) {
     // BASE is not a delta kind — a requirement outside an ADDED/MODIFIED/REMOVED
     // section (e.g. quoted under ## Notes) is documentation, not a change.

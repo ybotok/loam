@@ -164,11 +164,12 @@ export interface ArchAxis {
   elements: Elem[];
   relationships: Rel[];
   /**
-   * True when this service's model EXTENDS a fleet map that does not parse, so
-   * `elements` and `relationships` above are empty for that reason and no other
-   * — see `covers.unknown` below, which is suspended on it.
+   * True when this service's model could not be read — it does not parse
+   * (`c4.invalid`), or it EXTENDS a fleet map that does not — so `elements` and
+   * `relationships` above are empty for that reason and no other. See
+   * `covers.unknown` below, which is suspended on it.
    */
-  mapUnreadable?: boolean;
+  modelUnreadable?: boolean;
   /** The living landscape, or null when the repo has none. */
   land: LoadedDoc | null;
   /** The docs root, for the one lazy load below — see `deployment` in the scope. */
@@ -315,24 +316,33 @@ export async function archAxisFindings(axis: ArchAxis): Promise<Finding[]> {
     health: health.ids,
     known,
   };
-  // `covers.unknown` is suspended entirely when the model EXTENDS a map that
-  // does not parse, and this is the standing rule of the whole axis rather than
-  // a special case: nothing may be graded out of a document nobody could read
+  // `covers.unknown` is suspended entirely when the model could not be read —
+  // it EXTENDS a map that does not parse, or it does not parse itself — and
+  // this is the standing rule of the whole axis rather than a special case:
+  // nothing may be graded out of a document nobody could read
   // (`core/c4/service-model/load.ts` states it; `model/grade.ts`, `model/diverged.ts`
   // and the flow skip in `./service.ts` all honour it). Such a model comes back
-  // with no elements and no edges AND the landscape half of the scope is empty
-  // for the same reason, so every `Covers:` line in the service's arch.spec.md
-  // would resolve to nothing — one unparseable `architecture/usecases/x.likec4`
-  // convicting every Covers: line of every migrated service in the fleet as a
-  // typo, under a code whose whole job is to catch typos.
+  // with no elements and no edges, so every `Covers:` line naming one of its
+  // containers would resolve to nothing. For an unreadable map the landscape
+  // half of the scope is empty too — one unparseable
+  // `architecture/usecases/x.likec4` convicting every Covers: line of every
+  // migrated service in the fleet as a typo, under a code whose whole job is to
+  // catch typos. For the model's own parse error it was one dropped quote in
+  // the example fleet's order-service: `c4.invalid` and six `covers.unknown`
+  // warnings, each sending the reader to arch.spec.md to fix an id that was
+  // spelled right. `c4.invalid` is the one finding; the grade comes back with
+  // the next run that parses.
   //
   // The alert:/sli: forms could still be answered out of health.yaml, which IS
   // readable, and they are suspended with the rest on purpose: a verdict that
   // grades two of the Covers: forms and drops the others is a report whose
   // completeness depends on which form the author happened to write, and the one
-  // repair — fix the map — brings all of them back on the next run. The health
-  // axis keeps its own grade either way (`health.uncovered`, below).
-  if (axis.mapUnreadable !== true) {
+  // repair — fix the map, or the model — brings all of them back on the next
+  // run. The same holds for a STANDALONE model that does not parse, whose
+  // landscape half is still readable: grading only the entries that name the
+  // map would be that partial report again. The health axis keeps its own grade
+  // either way (`health.uncovered`, below).
+  if (axis.modelUnreadable !== true) {
     findings.push(
       ...coversUnknownFindings(archReqs, { where: `${service}: arch.spec.md`, subject: service }, scope, health.unreadable),
     );

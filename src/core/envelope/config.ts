@@ -142,6 +142,17 @@ function searchDirs(start: string): string[] {
   }
 }
 
+/**
+ * The files loam wrote into the repository this config governs and owns there,
+ * relative to its root: loam.json itself and every agent file `agentFiles`
+ * records. `sources.unwalked` leaves them out of its denominator — a check
+ * that counted loam's own bookkeeping as a part of the service nobody read
+ * fired in every service repo the moment `loam init` had run.
+ */
+export function loamOwnedFiles(config: LoamConfig): string[] {
+  return [CONFIG_FILENAME, ...Object.keys(config.agentFiles ?? {})];
+}
+
 /** Where a config written HERE goes — never a discovered one. `init` and `saveConfig` use this. */
 export function localConfigPath(cwd: string = process.cwd()): string {
   return resolve(cwd, CONFIG_FILENAME);

@@ -55,8 +55,9 @@ import { AGENT_TOOLS, CLAUDE } from "./tools/registry.js";
  * Thinning the file is the third option. What remains is what does not move
  * between releases: what this workflow is for, and the verbs in order. What
  * leaves is everything version-shaped. `doctor.agent-files-stale` still reports
- * a file whose stamp has fallen behind, and now has almost nothing to be right
- * about — which is the point.
+ * a file whose stamp has fallen behind — once its body, stamp aside, is no
+ * longer the one this binary writes — and now has almost nothing to be right
+ * about, which is the point.
  *
  * The trade is real and worth stating: an agent that cannot execute `loam` now
  * has a spine instead of a protocol. That is the correct failure. The exact
@@ -66,12 +67,13 @@ import { AGENT_TOOLS, CLAUDE } from "./tools/registry.js";
  *
  * The last clause of the pointer is the one sentence here that changes what an
  * agent DOES rather than what it knows. `loam instructions loam-check` prints
- * 84 KB — about a fifth of a 100k-token window, 223 fix-table rows of which a
- * run needs two or three — and every file written from this stub opens by
- * telling the agent to run it. `--no-fix-tables` (commands/instructions.ts)
- * drops the rows, and `loam explain <code>` answers the one row the run turned
- * out to need in under 500 bytes. The flag is what makes the lazy path payable;
- * this sentence is what makes an agent take it.
+ * the largest page loam has — 109 KB measured 2026-10-10 (84 KB when this was
+ * first written), about a quarter of a 100k-token window, and hundreds of
+ * fix-table rows of which a run needs two or three — and every file written
+ * from this stub opens by telling the agent to run it. `--no-fix-tables`
+ * (commands/instructions.ts) drops the rows, and `loam explain <code>` answers
+ * the one row the run turned out to need on its own. The flag is what makes
+ * the lazy path payable; this sentence is what makes an agent take it.
  */
 function stubBody(c: CommandContent): string {
   const steps = c.spine.map((s, i) => `  ${i + 1}. ${s}`).join("\n");
@@ -270,18 +272,6 @@ export async function syncAgentCommands(req: {
     out.managed[key] = desired;
   }
   return out;
-}
-
-/**
- * Backward-compatible create-only wrapper. Callers that own no digest manifest
- * leave every existing file alone and receive only the paths created.
- */
-export async function scaffoldAgentCommands(
-  cwd: string,
-  toolIds: string[] = ["claude"],
-  delivery: readonly Delivery[] = DELIVERIES,
-): Promise<string[]> {
-  return (await syncAgentCommands({ cwd, toolIds, delivery })).created;
 }
 
 /**

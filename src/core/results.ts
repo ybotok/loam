@@ -23,6 +23,10 @@
  * reports @Before/@After hook results in per-element `before[]`/`after[]`
  * arrays (a teardown assertion fails there while every step stays `passed`),
  * and behave carries an element-level `status` that a hook failure flips.
+ * cucumber-js puts its hooks among the `steps[]` instead, as entries marked
+ * `hidden` with the keyword `Before`/`After`, and they are read as hooks
+ * there too — the number of real steps is contract now, because a run is
+ * held to the step count of the scenario it claims to be (`runnerAnswers`).
  * Only those fields are contract: unknown fields, tagless elements
  * (backgrounds, hand-written scenarios) and stray entries are skipped without
  * comment. What is NOT tolerated is a file that is not that array at all: a
@@ -40,9 +44,16 @@ export interface ReportScenario {
   where: string;
   /** Digests carried as `@loam-digest-…` tags. Usually one; hand-tagging can add more. */
   digests: string[];
-  /** Step statuses, lowercased, in order. */
+  /** Step statuses, lowercased, in order — hooks excluded, wherever the dialect put them. */
   steps: string[];
-  /** Hook statuses from cucumber-jvm's `before[]`/`after[]`, lowercased, in order. */
+  /**
+   * Whether `steps` is the run's own step list — true for a cucumber report —
+   * or a one-status stand-in: loam's runner-neutral shape carries a status per
+   * scenario and no step structure at all, so there is nothing in it to hold
+   * against the stamped scenario's step count.
+   */
+  stepwise: boolean;
+  /** Hook statuses — cucumber-jvm's `before[]`/`after[]`, cucumber-js's hidden hook steps — lowercased, in order. */
   hooks: string[];
   /** behave's element-level status, lowercased — absent in the other dialects. */
   status?: string;
@@ -151,6 +162,7 @@ export function readScenarioReport(doc: unknown, reportName: string): ReportRead
       where: str(entry["test"]) ?? `(${SCENARIO_REPORT_MARKER} entry ${i})`,
       digests: [digest],
       steps: [status],
+      stepwise: false,
       hooks: [],
     });
   }
@@ -163,7 +175,8 @@ export function readCucumberReport(doc: unknown, reportName: string): ReportRead
       ok: false,
       message:
         `${reportName} is not a cucumber JSON report — expected the top-level array of features ` +
-        "that `cucumber-js --format json` (or cucumber-jvm, behave, SpecFlow) emits.",
+        "that `cucumber-js --format json` (or cucumber-jvm, behave, SpecFlow) emits. " +
+        `A runner with no cucumber formatter answers through loam's own shape instead: {"${SCENARIO_REPORT_MARKER}": 1, "results": [{"digest": "…", "status": "passed"}]}.`,
     };
   }
   const scenarios: ReportScenario[] = [];
@@ -186,16 +199,25 @@ export function readCucumberReport(doc: unknown, reportName: string): ReportRead
       // No digest tag, nothing to match: a background, a hand-written
       // scenario, another tool's output. Invisible here, deliberately.
       if (digests.length === 0) continue;
-      const resultStatuses = (raw: unknown): string[] => {
-        if (!Array.isArray(raw)) return [];
-        return raw.map((s) => {
-          const status = isRecord(s) && isRecord(s["result"]) ? str(s["result"]["status"]) : undefined;
-          return (status ?? "unknown").toLowerCase();
-        });
+      const statusOf = (s: unknown): string => {
+        const status = isRecord(s) && isRecord(s["result"]) ? str(s["result"]["status"]) : undefined;
+        return (status ?? "unknown").toLowerCase();
       };
-      const steps = resultStatuses(el["steps"]);
+      const resultStatuses = (raw: unknown): string[] => (Array.isArray(raw) ? raw.map(statusOf) : []);
+      // cucumber-js reports its Before/After hooks INSIDE `steps`, as entries
+      // marked `hidden` with the keyword `Before`/`After`; they are hooks, not
+      // steps of the scenario, and counting them would make every hooked run
+      // look like a different scenario from the one stamped.
+      const listed = Array.isArray(el["steps"]) ? (el["steps"] as unknown[]) : [];
+      const isHook = (s: unknown): boolean =>
+        isRecord(s) && (s["hidden"] === true || /^(before|after)$/i.test(str(s["keyword"])?.trim() ?? ""));
+      const steps = listed.filter((s) => !isHook(s)).map(statusOf);
       // cucumber-jvm's @Before/@After hooks: separate arrays, same result shape.
-      const hooks = [...resultStatuses(el["before"]), ...resultStatuses(el["after"])];
+      const hooks = [
+        ...resultStatuses(el["before"]),
+        ...listed.filter(isHook).map(statusOf),
+        ...resultStatuses(el["after"]),
+      ];
       // behave's element-level status — a hook failure flips it while the
       // steps that already ran keep "passed".
       const status = str(el["status"])?.toLowerCase();
@@ -203,6 +225,7 @@ export function readCucumberReport(doc: unknown, reportName: string): ReportRead
         where: `${featureName} › ${str(el["name"]) ?? "(unnamed scenario)"}`,
         digests,
         steps,
+        stepwise: true,
         hooks,
         ...(status === undefined ? {} : { status }),
       });
@@ -256,6 +279,14 @@ export function contestedDigests(claims: readonly Claim[]): Map<string, string[]
  * occurrence wins as failure, a skipped-only run is "skipped" not green, and
  * no match at all is "not found in report". A digest two services share is
  * refused before any of that: see {@link contestedDigests}.
+ *
+ * And a cucumber occurrence must have run as many steps as the stamped
+ * scenario has (`Claim.steps`). The digest is only a tag, and a tag is text:
+ * a one-step stub named "a step" carrying the right digest confirmed
+ * five-step scenarios, because nothing compared what ran with what was
+ * stamped. The count is the check every dialect can be held to; loam's own
+ * runner-neutral shape carries no steps to count, so its entries are held to
+ * their status alone, as that shape has always promised.
  */
 export function runnerAnswers(
   claims: Claim[],
@@ -279,13 +310,16 @@ export function runnerAnswers(
       const tag = c.digest === undefined ? "a digest tag" : scenarioDigestTag(c.digest);
       return answer(c.id, "unconfirmed", [], `not found in report — no scenario in ${reportName} carries ${tag}`);
     }
-    const failing = runs.filter((r) => !passed(r));
+    const failing = runs.filter((r) => !passed(r) || !sameShape(r, c.steps));
     if (failing.length === 0) {
       return answer(c.id, "confirmed", runs.map((r) => `${reportName}: ${r.where}`));
     }
     const first = failing[0]!;
     const rerun = runs.length > 1 ? ` — ${failing.length} of ${runs.length} matching runs failed` : "";
-    return answer(c.id, "unconfirmed", [], `${reason(first)} (${reportName}: ${first.where})${rerun}`);
+    const why = passed(first)
+      ? `ran ${first.steps.length} step(s) where the stamped scenario has ${c.steps} — the report's scenario is not the one \`loam gherkin\` stamped with this digest`
+      : reason(first);
+    return answer(c.id, "unconfirmed", [], `${why} (${reportName}: ${first.where})${rerun}`);
   });
 }
 
@@ -308,6 +342,17 @@ function passed(r: ReportScenario): boolean {
     r.hooks.every((h) => h === "passed") &&
     (r.status === undefined || r.status === "passed")
   );
+}
+
+/**
+ * Did this run execute the scenario the claim stamped — as far as the report
+ * can say? A cucumber run must have run exactly the stamped number of steps.
+ * An entry with no step structure (loam's own shape), and a claim carrying no
+ * count (only `scenario.tested` claims carry one, and only they carry a digest
+ * to match), are held to their status alone.
+ */
+function sameShape(r: ReportScenario, expected: number | undefined): boolean {
+  return !r.stepwise || expected === undefined || r.steps.length === expected;
 }
 
 /** Why a run did not pass, naming the step, hook or element status that says so. */

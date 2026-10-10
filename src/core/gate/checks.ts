@@ -10,7 +10,9 @@
  *                 plus the one integrity error that makes freshness
  *                 unjudgeable (frontmatter.malformed) and a refusing decode
  *                 of the spec bytes themselves
- *   verification  verificationState per active feature touching the service
+ *   verification  verificationState per feature touching the service — the
+ *                 active ones, plus those archived after `--since <ref>` when
+ *                 a pipeline names the docs commit it last deployed from
  *                 (its own module, `./verification.ts`)
  *   interrupted   the `.loam-commit` journal — the one repo state that poisons
  *                 every other answer above
@@ -34,7 +36,7 @@ import type { DocsDir } from "../kernel/ids/dirs.js";
 import type { RawServiceId } from "../kernel/ids/service.js";
 import { atLeastDocumented, partnerScan, type PartnerScan } from "./partners.js";
 import { verificationCheck } from "./verification.js";
-import { unreadableSubject, type GateCheck, type GateReport } from "./report.js";
+import { unreadableSubject, type GateCheck, type GateReport, type GateSince } from "./report.js";
 
 export interface GateRequest {
   docsDir: DocsDir;
@@ -48,6 +50,8 @@ export interface GateRequest {
    */
   repoDir?: string;
   fleet: FleetContext;
+  /** `--since <ref>`, resolved by the command; absent means in-flight features only. */
+  since?: GateSince;
 }
 
 export async function gateReport(req: GateRequest): Promise<GateReport> {
@@ -57,7 +61,7 @@ export async function gateReport(req: GateRequest): Promise<GateReport> {
   const scan = await partnerScan({ docsDir: req.docsDir, service: req.service, fleet: req.fleet });
   const [freshness, verification, interrupted] = await Promise.all([
     freshnessFindings(req, scan),
-    verificationCheck({ docsDir: req.docsDir, service: req.service, fleet: req.fleet }),
+    verificationCheck(req),
     interruptedCommitFinding(req.docsDir),
   ]);
   const checks: GateCheck[] = [
@@ -68,6 +72,7 @@ export async function gateReport(req: GateRequest): Promise<GateReport> {
   ];
   return {
     service: req.service,
+    since: req.since === undefined ? null : { ref: req.since.ref, commit: req.since.commit },
     landscape: scan.landscape,
     partners: scan.partners,
     features: verification.features,

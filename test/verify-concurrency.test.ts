@@ -28,15 +28,19 @@ import { existsSync } from "node:fs";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { coherentFixture, makeProject, runLoam, type Project } from "./helpers/harness.js";
+import { citeable, coherentFixture, makeProject, runLoam, type Project } from "./helpers/harness.js";
 import {
+  allClaims,
   answersFile,
+  anyRecord,
   DIR,
   FEAT,
+  filedServices,
   PAYMENT,
-  RECORD,
+  RECORD_DIR,
   recordOnFile,
   serviceClaims,
+  serviceRecord,
   serviceRepo,
   SPLIT,
   spawnRecord,
@@ -45,7 +49,7 @@ import { stageWrites } from "../src/core/staging/commit.js";
 import { COMMIT_INTENT } from "../src/core/staging/interrupted.js";
 import { acquireDocsLock, acquireDocsLockWaiting, DocsBusyError, DOCS_LOCK } from "../src/core/staging/lock.js";
 import { writeTxnIntent } from "../src/core/staging/txn/journal.js";
-import { readVerificationState } from "../src/core/verify/file.js";
+import { readVerificationState } from "../src/core/verify/read/file.js";
 import { commitVerification } from "../src/core/verify/store/commit.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -64,7 +68,7 @@ async function project(): Promise<Project> {
 /* ------------------------------------------------------------------ */
 
 describe("two real processes recording one feature", () => {
-  it("different services: both runs land and both attestations are on the file", async () => {
+  it("different services: both runs land and both attestations are on disk", async () => {
     const p = await project();
     const splitRepo = await serviceRepo(p, SPLIT);
     const paymentRepo = await serviceRepo(p, PAYMENT);
@@ -78,10 +82,10 @@ describe("two real processes recording one feature", () => {
     expect(a.code, a.out).toBe(0);
     expect(b.code, b.out).toBe(0);
 
-    const record = await recordOnFile(p);
-    const services = (record["attestations"] as Array<{ service: string }>).map((x) => x.service).sort();
-    expect(services).toEqual([PAYMENT, SPLIT].sort());
-    // And the file is a record loam itself will read back, not merely YAML.
+    // One file per service: the two runs never wrote the same bytes, which is
+    // also why two docs-repo branches recording them now merge cleanly.
+    expect(await filedServices(p)).toEqual([PAYMENT, SPLIT].sort());
+    // And the files add up to a record loam itself will read back, not merely YAML.
     const state = await readVerificationState(join(p.docsDir, DIR));
     expect(state.state).toBe("ok");
   }, 30_000);
@@ -98,7 +102,7 @@ describe("two real processes recording one feature", () => {
     expect(a.code, a.out).toBe(0);
     expect(b.code, b.out).toBe(0);
 
-    const record = await recordOnFile(p);
+    const record = await recordOnFile(p, SPLIT);
     const attested = (record["attestations"] as Array<{ service: string }>).filter((x) => x.service === SPLIT);
     expect(attested).toHaveLength(1);
     // Whole-record semantics: every claim carries the SAME run's evidence.
@@ -129,7 +133,7 @@ describe("the docs lock around --record", () => {
     await release();
     const res = await pending;
     expect(res.code, res.out).toBe(0);
-    expect(existsSync(join(p.docsDir, RECORD))).toBe(true);
+    expect(existsSync(join(p.docsDir, serviceRecord(SPLIT)))).toBe(true);
   });
 
   it("a holder that never leaves is answered docs-busy after the bounded wait, nothing written", async () => {
@@ -143,7 +147,7 @@ describe("the docs lock around --record", () => {
     const res = await runLoam(repo, "verify", FEAT, "--service", SPLIT, "--record", answers, "--json");
     expect(res.code).toBe(1);
     expect(JSON.parse(res.stdout).error.code).toBe("docs-busy");
-    expect(existsSync(join(p.docsDir, RECORD))).toBe(false);
+    expect(anyRecord(p)).toBe(false);
     // The refusal did not eat the holder's lock either.
     expect(existsSync(lockPath)).toBe(true);
   }, 20_000);
@@ -202,25 +206,24 @@ describe("commitVerification", () => {
 
   it("a third-party edit between the read and the commit refuses record-raced and survives", async () => {
     const p = await project();
-    const state = await recordedState(p);
-    const path = join(p.docsDir, RECORD);
-    const edited = state.raw.toString("utf8") + "# a human annotated this by hand\n";
-    await writeFile(path, edited, "utf8");
+    const file = (await recordedState(p)).files.services.get(SPLIT)!;
+    const edited = file.raw.toString("utf8") + "# a human annotated this by hand\n";
+    await writeFile(file.path, edited, "utf8");
 
-    const outcome = await commitVerification(join(p.docsDir, DIR), state.verification, state.raw, p.docsDir);
+    const outcome = await commitVerification([{ path: file.path, record: file.verification, preImage: file.raw }], p.docsDir);
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) expect(outcome.code).toBe("record-raced");
     // The edit is byte-identical on disk, and no staging residue sits beside it.
-    expect(await readFile(path, "utf8")).toBe(edited);
-    const dir = await readdir(join(p.docsDir, DIR));
+    expect(await readFile(file.path, "utf8")).toBe(edited);
+    const dir = await readdir(join(p.docsDir, RECORD_DIR));
     expect(dir.filter((n) => n.includes(".tmp"))).toEqual([]);
   });
 
   it("a record that appeared after an absent read refuses record-raced rather than replacing it", async () => {
     const p = await project();
-    const state = await recordedState(p);
+    const file = (await recordedState(p)).files.services.get(SPLIT)!;
     // The caller read "absent" (preImage null) — but the file exists now.
-    const outcome = await commitVerification(join(p.docsDir, DIR), state.verification, null, p.docsDir);
+    const outcome = await commitVerification([{ path: file.path, record: file.verification, preImage: null }], p.docsDir);
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) expect(outcome.code).toBe("record-raced");
     expect((await readVerificationState(join(p.docsDir, DIR))).state).toBe("ok");
@@ -228,13 +231,33 @@ describe("commitVerification", () => {
 
   it("a matching pre-image commits atomically: new bytes, no temp residue", async () => {
     const p = await project();
-    const state = await recordedState(p);
-    const outcome = await commitVerification(join(p.docsDir, DIR), state.verification, state.raw, p.docsDir);
+    const file = (await recordedState(p)).files.services.get(SPLIT)!;
+    const outcome = await commitVerification([{ path: file.path, record: file.verification, preImage: file.raw }], p.docsDir);
     expect(outcome.ok).toBe(true);
     const after = await readVerificationState(join(p.docsDir, DIR));
     expect(after.state).toBe("ok");
-    const dir = await readdir(join(p.docsDir, DIR));
+    const dir = await readdir(join(p.docsDir, RECORD_DIR));
     expect(dir.filter((n) => n.includes(".tmp"))).toEqual([]);
+  });
+
+  it("a delete is held to the same compare: an edited file it would remove refuses and survives", async () => {
+    // The one-file record a service's write supersedes is removed in the same
+    // commit, and a removal is a replace with nothing — so it gets the same
+    // compare-and-set, or an edit landing after the read would be deleted
+    // unseen.
+    const p = await project();
+    const all = await allClaims(p);
+    await citeable(p.workDir, "proof.ts:2");
+    expect((await runLoam(p.workDir, "verify", FEAT, "--record", await answersFile(p.workDir, all, "proof.ts:2", "all.json"))).code).toBe(0);
+    const state = await readVerificationState(join(p.docsDir, DIR));
+    if (state.state !== "ok") throw new Error("fixture record unreadable");
+    const legacy = state.files.legacy!;
+    const edited = legacy.raw.toString("utf8") + "# annotated\n";
+    await writeFile(legacy.path, edited, "utf8");
+    const outcome = await commitVerification([{ path: legacy.path, record: null, preImage: legacy.raw }], p.docsDir);
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.code).toBe("record-raced");
+    expect(await readFile(legacy.path, "utf8")).toBe(edited);
   });
 });
 
@@ -283,7 +306,7 @@ describe("a version-2 journal in the docs repo", () => {
     // The commit was finished, the record landed on top of it, and the journal
     // is gone — a record written over a half-commit is the state this closes.
     expect(await readFile(note, "utf8")).toBe("carried forward by recovery\n");
-    expect(existsSync(join(p.docsDir, RECORD))).toBe(true);
+    expect(existsSync(join(p.docsDir, serviceRecord(SPLIT)))).toBe(true);
     expect(existsSync(join(p.docsDir, COMMIT_INTENT))).toBe(false);
     expect((await readVerificationState(join(p.docsDir, DIR))).state).toBe("ok");
   });
@@ -298,7 +321,7 @@ describe("a version-2 journal in the docs repo", () => {
     const res = await runLoam(repo, "verify", FEAT, "--service", SPLIT, "--record", answers, "--json");
     expect(res.code).toBe(1);
     expect(JSON.parse(res.stdout).error.code).toBe("commit-interrupted");
-    expect(existsSync(join(p.docsDir, RECORD))).toBe(false);
+    expect(anyRecord(p)).toBe(false);
     // The record it could not grade is left for a human to reconcile.
     expect(existsSync(join(p.docsDir, COMMIT_INTENT))).toBe(true);
     // And the lock is back, like every other refusal under it: the recovery

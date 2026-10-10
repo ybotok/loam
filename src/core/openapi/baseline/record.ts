@@ -19,8 +19,6 @@ export interface BaselineRecord {
   components: Record<string, string>;
 }
 
-export const EMPTY_RECORD: BaselineRecord = { pathItems: {}, components: {} };
-
 /** One surface a feature restates: a path-item non-method key, or a component. */
 export type RestatedSurface =
   | { kind: "path-item"; path: string; key: string; value: unknown }

@@ -68,6 +68,32 @@ components:
 `;
 
 /**
+ * The same producer as an AsyncAPI 2.6.0 document — what a team copies in from
+ * an existing service. `subscribe` is 2.x's spelling of "this application
+ * sends", the perspective ambiguity 3.0's `action` exists to remove.
+ */
+const PRODUCER_2X = `asyncapi: 2.6.0
+info:
+  title: payment-service events
+  version: "1.0"
+channels:
+  payment.events.v1:
+    subscribe:
+      operationId: sendPaymentAuthorized
+      message:
+        $ref: '#/components/messages/PaymentAuthorized'
+components:
+  messages:
+    PaymentAuthorized:
+      name: payment.PaymentAuthorized
+      payload:
+        type: object
+        properties:
+          paymentId:
+            type: string
+`;
+
+/**
  * notification-service: receives the same message, and its operation lists NO
  * messages — the AsyncAPI 3 shape that means "every message on this channel",
  * and the shape a minimal hand-written contract actually takes.
@@ -176,7 +202,13 @@ describe("readAsyncapi", () => {
   it("reads a message's name, and which operations send and receive it", async () => {
     const doc = await parseDoc(PRODUCER);
     expect(doc.unreadable).toBe(false);
-    expect(doc.messages).toEqual([{ name: "payment.PaymentAuthorized", slot: "components.messages.PaymentAuthorized" }]);
+    expect(doc.messages).toEqual([
+      {
+        name: "payment.PaymentAuthorized",
+        slot: "components.messages.PaymentAuthorized",
+        closureDigest: expect.stringMatching(/^[0-9a-f]{16}$/),
+      },
+    ]);
     expect(doc.sent).toEqual(["payment.PaymentAuthorized"]);
     expect(doc.received).toEqual([]);
   });
@@ -302,6 +334,23 @@ channels:
     expect(empty.messages).toEqual([]);
   });
 
+  it("grades a document that says AsyncAPI 1.x or 2.x as unreadable, naming the version and the upgrade", async () => {
+    // 2.x spells direction as publish/subscribe under a channel and declares no
+    // `operations`, so it used to read as a 3.0 contract with no messages: the
+    // false "declare the operation" diagnosis the unreadable flag exists for.
+    const v2 = await parseDoc(PRODUCER_2X);
+    expect(v2.unreadable).toBe(true);
+    expect(v2.messages).toEqual([]);
+    expect(v2.error).toContain("AsyncAPI 2.6.0");
+    expect(v2.error).toContain("asyncapi convert --target-version=3.0.0");
+    // A bare YAML number is the same claim spelled loosely.
+    expect((await parseDoc("asyncapi: 2.6\n")).unreadable).toBe(true);
+    expect((await parseDoc("asyncapi: '1.2.0'\n")).unreadable).toBe(true);
+    // 3.0 itself, and a delta that restates slots without the header, still read.
+    expect((await parseDoc(PRODUCER)).unreadable).toBe(false);
+    expect((await parseDoc(PRODUCER.replace("asyncapi: 3.0.0\n", ""))).unreadable).toBe(false);
+  });
+
   it("does not hang on a $ref cycle", async () => {
     const doc = await parseDoc(`asyncapi: 3.0.0
 components:
@@ -366,6 +415,23 @@ describe("validate --service: the event axis", () => {
       // link, which is what grading against an empty parse would produce.
       expect(codes).not.toContain("spine.message-undefined");
       expect(codes).not.toContain("spec-event.message-undefined");
+    });
+  });
+
+  it("an AsyncAPI 2.x contract is one asyncapi.invalid naming the version, not a cascade of join errors", async () => {
+    // Before: one spine.message-undefined per edge, one spec-event.message-undefined
+    // per requirement and a knock-on spine.message-unproduced on the consumer —
+    // none naming the version, every fix text wrong for a file that does declare
+    // its messages as publish/subscribe.
+    await withProject(fleet({ "services/payment-service/asyncapi.yaml": PRODUCER_2X }), {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "payment-service", "--json");
+      const findings = JSON.parse(res.stdout).targets[0].findings as { code: string; details?: string[] }[];
+      const codes = findings.map((f) => f.code);
+      expect(codes.filter((c) => c === "asyncapi.invalid")).toHaveLength(1);
+      expect(findings.find((f) => f.code === "asyncapi.invalid")?.details?.[0]).toContain("AsyncAPI 2.6.0");
+      expect(codes).not.toContain("spine.message-undefined");
+      expect(codes).not.toContain("spec-event.message-undefined");
+      expect(await codesFor(p, "notification-service")).not.toContain("spine.message-unproduced");
     });
   });
 

@@ -7,7 +7,7 @@
  * and a final tree byte-identical to what a solo archive produces.
  *
  * The one nondeterministic byte in an archived feature is the snapshot
- * manifest's `archivedAt` timestamp (written by src/core/staging/snapshot.ts
+ * manifest's `archivedAt` timestamp (written by src/core/staging/snapshot/snapshot.ts
  * into features/archive/<dir>/.loam-before/manifest.json), so the tree
  * comparison excludes that single file and pins its SHAPE instead.
  */

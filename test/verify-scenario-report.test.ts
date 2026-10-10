@@ -31,7 +31,7 @@ import {
   FEATURE_SPEC,
   type Project,
 } from "./helpers/harness.js";
-import { answersFile, FEAT, RECORD, serviceClaims, serviceRepo, SPLIT } from "./helpers/federated.js";
+import { answersFile, FEAT, serviceClaims, serviceRecord, serviceRepo, SPLIT } from "./helpers/federated.js";
 
 let project: Project | null = null;
 afterEach(async () => {
@@ -65,7 +65,7 @@ describe("the loamScenarioReport answer sheet", () => {
     });
     expect(code, out).toBe(0);
 
-    const record = parse(await readFile(join(p.docsDir, RECORD), "utf8")) as Verification;
+    const record = parse(await readFile(join(p.docsDir, serviceRecord(SPLIT)), "utf8")) as Verification;
     const scenario = record.claims.filter((c) => c.kind === "scenario.tested");
     expect(scenario.length).toBeGreaterThan(0);
     const confirmed = scenario.filter((c) => c.verdict === "confirmed");
@@ -83,7 +83,7 @@ describe("the loamScenarioReport answer sheet", () => {
       results: [{ digest: fixtureDigest(), status: "failed", test: "SplitPaymentTest#acrossTwoPayees" }],
     });
     expect(code, out).toBe(0);
-    const record = parse(await readFile(join(p.docsDir, RECORD), "utf8")) as Verification;
+    const record = parse(await readFile(join(p.docsDir, serviceRecord(SPLIT)), "utf8")) as Verification;
     const scenario = record.claims.filter((c) => c.kind === "scenario.tested");
     expect(scenario.every((c) => c.verdict === "unconfirmed")).toBe(true);
   });

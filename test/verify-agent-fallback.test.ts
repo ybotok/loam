@@ -40,7 +40,7 @@ import { parseRequirements } from "../src/core/document/parse.js";
 import { contestedDigests } from "../src/core/results.js";
 import { scenarioBodyHash } from "../src/core/gherkin/digest.js";
 import { type Claim as CoreClaim } from "../src/core/verify/checklist.js";
-import { coherentFixture, makeProject, runLoam, FEATURE_SPEC, type Project } from "./helpers/harness.js";
+import { citeable, coherentFixture, makeProject, runLoam, FEATURE_SPEC, type Project } from "./helpers/harness.js";
 
 const FEAT = "FEAT-1";
 const RECORD = "features/FEAT-1-split/verification.yaml";
@@ -56,6 +56,9 @@ async function project(
 ): Promise<Project> {
   const p = await makeProject(files, opts);
   cleanups.push(() => p.destroy());
+  // The all-at-once form resolves every agent citation in the repository it
+  // records from, so the evidence this file's answer sets cite is made real.
+  await citeable(p.workDir, "src/split/Service.ts:12");
   return p;
 }
 
@@ -99,7 +102,8 @@ async function greenReport(p: Project, name = "report.json"): Promise<string> {
           name: "Split across two payees",
           type: "scenario",
           tags: [{ name: `@loam-digest-${digest}` }],
-          steps: [{ result: { status: "passed" } }],
+          // One result per Given/When/Then: a cucumber run is held to the stamped scenario's step count.
+          steps: [{ result: { status: "passed" } }, { result: { status: "passed" } }, { result: { status: "passed" } }],
         },
       ],
     },

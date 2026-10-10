@@ -20,7 +20,7 @@ import {
   SNAPSHOT_MANIFEST,
   SNAPSHOT_VERSION,
   type SnapshotManifest,
-} from "../../core/staging/snapshot.js";
+} from "../../core/staging/snapshot/manifest.js";
 
 export class RestoreFailure extends Error {
   constructor(

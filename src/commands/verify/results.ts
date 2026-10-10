@@ -21,6 +21,17 @@ export type ResultsRead =
   | { ok: false; code: "answers-unreadable"; message: string };
 
 /**
+ * The two shapes `--results` reads, named wherever a file is refused for being
+ * neither — a fleet whose runner has no cucumber formatter learns here that
+ * the runner-neutral shape exists, rather than from a parse error.
+ */
+const RESULTS_SHAPES =
+  "--results reads two JSON shapes: a cucumber JSON report (cucumber-js --format json, cucumber-jvm, behave, " +
+  "SpecFlow/Reqnroll, pytest-bdd --cucumberjson and godog's cucumber formatter all write one), or loam's runner-neutral " +
+  '{"loamScenarioReport": 1, "results": [{"digest": "<16 hex>", "status": "passed"}]} — the shape a JUnit, pytest, ' +
+  "Vitest or house runner's report is adapted into, keyed by each scenario's @loam-digest tag.";
+
+/**
  * The report as an artifact, not merely as a parse. The resolve/read/digest
  * plumbing lives in `./evidence/read.ts`, shared with `--contract-results`:
  * the bytes are digested and the file's mtime read, because loam cannot prove
@@ -29,7 +40,7 @@ export type ResultsRead =
  * the record.
  */
 export async function readResults(spelled: string, repoDir: string | undefined): Promise<ResultsRead> {
-  const artifact = await readReportArtifact(spelled, repoDir, "test report");
+  const artifact = await readReportArtifact(spelled, repoDir, "test report", RESULTS_SHAPES);
   if (!artifact.ok) return artifact;
   // The reader is chosen by MARKER, before either shape has validated
   // anything. A file declaring `loamScenarioReport` must be graded as that
@@ -72,8 +83,8 @@ export type ServiceEvidenceCheck =
  * in this repository: an agent's `file:line` resolves to a real line that is
  * unchanged at the attested commit, and each runner's evidence names the report
  * loam just read — the cucumber report for `runner`, the contract report for
- * `external-runner`. Legacy global mode deliberately keeps its original, looser
- * evidence contract for backward compatibility.
+ * `external-runner`. The legacy all-at-once form binds to no commit, so it gets
+ * only the first half of that — {@link validateLocalEvidence}.
  *
  * The same pass now STAMPS what it validated: one `EvidencePin` per agent
  * citation, built where `committedFile`'s blob is already in hand (zero new
@@ -132,28 +143,10 @@ export async function validateServiceEvidence(
       continue;
     }
     for (const evidence of answer.evidence) {
-      const match = /^(.+):([1-9]\d*)$/.exec(evidence);
-      if (match === null) {
-        return err(`Claim ${answer.id} has evidence '${evidence}' — service evidence must be a canonical relative file:line.`);
-      }
-      const relativePath = match[1]!;
-      const line = Number(match[2]);
-      let absolutePath: string;
+      const cited = await resolveCitation(repoDir, answer.id, evidence);
+      if (!cited.ok) return err(cited.message);
+      const { relativePath, line } = cited;
       try {
-        absolutePath = resolvePortableFileInside(repoDir, relativePath, `evidence for ${answer.id}`);
-      } catch (cause) {
-        return err(`Claim ${answer.id} has unsafe evidence '${evidence}': ${cause instanceof Error ? cause.message : String(cause)}`);
-      }
-      try {
-        const info = await stat(absolutePath);
-        if (!info.isFile()) {
-          return err(`Claim ${answer.id} has evidence '${evidence}', but '${relativePath}' is not a regular file.`);
-        }
-        const source = await readFile(absolutePath, "utf8");
-        const lines = sourceLines(source).length;
-        if (line > lines) {
-          return err(`Claim ${answer.id} has evidence '${evidence}', but '${relativePath}' has only ${lines} line(s).`);
-        }
         const committed = await committedFile(repoDir, commit, relativePath);
         if (!committed.ok) {
           return err(`Claim ${answer.id} has evidence '${evidence}' that is not bound to ${commit.slice(0, 12)}: ${committed.message}`);
@@ -192,6 +185,89 @@ export async function validateServiceEvidence(
     }
   }
   return { ok: true, pins, tokenMisses };
+}
+
+type Citation = { ok: true; relativePath: string; line: number } | { ok: false; message: string };
+
+/**
+ * One `file:line` citation, resolved in the working tree: canonical form, a
+ * path that stays inside the repository, a regular file, and a line that
+ * exists. What both recording forms owe every agent citation before anything
+ * else — the federated form then binds it to the attested commit.
+ */
+async function resolveCitation(repoDir: string, id: string, evidence: string): Promise<Citation> {
+  const err = (message: string): Citation => ({ ok: false, message });
+  const match = /^(.+):([1-9]\d*)$/.exec(evidence);
+  if (match === null) {
+    return err(`Claim ${id} has evidence '${evidence}' — evidence must be a canonical relative file:line.`);
+  }
+  const relativePath = match[1]!;
+  const line = Number(match[2]);
+  let absolutePath: string;
+  try {
+    absolutePath = resolvePortableFileInside(repoDir, relativePath, `evidence for ${id}`);
+  } catch (cause) {
+    return err(`Claim ${id} has unsafe evidence '${evidence}': ${cause instanceof Error ? cause.message : String(cause)}`);
+  }
+  try {
+    // Absence named in the repository's own spelling: the stat's ENOENT
+    // carries the absolute path of whatever machine ran this, which tells the
+    // reader nothing the citation did not.
+    const info = await stat(absolutePath).catch((cause: NodeJS.ErrnoException) => {
+      if (cause.code === "ENOENT") return null;
+      throw cause;
+    });
+    if (info === null) return err(`Claim ${id} has evidence '${evidence}', but '${relativePath}' does not exist in this repository.`);
+    if (!info.isFile()) return err(`Claim ${id} has evidence '${evidence}', but '${relativePath}' is not a regular file.`);
+    const lines = sourceLines(await readFile(absolutePath, "utf8")).length;
+    if (line > lines) return err(`Claim ${id} has evidence '${evidence}', but '${relativePath}' has only ${lines} line(s).`);
+  } catch (cause) {
+    return err(`Claim ${id} has unreadable evidence '${evidence}': ${cause instanceof Error ? cause.message : String(cause)}`);
+  }
+  return { ok: true, relativePath, line };
+}
+
+/**
+ * The all-at-once form's evidence check: every agent citation must resolve to a
+ * real line of a real file in THIS repository. The form binds to no commit, so
+ * there is nothing to pin and no blob to compare — but it used to check
+ * nothing at all, and accepted `src/foo.py:1` for a file that did not exist
+ * while printing `verified`, in the same release whose `--service` form refused
+ * exactly that citation. The commit binding is the federated form's addition,
+ * not the difference between checked and unchecked.
+ *
+ * A CITATION is what is checked, and only a citation: an entry shaped like a
+ * `path:line` (see {@link citesALine}). The all-at-once form has always taken
+ * other evidence — "manual QA by Alice", a CI run's URL, `README.md` with no
+ * line — and still records it as it stands; holding every entry to the
+ * `file:line` grammar refused all of that with `answers-unevidenced`, which
+ * was never the defect. What a `path:line` claims is checkable, so it is
+ * checked; prose claims nothing a file can contradict. The federated form
+ * keeps its stricter contract — every agent entry a `file:line` bound to the
+ * attested commit — because its whole promise is that binding.
+ */
+export async function validateLocalEvidence(answers: Answer[], repoDir: string): Promise<{ ok: true } | { ok: false; message: string }> {
+  for (const answer of answers) {
+    if (answer.verdict !== "confirmed" || answer.answered_by === "runner" || answer.answered_by === "external-runner") continue;
+    for (const evidence of answer.evidence.filter(citesALine)) {
+      const cited = await resolveCitation(repoDir, answer.id, evidence);
+      if (!cited.ok) return cited;
+    }
+  }
+  return { ok: true };
+}
+
+/**
+ * Is this evidence entry shaped like a `path:line` — something that names a
+ * line of a file and can therefore be wrong about it? One token (no
+ * whitespace: prose such as "checked at 10:30" is not a citation), not a URL
+ * (`https://ci.example:8443` ends in a number too), ending in `:<digits>`.
+ * Deliberately wider than `resolveCitation`'s canonical form: `src/x.py:0` and
+ * `../x.py:3` are citations, badly made, and must be refused rather than
+ * waved through as prose.
+ */
+function citesALine(evidence: string): boolean {
+  return /^\S+:\d+$/.test(evidence) && !/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(evidence);
 }
 
 type CommitResult = { ok: true; commit: string } | { ok: false; message: string };

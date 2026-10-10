@@ -73,6 +73,7 @@
  */
 import type { ServiceEntry } from "../repo/entries.js";
 import type { UseCaseBlastRadius } from "../usecases/touch.js";
+import type { AnsweredBy } from "../verify/answers.js";
 import type { VerificationVerdict } from "../verify/record.js";
 import type { Finding } from "../vocabulary/report.js";
 
@@ -195,6 +196,15 @@ export interface VerificationState {
   unanswered: number;
   /** Of the confirmed, the scenario claims on an agent's word (`attestedClaims`). */
   attested: number;
+  /**
+   * Of the confirmed, one count per `answered_by` value (`confirmedProvenance`),
+   * every key present — `list --json`'s `answered`, under the same name. A
+   * different question from `attested`: that one asks only about the scenario
+   * claims the verdict turns on, this one who answered EVERY kind, so a record
+   * `verified` on its scenarios can still say six of its answers were an
+   * agent's word about a permission or an edge.
+   */
+  answered: Record<AnsweredBy, number>;
 }
 
 /**
@@ -336,6 +346,12 @@ export interface FleetStatusReport {
      * (`vouch_scope`, either axis) — a SUBSET: the three above still sum to `total`.
      */
     sampledVouched: number;
+    /**
+     * Of `vouched`, the ones with a stamped document whose words moved after
+     * the vouch (`content.stale`, either axis) — a SUBSET like
+     * `sampledVouched`, and each one is a `next.revouch` step below.
+     */
+    contentStale: number;
   };
   features: FleetFeatureState[];
   /** Dependencies before consumers — which feature has to archive first. */

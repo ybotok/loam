@@ -512,15 +512,18 @@ describe("the family registry answers what no fix table reaches, and only that",
 
   it("covers exactly the four families it claims, and every row carries both columns", () => {
     // The count is the measurement this axis was written against: 116
-    // unanswerable codes, 65 of them here. A family that silently loses codes
+    // unanswerable codes, 65 of them here — 67 since `diff.op-modified` and
+    // `diff.message-modified` (2026-10-10). A family that silently loses codes
     // — or grows one from a fifth prefix nobody decided to cover — fails here
-    // rather than by leaving `explain` quietly refusing again.
+    // rather than by leaving `explain` quietly refusing again. `next.` grew by
+    // one deliberately, to 68 in all: `next.revouch` (the fleet form's
+    // re-vouch step).
     const byFamily = (prefix: string): string[] => registry.filter((code) => code.startsWith(prefix));
     expect(byFamily("doctor.")).toHaveLength(21);
-    expect(byFamily("next.")).toHaveLength(26);
-    expect(byFamily("diff.")).toHaveLength(14);
+    expect(byFamily("next.")).toHaveLength(27);
+    expect(byFamily("diff.")).toHaveLength(16);
     expect(byFamily("gate.")).toHaveLength(4);
-    expect(registry).toHaveLength(65);
+    expect(registry).toHaveLength(68);
     for (const code of registry) {
       const entry = familyFinding(code)!;
       expect(entry.scope.startsWith("loam "), `${code}'s scope must name the invocation that emits it`).toBe(true);

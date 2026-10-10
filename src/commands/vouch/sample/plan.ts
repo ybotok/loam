@@ -23,12 +23,11 @@
  * chosen from a document that has since moved.
  */
 import { existsSync } from "node:fs";
-import { rawBody } from "../../../core/document/frontmatter.js";
+import { contentDigest, rawBody } from "../../../core/document/frontmatter.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 import type { PathableService } from "../../../core/kernel/ids/service.js";
 import type { DocSection } from "../../../core/provenance/sample/sections.js";
 import { planSample, type VouchScope } from "../../../core/provenance/sample/scope.js";
-import { contentDigest } from "../../../core/provenance/stamp.js";
 import { SPEC_AXES } from "../../../core/repo/paths.js";
 import { locateServicePaths } from "../../../core/repo/service-target.js";
 import { noLivingSpecMessage, verifySpec, type SpecRefusal, type VerifiedSpec } from "../vet/verify.js";

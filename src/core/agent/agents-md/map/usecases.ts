@@ -12,9 +12,10 @@
  * describes. What stays is what `explain` does not say — how to opt a view in,
  * and that an untagged dynamic view is never graded at all.
  *
- * Same assembly contract as every section: ../../agents-md.ts concatenates with
- * NO join separator, so this string starts at the first character of its opening
- * line and ends with the newline that closes its last one.
+ * Same assembly contract as every part of the `loam-codes` page:
+ * ../../workflows/reference/codes.ts concatenates with NO join separator, so this
+ * string starts at the first character of its opening line and ends with
+ * the newline that closes its last one.
  */
 export const USECASE_VIEWS = `- Business use cases are \`dynamic view\`s, and \`loam validate --all\` grades the
   ones that opt in. Write the flow in a file of its own —

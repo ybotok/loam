@@ -10,10 +10,441 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Fixed — a writer waiting on the lock no longer deletes the next writer's live lock
+
+No code, flag, path or payload key was added, changed or retired. What changes is that concurrent
+writers no longer fail, or share one commit window, when a lock holder exits while another writer
+waits for it.
+
+- **A stale `.loam-lock` is broken only while the holder judged dead still holds it.** A writer
+  that finds the lock held reads the holder, and if that pid no longer exists on this host, it
+  breaks the lock. Under CPU load the holder could release normally and exit between that read and
+  the pid check, and a third writer could take the lock in the same gap. The waiter then deleted
+  the third writer's live lock and took one of its own, so two writers were inside one commit window.
+  One of four concurrent `loam gherkin --json` runs failed as `merge-failed` (`ENOENT … rename
+  '….feature.loam-<pid>-…tmp'`): the second writer's recovery read the first's in-flight journal as
+  an interrupted commit and swept its staged files. The code is shared by every writer that takes
+  the lock (`archive`, `unarchive`, `new`, `seed`, `rebase`, `subsystem`, `verify --record`, `vouch`,
+  `gherkin`), and the defect is present in `0.2.0-alpha.8`. The waiter now re-reads the lock after
+  its verdict, and moves it to a private name before removing it. Anything it moved that is not the
+  lock it judged goes back in place. A crashed holder's lock is still reclaimed as before.
+
+### Fixed — `validate --all --base` grades the landscape by what the branch changed in it
+
+No code, flag, path or payload key was added, changed or retired; the unscoped `validate --all` is
+unchanged.
+
+- **A call edge the branch adds or edits in `architecture/` is graded against its provider's
+  contract**, even when the provider is not in scope. README's own example — `authorisePayment` on
+  an edge into a contract spelling it `authorizePayment` — used to pass both PR gates on the example
+  fleet and, even under `--strict`, on a freshly seeded spine-first fleet. It now fails as
+  `spine.op-undefined` (and `spine.op-deprecated`, `spine.op-link-missing` and `spine.resolved` read
+  the same way), filed on the `landscape` target. Only those edges are graded: the provider is not
+  pulled into scope, so its own documents — on a seeded fleet, its `service.no-model` — stay out of
+  the PR's verdict. An edge is new when its (source, target, op) is; a reformat grades nothing.
+- **The landscape re-grades a fleet-wide vocabulary only when the file that carries it changed.**
+  `permissions.*` rides a scoped run only when `architecture/permissions.yaml` changed,
+  `capability.*` only when `architecture/capabilities.yaml` or `capabilities/` did,
+  `obligation.invalid` and `obligation.unapplied` only when `architecture/obligations.yaml` did,
+  `glossary.*` only when `glossary/` did, and `agents.stale` / `docs.binary-behind` only when
+  `AGENTS.md` did. A one-line map edit on the example fleet is no longer red under `--strict` on four
+  warnings that were all there at the base.
+- README's spine-first section now says that under the `--base` gate a PR adding a service's
+  `openapi.yaml` stays red until that service has a `model.likec4` — `service.no-model` is the
+  ratchet working as designed.
+
+### Fixed — one LikeC4 typo no longer floods agent-facing output
+
+No code, flag, path or payload key was added, changed or removed; what moves is the TEXT of the
+diagnostics LikeC4 hands loam, and one warning that stops cascading.
+
+- **A parser's "Expecting: one of these possible Token sequences" message is cut to its first four
+  alternatives plus `… (+N more)`**, keeping the `but found: '…'` line — on every surface that
+  prints a LikeC4 diagnostic (`validate`, `context`, `show`, `tasks`, `doctor`, `gate`,
+  `archive`). One dropped quote in the example fleet's order-service model made `loam validate
+  --service order-service` print 18,503 lines (434 KB; 458 KB as `--json`); it now prints 27 lines
+  (1.7 KB; 5.5 KB as `--json`).
+- **Each LikeC4 diagnostic is reported once, in line order.** The same message at the same line of
+  the same file used to be listed twice, and the lexer's error led the parser's even when it sat a
+  dozen lines below the fault. The `N error(s)` count in `c4.invalid`, `delta.invalid` and the other
+  parse findings now counts distinct diagnostics.
+- **`covers.unknown` is no longer raised for a service whose own `model.likec4` does not parse.**
+  `c4.invalid` is the one finding; the six `covers.unknown` warnings the example fleet showed for one
+  dropped quote named ids that were spelled right. The same suspension already applied to a model
+  extending a map that does not parse.
+- **A broken document no longer bloats anybody else's briefing.** A dropped quote in a feature's
+  `delta.likec4` made `loam context order-service --json` 626 KB instead of 24 KB (now 27 KB). The
+  fleet map's parse error reached `useCaseScan.error` on every service's `context --json` and the
+  `loam gate` "landscape cannot be used" message raw — 173 KB and 152 KB — and now goes through the
+  same spelling as every other diagnostic, which adds its 1-based `L<n>:` line (23 KB and 2 KB).
+
+### Fixed — `doctor.agent-files-stale` fires on a changed body, not on every release
+
+No code, flag, path or payload key was added, changed or retired; what a repo NOTICES is that
+`loam doctor` stops warning about generated command and skill files whose only difference is the
+version stamp.
+
+- The stamp sits inside every generated command and skill file, so every release used to turn every
+  one of them stale in every repo, even when the release had not changed a word of the pointer — a
+  warning that is always on, which then hid the release where a pointer really did change. A file is
+  now stale only when its body, the stamp line set aside, is not what this loam writes, AND its stamp
+  is missing or older. Line endings do not count (a Windows checkout that converts them to CRLF is
+  not a change). A customized body under a current stamp stays quiet, as before. Same code, same severity;
+  the `agents.staleFiles` list in `loam doctor --json` simply stops naming stamp-only files.
+
+### Fixed — relationship order is the same on every run
+
+No code, flag, path or payload key was added, changed or retired; lists built from relationships
+come back in one stable order.
+
+- LikeC4 indexes relationships by a hash of the document's path, and loam stages documents under a
+  fresh random folder per run, so an edge whose hash happened to come out all digits (about one in
+  2,200) jumped to the front of the list on that run only; inside a project of several documents the
+  base order was whichever file finished reading first. A scheduled CI run failed on it. Every loader
+  now returns relationships sorted by source, target, title, `op`, `publishes`, `consumes` and tags,
+  so anything listed from edges — `loam explore`'s neighbours, the candidates a
+  `usecase.step-contested` finding names, findings emitted per edge — keeps one order between runs
+  and machines. That order is no longer the declaration order.
+
+### Fixed — the repository no longer claims a version is published
+
+No code, flag, path or payload key was added, changed or retired; only documentation moved.
+
+- README called the version in `package.json` "the newest published version", by construction of
+  the test that pinned it — and kept saying so for `0.2.0-alpha.8`, whose publish failed. It now
+  names that version as the version of the checkout and points at the npm dist-tags as the source of
+  truth; the drift test forbids the publication claim in README and in the CHANGELOG section of the
+  checkout's own version. The `0.2.0-alpha.8` section below carries a dated note that it was never
+  published.
+- README and WORKFLOW no longer quote byte sizes and code counts that had gone stale (the
+  `loam-check` page, the AGENTS.md orientation, the finding-code total). A finding- or refusal-code
+  count quoted on a shipped page is now graded against `loam explain --codes`.
+
+### Changed — `loam archive` moves the delta's bytes and nothing else's
+
+- **The requirements merge splices instead of re-serializing.** A living requirement the delta does
+  not touch is written back byte for byte; only ADDED requirements and the ones a MODIFIED replaces
+  are serialized. Before, the whole `## Requirements` run was re-serialized, so a living spec
+  written without a blank line under `### Requirement:` had one inserted under every untouched
+  requirement by its first archive — the diff, `loam vouch --pack` and the re-vouch all widened to
+  the whole section. `loam unarchive` is unchanged and still restores every byte. Each kept slice
+  is matched to its requirement by `Requirement-ID:` (the heading when there is none), never by
+  position; if the slices and the living requirements do not match one to one, the whole run is
+  re-serialized as before rather than one requirement's text landing in another's place.
+- **`archive --json` gains the additive `revouchOwed` key** (`[{service, path, owner}]`, on the
+  dry run and the real merge alike): every vouched living `spec.md` / `arch.spec.md` the merge
+  moves under its vouch stamp, with the frontmatter's `owner` (`null` when none is recorded).
+  `content.stale` follows on each — unchanged and still a warning; no new code, nothing `--strict`
+  lets through. The human view prints the same list under a `re-vouch owed` line, naming
+  `loam vouch --service <id>` and saying the re-vouches belong in the archive's own PR, which
+  `loam validate --all --base <ref> --strict` keeps red until they land. The `/loam-ship` protocol
+  gains that step, and README's docs-repo PR recipe says so.
+- The human view of `loam archive` no longer prints its `archive <id>` header twice.
+
+### Fixed — the adopt brief's spec examples
+
+- The `spec.md` and `arch.spec.md` examples in `loam adopt`'s brief name the service being adopted
+  in their frontmatter `service:` and title, where they used to say `payment-service` for every
+  service — a verbatim paste failed `frontmatter.field-mismatch`. Their requirements now carry the
+  canonical blank line under `### Requirement:`, so a spec copied from them is not reflowed by its
+  first archive.
+
+### Fixed — fleet readouts tell the truth about trust
+
+A vouched spec edited after the vouch (`content.stale`, computable from the docs repo) was reported
+by `loam validate` and by no fleet readout; `sources.unwalked` fired in every service repo straight
+after a fresh vouch; and the human `status`/`list` views printed a verification count without
+saying who answered it. Additive throughout — no code, flag or key changed or was removed, and the
+maturity rung of every service is unchanged.
+
+- **New stable code `next.revouch`** in `loam status`'s fleet `next[]` (and under `--service`): one
+  step per vouched service whose `spec.md` or `arch.spec.md` changed since the vouch, naming the
+  documents. Its `command` is `loam vouch --service <id>` and its `execution` is
+  `kind: "human-review"`, `runnable: false`, `cwd: "service-repo"` — a re-vouch is a person's act.
+  While one stands, `status` no longer reports `next.fleet-clean`.
+- **New payload key `services.contentStale`** on `loam status --json` (fleet form): of `vouched`, the
+  services with a document moved under its stamp — a subset, like `sampledVouched`. The human line
+  reads `N vouched (M stale)`.
+- **New payload key `scorecard.provenance.contentStale`** on `loam validate --all --json`: services
+  with a `content.stale` finding in that run. The text row reads `N vouched — M stale content ·
+  K stale digest(s) · …` (it used to say `0 stale digest(s)` beside the warning).
+- **New payload key `answered` inside `verification`** on `loam status --json` (the feature form, and each
+  `features[].verification` of the fleet form) and on each `features[]` row of `loam gate --json`,
+  which spreads the same record: the confirmed claims per `answered_by`
+  (`runner`, `external-runner`, `agent`), the split `list --json` already carried. The human views
+  print it beside the verdict — `status <FEAT>` as `verified 19/19 confirmed (13 runner · 6 agent)`,
+  `list`'s verification column as `7/7 (5 runner · 2 agent)`. The verdict and its definition are
+  unchanged.
+- **`loam list`** shows such a service as `vouched (stale)` (or `vouched (sampled, stale)`) and counts
+  it in the maturity line; its `missing` — in text and in `--json`, and likewise in `explore` and the
+  context pack, which share it — now reads `re-vouch (<file> changed since the vouch)`, so
+  `list --needs-work` (with `--review-order` and `--owners`) lists it instead of answering
+  "nothing to do". The `maturity` value stays `vouched`.
+- **`sources.unwalked`** no longer counts loam's own files — `loam.json` and the agent files recorded
+  in its `agentFiles` — or any `.gitignore` toward its denominator. `.gitignore` is the file that
+  defines what git tracks, so it is the measuring instrument, never a part of the service a spec
+  owes; `package.json`, READMEs and the like stay in. A freshly vouched service repo is no longer
+  red under `validate --service --strict` for files it cannot honestly list in `sources`.
+- **`loam list` legend** names the `e` (events / AsyncAPI) column: `[e]vents`.
+- **SCHEMA.md**: the per-service CI summary shape gains `contentStale` (the count of `content.stale`
+  findings), and its jq derivation counts it. **WORKFLOW.md** states that `loam gate --strict` also
+  fails on a join partner's `content.stale`.
+
+### Added
+
+- **New warning `frontmatter.owner-mismatch`** from `loam validate` (`--service` and `--all`) when
+  one service's `spec.md` and `arch.spec.md` both name an `owner` and the two differ. `loam show`
+  and `loam context` print only `spec.md`'s owner, so the other value was a second answer nobody
+  saw. Its `details` list each file's value (`spec.md: <owner>`, `arch.spec.md: <owner>`). Silent
+  when either file names no owner (that stays `frontmatter.field-missing`). It compares the two
+  files only, never CODEOWNERS. As a warning it fails `loam validate --strict`, so a service that
+  passed `--strict` with two different owners now exits 1 there until they agree.
+- **`openapi.generated-stale` now says what moved.** The finding gains `details` naming each
+  operationId that differs between the build's contract and the committed copy — `served, not in
+  the committed copy: <id>` and `committed, no longer served: <id>` — and its message counts both
+  sides, or says every operationId matches when the difference is inside an operation or outside
+  `paths`. The digest still decides whether it fires; same code, same severity.
+- **`diff.op-modified` (warn)**: an operationId present at the base ref and now, whose operation
+  changed — its own definition, its method or path, or anything its internal `$ref`s reach, so a
+  field renamed in a shared `components` schema counts. **`diff.message-modified` (warn)** is the
+  same for an AsyncAPI message: its declaration or anything its payload `$ref`s reach. Both name
+  the authored consumers in `details[]` (the same scan `diff.op-deprecated` runs) and point at
+  oasdiff or `asyncapi diff`; neither grades whether the change is breaking, so neither sets
+  `breaking` or changes the exit code. A PR that renamed a required field used to print "no
+  fleet-meaningful changes" and exit 0 with nothing else.
+- **The `modified` count in `loam diff --json`'s `summary` now counts both new codes** beside
+  `diff.requirement-modified`. The key is unchanged; a diff over a changed contract reports a
+  higher number than before.
+- A newly deprecated operation is still reported once, as `diff.op-deprecated`, not also as
+  `diff.op-modified`.
+
+### Changed
+
+- **An AsyncAPI 1.x or 2.x document is `asyncapi.invalid`, once.** loam reads AsyncAPI 3.0 only,
+  and a document whose `asyncapi:` field says `1.` or `2.` used to read as a 3.0 contract with no
+  messages: one `spine.message-undefined` per landscape edge, one `spec-event.message-undefined` per
+  requirement and a `spine.message-unproduced` on every consumer, none naming the version. It now
+  takes the unreadable path every broken contract takes — one `asyncapi.invalid` whose `details`
+  name the version and `asyncapi convert --target-version=3.0.0`, and nothing on the event axis
+  graded against it. The same applies to a feature's own `asyncapi.yaml` under `--feature`. The
+  `asyncapi.invalid` message, and the `context` / `delta` lines for an unreadable event contract,
+  now say "does not read as AsyncAPI 3.0" rather than "does not parse". **It is an error:
+  `loam validate` now exits 1 on such a document even where no edge or requirement names its
+  messages** — a document that used to pass. `asyncapi convert --target-version=3.0.0` upgrades it.
+- **`loam diff --base <ref>` exits 1 while a CHANGED `asyncapi.yaml` says 1.x or 2.x.** The
+  document is listed in that service's `unreadable[]` once for each side on which it says 1.x or
+  2.x, counted in the `unreadable` total of `summary`, and the service reads
+  `change: "changed"`; it used to read as a contract with no messages and exit 0. One the branch
+  did not touch does not do this — see the next entry. `asyncapi convert --target-version=3.0.0`
+  upgrades it.
+- **`loam diff --base <ref>` skips an unreadable `openapi.yaml` or `asyncapi.yaml` that the base
+  ref holds byte for byte.** Such a contract is no longer listed in `unreadable[]`, counted in
+  `summary`, or the reason a service reads `change: "changed"`, so an unconverted
+  AsyncAPI 2.x file, or a broken OpenAPI file, that the branch never touched no longer fails every
+  PR's diff with exit 1. A contract the branch changed, or one only one side cannot read, still
+  suspends its axis and exits 1. `spec.md` and `arch.spec.md` are not skipped: an unreadable one
+  stays suspended even when untouched, because another service's removal may be the one that
+  could not be checked against it. No key is added or removed.
+- **Suggested element ids follow `loam seed`'s convention.** For a service the fleet map does not
+  draw yet, the `loam adopt` brief and the `loam new` delta scaffold now suggest `svc_<id>` (dots
+  and dashes folded to `_`, e.g. `svc_payment_service`) instead of a camel-cased name, and
+  `loam new --touches <id>` reuses the element id the map already draws the service as. A service
+  the map nests inside another element is quoted by its last segment with a note naming the parent,
+  since a dotted id is no top-level declaration. The commented example in a freshly seeded
+  `architecture/landscape.likec4` uses the seeded ids too. Element ids stay cosmetic —
+  `metadata { service '<id>' }` is the join — so nothing already written needs to change.
+- **`seed-landscape-edited` gives advice that can be followed.** The refusal and `loam explain
+  seed-landscape-edited` used to say "fold the edits into fleet.yaml and delete the file", which is
+  impossible once an edge carries `metadata { op }` (fleet.yaml cannot). They now say seed runs
+  once, before any operation is drawn, and that the map grows from then on through
+  `loam adopt --service <id>` and feature C4 deltas. Same code, same exit code.
+- **`migrate-openspec` and `audit-openspec` read the OpenSpec 1.13 requirement grammar.** A
+  `RENAMED` pair written with a `*` or `+` bullet, or with no bullet, is a pair (it was
+  `openspec.renamed-malformed`); a `REMOVED` section written as a bullet list (`-`, `*` or `+`) of
+  requirement headings is read as those removals (it was `openspec.change-empty`); and a closing
+  `#` run on a `### Requirement:` or `#### Scenario:` heading is dropped at ingest, so
+  `### Requirement: Invoice totals ###` stages as `Invoice totals` and a MODIFIED delta naming it
+  no longer fails `loam validate` as `delta.modified-unknown`. loam's own parser is unchanged.
+- **An inbound landscape edge into the provider with no `metadata { op }`** (and no
+  `publishes`/`consumes`) is now listed in the `details[]` of `diff.op-removed`,
+  `diff.op-removed-consumed`, `diff.op-deprecated` and `diff.op-modified` as a consumer whose
+  operation is unknown. A removal with such a caller and no named one now says "could NOT be fully
+  answered" instead of "no current landscape edge or living requirement names it". It stays a
+  warning, exit 0: a map `loam seed` drew, every edge without an op, does not fail every removal.
+- **Without `--json`, a commander usage error** (a missing `--base` on `loam diff`, an unknown flag
+  or command, a missing argument) now prints a fix line naming `loam <command> --help` and the code
+  line `invalid-option  ·  loam explain invalid-option` under commander's own message, like every
+  other refusal. stdout stays empty, exit 1; the `--json` envelope is unchanged.
+- README's `.github/workflows/fleet-edges.yml` **pins loam to an exact version** (`LOAM`) and says
+  how to move the pin, **adds an oasdiff step** per changed `services/*openapi.yaml`, and no longer
+  labels the `diff` step "did you break a consumer?". `test/docs-drift.test.ts` keeps the pin equal
+  to the version README names.
+
+### Contributors — release preflight and test harness
+
+- `npm run release:check` runs `npm ci --dry-run --offline` on a scratch copy of `package.json` and
+  `package-lock.json` (new `scripts/lockfile-check.mjs`): the check that would have refused
+  `0.2.0-alpha.8`'s stripped lockfile before the tag instead of after it.
+- The test harness creates its temporary directories under the canonical (symlink-resolved) temp
+  root, so the suite passes on macOS without a `TMPDIR` override.
+
+### Changed — a federated verification record is one file per service (a file-format event)
+
+- **New path written: `features/<FEAT>/verification/<svc>.yaml`.** `loam verify <FEAT> --service
+  <svc> --record` (and `--results` / `--contract-results` under `--service`, and the bound form that
+  substitutes `--service` from loam.json) now writes that service's attestation to a file of its
+  own instead of into one shared `verification.yaml`. Each file is a `schema: 2` record holding
+  exactly one attestation and that service's answers; the directory is the record, and the verdict
+  and counts are computed from the union of its files when anything reads it. What a repo notices:
+  two teams recording two different services on two docs-repo branches no longer conflict when
+  their PRs merge — the shared file conflicted every time (add/add from an empty start, content
+  conflicts on `summary:`, `claims:` and `attestations:` once one attestation had landed).
+- **Old path still read, forever: `features/<FEAT>/verification.yaml`**, active and archived, in
+  every shape loam has written. A one-file federated record reads exactly as before until a service
+  records again; that service's new file then supersedes its share of the old one (the old file is
+  not rewritten), and the write that leaves nothing in it counting removes it. An all-at-once
+  (schema-1) record is removed by the first `--service` write, which lists its answers in
+  `discarded` — the same answers the old overwrite listed.
+- **The all-at-once form is unchanged on disk.** `loam verify <FEAT> --record` without `--service`
+  still writes the one file `verification.yaml` — it answers the whole checklist from one place, so
+  there is no second writer to collide with and no service to name a file after — and is still
+  refused `record-federated` over any record carrying attestations, now including per-service files.
+- **When services answered different versions of the checklist**, a record kept as per-service files
+  counts the answers of the files that answered the version the feature asks NOW — `loam verify`
+  (read and `--record`), `loam tasks`, and `status`, `list` and `gate` for an in-flight feature all
+  derive it — and falls back to the newest file (by `recorded` date, a later service id breaking a
+  same-day tie) only for an archived feature's frozen view or when no file answered the current
+  version. The others stay in `attestations` and are named by `verify.checklist-forked` until they
+  record again — now on the recording run's own output (`notices` under `--json`) as well as the
+  read view, so the service whose answers a tally leaves out is named where the tally is printed. A
+  same-day record from a service with a later id against an older checklist no longer drops the
+  current answers and makes every reader call the record stale. A one-file record keeps its old
+  reading. The `verify.checklist-forked` message no longer suggests accepting the split.
+- **`record-unreadable` names the file that failed and the repair that is safe for it.** Git conflict
+  markers in any record file are detected before the YAML is parsed and named with their lines. A
+  service's own `verification/<svc>.yaml` is that service's word alone, so its advice is to repair
+  it or delete it and record that service again; the one-file `verification.yaml` may hold other
+  services' attestations, so its advice is to repair it or restore it from version control (after a
+  merge, the copy on the branch you merged into) — never to delete it. The old advice ("delete it
+  and record again") erased other teams' attestations when followed on a shared record, and a
+  `verify.record-miscounted` record's "record the answers again" looped straight back into the same
+  refusal. The same per-file advice reaches `evidence.record-unreadable`, and the `status` and
+  `gate` sentences for an unreadable record no longer say "delete it". A per-service file holding
+  anything but its own service's attestation is unreadable too.
+- **`path` in a recording `verify --json` payload** is the file this run wrote — the service's own
+  `verification/<svc>.yaml` under `--service`. The `path` inside `recorded` on the read and frozen views, and the
+  `verification` artifact's `path` in `status`, name the `verification/` directory once it exists,
+  the one file otherwise. `archive` and `unarchive` carry the directory with the feature they move.
+  No code or flag was added, changed or retired, and no payload key was added or removed. What
+  changes is the VALUE of four `path` keys, and each may now name a DIRECTORY: `path` on a recording
+  `verify --json`, the `path` inside `recorded` on the read and frozen views, the `verification` artifact's
+  `path` in `status --json`, and the `path` on a `next.verify` step in `status --json` (which follows
+  the artifact's). A script that opens one of them as a file must now expect
+  `features/<FEAT>/verification` — a directory — once any service has recorded under `--service`.
+- **A loam older than this release does not read `verification/<svc>.yaml`.** It sees only
+  `verification.yaml`, so `status`, `gate` and `verify` under an older pin report a feature recorded
+  this way as having no record (`gate --strict` then exits 1 on `gate.feature-unverified`), and an
+  older all-at-once `--record` writes a `verification.yaml` that this release ignores beside the
+  directory (its answers carry no attestation). Upgrade every repository that records or gates a
+  feature together — the docs repo's pipelines and each service repo's pin.
+- **`features/<FEAT>/verification/` is loam's from this release.** Every non-dot `*.yaml` in it is
+  read as one service's attestation file, and one that is not (a hand-made `k6.yaml`, say) is
+  `record-unreadable`: `verify` refuses and `status` shows the record as unreadable. Keep anything
+  else beside the feature, not inside that directory.
+
+### Changed — `verified` means a run of the stamped scenario, and the runner-neutral path is findable
+
+- **A cucumber run must have run the stamped scenario's step count.** `verify --results` used to
+  confirm a `scenario.tested` claim from any report element carrying its `@loam-digest-…` tag whose
+  steps passed — a one-step stub tagged by hand confirmed five-step scenarios. A matched cucumber
+  element must now have run exactly as many steps as `loam gherkin` emits for the scenario (`And` /
+  `But` included); otherwise the claim is `unconfirmed`, noted `ran N step(s) where the stamped
+  scenario has M`. The step text is not compared (outlines fill their placeholders in, dialects
+  differ on keyword spacing). cucumber-js's hook entries inside `steps[]` (`hidden`, keyword
+  `Before`/`After`) are read as hooks, not steps: they no longer count toward the steps, and a
+  failing one is reported `failed in a before/after hook`. `loamScenarioReport` entries carry no
+  steps and are held to their status, as before. What a repo notices: a report whose elements do
+  not run every stamped step stops confirming.
+- **A `--results` file that is not JSON is refused naming both accepted shapes.** A JUnit XML report
+  died with the parser's raw "Unexpected token '<'". It is still `answers-unreadable`, and the
+  message now says the file is XML or not JSON and names what `--results` reads: cucumber JSON
+  (cucumber-js, cucumber-jvm, behave, SpecFlow/Reqnroll, pytest-bdd `--cucumberjson`, godog) or
+  loam's runner-neutral `{"loamScenarioReport": 1, …}`. A `--contract-results` file that is not JSON
+  names its one shape the same way.
+- **`loamScenarioReport` is named wherever cucumber is.** The `--results` description in
+  `loam verify --help` now reads "cucumber JSON, or loam's runner-neutral loamScenarioReport JSON for
+  any other runner"; the `check` in the `done` block `loam tasks` prints for a `scenario.tested` unit names both
+  report shapes; the `verify.scenario-attested` message's suggested command reads
+  `--results <report.json>` and names both; WORKFLOW, the verify, implement and done-check protocols
+  and the cycle `loam explain` teaches say the same. So does the `next.verify-attested` step in
+  `status --json` — its `statement` names both shapes and its `command` now reads
+  `loam verify <FEAT> --results <report.json>` (it was `--results <cucumber-report.json>`) — and
+  `loam explain next.verify-attested`.
+- **The all-at-once `--record` checks each evidence entry shaped like a `file:line`.** Without
+  `--service` it accepted any non-empty evidence — `src/foo.py:1` for a file that does not exist —
+  and printed `verified`, while the federated form refused the same citation. An evidence entry of
+  an agent-confirmed answer that is shaped like a `file:line` (one token ending in `:<digits>`, not
+  a URL) must now be a canonical relative path to a regular file inside the repository loam.json was
+  found in, with that line in it; otherwise `answers-unevidenced`, exit 1, where it used to be
+  recorded. Every other entry — prose ("manual QA by Alice"), a URL, a path with no line — is
+  recorded exactly as before. The form still binds to no commit and stamps no pins. Evidence that
+  lives in another service's repository is recorded from there, with `--service`. A missing cited
+  file is now named in the repository's own spelling ("does not exist in this repository") in both
+  forms, never through the machine's absolute path.
+- No code, flag, path or payload key was added, changed or retired.
+
+### Added — `loam gate --since <ref>`: the deploy gate no longer forgets a feature at archive
+
+- **`loam gate` used to grade in-flight features only**, so a feature left the verification check
+  the moment it was archived — and `loam archive` reads no verification record, by design. On the
+  example fleet `gate --service order-service --strict` went from exit 1 (FEAT-112 unverified) to
+  exit 0 after `loam archive FEAT-112`; a contract-only feature escaped even a vouched service,
+  because `content_digest` covers the spec bodies and not `openapi.yaml`/`asyncapi.yaml`. Without
+  the new flag that is still exactly what the gate does, and `--help`, WORKFLOW.md and
+  `loam explain gate.feature-unverified` now say so.
+- **New flag `--since <ref>`** on `loam gate`: a docs-repo git ref — the docs commit the pipeline's
+  last deploy recorded. Every feature archived after it that carries a `specs/<service>/` delta is
+  graded too, by its frozen verification record, under the existing warn-only
+  `gate.feature-unverified` (or the reused `verify.scenario-attested`). "Archived after" means its
+  `features/archive/<FEAT>/` directory is absent at the ref, or differs from what it held there —
+  committed since or not — so a feature unarchived, edited and archived again is graded as the new
+  ship it is, not skipped as one an earlier deploy answered for. When git will not say what changed
+  under `features/archive/`, every archived feature touching the service is graded. Its message
+  names the ref and points at `loam unarchive <FEAT>` rather than a `loam verify --record` an
+  archived feature refuses. The ref is read from the docs repo's own git exactly as
+  `loam diff --base` reads its base, and refused the same way: `repository-unavailable` when git
+  cannot answer from the docs repo (or cannot list `features/archive/` at the ref), `unknown-target`
+  when the ref names no commit. No new code; no deployment state is stored.
+- **An archived record is held to the checklist its feature shipped with.** A record gone stale
+  before the archive (a scenario appended after it was written) read `stale`/`unverified` in flight
+  and `verified` with no finding once archived, because an archived record is never judged against
+  a checklist re-derived after the merge. `loam archive` now writes the digest of the checklist a
+  fresh `loam verify` derives just before the merge — when the feature carries a readable record —
+  into its snapshot manifest as a new key, **`checklist`**, in
+  `features/archive/<FEAT>/.loam-before/manifest.json` (additive: the manifest stays version 3,
+  `unarchive` ignores the key, and an older loam reading the manifest is unaffected). `gate --since`
+  grades the frozen record against it: a record answering an older checklist is `state: "stale"`,
+  `verdict: "unverified"`, with a `gate.feature-unverified` saying the feature moved after its
+  record was written. A manifest without the key — an archive made by an older loam — is graded as
+  before, as frozen history, and the row says so. `list`, `status` and `verify` keep reading an
+  archived record as frozen history, never stale.
+- **New `--json` payload keys:** top-level `since` — `{ ref, commit }` under `--since`, `null`
+  without it — and, only on a row `--since` added, `features[].archived` (`true`) and
+  `features[].checklistAtArchive` (the captured digest, or `null` when the archive captured none).
+  An in-flight row carries neither key, so a payload without the flag is unchanged apart from
+  `since: null`. The text view titles the block "verification — in flight, and archived since
+  <ref>", marks those rows `· archived`, and adds a line under a recorded row whose archive
+  captured no checklist.
+- **The MCP `loam_gate` tool** gains the matching `since` string argument.
+
 ## [0.2.0-alpha.8] - 2026-09-21
 
-The work packet: the verify checklist read forwards. Still a prerelease on the `alpha` line:
-`npm i @ybotok/loam@alpha` installs it. Everything in it is additive — no stable code was added,
+The work packet: the verify checklist read forwards. Still a prerelease on the `alpha` line.
+**Not published (noted 2026-10-10):** the `v0.2.0-alpha.8` tag was cut, but its release run failed at
+`npm ci` — npm on Windows had stripped other platforms' optional packages from the tagged commit's
+`package-lock.json` during the version bump (restored on `main` the same day) — so the publish never
+ran. `npm i @ybotok/loam@alpha` does not install this version, and `npm view @ybotok/loam dist-tags`
+is the record of what does. Everything in it is additive — no stable code was added,
 changed or retired, no existing flag, path or payload key moved, and nothing a repository has
 committed needs to change. What a repo NOTICES after upgrading: one new read-only command
 (`loam tasks`), new keys on two `--json` payloads it may already consume, and a corrected SCHEMA

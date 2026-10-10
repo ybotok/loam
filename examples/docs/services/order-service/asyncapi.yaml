@@ -5,8 +5,9 @@
 # `action: send|receive`, which is the exact analog of an `operationId` and the thing
 # that makes direction legible; 2.x spells the same thing as publish/subscribe under
 # a channel, where the two words are ambiguous about whose perspective they take. A
-# 2.x document declares no `operations` at all, so loam would read it as a contract
-# with no messages rather than as a mis-parsed one.
+# 2.x document declares no `operations` at all, so loam refuses it as one
+# `asyncapi.invalid` naming the version rather than reading it as a contract with no
+# messages (`asyncapi convert --target-version=3.0.0` upgrades it).
 #
 # The join is the message NAME, spelled three times and required to be identical: the
 # landscape edge's `metadata { publishes }` / `metadata { consumes }`, a requirement's
