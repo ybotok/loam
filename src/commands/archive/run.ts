@@ -35,15 +35,12 @@ import { serviceViewsState, viewsState } from "../../core/repo/tree/render/stale
 import { loadArchitecture } from "../../core/c4/project/architecture.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { gate } from "./plan/gate.js";
-import { type ArchiveOptions } from "./plan/refusal.js";
+import { ArchiveFailure, issueJson, printPlan, refuseJson, type ArchiveOptions } from "./plan/refusal.js";
 import { planCapabilities, planGlossary, planSpecs } from "./plan/specs.js";
 import { planOpenapiContracts } from "./plan/contracts/openapi.js";
 import { planAsyncapiContracts } from "./plan/contracts/asyncapi.js";
 import { planDeployments, planFlows, planLandscape } from "./plan/landscape.js";
 import { emptyPlan } from "./plan/state.js";
-import { issueJson, refuseJson } from "./plan/refusal.js";
-import { ArchiveFailure } from "./plan/refusal.js";
-import { printPlan } from "./plan/refusal.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 export async function archiveLocked(
@@ -98,6 +95,7 @@ export async function archiveLocked(
   await planFlows(config, gated, planned, say);
   await planDeployments(config, gated, planned, say);
   const { writes, planWarns, planGates, openapiRemovals, asyncapiRemovals } = planned;
+  const revouchOwed = planned.revouchOwed.map((r) => ({ ...r, path: repoPath(config.docsDir, r.path) }));
 
   // Gate on what only the plan could see: a merged operation pointing at a
   // component that exists nowhere, a removal marker addressing no operation.
@@ -127,6 +125,17 @@ export async function archiveLocked(
     say(`\n  ⚠ archiving despite ${planGates.length} contract merge issue(s) (--approve):`);
     for (const i of planGates) say(`      ✗ ${i.message}`);
   }
+  // Printed by the dry run and the real merge alike, before either commits to
+  // anything: the merge is what moves these documents, and the merge's PR is
+  // the place their re-vouches belong. Not a finding and not a refusal — the
+  // staleness that follows is honest, and `content.stale` is what grades it.
+  if (revouchOwed.length > 0) {
+    say(`\n  re-vouch owed — this merge moves ${revouchOwed.length} vouched spec(s) under the vouch stamp, so content.stale follows on each until its owner re-vouches:`);
+    for (const r of revouchOwed) {
+      say(`    ${r.path}  (owner: ${r.owner ?? "none recorded"}) — \`loam vouch --service ${r.service}\`, run in that service's repo`);
+    }
+    say(`    land the re-vouches in this PR: \`loam validate --all --base <ref> --strict\` stays red on it until they do.`);
+  }
 
   // The plan as data, verb decided now — after the commit everything would read
   // as an update. The `--json` payload is identical for a dry run and the real
@@ -148,6 +157,7 @@ export async function archiveLocked(
     overridden: overridden.map((issue) => issueJson(issue, repoPath(config.docsDir, archiveDest))),
     openapiRemovals,
     asyncapiRemovals,
+    revouchOwed,
     // Present only when this run found an interrupted commit and dealt with it:
     // an agent that sees the docs change under it deserves to be told why, and
     // the absent field is the ordinary case.

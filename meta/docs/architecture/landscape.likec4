@@ -237,6 +237,7 @@ model {
   loam.commands.archive -> loam.core.kernel
   loam.commands.archive -> loam.core.links
   loam.commands.archive -> loam.core.openapi
+  loam.commands.archive -> loam.core.provenance
   loam.commands.archive -> loam.core.repo
   loam.commands.archive -> loam.core.staging
   loam.commands.archive -> loam.core.usecases

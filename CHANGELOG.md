@@ -101,6 +101,32 @@ No code, flag, path or payload key was added, changed or retired; only documenta
   `loam-check` page, the AGENTS.md orientation, the finding-code total). A finding- or refusal-code
   count quoted on a shipped page is now graded against `loam explain --codes`.
 
+### Changed — `loam archive` moves the delta's bytes and nothing else's
+
+- **The requirements merge splices instead of re-serializing.** A living requirement the delta does
+  not touch is written back byte for byte; only ADDED requirements and the ones a MODIFIED replaces
+  are serialized. Before, the whole `## Requirements` run was re-serialized, so a living spec
+  written without a blank line under `### Requirement:` had one inserted under every untouched
+  requirement by its first archive — the diff, `loam vouch --pack` and the re-vouch all widened to
+  the whole section. `loam unarchive` is unchanged and still restores every byte.
+- **`archive --json` gains the additive `revouchOwed` key** (`[{service, path, owner}]`, on the
+  dry run and the real merge alike): every vouched living `spec.md` / `arch.spec.md` the merge
+  moves under its vouch stamp, with the frontmatter's `owner` (`null` when none is recorded).
+  `content.stale` follows on each — unchanged and still a warning; no new code, nothing `--strict`
+  lets through. The human view prints the same list under a `re-vouch owed` line, naming
+  `loam vouch --service <id>` and saying the re-vouches belong in the archive's own PR, which
+  `loam validate --all --base <ref> --strict` keeps red until they land. The `/loam-ship` protocol
+  gains that step, and README's docs-repo PR recipe says so.
+- The human view of `loam archive` no longer prints its `archive <id>` header twice.
+
+### Fixed — the adopt brief's spec examples
+
+- The `spec.md` and `arch.spec.md` examples in `loam adopt`'s brief name the service being adopted
+  in their frontmatter `service:` and title, where they used to say `payment-service` for every
+  service — a verbatim paste failed `frontmatter.field-mismatch`. Their requirements now carry the
+  canonical blank line under `### Requirement:`, so a spec copied from them is not reflowed by its
+  first archive.
+
 ### Added
 
 - **New warning `frontmatter.owner-mismatch`** from `loam validate` (`--service` and `--all`) when

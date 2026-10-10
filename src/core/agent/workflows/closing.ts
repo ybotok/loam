@@ -187,6 +187,7 @@ export const LOAM_SHIP: CommandContent = {
     "`loam validate --feature $1` must come back valid; if it says nothing pinned the delta, rebase and re-validate first",
     "`loam archive $1 --dry-run` — read the whole plan and every warning before the merge touches anything",
     "`loam archive $1` for real, and read what it reports it did",
+    "every vouched spec on `revouchOwed[]` owes its owner's re-vouch — tell them; it lands in this same PR",
     "`loam unarchive $1` is the undo if the plan turns out to have been wrong",
   ],
   body: `Archive a shipped feature.
@@ -256,6 +257,16 @@ export const LOAM_SHIP: CommandContent = {
      name the same state) and hand it to a human — re-running does not help.
    - \`rollback-incomplete\` — the merge failed AND some files could not be restored.
      Stop and hand it to a human; the message lists the files to check.
+5. Re-vouches are owed. \`revouchOwed[]\` — on the dry run and the real merge alike —
+   names every VOUCHED spec the merge moves under its vouch stamp, with the
+   document's \`owner\`. \`content.stale\` follows on each, and honestly: the merged
+   text is words nobody has yet read against the code. You cannot clear it — a
+   vouch is a person's, run in that service's own repo (\`loam vouch --service <id>\`,
+   after \`loam vouch --pack --service <id>\` for what to re-read). Name the
+   documents and owners in your hand-back, and say the re-vouches belong in the
+   SAME PR as this archive: a docs repo gated on
+   \`loam validate --all --base <ref> --strict\` keeps the archive's PR red until they
+   land. Never edit a stamp by hand to turn it green.
 
 Archived by mistake? \`loam unarchive $1\` restores the living docs from the snapshot
 archive left in \`features/archive/$1*/.loam-before/\` and re-opens the feature. Do not

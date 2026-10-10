@@ -29,7 +29,7 @@ import type { FleetContext } from "../fleet-context.js";
 import { locateServicePaths } from "../repo/service-target.js";
 import { readVouchScope } from "./sample/scope.js";
 import { sourceFindings } from "./sources.js";
-import { contentDigest } from "./stamp.js";
+import { movedUnderVouch } from "./stamp.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
 /** Fields every artifact is expected to carry, beyond its identity and status. */
@@ -221,13 +221,7 @@ function identityFindings(fm: Frontmatter, spec: IdentitySpec): Finding[] {
  * the exact agent-written-prose threat model this layer exists for.
  */
 function contentFindings(fm: Frontmatter, raw: string, service: string, label: string): Finding[] {
-  if (stringField(fm, "status") !== "verified") return [];
-  const stamped = stringField(fm, "content_digest");
-  // A verified doc with no stamp predates the field. Quiet on purpose: the fix
-  // is re-vouching, and grading years of pre-feature vouches as suspect would
-  // drown the fleet in warnings nobody chose.
-  if (stamped === undefined) return [];
-  if (contentDigest(raw) === stamped) return [];
+  if (!movedUnderVouch(fm, raw)) return [];
   const since = stringField(fm, "last_verified") ?? "it was vouched";
   return [
     {

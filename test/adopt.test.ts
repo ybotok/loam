@@ -41,6 +41,8 @@ import {
   treeHashes,
   type Project,
 } from "./helpers/harness.js";
+import { parseRequirements } from "../src/core/document/parse.js";
+import { serializeRequirements } from "../src/core/document/spec.js";
 
 const SVC = "payment-service";
 
@@ -736,6 +738,41 @@ describe("the frontmatter it must write", () => {
     expect(text).toContain("sources");
     expect(text).toMatch(/only .*tie|internal consistency/i);
     expect(b.frontmatter.fields.sources).toMatch(/read/i);
+  });
+
+  it("hands out spec examples headed by the service being adopted, so a verbatim paste validates", async () => {
+    // Both examples carried `service: payment-service` under a heading for
+    // whatever service the brief was for — and `service:` must name the
+    // directory the file sits in, so the paste failed frontmatter.field-mismatch
+    // on every other service.
+    const p = await project({}, { service: "order-service" });
+    const b = await brief(p);
+    for (const artifact of ["spec.md", "arch.spec.md"]) {
+      const example = target(b, artifact).example as string;
+      expect(example).toContain("service: order-service\n");
+      expect(example).toMatch(/^# order-service/m);
+      expect(example).not.toContain("payment-service");
+      expect(example).not.toContain("<svc>");
+    }
+    await p.write("services/order-service/spec.md", target(b, "spec.md").example as string);
+    const res = await runLoam(p.workDir, "validate", "--service", "order-service", "--json");
+    const codes = JSON.parse(res.stdout).targets[0].findings.map((f: { code: string }) => f.code);
+    expect(codes).not.toContain("frontmatter.field-mismatch");
+  });
+
+  it("writes its example requirements in the canonical shape, so the first archive moves none of them", async () => {
+    // `serializeRequirements` puts a blank line under every `### Requirement:`.
+    // An example without one taught a living spec that shape, and the first
+    // archive into it re-serialized every requirement the feature never named.
+    // Canonical means a round trip through the parser and the serializer gives
+    // the requirements back byte for byte.
+    const p = await project({}, { service: SVC });
+    const b = await brief(p);
+    for (const artifact of ["spec.md", "arch.spec.md"]) {
+      const example = target(b, artifact).example as string;
+      const run = example.slice(example.indexOf("### Requirement:"));
+      expect(serializeRequirements(parseRequirements(example)), artifact).toBe(run);
+    }
   });
 });
 

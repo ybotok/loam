@@ -346,10 +346,10 @@ export function withoutRealizesPins(requirement: Requirement): Requirement {
  * The identity of a requirement's CONTENT: sha256 over its canonical
  * serialization, truncated like every other digest loam stamps.
  *
- * Canonical, not raw bytes, and deliberately: a living spec is rewritten by
- * `serializeRequirements` on every archive, so hashing the file's bytes would
- * make a baseline go stale over reflowed blank lines — a false alarm on the one
- * check whose whole value is that it only fires when something real moved.
+ * Canonical, not raw bytes, and deliberately: archive writes every requirement
+ * a delta adds or replaces through `serializeRequirements`, so hashing bytes
+ * would make a baseline go stale over reflowed blank lines — a false alarm on
+ * the one check whose whole value is that it only fires when something moved.
  * What the hash therefore covers is exactly what survives a round trip: the
  * heading, the body (`Requirement-ID:` and `Operations:`/`Covers:` lines
  * included), and every scenario with its Given/When/Then lines. `kind` and
