@@ -10,6 +10,7 @@ import type { Issue } from "../../vocabulary/issue.js";
 import { ASYNCAPI_BASELINES_KEY, slotKey } from "../../asyncapi/digest.js";
 import type { EventPair } from "../retired/event-pair.js";
 import { asyncapiSurfaces } from "../../asyncapi/baseline/surfaces.js";
+import { messageName } from "../../asyncapi/read.js";
 import { entryFor, readBaselineRecord, surfaceIn } from "../../openapi/baseline/record.js";
 import {
   classifyBaselineDigests,
@@ -36,7 +37,7 @@ export interface AsyncapiBaselineInput extends EventPair {
  * graded once or the two halves drift into different ideas of what it restates.
  */
 export function gradeBaselines(input: AsyncapiBaselineInput, issues: Issue[]): void {
-  const { featSlots, livingSlots, svc, featureId } = input;
+  const { featSlots, livingSlots, livingDoc, svc, featureId } = input;
   let unpinned = 0;
   for (const slot of featSlots) {
     // A removal marker is not a restatement of anything; its own exactness
@@ -59,12 +60,19 @@ export function gradeBaselines(input: AsyncapiBaselineInput, issues: Issue[]): v
       // written over a living slot, so one with nothing behind it usually
       // means a parallel feature retired the slot — and "drop the marker",
       // which this used to say, archived the quote as an addition and put the
-      // retired slot back.
+      // retired slot back. Or MOVED it, on the one slot a move vacates on
+      // this axis: a `components.messages` key whose message name the living
+      // contract now declares elsewhere. A channel or operation slot's
+      // identity is its key, so it is never "moved" — it is retired.
+      const name = slot.section === "components.messages" ? messageName(slot.node, slot.key) : undefined;
+      const movedTo = livingDoc.messages.filter((m) => m.remove !== true && m.name === name).map((m) => m.slot);
       issues.push({
         severity: "error",
         code: "asyncapi.baseline-invalid",
         subject: svc,
-        message: `${svc}: ${label} carries x-loam-based-on, but the living contract has no slot there — the version it was pinned to is gone. If a parallel feature retired it, re-read the living contract and delete this slot from the delta, unless this feature deliberately brings it back (then drop the pin and archive with --approve past \`asyncapi.slot-revived\`). A genuinely new channel, operation or message has no living version to be based on and carries no pin.`,
+        message: movedTo.length > 0
+          ? `${svc}: ${label} carries x-loam-based-on, but the living contract has no slot there — message '${name}' is declared at ${movedTo.join(" and ")} now: a parallel feature moved it. Re-read it there and delete this slot from the delta, making any change at its new key; archived as it stands, it would declare '${name}' at ${label} as well. To move it back on purpose, drop the pin and retire it at ${movedTo.join(" and ")} in this delta.`
+          : `${svc}: ${label} carries x-loam-based-on, but the living contract has no slot there — the version it was pinned to is gone. If a parallel feature retired it, re-read the living contract and delete this slot from the delta, unless this feature deliberately brings it back (then drop the pin and archive with --approve past \`asyncapi.slot-revived\`). A genuinely new channel, operation or message has no living version to be based on and carries no pin.`,
       });
     } else if (verdict === "stale") {
       issues.push({

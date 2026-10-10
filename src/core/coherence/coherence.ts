@@ -181,7 +181,8 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
   } = await declaredByService(scope, svcNames, issues, context);
 
   // A revival: an operation this delta spells that the living contract no
-  // longer has because an ARCHIVED feature retired it — the merge would read
+  // longer has because an ARCHIVED feature retired it — or spells at an
+  // address an archived feature moved it away from — and the merge would read
   // it as an addition and put it back (./retired/ says why the gate could not
   // see this before). One lazy handle for both contract axes, so the walk of
   // features/archive/ is paid once per call at most, and only when some entry

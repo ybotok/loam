@@ -33,7 +33,7 @@ import type { Requirement } from "../document/spec.js";
 import { openapiBaselineIssues } from "../openapi/baseline/gate.js";
 import { readOpenapi, type Operation } from "../openapi/doc.js";
 import { operationRetirements } from "./retired/retirement.js";
-import { absentOperations } from "./retired/revived.js";
+import { absentOperations, type Absent } from "./retired/revived.js";
 import type { FleetContext } from "../fleet-context.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
@@ -60,12 +60,14 @@ export interface Declared {
    */
   unreadableApis: Set<string>;
   /**
-   * Per service: the feature operations whose id the living contract does not
-   * hold — new, or RETIRED by an archived feature, which the living contract
-   * alone cannot tell apart. coherence.ts asks the retired index
-   * (./retired/) only when one of these lists is non-empty.
+   * Per service: the feature operations the living contract does not hold as
+   * spelled — by id (new, or RETIRED by an archived feature), or at a slot the
+   * living contract leaves empty while the id lives elsewhere (new there, or
+   * MOVED away by an archived feature) — which the living contract alone
+   * cannot tell apart. coherence.ts asks the retired index (./retired/) only
+   * when one of these lists is non-empty.
    */
-  revivalCandidates: Map<PathableService, Operation[]>;
+  revivalCandidates: Map<PathableService, Absent<Operation>[]>;
 }
 
 /** The three facts this walk needs about the feature it is reading. */
@@ -92,7 +94,7 @@ export async function declaredByService(
     const anonymousMarkers = new Map<string, boolean>();
     const featureApiOps = new Set<string>();
     const unreadableApis = new Set<string>();
-    const revivalCandidates = new Map<PathableService, Operation[]>();
+    const revivalCandidates = new Map<PathableService, Absent<Operation>[]>();
     // The capability gate's vocabulary, once per call. Absent or invalid stays
     // SILENT here — capability.invalid is validate --all's one finding about a
     // broken file, and an absent file means the fleet never opted in — so with

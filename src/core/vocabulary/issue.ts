@@ -153,7 +153,7 @@ export type IssueCode =
   | "asyncapi.baseline-missing"
   /** the living slot or component surface changed since this delta pinned it — merging would discard whoever landed in between */
   | "asyncapi.baseline-stale"
-  /** a `channels`/`operations` slot, or a message by name, that this feature declares, the living contract no longer has, and an ARCHIVED feature's removal retired — the merge cannot tell a quote of a retired slot from an addition, so archiving would put it back. A warning that GATES; `--approve` re-adds it on purpose */
+  /** a `channels`/`operations` slot, or a message by name, that this feature declares, the living contract no longer has, and an ARCHIVED feature's removal retired — or a message declared at a `components.messages` key an archived feature moved it away from — the merge cannot tell a quote of a retired or moved slot from an addition, so archiving would put it back. A warning that GATES; `--approve` re-adds it on purpose */
   | "asyncapi.slot-revived"
   /** a slot-removal marker addresses a (section, key) the living contract does not have */
   | "asyncapi.remove-target-missing"
@@ -253,7 +253,7 @@ export type IssueCode =
   | "openapi.baseline-missing"
   /** the living operation, path-level key or component changed since this delta pinned it — merging would discard whoever landed in between */
   | "openapi.baseline-stale"
-  /** an operation this feature spells, the living contract no longer has, and an ARCHIVED feature's removal marker retired — the merge cannot tell a quote of a retired operation from an addition, so archiving would put it back. A warning that GATES; `--approve` re-adds it on purpose */
+  /** an operation this feature spells, the living contract no longer has, and an ARCHIVED feature's removal marker retired — or spells at an address an archived feature moved it away from — the merge cannot tell a quote of a retired or moved operation from an addition, so archiving would put it back (beside its new address, for a move). A warning that GATES; `--approve` re-adds it on purpose */
   | "openapi.op-revived"
   /** the feature retires an operation the LIVING fleet still consumes — a landscape edge's `metadata { op }`, or another service's living requirement */
   | "openapi.remove-op-consumed"

@@ -336,7 +336,7 @@ async function rebaseLocked(
     console.log(
       `\n${plural(unresolved.length, "item")} could not be pinned because the living docs do not have them yet — ` +
         `for a requirement, \`loam dependencies ${id}\` says which feature introduces it first; for an operation, this feature is adding it` +
-        (revived.length === 0 ? "." : ", unless an archived feature retired it — those are listed below, and they are not new."),
+        (revived.length === 0 ? "." : ", unless an archived feature retired it or moved it away — those are listed below, and they are not new."),
     );
   }
   sayRevived(revived);
@@ -350,7 +350,7 @@ async function rebaseLocked(
 function sayRevived(revived: readonly Issue[]): void {
   if (revived.length === 0) return;
   console.log(
-    `\n⚠ ${plural(revived.length, "item")} this feature spells ${revived.length === 1 ? "was" : "were"} RETIRED by an archived feature — ` +
+    `\n⚠ ${plural(revived.length, "item")} this feature spells ${revived.length === 1 ? "was" : "were"} RETIRED by an archived feature, or moved to another address by one — ` +
       `nothing was pinned for ${revived.length === 1 ? "it" : "them"}, and \`loam archive\` refuses ${revived.length === 1 ? "it" : "them"} until you decide:`,
   );
   for (const issue of revived) console.log(`  ⚠ ${issue.message}`);

@@ -42,6 +42,19 @@
  * feature archived without a pre-image contributes its channel slot and not
  * the inline names.
  *
+ * A relocation retires nothing, but it does VACATE an address: the id lives
+ * on at its new slot, and a later delta quoting the old one would put it back
+ * there too — one operationId at two addresses, which the merge cannot tell
+ * from an addition any more than it can a retired operation, and which the
+ * slot-keyed baseline gate and the id-keyed revival check both missed (the id
+ * is living, the slot is empty). So the index records moves as well: the
+ * marker ids the relocation rule removes from the net set are exactly the
+ * moved ids, and their old slots are on the markers. The event axis has the
+ * same shape in one place only — a `components.messages` marker whose message
+ * name the delta declares again elsewhere; a channel or operation slot's
+ * identity IS its key, so a "moved" channel is a retired key plus a new one,
+ * and the slot index already catches a quote of the old key.
+ *
  * What it cannot see, and SCHEMA.md says so: a removal made by hand-editing a
  * living contract leaves no marker anywhere, and an archived feature deleted
  * from disk takes its markers with it. Both read as "never retired" — the gate
@@ -74,14 +87,14 @@ import type { FleetContext } from "../../fleet-context.js";
 import { messageRetirements, operationRetirements } from "./retirement.js";
 
 /**
- * The archived features that retired one entry, in id order and distinct —
- * never empty, because an entry is recorded only together with its first
- * retirer. The tuple says so to the compiler, so the one sentence that names
+ * The archived features that retired one entry (or moved it away from one
+ * address), in id order and distinct — never empty, because an entry is
+ * recorded only together with its first retirer. The tuple says so to the compiler, so the one sentence that names
  * them (./revived.ts) cannot be handed nobody.
  */
 export type ArchivedBy = readonly [string, ...string[]];
 
-/** Everything the archived features retired, each entry naming the features that did it. */
+/** Everything the archived features retired or moved away, each entry naming the features that did it. */
 export interface RetiredIndex {
   /** `retiredKey(service, operationId)` → the archived features whose openapi delta retired it. */
   operations: ReadonlyMap<string, ArchivedBy>;
@@ -89,6 +102,10 @@ export interface RetiredIndex {
   slots: ReadonlyMap<string, ArchivedBy>;
   /** `retiredKey(service, messageName)` — by the join token, wherever the message was declared. */
   messages: ReadonlyMap<string, ArchivedBy>;
+  /** `retiredKey(service, operationId, method, path)` — the address a relocation moved that operation away from. */
+  movedOperations: ReadonlyMap<string, ArchivedBy>;
+  /** `retiredKey(service, messageName, slot)` — the `components.messages.<key>` a relocation moved that message away from. */
+  movedMessages: ReadonlyMap<string, ArchivedBy>;
 }
 
 /** The index's one key spelling. NUL-joined: no id, section, key or message name can contain it. */
@@ -134,20 +151,28 @@ export function retiredLookup(docsDir: DocsDir, context?: FleetContext): Retired
   };
 }
 
-/** What one archived feature's deltas for one service retired, as index keys. */
+/** What one archived feature's deltas for one service retired or moved away, as index keys. */
 interface ServiceRetirements {
   featureId: string;
   operations: string[];
   slots: string[];
   messages: string[];
+  movedOperations: string[];
+  movedMessages: string[];
 }
 
 /** The index's parts, in the one order `readRetiredIndex` records them. */
-const PARTS = ["operations", "slots", "messages"] as const;
+const PARTS = ["operations", "slots", "messages", "movedOperations", "movedMessages"] as const;
 
-/** Walk every archived feature's contract deltas and record what each one retired. */
+/** Walk every archived feature's contract deltas and record what each one retired or moved away. */
 async function readRetiredIndex(docsDir: DocsDir, context?: FleetContext): Promise<RetiredIndex> {
-  const index = { operations: new Map<string, ArchivedBy>(), slots: new Map<string, ArchivedBy>(), messages: new Map<string, ArchivedBy>() };
+  const index = {
+    operations: new Map<string, ArchivedBy>(),
+    slots: new Map<string, ArchivedBy>(),
+    messages: new Map<string, ArchivedBy>(),
+    movedOperations: new Map<string, ArchivedBy>(),
+    movedMessages: new Map<string, ArchivedBy>(),
+  };
   // A `features/archive` that is not a directory holds no archived feature,
   // and listing it would throw ENOTDIR out of the feature gate — refusing an
   // archive over a question about OTHER features' history, before the plan
@@ -165,13 +190,15 @@ async function readRetiredIndex(docsDir: DocsDir, context?: FleetContext): Promi
   return index;
 }
 
-/** One archived feature's retirements on one service — only the markers its merge carried out. */
+/** One archived feature's retirements and moves on one service — only the markers its merge carried out. */
 async function serviceRetirements(
   feature: FeatureEntry,
   service: RawServiceId,
   context: FleetContext | undefined,
 ): Promise<ServiceRetirements> {
-  const found: ServiceRetirements = { featureId: feature.id, operations: [], slots: [], messages: [] };
+  const found: ServiceRetirements = {
+    featureId: feature.id, operations: [], slots: [], messages: [], movedOperations: [], movedMessages: [],
+  };
   const paths = featureSpecPaths(feature.dir, service);
   // An absent delta reads as an empty document; an unreadable one retired
   // nothing loam could have merged (archive refuses `merge-failed`).
@@ -190,7 +217,15 @@ async function serviceRetirements(
         held.unreadable ||
         held.ops.some((h) => !h.remove && h.id === op.id && h.method === op.method && h.path === op.path),
     );
-    for (const id of operationRetirements(carried).net) found.operations.push(retiredKey(service, id));
+    const { markerIds, net } = operationRetirements(carried);
+    for (const id of net) found.operations.push(retiredKey(service, id));
+    // The marker ids the relocation rule took out of `net` are the moved ones,
+    // and each marker carrying one stands on an address it vacated.
+    for (const op of carried) {
+      if (op.remove && markerIds.has(op.id) && !net.has(op.id)) {
+        found.movedOperations.push(retiredKey(service, op.id, op.method, op.path));
+      }
+    }
   }
   if (!existsSync(paths.asyncapi)) return found;
   const events = await readAsyncapi(paths.asyncapi, context);
@@ -217,6 +252,13 @@ async function serviceRetirements(
   }
   const retired = messageRetirements(carriedEvents, carriedSlots, before?.doc ?? NOTHING_DECLARED);
   for (const name of retired.net) found.messages.push(retiredKey(service, name));
+  // A message marker whose name the delta declares again is a relocation: the
+  // key it stands on is the address the message moved away from.
+  for (const m of carriedEvents.messages) {
+    if (m.remove === true && m.slot.startsWith("components.messages.") && retired.redeclared.has(m.name)) {
+      found.movedMessages.push(retiredKey(service, m.name, m.slot));
+    }
+  }
   return found;
 }
 
