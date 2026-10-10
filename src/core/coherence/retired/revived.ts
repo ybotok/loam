@@ -15,22 +15,23 @@
  * feature gate's two walks (../declared.ts, ../events/declared.ts) — and only
  * graded here, so the archive walk (./archived.ts) is paid for only when some
  * entry is absent from the living contract at all. `serviceRevivals` is the
- * same question asked standalone, for `loam rebase`, which reads no gate.
+ * same question asked standalone, for `loam rebase`, which reads no gate — on
+ * the event axis through the gate's own reading of the pair
+ * (./event-pair.ts), so the two cannot grade one tree two ways.
  */
 import { existsSync } from "node:fs";
-import { parse } from "yaml";
 import type { Issue } from "../../vocabulary/issue.js";
 import type { PathableService } from "../../kernel/ids/service.js";
 import type { DocsDir, FeatureDir } from "../../kernel/ids/dirs.js";
 import { featureSpecPaths } from "../../repo/paths.js";
 import { locateServicePaths } from "../../repo/service-target.js";
 import { readOpenapi, type OpenapiDoc, type Operation } from "../../openapi/doc.js";
-import { readOr } from "../../openapi/contract-text.js";
-import { asyncapiSlots, type AsyncapiSlot } from "../../asyncapi/digest.js";
+import { slotKey, type AsyncapiSlot } from "../../asyncapi/digest.js";
 import { readAsyncapi } from "../../asyncapi/read.js";
-import type { AsyncapiDoc, EventMessage } from "../../asyncapi/model.js";
+import type { EventMessage } from "../../asyncapi/model.js";
 import type { FleetContext } from "../../fleet-context.js";
 import { retiredKey, type ArchivedBy, type RetiredIndex, type RetiredLookup } from "./archived.js";
+import { readEventPair, type EventPairRead } from "./event-pair.js";
 
 /** The two remedies, spelled once: which one applies is the human's call, never loam's. */
 const REMEDY =
@@ -83,21 +84,16 @@ export interface AbsentEvents {
  * The event axis's candidates. A `components.messages` slot is graded by the
  * message NAME it declares, not by its key: the name is what every join reads,
  * so a retired message redeclared under a new key is the same message back,
- * and a new message reusing a dead key is not.
+ * and a new message reusing a dead key is not. Absent from living is a
+ * candidate; a living side that does not answer (./event-pair.ts) proves
+ * nothing, so it yields none.
  */
-export function absentEvents(input: {
-  featDoc: AsyncapiDoc;
-  featSlots: readonly AsyncapiSlot[];
-  livingDoc: AsyncapiDoc;
-  livingSlots: ReadonlyMap<string, AsyncapiSlot>;
-}): AbsentEvents {
-  const { featDoc, featSlots, livingDoc, livingSlots } = input;
-  if (featDoc.unreadable || livingDoc.unreadable) return { slots: [], messages: [] };
+export function absentEvents(read: EventPairRead): AbsentEvents {
+  const { featDoc, featSlots, livingDoc, livingSlots } = read;
+  if (!read.livingAnswers || featDoc.unreadable || livingDoc.unreadable) return { slots: [], messages: [] };
   const livingNames = new Set(livingDoc.messages.filter((m) => m.remove !== true).map((m) => m.name));
   return {
-    slots: featSlots.filter(
-      (s) => !s.remove && s.section !== "components.messages" && !livingSlots.has(`${s.section}\0${s.key}`),
-    ),
+    slots: featSlots.filter((s) => !s.remove && s.section !== "components.messages" && !livingSlots.has(slotKey(s))),
     messages: featDoc.messages.filter((m) => m.remove !== true && !livingNames.has(m.name)),
   };
 }
@@ -147,7 +143,8 @@ export interface ServiceRevivalRequest {
  * two walks compute the same candidates from the documents they already hold;
  * `loam rebase` holds none, and must not pin a revived operation as if this
  * feature were adding it. One reading of each document, the gate's: by id on
- * the contract axis, by slot key and message name on the event axis.
+ * the contract axis through `absentOperations`, and on the event axis through
+ * `readEventPair` and `absentEvents`, the walk's own reader and candidates.
  */
 export async function serviceRevivals(request: ServiceRevivalRequest): Promise<Issue[]> {
   const { docsDir, featureDir, service, retired, context } = request;
@@ -162,17 +159,11 @@ export async function serviceRevivals(request: ServiceRevivalRequest): Promise<I
 
   if (!existsSync(feature.asyncapi)) return issues;
   const featDoc = await readAsyncapi(feature.asyncapi, context);
-  const livingDoc = await readAsyncapi(living.asyncapi, context);
-  const featText = featDoc.unreadable ? undefined : await readOr(feature.asyncapi, context);
-  const livingText = !existsSync(living.asyncapi) || livingDoc.unreadable ? undefined : await readOr(living.asyncapi, context);
-  // A side that did not decode is a side nobody can grade, exactly as the gate's walk reads it.
-  if (featText === undefined || (existsSync(living.asyncapi) && livingText === undefined)) return issues;
-  const events = absentEvents({
-    featDoc,
-    featSlots: asyncapiSlots(parse(featText)),
-    livingDoc,
-    livingSlots: new Map(asyncapiSlots(livingText === undefined ? {} : parse(livingText)).map((s) => [`${s.section}\0${s.key}`, s])),
-  });
+  // An unreadable delta is `asyncapi.invalid` in the gate, which grades
+  // nothing else against it; the guards on the living side are the pair's.
+  if (featDoc.unreadable) return issues;
+  const sides = { featPath: feature.asyncapi, featDoc, livingPath: living.asyncapi, livingDoc: await readAsyncapi(living.asyncapi, context) };
+  const events = absentEvents(await readEventPair(sides, context));
   if (events.slots.length > 0 || events.messages.length > 0) issues.push(...revivedEvents(service, events, await retired()));
   return issues;
 }

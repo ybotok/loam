@@ -22,6 +22,8 @@ import {
   ASYNCAPI_BASELINE_KEY,
   asyncapiSlots,
   slotDigest,
+  slotKey,
+  slotsByKey,
   type AsyncapiSection,
 } from "../digest.js";
 
@@ -66,7 +68,7 @@ export function pinAsyncapiSlots(featureText: string, livingText: string, servic
   const { doc, plain: featPlain } = readEventTree(featureText, "feature", service);
   const { plain: livingPlain } = readEventTree(livingText, "living", service);
 
-  const livingBySlot = new Map(asyncapiSlots(livingPlain).map((slot) => [`${slot.section}\0${slot.key}`, slot]));
+  const livingBySlot = slotsByKey(asyncapiSlots(livingPlain));
   const pins: AsyncapiSlotPin[] = [];
   let edited = false;
   for (const slot of asyncapiSlots(featPlain)) {
@@ -77,7 +79,7 @@ export function pinAsyncapiSlots(featureText: string, livingText: string, servic
 
     const at = { section: slot.section, key: slot.key };
     const from = slot.basedOn ?? null;
-    const living = livingBySlot.get(`${slot.section}\0${slot.key}`);
+    const living = livingBySlot.get(slotKey(slot));
     if (living === undefined || living.node === null || typeof living.node !== "object" || Array.isArray(living.node)) {
       pins.push({ ...at, status: "unresolved", from, to: null });
       continue;

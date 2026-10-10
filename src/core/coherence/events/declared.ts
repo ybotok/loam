@@ -23,22 +23,20 @@
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { parse } from "yaml";
 import { type PathableService } from "../../kernel/ids/service.js";
 import type { Issue } from "../../vocabulary/issue.js";
 import { featureSpecPaths, SPEC_AXES } from "../../repo/paths.js";
 import { locateServicePaths } from "../../repo/service-target.js";
 import { parseRequirements } from "../../document/parse.js";
-import { asyncapiSlots, type AsyncapiSlot } from "../../asyncapi/digest.js";
 import { readAsyncapi } from "../../asyncapi/read.js";
 import type { AsyncapiDoc } from "../../asyncapi/model.js";
 import type { FleetContext } from "../../fleet-context.js";
 import type { DocsDir, FeatureDir } from "../../kernel/ids/dirs.js";
 import { gradeBaselines, gradeMarkers } from "./grades.js";
 import { mergedAsyncapiDoc } from "./merged.js";
-import { readOr } from "../../openapi/contract-text.js";
 import { messageRetirements } from "../retired/retirement.js";
 import { absentEvents, type AbsentEvents } from "../retired/revived.js";
+import { readEventPair } from "../retired/event-pair.js";
 
 /** The three facts this walk needs about the feature it is reading. */
 export interface EventDeltaScope {
@@ -192,33 +190,16 @@ export async function declaredEvents(
     }
     featureDocs.set(svc, featDoc);
 
-    const featText = await readOr(featPath, context);
-    // Parsed ONCE and kept: the slot walk and the surface half of the baseline
-    // grade read the same resolved tree, and a second `parse` of the same
-    // bytes is a second chance for the two halves to disagree about what the
-    // delta declares.
-    const featPlain: unknown = featText === undefined ? {} : parse(featText);
-    const featSlots = asyncapiSlots(featPlain);
-    // The living side of every slot judgement. Absent is a real answer —
-    // everything the delta spells is new, and a baseline only means
-    // something for a slot that already exists. Unreadable is NOT an
-    // answer: grading pins or markers against an empty parse would call
-    // every restatement new and every marker stale, so both checks stand
-    // down and the (later) merge refuses the unreadable side by name.
-    const livingText = !existsSync(livingPath) || livingDoc.unreadable ? undefined : await readOr(livingPath, context);
-    const livingPlain: unknown = livingText === undefined ? {} : parse(livingText);
-    const livingSlots = new Map<string, AsyncapiSlot>(
-      asyncapiSlots(livingPlain).map((s) => [`${s.section}\0${s.key}`, s]),
-    );
-    // Absent from living is a candidate; an UNREADABLE living side (no text
-    // above while the file exists) proves nothing, so it yields none.
-    if (livingText !== undefined || !existsSync(livingPath)) {
-      revivalCandidates.set(svc, absentEvents({ featDoc, featSlots, livingDoc, livingSlots }));
-    }
+    // Both sides' texts, trees and slots, read the one way rebase's
+    // standalone revival read reads them too (../retired/event-pair.ts owns
+    // the guards: absent living is an answer, unreadable living is not).
+    const read = await readEventPair({ featPath, featDoc, livingPath, livingDoc }, context);
+    const { featSlots, featText, livingText } = read;
+    revivalCandidates.set(svc, absentEvents(read));
 
     if (livingText !== undefined) {
-      gradeBaselines({ featSlots, livingSlots, featPlain, livingPlain, svc, featureId }, issues);
-      gradeMarkers({ featDoc, livingDoc, featSlots, livingSlots }, svc, issues);
+      gradeBaselines({ ...read, svc, featureId }, issues);
+      gradeMarkers(read, svc, issues);
       if (featText !== undefined) {
         const merged = mergedAsyncapiDoc({ livingText, livingDoc, featureText: featText, service: svc });
         if (merged !== undefined) {

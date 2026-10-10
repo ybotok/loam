@@ -7,8 +7,8 @@
  * moved them verbatim.
  */
 import type { Issue } from "../../vocabulary/issue.js";
-import { ASYNCAPI_BASELINES_KEY, type AsyncapiSlot } from "../../asyncapi/digest.js";
-import { type AsyncapiDoc } from "../../asyncapi/model.js";
+import { ASYNCAPI_BASELINES_KEY, slotKey } from "../../asyncapi/digest.js";
+import type { EventPair } from "../retired/event-pair.js";
 import { asyncapiSurfaces } from "../../asyncapi/baseline/surfaces.js";
 import { entryFor, readBaselineRecord, surfaceIn } from "../../openapi/baseline/record.js";
 import {
@@ -19,9 +19,7 @@ import {
 } from "../../openapi/digest.js";
 
 /** Everything the two baseline graders need about one service's pair of contracts. */
-export interface AsyncapiBaselineInput {
-  featSlots: AsyncapiSlot[];
-  livingSlots: Map<string, AsyncapiSlot>;
+export interface AsyncapiBaselineInput extends EventPair {
   /** The FEATURE document's resolved parse — where the record and the surfaces are read from. */
   featPlain: unknown;
   /** The LIVING document's resolved parse; `{}` where no living contract exists. */
@@ -45,7 +43,7 @@ export function gradeBaselines(input: AsyncapiBaselineInput, issues: Issue[]): v
     // checks guard the slot.
     if (slot.remove) continue;
     const label = `${slot.section}.${slot.key}`;
-    const living = livingSlots.get(`${slot.section}\0${slot.key}`);
+    const living = livingSlots.get(slotKey(slot));
     if (slot.basedOn !== undefined && !OPERATION_DIGEST_RE.test(slot.basedOn)) {
       issues.push({
         severity: "error",
@@ -161,16 +159,12 @@ function gradeSurfaces(input: AsyncapiBaselineInput, issues: Issue[]): number {
 }
 
 /** Marker exactness: the slot must exist, and a message marker must name the living declaration. */
-export function gradeMarkers(
-  input: { featDoc: AsyncapiDoc; livingDoc: AsyncapiDoc; featSlots: AsyncapiSlot[]; livingSlots: Map<string, AsyncapiSlot> },
-  svc: string,
-  issues: Issue[],
-): void {
-  const { featDoc, livingDoc, featSlots, livingSlots } = input;
+export function gradeMarkers(pair: EventPair, svc: string, issues: Issue[]): void {
+  const { featDoc, livingDoc, featSlots, livingSlots } = pair;
   for (const slot of featSlots) {
     if (!slot.remove) continue;
     const label = `${slot.section}.${slot.key}`;
-    const living = livingSlots.get(`${slot.section}\0${slot.key}`);
+    const living = livingSlots.get(slotKey(slot));
     if (living === undefined) {
       issues.push({
         severity: "error",
