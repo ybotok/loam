@@ -78,7 +78,7 @@ export function gradeBaselines(input: AsyncapiBaselineInput, issues: Issue[]): v
         code: "asyncapi.baseline-invalid",
         subject: svc,
         message: movedTo.length > 0
-          ? `${svc}: ${label} carries x-loam-based-on, but the living contract has no slot there — message '${name}' is declared at ${movedTo.join(" and ")} now: a parallel feature moved it. Re-read it there and delete this slot from the delta, making any change at its new key; archived while it is still declared there, it would declare '${name}' at ${label} as well. To move it back on purpose, drop the pin and ${moveBackRemedy(movedTo, label)} in this delta.`
+          ? `${svc}: ${label} carries x-loam-based-on, but the living contract has no slot there — message '${name}' is declared at ${movedTo.join(" and ")} now: a parallel feature moved it there (or retired it here, and another re-declared it there). Re-read it there and delete this slot from the delta, making any change at its new key; archived while it is still declared there, it would declare '${name}' at ${label} as well. To move it back on purpose, drop the pin and ${moveBackRemedy(movedTo, label)} in this delta.`
           : `${svc}: ${label} carries x-loam-based-on, but the living contract has no slot there — the version it was pinned to is gone. If a parallel feature retired it, re-read the living contract and delete this slot from the delta, unless this feature deliberately brings it back (then drop the pin and archive with --approve past \`asyncapi.slot-revived\`). A genuinely new channel, operation or message has no living version to be based on and carries no pin.`,
       });
     } else if (verdict === "stale") {

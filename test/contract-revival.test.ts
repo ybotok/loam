@@ -596,6 +596,8 @@ ${CANCEL_OP}`);
     // The index recorded a retirement by id alone, never the address it
     // vacated, so with the id living elsewhere this archived at exit 0.
     const f = await exampleFleet();
+    // Pinned while cancelOrder still stood at /cancel — what rebase wrote then.
+    contractOnly(f, "FEAT-206", "FEAT-206-pinned-cancel", pinOpenapi(QUOTED_CANCEL, f.read(LIVING_ORDER_API)));
     contractOnly(f, "FEAT-204", "FEAT-204-retire-cancel", `openapi: 3.1.0
 paths:
   /orders/{id}/cancel:
@@ -626,6 +628,17 @@ ${CANCEL_OP}`);
     const rebased = JSON.parse((await runLoam(f.fleet, "rebase", "FEAT-201", "--dry-run", "--json")).stdout) as { revived: Array<{ message: string }> };
     expect(rebased.revived.map((r) => r.message)).toEqual([warned!.message]);
     expect((await runLoam(f.fleet, "archive", "FEAT-201")).code).toBe(1);
+
+    // Pinned, the same quote is baseline-invalid too, and its attribution
+    // names both ways the id came to live elsewhere — not a move alone.
+    const pinned = findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-206", "--json")).stdout);
+    const [invalid] = ofCode(pinned, "openapi.baseline-invalid");
+    expect(invalid!.message).toContain(
+      "'cancelOrder' lives at POST /orders/{id}/abort now: a parallel feature moved it there (or retired it here, and another re-added it there)",
+    );
+    expect(ofCode(pinned, "openapi.op-revived").map((r) => r.message)).toEqual([
+      expect.stringContaining("archived FEAT-204 retired it there; it lives at POST /orders/{id}/abort now"),
+    ]);
   });
 
   it("a removal marker at an address the operation does not live at takes it out of nowhere, so the quote of the vacated address is still refused", async () => {
