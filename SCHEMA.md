@@ -1327,7 +1327,9 @@ the slots the feature adds, changes or removes**, exactly as an openapi delta ho
 operations: the merge walks only the slots the delta declares, so a slot it leaves out stays as the
 living contract has it, and an edited slot is written out whole. A slot restated without being
 changed is legal and the machinery tells it from an edit, but it buys nothing and costs a pin,
-which a parallel feature's removal turns into `asyncapi.baseline-invalid`. Identity is the **slot** — the pair
+which a parallel feature's removal turns into `asyncapi.baseline-invalid` — or, unpinned, into
+`asyncapi.slot-revived`, the contract axis's revival check (under *Living spec vs delta* below) on
+this axis's identity. Identity is the **slot** — the pair
 (section, key) over the three named sections `channels.<key>`, `operations.<key>` and
 `components.messages.<key>` — and the join token stays the message name. Three feature-only keys,
 spelled and shaped exactly as on the OpenAPI axis: `x-loam-based-on` inside a slot's value (written
@@ -1506,10 +1508,11 @@ the source for tests.
   authoring-time copy back over what landed in between. A quote also costs something even pinned:
   it is one more pin, and a pinned quote whose living operation a parallel feature removes is
   `openapi.baseline-invalid` — the living slot is gone, so the pin is founded on nothing — an
-  error that blocks the archive until the quote is deleted. Unpinned, the same quote is worse: with
-  no living operation behind it, it grades as an addition, and the archive puts the retired
-  operation back. So a delta quotes nothing it does not change, and every operation in it that the
-  living contract already holds carries
+  error that blocks the archive until the quote is deleted. Unpinned, the same quote has no living
+  operation behind it, so the baseline axis cannot tell it from an addition — and it used to
+  archive as one, at exit 0, putting the retired operation back. The **revival check** below is
+  what refuses it now. So a delta quotes nothing it does not change, and every operation in it that
+  the living contract already holds carries
   **`x-loam-based-on`** — the same 16-hex digest, in the
   vendor-extension shape this axis already uses for `x-loam-remove`, written by `loam rebase` and
   stripped on merge exactly like `Based-On:`. The digest is taken over the operation's *canonical*
@@ -1541,6 +1544,37 @@ the source for tests.
   component copying is verdict-driven, with genuinely new components copied only when reachable from
   content actually written. Removal markers still carry no pin, since
   `openapi.remove-target-mismatch` already checks that exact slot.
+- **A retired operation does not come back by accident.** An operation the living contract does
+  not hold is either new or *retired*, and the living contract alone cannot say which: both are
+  simply absent. So the feature gate also reads what every **archived** feature took out — the
+  `x-loam-remove: true` markers left in `features/archive/<FEAT>/specs/<svc>/openapi.yaml` and
+  `asyncapi.yaml`, through the same relocation rule the gate applies to an in-flight delta (a
+  marker on an id the same delta redefines elsewhere moved it, and retired nothing). A delta entry
+  that is not itself a removal, that its service's living contract does not hold, and that an
+  archived feature other than this one retired is **`openapi.op-revived`** (by operationId — a
+  retired operation quoted at a new path is the same operation back) or **`asyncapi.slot-revived`**
+  (a `channels` or `operations` slot by its key; a message by its *name*, wherever it is declared).
+  Both are warnings that **gate** the archive, `openapi.baseline-missing`'s doctrine: the document
+  is legal, and re-adding a retired operation can be exactly what a feature means — a retirement
+  rolled back — so `--approve` carries the call, and the archive output then names what came back
+  and whose retirement it reverses. The message offers both remedies: delete the quote if it only
+  restated the operation; archive with `--approve` if the feature brings it back on purpose (a pin
+  over nothing is `openapi.baseline-invalid`, so a deliberate re-add drops it first). A
+  channel-slot removal retires the messages its living channel
+  declared inline, which the delta never spells, so those names are read from the archived
+  feature's undo snapshot (`.loam-before/`, the pre-image of the contract the merge ran against) —
+  only while that pre-image still hashes to what the manifest recorded. Two marker shapes are not
+  sources, because neither retires anything at archive: a marker with no `operationId`
+  (`openapi.remove-marker-anonymous`) and one written at path level
+  (`openapi.remove-marker-path-level`) — the merge deletes only a living operation whose id the
+  marker names, so a feature archived past either under `--approve` left the operation living.
+  **The honest limit:** the check knows only what the files under `features/archive/` record. A
+  removal made by hand-editing a living contract leaves no marker anywhere, and an archived feature
+  deleted from disk takes its markers with it; both read as "never retired", and a quote of such an
+  operation grades as an addition exactly as it did before the check existed. A channel's inline
+  messages drop out the same way when its feature carries no intact pre-image (archived before the
+  snapshot existed, or the snapshot edited or removed since) — the channel slot itself is still
+  caught. No git history is read: the archive directory is the record.
 
 A requirement may carry a stable identity in its body: `Requirement-ID: <id>`, where the ID matches
 `[A-Za-z][A-Za-z0-9._-]{0,127}`. It is optional for backward compatibility. When present in a delta,

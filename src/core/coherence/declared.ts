@@ -31,8 +31,9 @@ import type { CapabilityRequirementIndex } from "../capabilities/realizes/join.j
 import { capabilityUnknownIssues } from "../capabilities/findings.js";
 import type { Requirement } from "../document/spec.js";
 import { openapiBaselineIssues } from "../openapi/baseline/gate.js";
-import { readOpenapi } from "../openapi/doc.js";
+import { readOpenapi, type Operation } from "../openapi/doc.js";
 import { operationRetirements } from "./retired/retirement.js";
+import { absentOperations } from "./retired/revived.js";
 import type { FleetContext } from "../fleet-context.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
@@ -48,7 +49,7 @@ export interface Declared {
   allMarkerIds: Map<string, Set<string>>;
   /** Per service: does the feature contract carry a marker with no operationId? */
   anonymousMarkers: Map<string, boolean>;
-  /** The operationIds genuinely NEW to their service across the whole feature. */
+  /** The operationIds the living contract of their service does not hold, across the whole feature — new, or revived (see `revivalCandidates`). */
   featureApiOps: Set<string>;
   /**
    * Services whose FEATURE openapi.yaml exists but does not parse. Every check
@@ -58,6 +59,13 @@ export interface Declared {
    * but at the broken file.
    */
   unreadableApis: Set<string>;
+  /**
+   * Per service: the feature operations whose id the living contract does not
+   * hold — new, or RETIRED by an archived feature, which the living contract
+   * alone cannot tell apart. coherence.ts asks the retired index
+   * (./retired/) only when one of these lists is non-empty.
+   */
+  revivalCandidates: Map<PathableService, Operation[]>;
 }
 
 /** The three facts this walk needs about the feature it is reading. */
@@ -84,6 +92,7 @@ export async function declaredByService(
     const anonymousMarkers = new Map<string, boolean>();
     const featureApiOps = new Set<string>();
     const unreadableApis = new Set<string>();
+    const revivalCandidates = new Map<PathableService, Operation[]>();
     // The capability gate's vocabulary, once per call. Absent or invalid stays
     // SILENT here — capability.invalid is validate --all's one finding about a
     // broken file, and an absent file means the fleet never opted in — so with
@@ -163,8 +172,12 @@ export async function declaredByService(
         issues.push(...capabilityUnknownIssues(archReqs, archTarget, capabilityVocab));
         issues.push(...realizesUnknownIssues(archReqs, archTarget, await capabilityReqs()));
       }
-      // Only operations genuinely NEW to this service count as feature-added: authors
-      // restate the full living API in the delta file (it is a complete document, not a patch).
+      // Only operations the living contract does not hold count as feature-added:
+      // a delta may restate living operations it does not change (a quote), and
+      // a quote adds nothing. "Not in living" is not quite "new", though — an
+      // operation an archived feature RETIRED is absent too, and adding it back
+      // is `openapi.op-revived`'s question (./retired/revived.ts), asked of the
+      // `revivalCandidates` collected below.
       const featDoc = await readOpenapi(paths.openapi, context);
       // A feature contract that EXISTS but does not read is a broken document,
       // not an empty one — the living-side `openapi.invalid` discipline
@@ -209,6 +222,7 @@ export async function declaredByService(
 
       const livingDoc = await readOpenapi((await locateServicePaths(docsDir, svc, context)).openapi, context);
       const livingOps = livingDoc.ops;
+      revivalCandidates.set(svc, absentOperations(featDoc, livingDoc));
       for (const id of livingDoc.duplicateIds) {
         const slots = livingOps.filter((op) => op.id === id).map((op) => `${op.method} ${op.path}`);
         issues.push({
@@ -303,5 +317,7 @@ export async function declaredByService(
         });
       }
     }
-  return { reqOps, removedReqOps, removingOps, allMarkerIds, anonymousMarkers, featureApiOps, unreadableApis };
+  return {
+    reqOps, removedReqOps, removingOps, allMarkerIds, anonymousMarkers, featureApiOps, unreadableApis, revivalCandidates,
+  };
 }

@@ -679,9 +679,10 @@ adds, changes or removes, the merge leaves every operation it does not spell exa
 contract has it, and a local `$ref` resolves into the living document — so an add-only contract
 delta has nothing to pin and needs no rebase. Each quote costs a pin, and a pinned quote whose living
 operation a parallel feature removes becomes `openapi.baseline-invalid`, an error that blocks the
-archive until the quote is deleted — while an unpinned one grades as an addition and puts the
-retired operation back. Restamping is the last step of resolving a collision, not the
-resolution — the output says which pins moved.
+archive until the quote is deleted — while an unpinned one is `openapi.op-revived`
+(`asyncapi.slot-revived` on the event axis), which gates the archive too, because the merge would
+read the retired operation as an addition and put it back. Restamping is the last step of
+resolving a collision, not the resolution — the output says which pins moved.
 
 **`loam verify`** — `--results <report.json>` answers the scenario claims from a test run,
 digest-matched, so only a green run confirms one, and the record writes down which file it read
@@ -736,8 +737,8 @@ archive is undone, an interrupted unarchive is *finished*, because the merged te
 is written down nowhere else — or refusing with `commit-interrupted` when a file has been edited
 since. `loam doctor` reports that state rather than calling the repo healthy.
 
-The gate itself comes in two kinds. Coherence, an unknown service and the OpenAPI plan are judgement
-calls, and `--approve` carries them; two refusals are mechanical loss and `--approve` deliberately
+The gate itself comes in two kinds. Coherence (a revived retired operation among it), an unknown
+service and the OpenAPI plan are judgement calls, and `--approve` carries them; two refusals are mechanical loss and `--approve` deliberately
 does not — a living document still holding git conflict markers (`merge-failed`) and a living
 requirement that has strayed outside `## Requirements` (`living-outside-requirements`). loam's docs
 files must be **UTF-8** for the same reason: undecodable bytes refuse the merge (`merge-failed`,
@@ -754,6 +755,15 @@ beside the methods, addresses no operation and retires nothing; archive refuses 
 living contract. Validation refuses stale, mismatched, or unjustified markers; archive deletes the
 method without persisting the marker or garbage-collecting components, and reports the removals in
 both text and JSON. See [SCHEMA.md](SCHEMA.md) for the lifecycle contract.
+
+A retirement also stays retired. The archive gate reads the removal markers every feature under
+`features/archive/` left behind, and refuses a delta that spells an HTTP operation, a channel, an
+event operation or a message one of them retired while the living contract no longer holds it
+(`openapi.op-revived`, `asyncapi.slot-revived` — warnings that gate). Without it, a parallel
+feature that had merely quoted the operation archived second and put it back at exit 0.
+`--approve` re-adds it on purpose, and the archive output names what came back and whose
+retirement it reverses. A removal made by hand-editing a living contract, or an archive deleted
+from disk, leaves no marker, and the gate cannot see it.
 
 ## The MCP server
 
