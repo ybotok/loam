@@ -56,6 +56,14 @@ export interface Plan {
   asyncapiRemovals: Array<{ service: string; slots: string[] }>;
   /** Services this feature introduces on the architecture axis alone. */
   architectureServices: Set<PathableService>;
+  /**
+   * Every vouched living spec this merge leaves out of step with its vouch
+   * stamp — `content.stale` follows on each until its owner re-vouches.
+   * `path` is absolute, like every planned write's, and made docs-relative
+   * where it is printed; `owner` is the frontmatter's, or null when the
+   * document names none. The `--json` payload carries it as `revouchOwed`.
+   */
+  revouchOwed: Array<{ service: string; path: string; owner: string | null }>;
 }
 
 export function emptyPlan(): Plan {
@@ -66,5 +74,6 @@ export function emptyPlan(): Plan {
     openapiRemovals: [],
     asyncapiRemovals: [],
     architectureServices: new Set<PathableService>(),
+    revouchOwed: [],
   };
 }

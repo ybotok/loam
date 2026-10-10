@@ -6,7 +6,7 @@
  */
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { rawBody } from "../document/frontmatter.js";
+import { rawBody, stringField, type Frontmatter } from "../document/frontmatter.js";
 import { collectSources, type SkippedSource } from "./walk.js";
 
 /**
@@ -158,6 +158,27 @@ export function emptySourcesMessage(label: string, sources: string[]): string {
  */
 export function contentDigest(source: string): string {
   return createHash("sha256").update(rawBody(source), "utf8").digest("hex").slice(0, DIGEST_LENGTH);
+}
+
+/**
+ * The one condition `content.stale` fires on: a `verified` document whose body
+ * no longer hashes to the `content_digest` its vouch stamped.
+ *
+ * Here, beside the digest it reads back, because a second command must give
+ * the same answer before the bytes exist: `loam archive` asks it of the
+ * document it is ABOUT to write, so it can name every vouched spec its merge
+ * moves under the stamp — and whose owner then owes a re-vouch. Two spellings
+ * of the condition would let the archive's list and the next validate disagree
+ * about which documents went stale.
+ */
+export function movedUnderVouch(fm: Frontmatter, raw: string): boolean {
+  if (stringField(fm, "status") !== "verified") return false;
+  const stamped = stringField(fm, "content_digest");
+  // A verified doc with no stamp predates the field. Quiet on purpose: the fix
+  // is re-vouching, and grading years of pre-feature vouches as suspect would
+  // drown the fleet in warnings nobody chose.
+  if (stamped === undefined) return false;
+  return contentDigest(raw) !== stamped;
 }
 
 /* ------------------------------------------------------------------ */

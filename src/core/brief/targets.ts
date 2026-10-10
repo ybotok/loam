@@ -144,19 +144,26 @@ views {
       "`Operations: <operationId>[, <operationId>]` in the requirement body names the API operations it governs. Every one must exist in this service's openapi.yaml — a name that does not is `spec-api.op-undefined` (error), reported against the LIVING spec, not only inside a feature delta.",
       "Document what the service DOES today, not what it should do. This is the baseline; changes to it belong in a feature delta.",
     ],
+    // `<svc>` is the model example's placeholder, filled the same way: the
+    // frontmatter `service:` must equal the directory it sits in, so a header
+    // naming payment-service was a paste that failed `frontmatter.field-mismatch`
+    // for every other service. And the blank line under each `### Requirement:`
+    // is the canonical shape `serializeRequirements` writes — a living spec
+    // copied from an example without it is reflowed by its first archive.
     example: `---
-service: payment-service
+service: <svc>
 status: draft
 owner: payments-team
 sources:
   - src/main/java/com/shop/payment/
 ---
 
-# payment-service
+# <svc>
 
 ## Requirements
 
 ### Requirement: Authorize a payment
+
 WHEN authorization is requested for a captured-eligible order THE SYSTEM SHALL
 authorize it against the issuer before any capture.
 
@@ -168,6 +175,7 @@ Operations: authorizePayment
 - **Then** the payment is authorized and an authorization id is returned
 
 ### Requirement: Refunding is permission-gated
+
 IF the caller lacks the refund permission THEN THE SYSTEM SHALL refuse the
 request and leave the payment untouched.
 
@@ -198,19 +206,21 @@ Operations: refundPayment
       "Optional, but expected for a service with real architecture: every alert/SLI health.yaml declares wants a covering requirement here (`health.uncovered`, warn) — a signal nothing tests is dashboard decoration.",
       "Write the obligations no business requirement states — the transactional outbox, what a caller's retry may assume, what pages whom. An arch scenario becomes an integration/ops test, not an acceptance test.",
     ],
+    // Same placeholder and same canonical requirement shape as spec.md's above.
     example: `---
-service: payment-service
+service: <svc>
 status: draft
 owner: payments-team
 sources:
   - src/main/java/com/shop/payment/
 ---
 
-# payment-service — architecture
+# <svc> — architecture
 
 ## Requirements
 
 ### Requirement: Events leave through the transactional outbox
+
 The service SHALL write a domain event and its state change in one transaction,
 published by an outbox relay — never a dual write.
 

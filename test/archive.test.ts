@@ -31,6 +31,7 @@ import { rm } from "node:fs/promises";
 import { parse } from "yaml";
 import { loadFile, type LoadedDoc } from "../src/core/c4/likec4.js";
 import { parseRequirements } from "../src/core/document/parse.js";
+import { contentDigest } from "../src/core/provenance/stamp.js";
 import {
   coherentFixture,
   makeProject,
@@ -3169,9 +3170,10 @@ Free-form guidance that is not the requirements section.
   it("prose between requirements rides the previous requirement's last scenario and survives the rewrite", async () => {
     // Pinned attribution, not aspiration: parseRequirements pushes body lines
     // onto whatever is open, so prose between requirement A and requirement B
-    // is A's last scenario's body and survives re-serialization there. A
-    // MODIFIED of A would replace it along with the rest of A — that is the
-    // documented wholesale-replace semantics, not a new loss.
+    // is A's last scenario's body — and it rides in A's raw slice of the run,
+    // which the merge writes back verbatim while A is untouched. A MODIFIED of
+    // A would replace it along with the rest of A — that is the documented
+    // wholesale-replace semantics, not a new loss.
     const note = "Interleaved operator note: settlement and authorization share a ledger row.";
     const living = LIVING_SPEC_TWO_REQS.replace(
       "\n### Requirement: Legacy settlement quirk",
@@ -3241,7 +3243,7 @@ The service SHALL refund an authorized payment on request.
     }
   });
 
-  it("a CRLF living spec keeps CRLF head and tail byte-for-byte; only the rewritten run is LF-normalized", async () => {
+  it("a CRLF living spec keeps CRLF head and tail byte-for-byte; only the requirements the merge rewrote are LF-normalized", async () => {
     const living = LIVING_SPEC_WITH_PROSE.replaceAll("\n", "\r\n");
     const p = await makeProject(proseFixture(living));
     try {
@@ -3252,6 +3254,226 @@ The service SHALL refund an authorized payment on request.
       expect(merged.startsWith(head)).toBe(true);
       expect(merged.endsWith(NOTES_SECTION.replaceAll("\n", "\r\n"))).toBe(true);
       expect(parseRequirements(merged).map((r) => r.name)).toEqual(["Authorize a payment", "Refund a payment"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+/*
+ * `loam archive` moves the bytes of the delta and nothing else's — and says
+ * which vouched documents those bytes land under.
+ *
+ * Two halves of one defect. The requirements merge used to re-serialize the
+ * whole `## Requirements` run, and `serializeRequirements` writes a blank line
+ * under every `### Requirement:` heading. A living spec written without one —
+ * the shape the adopt brief's own example taught — had that line inserted
+ * under every requirement the feature never mentioned, so the archive's diff,
+ * the vouch pack and the re-vouch all widened from the delta to the whole
+ * section. The merge now splices: an untouched requirement is written back as
+ * its raw slice, and only what the delta added or replaced is serialized.
+ *
+ * The second half is the stamp. Any merge into a vouched spec moves its body,
+ * and `content.stale` then follows — honestly, since the merged text is words
+ * nobody has read against the code. Archive does not soften that (no warn code
+ * `--strict` lets through); it names each such document and its owner, in the
+ * dry run and the real merge alike, so the re-vouch can land in the archive's
+ * own PR.
+ */
+
+const ORDERS_INTENT = "# Why\n\nOrders can be split across payees.\n";
+
+/**
+ * Four requirements with NO blank line under their headings — the shape the
+ * adopt brief taught before its examples were made canonical, and the one the
+ * reflow hit. Each slice is named so a test can say which bytes must survive.
+ */
+const ORD_PLACE = `### Requirement: Place an order
+Requirement-ID: ORD-1
+The service SHALL accept an order.
+
+#### Scenario: Accepted
+- **Given** a basket
+- **When** it is submitted
+- **Then** an order is created
+
+`;
+const ORD_BILL = `### Requirement: Bill an order
+Requirement-ID: ORD-2
+The service SHALL bill a placed order once.
+
+#### Scenario: Billed once
+- **Given** a placed order
+- **When** billing runs twice
+- **Then** one charge exists
+
+`;
+const ORD_LEGACY = `### Requirement: Legacy export
+Requirement-ID: ORD-3
+The service SHALL export orders nightly.
+
+#### Scenario: Exported
+- **Given** the night batch
+- **When** it runs
+- **Then** every order is exported
+
+`;
+const ORD_SHIP = `### Requirement: Ship an order
+Requirement-ID: ORD-4
+The service SHALL ship a billed order.
+
+#### Scenario: Shipped
+- **Given** a billed order
+- **When** shipping runs
+- **Then** a parcel leaves
+`;
+
+const ORDERS_BODY = `
+# orders-api
+
+Takes orders.
+
+## Requirements
+
+${ORD_PLACE}${ORD_BILL}${ORD_LEGACY}${ORD_SHIP}`;
+
+/** The orders-api living spec, as a draft or as vouched by `owner` over exactly this body. */
+function ordersLiving(vouched: { owner: string } | null): string {
+  if (vouched === null) return `---\nservice: orders-api\nstatus: draft\n---\n${ORDERS_BODY}`;
+  const header = `---\nservice: orders-api\nstatus: verified\nowner: ${vouched.owner}\n`;
+  // content_digest hashes the BODY alone, so it can be taken before it is written in.
+  return `${header}content_digest: ${contentDigest(`${header}---\n${ORDERS_BODY}`)}\n---\n${ORDERS_BODY}`;
+}
+
+const ORD_SPLIT = `### Requirement: Split a bill
+Requirement-ID: ORD-5
+The service SHALL split a bill across payees.
+
+#### Scenario: Split
+- **Given** a bill of 100
+- **When** split 60/40
+- **Then** two charges exist
+`;
+
+const ORDERS_ADD_ONLY = `# orders-api — delta for FEAT-9
+
+## ADDED Requirements
+
+${ORD_SPLIT}`;
+
+function ordersAllKinds(livingText: string): string {
+  return `# orders-api — delta for FEAT-9
+
+## ADDED Requirements
+
+${ORD_SPLIT}
+## MODIFIED Requirements
+
+### Requirement: Bill an order
+Requirement-ID: ORD-2
+Based-On: ${pinFor(livingText, "Bill an order")}
+The service SHALL bill a placed order exactly once per payee.
+
+#### Scenario: Billed once per payee
+- **Given** a placed order with two payees
+- **When** billing runs twice
+- **Then** exactly two charges exist
+
+## REMOVED Requirements
+
+### Requirement: Legacy export
+Requirement-ID: ORD-3
+Based-On: ${pinFor(livingText, "Legacy export")}
+`;
+}
+
+function ordersFixture(livingText: string, delta: string): Record<string, string> {
+  return {
+    "services/orders-api/spec.md": livingText,
+    "features/FEAT-9-split/specs/orders-api/spec.md": delta,
+    "features/FEAT-9-split/intent.md": ORDERS_INTENT,
+  };
+}
+
+const ORDERS_SPEC = "services/orders-api/spec.md";
+
+describe("archive splices the delta into the living requirements", () => {
+  it("an ADDED requirement only appends: every untouched byte stays where it was", async () => {
+    const before = ordersLiving(null);
+    const p = await makeProject(ordersFixture(before, ORDERS_ADD_ONLY));
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-9")).code).toBe(0);
+      // Exactly the old file, one separating blank line, and the new requirement
+      // in canonical form — no line under an untouched heading moved.
+      expect(await p.read(ORDERS_SPEC)).toBe(
+        `${before}\n### Requirement: Split a bill\n\nRequirement-ID: ORD-5\n${ORD_SPLIT.slice(ORD_SPLIT.indexOf("The service"))}`,
+      );
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("MODIFIED and REMOVED rewrite only their own requirements, and unarchive restores every byte", async () => {
+    const before = ordersLiving(null);
+    const p = await makeProject(ordersFixture(before, ordersAllKinds(before)));
+    try {
+      const tree = await treeHashes(p.docsDir);
+      expect((await runLoam(p.workDir, "archive", "FEAT-9")).code).toBe(0);
+      const after = await p.read(ORDERS_SPEC);
+
+      expect(parseRequirements(after).map((r) => r.id)).toEqual(["ORD-1", "ORD-2", "ORD-4", "ORD-5"]);
+      // The two requirements the delta never named are byte-identical slices.
+      expect(after).toContain(ORD_PLACE);
+      expect(after).toContain(ORD_SHIP);
+      expect(after.startsWith(before.slice(0, before.indexOf(ORD_BILL)))).toBe(true);
+      // The replaced one is serialized — canonical, and in its old position.
+      expect(after).toContain("### Requirement: Bill an order\n\nRequirement-ID: ORD-2\n");
+      expect(after.indexOf("Bill an order")).toBeLessThan(after.indexOf("Ship an order"));
+      expect(after).not.toContain("Legacy export");
+      expect(after).not.toContain("Based-On:");
+
+      expect((await runLoam(p.workDir, "unarchive", "FEAT-9")).code).toBe(0);
+      expect(await treeHashes(p.docsDir), "archive then unarchive is a byte round trip").toEqual(tree);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("archive names every vouched spec its merge moves under the stamp", () => {
+  it("--dry-run --json carries revouchOwed with the owner; a draft spec owes nothing", async () => {
+    const vouched = await makeProject(ordersFixture(ordersLiving({ owner: "orders-team" }), ORDERS_ADD_ONLY));
+    const draft = await makeProject(ordersFixture(ordersLiving(null), ORDERS_ADD_ONLY));
+    try {
+      const res = await runLoam(vouched.workDir, "archive", "FEAT-9", "--dry-run", "--json");
+      expect(res.code).toBe(0);
+      expect(JSON.parse(res.stdout).revouchOwed).toEqual([
+        { service: "orders-api", path: ORDERS_SPEC, owner: "orders-team" },
+      ]);
+      const quiet = await runLoam(draft.workDir, "archive", "FEAT-9", "--dry-run", "--json");
+      expect(JSON.parse(quiet.stdout).revouchOwed).toEqual([]);
+    } finally {
+      await vouched.destroy();
+      await draft.destroy();
+    }
+  });
+
+  it("the human view says it in the dry run and the real merge, and validate then agrees", async () => {
+    const p = await makeProject(ordersFixture(ordersLiving({ owner: "orders-team" }), ORDERS_ADD_ONLY));
+    try {
+      const dry = await runLoam(p.workDir, "archive", "FEAT-9", "--dry-run");
+      expect(dry.code).toBe(0);
+      expect(dry.stdout).toContain("re-vouch owed");
+      expect(dry.stdout).toContain(`${ORDERS_SPEC}  (owner: orders-team)`);
+      expect(dry.stdout).toContain("`loam vouch --service orders-api`");
+
+      const real = await runLoam(p.workDir, "archive", "FEAT-9");
+      expect(real.code).toBe(0);
+      expect(real.stdout).toContain(`${ORDERS_SPEC}  (owner: orders-team)`);
+      // The list is a promise about the next validate — one predicate grades both.
+      const graded = JSON.parse((await runLoam(p.workDir, "validate", "--service", "orders-api", "--json")).stdout);
+      const codes = (graded.targets[0].findings as Array<{ code: string }>).map((f) => f.code);
+      expect(codes).toContain("content.stale");
     } finally {
       await p.destroy();
     }

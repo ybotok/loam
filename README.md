@@ -294,6 +294,10 @@ Unscoped, neither setting is usable on a partly-documented system: `loam validat
 over boundaries nobody has written yet, because warnings do not gate, and `--strict` over all of
 them is red from the first minute of adoption until the last one is done.
 
+An archive's PR stays red under `--base --strict` until its re-vouches land: the merge moves every
+vouched spec it touches under its vouch stamp, so `content.stale` follows, and `loam archive` names
+each such spec and its owner (`revouchOwed`) so those re-vouches can join the same PR.
+
 **A `--base`-scoped validate cannot see a victim boundary the change did not touch.** Remove an
 operation `payment-service` owns, and `checkout-web` — whose living requirement still names it —
 is not in scope, so nothing in that gate reports the broken join. That is `loam diff --base`'s
