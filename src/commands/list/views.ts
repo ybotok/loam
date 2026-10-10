@@ -32,7 +32,12 @@ export interface ServiceView extends MaturityInput {
   /** True when this service's `sources` can only be resolved from its own repo. */
   unverifiableFromHere: boolean;
   maturity: Maturity;
-  /** What stands between this service and the next rung, in fix order. */
+  /**
+   * What stands between this service and the next rung, in fix order — and at
+   * `vouched`, the re-vouch a document that moved under its stamp owes
+   * (`maturityGaps`). Empty exactly when nothing is owed, which is the
+   * worklist's membership test.
+   */
   missing: string[];
 }
 

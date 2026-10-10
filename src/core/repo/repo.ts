@@ -7,15 +7,30 @@
  * a repo to walk at all in `state.ts`.
  */
 import { existsSync } from "node:fs";
-import { readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { listField, readFrontmatter, stringField, type Frontmatter } from "../document/frontmatter.js";
+import {
+  contentStamp,
+  listField,
+  movedUnderVouch,
+  readFrontmatter,
+  stringField,
+  type Frontmatter,
+} from "../document/frontmatter.js";
 import type { FleetContext } from "../fleet-context.js";
 import { featureDirOf, type DocsDir, type FeatureDir } from "../kernel/ids/dirs.js";
 import { rawServiceId, serviceIdProblem, type RawServiceId } from "../kernel/ids/service.js";
 import { readVouchScope } from "../provenance/sample/scope.js";
 import { compareIds, featureIdFromDirName, type FeatureEntry, type ServiceEntry } from "./entries.js";
-import { ARCHIVE_DIR, featurePaths, featuresDir, fleetAdrsDir, isServiceArtifactName, servicePathsAt } from "./paths.js";
+import {
+  ARCHIVE_DIR,
+  featurePaths,
+  featuresDir,
+  fleetAdrsDir,
+  isServiceArtifactName,
+  servicePathsAt,
+  SPEC_AXES,
+} from "./paths.js";
 import { requireDocsRepo } from "./state.js";
 import { countMarkdown, entryIs } from "./tree/fs.js";
 import { walkServicesTree, type FleetTree } from "./tree/walk.js";
@@ -99,6 +114,27 @@ async function archHeader(path: string): Promise<Frontmatter> {
   }
 }
 
+/**
+ * The spec files whose body moved under their vouch — `content.stale`'s
+ * question, asked through the one predicate `loam validate` grades with
+ * (`movedUnderVouch`) so the fleet listing and the finding cannot disagree
+ * about one file. Only a header that carries a stamp (`contentStamp`) costs the
+ * second read: the frontmatter read already answered whether there is anything
+ * to compare, and on a fleet mid-adoption most headers do not. The body is
+ * read exactly as the finding reads it, as UTF-8 text, because the stamp is
+ * byte-exact.
+ */
+async function filesMovedUnderVouch(
+  axes: readonly { file: string; path: string; header: Frontmatter }[],
+): Promise<string[]> {
+  const moved = await Promise.all(
+    axes.map(async ({ file, path, header }) =>
+      contentStamp(header) !== undefined && movedUnderVouch(header, await readFile(path, "utf8")) ? [file] : [],
+    ),
+  );
+  return moved.flat();
+}
+
 export async function serviceEntries(tree: FleetTree): Promise<ServiceEntry[]> {
   const entries = await Promise.all(
     tree.services.map(async (svc): Promise<ServiceEntry> => {
@@ -110,6 +146,7 @@ export async function serviceEntries(tree: FleetTree): Promise<ServiceEntry[]> {
       // sampled. `readFrontmatter` answers "absent" for a file that is not
       // there, so a service without the second axis pays one existsSync.
       const [fm, archFm] = await Promise.all([readFrontmatter(p.spec), archHeader(p.archSpec)]);
+      const headers = { spec: fm, archSpec: archFm };
       const idProblem = serviceIdProblem(svc.id, "directory name");
       return {
         id: svc.id,
@@ -136,6 +173,12 @@ export async function serviceEntries(tree: FleetTree): Promise<ServiceEntry[]> {
         // listing is the last place a mangled field should be able to buy
         // itself a full-trust row.
         vouchScope: [fm, archFm].some((header) => readVouchScope(header).kind !== "none") ? "sampled" : null,
+        // Both axes again, for the scope's reason: a stamp is per FILE, and an
+        // arch.spec.md edited under its vouch is a service part of whose
+        // documentation nobody has re-read.
+        contentStale: await filesMovedUnderVouch(
+          SPEC_AXES.map((axis) => ({ file: axis.file, path: p[axis.key], header: headers[axis.key] })),
+        ),
       };
     }),
   );

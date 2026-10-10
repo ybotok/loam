@@ -925,7 +925,12 @@ two checked files:
   `--all` alike, from the docs repo included. A `verified` spec whose current body hash mismatches
   gets `content.stale` (**warning**, the `sources.stale` grading: the doc changed since it was
   vouched, and only a person can say whether verified still holds). A verified doc with no
-  `content_digest` predates the stamp and stays quiet — the fix is re-vouching.
+  `content_digest` predates the stamp and stays quiet — the fix is re-vouching. Every fleet readout
+  carries the same fact, because it is computable from the docs repo: `loam list` shows
+  `vouched (stale)` and owes the row `re-vouch` in `missing` (so `--needs-work` lists it), `loam
+  status` counts it under `services.contentStale` and emits `next.revouch` instead of
+  `next.fleet-clean`, and `validate --all`'s scorecard counts it under `provenance.contentStale`.
+  The rung stays `vouched` — a person did stamp the document — exactly as for `vouch_scope` below.
 - `vouch_scope` — written by `loam vouch --sample <n>`, never by hand, and present only when the
   person who vouched read a recorded SAMPLE of the document rather than all of it. One flat string,
   `sampled <k>/<n> seed=<16 hex>`: k sections read of n, and the seed that chose them. `status`
@@ -3109,6 +3114,7 @@ and publishes it wherever the fleet view reads:
   "errors": 0,
   "warnings": 2,
   "sources": { "current": 1, "stale": 0, "unvouched": 0, "absent": 0 },
+  "contentStale": 0,
   "generatedAt": "2026-08-03T12:00:00Z"
 }
 ```
@@ -3127,9 +3133,15 @@ loam validate --service "$SVC" --json | jq '{
     unvouched: [.targets[0].findings[] | select(.code == "sources.unvouched")] | length,
     absent:    [.targets[0].findings[] | select(.code == "sources.absent")]    | length
   },
+  contentStale: [.targets[0].findings[] | select(.code == "content.stale")] | length,
   generatedAt: (now | todate)
 }'
 ```
+
+`contentStale` counts the spec documents whose words moved after their vouch — the doc-side half of
+staleness, beside the code-side `sources.stale`. Unlike that half it is not owed to the service repo
+alone (the docs repo's own `validate --all` scorecard counts it too), but a summary that left it out
+would publish "0 stale" over a document nobody re-read.
 
 `generatedAt` is the CI's clock, never loam's — loam output carries no timestamps, by design, so the
 same repo state always yields the same bytes. That is also what makes the timestamp the liveness

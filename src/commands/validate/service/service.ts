@@ -11,7 +11,7 @@
  */
 import { existsSync } from "node:fs";
 import { relative } from "node:path";
-import { type Elem, type Rel } from "../../../core/c4/likec4.js";
+import { type Elem, type LoadedDoc, type Rel } from "../../../core/c4/likec4.js";
 import { type ServiceModel } from "../../../core/c4/service-model/load.js";
 import { serviceResolver } from "../../../core/c4/resolve/service.js";
 import { type PathableService } from "../../../core/kernel/ids/service.js";
@@ -24,7 +24,6 @@ import { realizesStaleFindings, realizesUnknownFindings } from "../../../core/ca
 import { parseRequirements, readRequirementsDocument } from "../../../core/document/parse.js";
 import { requiresUnknownFindings } from "../checks/requirements.js";
 import { listServices } from "../../../core/repo/repo.js";
-import { type LoadedDoc } from "../../../core/c4/likec4.js";
 import { type Finding, type TargetReport } from "../../../core/vocabulary/report.js";
 import { closeIds } from "../../../core/c4/arch.js";
 import { serviceProvenance } from "../../../core/provenance/findings.js";
@@ -73,6 +72,8 @@ interface ServiceCheck {
   service: PathableService;
   /** The service's own repo, when loam is standing in it. Undefined from the docs repo. */
   repoDir?: string;
+  /** loam's own files in `repoDir` (`loamOwnedFiles`) — outside the walk check's denominator. */
+  loamOwned?: readonly string[];
   /** The build outputs `loam.json` names, when this repo declares any. */
   contracts?: { openapi?: string };
   /** The living landscape under --all; undefined means "load it if you need it", null means "there is none". */
@@ -87,7 +88,6 @@ interface ServiceCheck {
    */
   landscapeReported?: boolean;
 }
-
 
 export async function validateService(check: ServiceCheck): Promise<TargetReport> {
   const { docsDir, service, repoDir, preloaded, gherkinDir, contracts, fleet } = check;
@@ -360,7 +360,7 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   findings.push(...(await serviceLinkFindings({ docsDir, subject: service, fleet }, paths)));
 
   // Provenance last: who vouched for this, and what code it was written from.
-  findings.push(...(await serviceProvenance(docsDir, service, { repoDir, fleet })));
+  findings.push(...(await serviceProvenance(docsDir, service, { repoDir, loamOwned: check.loamOwned, fleet })));
   findings.push(...(await sourceScopeFindings(docsDir, service, repoDir, fleet)));
   // The build's own contract against the committed copy. Service-repo only:
   // from the docs repo there is no build output to read, and the family stays

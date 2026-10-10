@@ -35,7 +35,11 @@ export const STATUS_COMMAND = `- \`loam status [<FEAT>]\` is the orientation sur
   never elided: a \`.loam-commit\` journal says a writer was killed mid-commit, so
   some of the files everything else is derived from may be half-written.
   Fleet-wide the rest are \`next.adopt-bound\`, \`next.adopt\`,
-  \`next.complete-service\`, \`next.feature\`, \`next.archive\`, \`next.fleet-clean\`,
+  \`next.complete-service\`, \`next.revouch\` (a vouched document's words moved
+  under its stamp — \`content.stale\`; its \`execution\` is a human review, never
+  yours to run: prepare \`loam vouch --pack --service <id>\` and hand the vouch
+  to a person),
+  \`next.feature\`, \`next.archive\`, \`next.fleet-clean\`,
   \`next.elided\` (the fleet list hit its cap and says how many steps of the same
   kinds it left out — it is ordered most-unblocking first, so work down it and
   re-run) and \`next.fleet-gate\`, always last while anything is outstanding:
@@ -56,6 +60,8 @@ export const STATUS_COMMAND = `- \`loam status [<FEAT>]\` is the orientation sur
   so it may be more pessimistic than either and can never be greener than both.
   \`verification\` carries \`verdict\` (\`verified\` | \`attested\` | \`unverified\`)
   and \`attested\` (how many scenario claims rest on an agent's word) beside the
-  recounted totals, and \`checks.issues[]\` carries \`gates\` and \`details\` on every
-  finding.
+  recounted totals, plus \`answered\` (the confirmed claims per \`answered_by\`:
+  \`runner\`, \`external-runner\`, \`agent\` — a \`verified\` record can still rest
+  partly on an agent's word about kinds the verdict does not turn on), and
+  \`checks.issues[]\` carries \`gates\` and \`details\` on every finding.
 `;

@@ -33,8 +33,12 @@ export function printScorecard(card: Scorecard): void {
     // because that is where it changes the reading: "120 vouched" and "120
     // vouched (100 sampled)" are different fleets, and a reader who stops at
     // the first number must not have been told the stronger of the two.
+    // The content count rides beside the digest count rather than inside the
+    // vouched one: both are staleness, of the words and of the code, and
+    // "0 stale digest(s)" alone read as "nothing is stale" in a run that had
+    // just warned `content.stale`.
     `  provenance    ${p.vouched} vouched${p.sampledVouched > 0 ? ` (${p.sampledVouched} sampled)` : ""} — ` +
-      `${p.staleDigests} stale digest(s) · ${p.unverifiableFromHere} unverifiable from here`,
+      `${p.contentStale} stale content · ${p.staleDigests} stale digest(s) · ${p.unverifiableFromHere} unverifiable from here`,
   );
   // The ceiling is the features axis's `active` — the payload deliberately
   // carries that denominator once, so this line reads it from there.

@@ -71,6 +71,22 @@ export interface ServiceEntry {
    */
   vouchScope: "sampled" | null;
   /**
+   * The spec files (`SPEC_AXES`' own names, `spec.md` / `arch.spec.md`) whose
+   * BODY moved after the vouch that stamped it — `content_digest` no longer
+   * matches — and empty when none did. `content.stale`'s question, carried on
+   * the entry because it needs nothing but the document: the docs repo can
+   * answer it for every service, where `sources.stale` needs each service's
+   * own repository.
+   *
+   * A qualification of the rung, exactly like `vouchScope` and for its reason:
+   * a person DID stamp the document, so `vouched` stands, while the renderings
+   * say "vouched (stale)" and the worklist owes the service a re-vouch. Without
+   * it every fleet readout — `list`, `status`, the scorecard — called a service
+   * vouched over words nobody had read since, while `validate` beside them
+   * warned that nobody had.
+   */
+  contentStale: string[];
+  /**
    * Why no loam command can author this directory, or absent when the name is a
    * legal service id — `serviceIdProblem`'s own sentence, so the read model and
    * the refusal say the same thing.

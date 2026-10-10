@@ -26,7 +26,7 @@
 import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { coherentFixture, makeProject, runLoam, TEST_IDENTITY, treeHashes, writeFiles, type Project } from "./helpers/harness.js";
-import { parseFrontmatter, rawBody, stringField, withFrontmatterFields } from "../src/core/document/frontmatter.js";
+import { contentDigest, parseFrontmatter, rawBody, stringField, withFrontmatterFields } from "../src/core/document/frontmatter.js";
 import { sectionHeadings } from "../src/core/document/parse.js";
 import { splitSections } from "../src/core/provenance/sample/sections.js";
 import {
@@ -38,7 +38,6 @@ import {
   sampleSeed,
   scopeText,
 } from "../src/core/provenance/sample/scope.js";
-import { contentDigest } from "../src/core/provenance/stamp.js";
 import { vouch } from "../src/commands/vouch/run.js";
 import { buildSamplePlan } from "../src/commands/vouch/sample/plan.js";
 

@@ -796,7 +796,14 @@ describe("the fleet payload", () => {
 
     expect(payload.scope).toBe("fleet");
     expect(payload.service).toBeNull();
-    expect(payload.services).toEqual({ total: 2, undocumented: 1, draft: 1, vouched: 0, sampledVouched: 0 });
+    expect(payload.services).toEqual({
+      total: 2,
+      undocumented: 1,
+      draft: 1,
+      vouched: 0,
+      sampledVouched: 0,
+      contentStale: 0,
+    });
     expect(payload.features).toHaveLength(1);
     expect(payload.features[0]).toMatchObject({
       id: "FEAT-1",
@@ -860,6 +867,9 @@ describe("the fleet payload", () => {
       vouched: 1,
       // Additive, and a SUBSET of vouched: this service was read in full.
       sampledVouched: 0,
+      // The other subset: its stamp carries no content_digest at all, which
+      // predates the field and is quiet on purpose.
+      contentStale: 0,
     });
     await p.destroy();
   });

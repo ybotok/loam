@@ -608,6 +608,7 @@ describe("the per-service summary contract (SCHEMA.md, Operating at fleet scale)
         unvouched: byCode("sources.unvouched"),
         absent: byCode("sources.absent"),
       },
+      contentStale: byCode("content.stale"),
       generatedAt,
     };
   }
@@ -622,8 +623,25 @@ describe("the per-service summary contract (SCHEMA.md, Operating at fleet scale)
         // the fixture's spec names no owner and no sources
         warnings: 2,
         sources: { current: 0, stale: 0, unvouched: 0, absent: 1 },
+        contentStale: 0,
         generatedAt: "2026-08-03T12:00:00Z",
       });
+    });
+  });
+
+  it("counts a document edited under its vouch as contentStale — the doc-side half of staleness", async () => {
+    // A stamp that no longer matches the body is exactly what an edit after a
+    // vouch leaves behind; forging the mismatch directly needs no vouch run.
+    // Before the field existed, this summary read "0 stale" while the same
+    // payload carried the content.stale warning it was derived from.
+    const files = coherentFixture();
+    files[`services/${SVC}/spec.md`] = files[`services/${SVC}/spec.md`]!.replace(
+      "status: verified\n",
+      "status: verified\ncontent_digest: 0000000000000000\n",
+    );
+    await withProject(files, { service: SVC }, async (p) => {
+      const payload = JSON.parse((await runLoam(p.workDir, "validate", "--json")).stdout);
+      expect(deriveSummary(payload, "2026-08-03T12:00:00Z")).toMatchObject({ valid: true, contentStale: 1 });
     });
   });
 
@@ -657,11 +675,11 @@ describe("the per-service summary contract (SCHEMA.md, Operating at fleet scale)
     for (const expr of [".targets[0].id", ".valid", ".summary.errors", ".summary.warnings"]) {
       expect(schema, `SCHEMA.md recipe no longer reads ${expr}`).toContain(expr);
     }
-    for (const code of ["sources.current", "sources.stale", "sources.unvouched", "sources.absent"]) {
+    for (const code of ["sources.current", "sources.stale", "sources.unvouched", "sources.absent", "content.stale"]) {
       expect(schema, `SCHEMA.md recipe no longer counts ${code}`).toContain(`"${code}"`);
     }
     // the output shape, and the liveness rule that makes silence visible
-    for (const key of ['"service"', '"valid"', '"errors"', '"warnings"', '"generatedAt"']) {
+    for (const key of ['"service"', '"valid"', '"errors"', '"warnings"', '"contentStale"', '"generatedAt"']) {
       expect(schema, `SCHEMA.md summary shape lost ${key}`).toContain(key);
     }
     expect(schema).toContain("now | todate");

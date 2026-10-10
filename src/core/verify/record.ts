@@ -14,7 +14,7 @@
  */
 import { join } from "node:path";
 import { type ClaimKind } from "./claims/identity.js";
-import { type AnsweredBy, type Verdict } from "./answers.js";
+import { ANSWERED_BY, type AnsweredBy, type Verdict } from "./answers.js";
 import { type EvidencePin } from "./pins/pin.js";
 
 export interface RecordedClaim {
@@ -201,6 +201,21 @@ export function confirmedProvenance(claims: readonly AnsweredClaim[]): Record<An
   const by = (who: AnsweredBy): number => done.filter((c) => c.answered_by === who).length;
   const ran = { runner: by("runner"), "external-runner": by("external-runner") };
   return { ...ran, agent: done.length - ran.runner - ran["external-runner"] };
+}
+
+/**
+ * The confirmed split as the per-feature human views print it — `13 runner · 6 agent`, empty
+ * buckets left out. `loam status <FEAT>` and `list`'s verification column print it beside the
+ * verdict because the verdict turns on the scenario claims alone ({@link verificationVerdict}), so
+ * `verified 19/19 confirmed` read as nineteen runs over a record where six were an agent's word —
+ * the split `--json` and the fleet scorecard already carried. The scorecard keeps all three keys
+ * for its stable-shape reason (validate's scorecard/print.ts); a one-feature line has no shape to
+ * keep, and a column of zeros is width the reader pays for nothing.
+ */
+export function answeredSplit(answered: Record<AnsweredBy, number>): string {
+  return ANSWERED_BY.filter((who) => answered[who] > 0)
+    .map((who) => `${answered[who]} ${who}`)
+    .join(" · ");
 }
 
 /** How a set of answers counts up — recounted from the answers, never read off a `summary`. */

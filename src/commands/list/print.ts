@@ -9,6 +9,7 @@ import { MATURITY_LADDER, maturityRollup } from "../../core/vocabulary/maturity.
 import { type CapabilityRow } from "../../core/capabilities/rollup.js";
 import { compareIds, type FeatureEntry } from "../../core/repo/entries.js";
 import type { PromisesKept } from "../../core/usecases/capability.js";
+import { answeredSplit } from "../../core/verify/record.js";
 import type { FleetTree } from "../../core/repo/tree/walk.js";
 import type { OwnedRow, OwnersJoin } from "./campaign/owners.js";
 import { type ServiceView, type VerificationCell } from "./views.js";
@@ -41,9 +42,24 @@ function serviceFlags(v: ServiceView): string {
  *
  * Only on `vouched`: a lower rung already says less than "a person vouched",
  * and hanging a scope note on it would explain a claim nothing is making.
+ *
+ * `vouched (stale)` is the same kind of string for the other thing a stamp can
+ * hide: the document's words moved after the person read them, and `loam
+ * validate` reports `content.stale` until somebody re-vouches. Both can hold at
+ * once — `vouched (sampled, stale)` — because they are different gaps.
  */
 function rungLabel(v: ServiceView): string {
-  return v.maturity === "vouched" && v.entry.vouchScope === "sampled" ? "vouched (sampled)" : v.maturity;
+  const qualifiers = vouchQualifiers(v);
+  return qualifiers.length === 0 ? v.maturity : `${v.maturity} (${qualifiers.join(", ")})`;
+}
+
+/** What a `vouched` row's stamp does not cover: a sample, and words moved since. Empty below the rung. */
+function vouchQualifiers(v: ServiceView): string[] {
+  if (v.maturity !== "vouched") return [];
+  return [
+    ...(v.entry.vouchScope === "sampled" ? ["sampled"] : []),
+    ...(v.entry.contentStale.length > 0 ? ["stale"] : []),
+  ];
 }
 
 /**
@@ -68,7 +84,9 @@ export interface FleetFacts {
 
 export function printServices(views: ServiceView[], fleet: FleetFacts): void {
   console.log(
-    `services (${views.length})  [M]odel [S]pec [a]rch-spec [A]pi [R]unbook [H]ealth`,
+    // One key per column serviceFlags prints, in its order — the `e` column
+    // shipped without one, so the legend explained six of seven.
+    `services (${views.length})  [M]odel [S]pec [a]rch-spec [A]pi [e]vents [R]unbook [H]ealth`,
   );
   const width = Math.max(0, ...views.map((v) => v.entry.id.length));
   // Measured over the DISPLAY strings, so the column does not shear the first
@@ -105,10 +123,12 @@ export function printServices(views: ServiceView[], fleet: FleetFacts): void {
     // line adds is the qualifier the per-row suffix already carries, because
     // this is the line a fleet lead reads for the trust answer, and recovering
     // "how many of those 118 did anybody read in full" by scanning 118 rows is
-    // not an answer. Same layout as the validate scorecard's provenance row.
-    const sampled = views.filter((v) => v.maturity === "vouched" && v.entry.vouchScope === "sampled").length;
+    // not an answer. Same layout as the validate scorecard's provenance row,
+    // and the same two qualifiers the per-row suffix carries, each counted.
+    const qualified = (q: string): number => views.filter((v) => vouchQualifiers(v).includes(q)).length;
+    const notes = ["sampled", "stale"].filter((q) => qualified(q) > 0).map((q) => `${qualified(q)} ${q}`);
     const rungs = MATURITY_LADDER.filter((m) => rollup[m] > 0).map(
-      (m) => `${rollup[m]} ${m}${m === "vouched" && sampled > 0 ? ` (${sampled} sampled)` : ""}`,
+      (m) => `${rollup[m]} ${m}${m === "vouched" && notes.length > 0 ? ` (${notes.join(", ")})` : ""}`,
     );
     console.log(`  maturity: ${rungs.join(" · ")}`);
     // The tree dial, only once a tree exists: unfiled is permanent and normal
@@ -302,7 +322,13 @@ function verificationMark(v: VerificationCell | null): string {
   // digest-matched green run, the second is somebody's word about one. Without
   // the suffix a complete count is the same glyph either way, which is exactly
   // the reading `verify`, `status` and the JSON envelope stopped giving.
-  return `${v.confirmed}/${v.claims}${v.verdict === "attested" ? " attested" : ""}`;
+  //
+  // And who answered the confirmed ones, beside it. The verdict turns on the
+  // scenario claims alone, so `7/7` under a verified record still read as seven
+  // runs where two were an agent's word about a permission or an edge — the
+  // split `--json` carried in `answered` and this column did not.
+  const split = v.confirmed > 0 ? ` (${answeredSplit(v.answered)})` : "";
+  return `${v.confirmed}/${v.claims}${v.verdict === "attested" ? " attested" : ""}${split}`;
 }
 
 export function printFeatures(features: FeatureEntry[], verification: (VerificationCell | null)[]): void {
