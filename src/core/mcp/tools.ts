@@ -19,6 +19,12 @@
  * run that has not happened yet), so an MCP-only host that could not reach
  * them could not fetch the protocol its own generated skill points at.
  *
+ * `adopt` is here for the same reason one step later: it writes nothing — it
+ * emits the brief an agent then writes a baseline from — and the loam-adopt
+ * protocol an MCP-only host fetches through `loam_instructions` opens by
+ * running it. Without the tool that host could read the protocol and never
+ * receive the brief the protocol is about.
+ *
  * Every table entry mirrors a real registration in `src/commands/` — same
  * positionals, same flags, same spellings — so the contract an MCP client
  * sees is the CLI contract, not a second one. `--json` is appended by
@@ -259,6 +265,19 @@ export const MCP_TOOLS: readonly McpTool[] = [
     ],
     flags: [
       { property: "feature", flag: "--feature", kind: "string", description: "narrow the in-flight section to this one feature" },
+    ],
+  },
+  {
+    name: "loam_adopt",
+    command: "adopt",
+    description:
+      "Brief an agent to write one service's baseline docs from its code, and say what will be checked — writes nothing. " +
+      "CLI equivalent: loam adopt [--service <id>] [--subsystem <name>] [--targets] --json",
+    positionals: [],
+    flags: [
+      { ...SERVICE_FLAG, description: "service to adopt (defaults to the configured service)" },
+      { property: "subsystem", flag: "--subsystem", kind: "string", description: "brief a NEW service's baseline into this subsystem instead of the services/ root" },
+      { property: "targets", flag: "--targets", kind: "boolean", description: "only what varies by service; a `full` field names the run that carries the walk, the checks and the unchecked list" },
     ],
   },
   {

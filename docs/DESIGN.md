@@ -242,11 +242,11 @@ the workspace layout differs, and that part is already isolated.
    exception: `unarchive.ts` imports `sayRecovery` from `archive.ts`. A second exception means a new
    shared module, not a second exception. One structural exception, which is not the shared-code
    shape this rule exists to stop: `commands/mcp/dispatch.ts` imports the `register*` functions of
-   the ten read commands it re-enters — the same functions `src/cli.ts` imports, for the same
-   purpose (building a program), not a helper reached around the layer. The acyclic alternative does
-   not exist: importing `cli.ts` from a command module would be a file cycle, and a second copy of
-   the registrations would agree with itself and with nothing else — the exact drift
-   `buildProgram()`'s doc comment records.
+   the commands it re-enters (the sixteen read tools, plus the four `--author` writers) — the same
+   functions `src/cli.ts` imports, for the same purpose (building a program), not a helper reached
+   around the layer. The acyclic alternative does not exist: importing `cli.ts` from a command
+   module would be a file cycle, and a second copy of the registrations would agree with itself and
+   with nothing else — the exact drift `buildProgram()`'s doc comment records.
 6. **A raw string that reaches a path join passes `assertServiceId` at the command boundary.**
    `new`, `rebase`, `init`, `delta`, `adopt` and `explore` guard — `assertServiceId` for a single
    id, `parseServiceIds` where the flag takes a list. `doctor` reads its id from `loam.json`, which

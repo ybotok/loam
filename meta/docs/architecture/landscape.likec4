@@ -329,6 +329,7 @@ model {
   loam.commands.list -> loam.core.verify
   loam.commands.list -> loam.core.vocabulary
 
+  loam.commands.mcp -> loam.commands.adopt
   loam.commands.mcp -> loam.commands.context
   loam.commands.mcp -> loam.commands.archive
   loam.commands.mcp -> loam.commands.delta

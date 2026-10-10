@@ -179,10 +179,11 @@ describe("routing", () => {
 });
 
 describe("tools/list", () => {
-  it("offers exactly the fifteen read-only commands — no writer is reachable", () => {
+  it("offers exactly the sixteen read-only commands — no writer is reachable", () => {
     const result = resultOf(replyOf(request(1, "tools/list")));
     const tools = result["tools"] as Array<Record<string, unknown>>;
     expect(tools.map((tool) => tool["name"]).sort()).toEqual([
+      "loam_adopt",
       "loam_context",
       "loam_delta",
       "loam_dependencies",
@@ -306,6 +307,8 @@ describe("the argv boundary", () => {
       ["loam_context", { service: "svc", feature: "FEAT-1" }, ["context", "svc", "--feature", "FEAT-1", "--json"]],
       ["loam_gate", { service: "svc", strict: true }, ["gate", "--service", "svc", "--strict", "--json"]],
       ["loam_steps", { service: "svc", duplicates: true }, ["steps", "--service", "svc", "--duplicates", "--json"]],
+      ["loam_adopt", { service: "svc", subsystem: "payments", targets: true },
+        ["adopt", "--service", "svc", "--subsystem", "payments", "--targets", "--json"]],
       // The variadic positional, and the negated boolean. `noFixTables: true`
       // spells `--no-fix-tables`: the JSON property is named for what setting
       // it true DOES, not for commander's `fixTables` attribute, because

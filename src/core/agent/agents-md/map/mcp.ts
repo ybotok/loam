@@ -16,9 +16,9 @@
  * sources). test/mcp-protocol.test.ts pins this string against MCP_TOOLS
  * instead: a tool added to the table without its name here fails there.
  */
-export const MCP_COMMAND = `- \`loam mcp\` serves the fifteen base read commands — validate, status, list, show,
-  delta, tasks, diff, explore, dependencies, doctor, context, gate, steps, explain,
-  instructions — as MCP tools over stdio (JSON-RPC 2.0), for hosts that reach
+export const MCP_COMMAND = `- \`loam mcp\` serves the sixteen base read commands — validate, status, list, show,
+  delta, tasks, diff, explore, dependencies, doctor, context, adopt, gate, steps,
+  explain, instructions — as MCP tools over stdio (JSON-RPC 2.0), for hosts that reach
   tools through MCP rather than a shell:
   configure the host to launch \`loam mcp\` in the repository the tools should
   answer for, or run \`loam init --mcp\` there and let it write the \`.mcp.json\`
@@ -34,7 +34,9 @@ export const MCP_COMMAND = `- \`loam mcp\` serves the fifteen base read commands
   \`instructions\`, are served so an MCP-only host can reach them BEFORE this
   repository is wired: the first line of every generated skill is
   \`loam instructions <workflow>\`, and a host that could not run it could not
-  fetch the protocol its own skill points at. An explicit \`mcp --author\` adds
+  fetch the protocol its own skill points at. \`adopt\` is served because it
+  writes nothing: the loam-adopt protocol opens by running it, and its brief is
+  what the agent then writes from. An explicit \`mcp --author\` adds
   \`new\`, \`rebase\`, \`gherkin\` and an archive dry-run. It never exposes
   \`vouch\`, evidence recording or a committing archive; those stay in the CLI,
   where the permission flow is yours.
