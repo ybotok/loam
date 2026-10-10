@@ -1559,8 +1559,9 @@ the source for tests.
   rolled back — so `--approve` carries the call, and the archive output then names what came back
   and whose retirement it reverses. The message offers both remedies: delete the quote if it only
   restated the operation; archive with `--approve` if the feature brings it back on purpose (a pin
-  over nothing is `openapi.baseline-invalid`, so a deliberate re-add drops it first). A
-  channel-slot removal retires the messages its living channel
+  over nothing is `openapi.baseline-invalid`, so a deliberate re-add drops it first). `loam rebase`
+  never pins such an entry as new: it prints the same finding (`revived[]` in `--json`) and leaves
+  the decision to the author. A channel-slot removal retires the messages its living channel
   declared inline, which the delta never spells, so those names are read from the archived
   feature's undo snapshot (`.loam-before/`, the pre-image of the contract the merge ran against) —
   only while that pre-image still hashes to what the manifest recorded. Two marker shapes are not

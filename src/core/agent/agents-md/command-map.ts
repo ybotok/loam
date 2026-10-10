@@ -231,7 +231,11 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   after you resolve a collision — it is the one mechanism standing between two
   features in flight and silently reverting each other's landed work. It refuses
   rather than inventing a pin, and re-pinning is not resolving: see
-  "The requirement baseline".
+  "The requirement baseline". An operation or event slot the delta spells that
+  an ARCHIVED feature retired is not pinned as new: rebase prints the
+  \`openapi.op-revived\` / \`asyncapi.slot-revived\` finding (and \`revived[]\` in
+  \`--json\`) and leaves the call — delete the quote, or re-add on purpose — to
+  you.
 - \`loam dependencies [<FEAT>]\` derives the ordering of the features in flight
   from the artifacts themselves — requirement identities and OpenAPI
   operationIds, never from validator prose. It is the answer to every

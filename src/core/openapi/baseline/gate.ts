@@ -68,11 +68,18 @@ export function openapiBaselineIssues(input: BaselineGateInput): Issue[] {
     }
     const verdict = classifyBaselineDigests(op.basedOn, op.digest, livingOp?.digest);
     if (verdict === "unfounded") {
+      // Two ways here, and the message must not pick the wrong one for the
+      // author. A pin is only ever written over a living operation, so a pin
+      // with nothing living behind it usually means the operation was there
+      // and LEFT — a parallel feature retired it. This used to say "drop the
+      // marker", and dropping it is exactly how the quote then archived as an
+      // addition and put the retired operation back. The other way — a pin
+      // hand-written onto a genuinely new operation — is the rare one.
       issues.push({
         severity: "error",
         code: "openapi.baseline-invalid",
         subject: service,
-        message: `${service}: ${where} ('${op.id}') carries ${OPENAPI_BASELINE_KEY}, but the living contract has no operation at that slot — a new operation has no living version to be based on; drop the marker`,
+        message: `${service}: ${where} ('${op.id}') carries ${OPENAPI_BASELINE_KEY}, but the living contract has no operation at that slot — the version it was pinned to is gone. If a parallel feature retired it, re-read the living contract and delete this operation from the delta, unless this feature deliberately brings it back (then drop the pin and archive with --approve past \`openapi.op-revived\`). A genuinely new operation has no living version to be based on and carries no pin.`,
       });
     } else if (verdict === "stale") {
       issues.push({

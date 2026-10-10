@@ -244,7 +244,8 @@ gates, because the merge would read the dead operation as a new one and put
 it back (\`asyncapi.slot-revived\` is the same finding on a channel, operation
 or message slot). The fix for both is to delete the quote. Keep it only when
 the feature brings the operation back ON PURPOSE: then drop any pin, and a
-human archives with \`--approve\`. The check reads the removal
+human archives with \`--approve\`. \`loam rebase\` pins neither shape and prints
+the same finding, so the decision stays with you. The check reads the removal
 markers of the features under \`features/archive/\` — a removal made by
 hand-editing a living contract is invisible to it.
 

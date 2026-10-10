@@ -12,7 +12,7 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
 
 ### Changed — `loam archive` refuses a delta that would bring back an operation another feature retired
 
-Two codes were added, both to the `IssueCode` union. No flag or `--json` key was.
+Two codes, both added to the `IssueCode` union, and one additive `--json` key were added.
 
 - **New `openapi.op-revived` (warn, gates archive).** A feature's `openapi.yaml` spells an
   operation (by operationId) that its service's living contract no longer holds, and an ARCHIVED
@@ -31,9 +31,14 @@ Two codes were added, both to the `IssueCode` union. No flag or `--json` key was
   output's "archiving despite" list, naming what came back and whose retirement it reverses.
   `loam validate --feature` reports both codes as warnings (exit unchanged), and `loam status`
   counts them as gating like every warning that gates.
-- **The `/loam-check` rows for `openapi.baseline-invalid` and `asyncapi.baseline-invalid`** (what
-  `loam explain` answers) no longer say an unpinned quote of a retired operation archives as an
-  addition; they say to delete the quote unless the feature deliberately brings it back.
+- **`loam rebase` no longer calls a retired operation one "this feature is adding".** It pins
+  nothing for it either way, and now prints the same finding after its pin lines; the additive
+  `--json` key `revived[]` carries the findings (`severity`, `code`, `gates`, `subject`,
+  `message`). The operation's `pins[]` row still reads `unresolved`.
+- **`openapi.baseline-invalid` and `asyncapi.baseline-invalid` reworded** for a pin whose living
+  operation or slot is gone: they used to say "drop the marker", which turned the quote into the
+  revival above. They now say to re-read the living contract and delete the quote unless the
+  feature deliberately brings it back. The `/loam-check` rows and `loam explain` say the same.
 - **What it reads, and what it cannot see.** Only files under `features/archive/` — the archived
   deltas' removal markers and, for a channel's inline messages, the snapshot pre-image; no git. A
   removal made by hand-editing a living contract, or an archived feature deleted from disk, leaves
