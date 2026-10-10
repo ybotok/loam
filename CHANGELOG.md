@@ -70,9 +70,9 @@ Two codes, both added to the `IssueCode` union, and one additive `--json` key we
   revival above. They now say to re-read the living contract and delete the quote unless the
   feature deliberately brings it back. When the living contract still holds the operationId (or,
   for a `components.messages` key, the message name) elsewhere, the message instead says a
-  parallel feature MOVED it and where it lives now, and to make any change there — never to
-  archive past the revival finding, which would answer it at both addresses. The `/loam-check`
-  rows and `loam explain` say the same. `loam rebase`'s text says such items were retired by an
+  parallel feature MOVED it there (or retired it here, and another re-added it there) and where it
+  lives now, and to make any change there — never to archive past the revival finding, which
+  would answer it at both addresses. The `/loam-check` rows and `loam explain` say the same. `loam rebase`'s text says such items were retired by an
   archived feature "or moved to another address by one".
 - **What it reads, and what it cannot see.** Only files under `features/archive/` — the archived
   deltas' removal markers and each feature's `.loam-before/` snapshot; no git. A marker counts only
