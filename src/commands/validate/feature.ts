@@ -44,6 +44,7 @@ import { errorText } from "../../core/c4/likec4.js";
 import { coverageFinding, repeatedListLineFindings } from "./checks/requirements.js";
 import { deltaArchCoverage } from "./arch-coverage.js";
 import { featureLinkFindings } from "./links/corpus.js";
+import { featureRecordFindings } from "./service/evidence-pins.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 export async function validateFeature(
@@ -89,6 +90,18 @@ export async function validateFeature(
   }
 
   findings.push(...(await featureProvenance(featureDir, featureId)));
+
+  // The verification record, graded for READABILITY only — never for what it
+  // concludes. A conflict-marked or hand-broken `verification.yaml` /
+  // `verification/<svc>.yaml` was refused by `verify`, reported by `status`,
+  // `gate` and `tasks`, and invisible here: `validate --all` from the docs repo
+  // (and so the PR gate) stayed green over a record nobody can read, because
+  // the only target raising this code was the service one, which runs from a
+  // service repo. Same code and severity as that target
+  // (`./service/evidence-pins.ts`) — a warn, so `valid` and `loam archive` are
+  // untouched (verify never gates archive) and `--strict` is the lever. The
+  // verdict itself stays `verify`'s and `status`'s to state.
+  findings.push(...(await featureRecordFindings(docsDir, feature)));
 
   // Who this feature is allowed to address. `specs/<svc>/` is what the archive
   // materialises `services/<svc>/` from, and nothing used to ask whether that

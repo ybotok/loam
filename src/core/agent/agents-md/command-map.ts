@@ -134,7 +134,9 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   codes service scope raises, graded here on the feature's own spec.md and
   arch.spec.md deltas, because every one of those breaches merges into the
   living document — \`spec.repeated-operations\`, \`spec.repeated-covers\`,
-  \`spec.merge-conflict\` and \`requirements.stepless-scenario\`. Then the
+  \`spec.merge-conflict\` and \`requirements.stepless-scenario\`. A feature
+  whose verification record will not read as one raises
+  \`evidence.record-unreadable\` (warn) here as well. Then the
   architecture spec axis (\`c4.uncovered\`, plus \`covers.unknown\` on the
   feature's arch.spec.md deltas), the delta-shape group:
   \`delta.unknown-section\`, \`delta.no-delta-sections\`,
