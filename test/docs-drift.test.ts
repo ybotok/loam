@@ -72,6 +72,14 @@ describe("mutable release facts", () => {
     const readme = await read("README.md");
     expect(readme).toContain(`LOAM: "@ybotok/loam@${await version()}"`);
     expect(readme).not.toMatch(/npx -y @ybotok\/loam (?:diff|validate)\b/);
+    // The service-repo recipe and the cloud-agent setup pin the same way, and
+    // a fleet bumps all of them in one change or its service repos gate on a
+    // different loam from its docs repo. So EVERY exact version README names
+    // must be this checkout's — a dist-tag such as `@alpha` is not a pin and
+    // is left alone.
+    const pinned = [...readme.matchAll(/@ybotok\/loam@(\d[^\s"'`]*)/g)].map((match) => match[1]);
+    expect(pinned.length, "README carries no pinned loam version at all").toBeGreaterThan(0);
+    expect(new Set(pinned), "a README recipe pins a loam other than this checkout's").toEqual(new Set([await version()]));
   });
 
   it("does not restore superseded publication claims", async () => {
@@ -120,8 +128,32 @@ describe("the released range and the unreleased head", () => {
 
 describe("ecosystem positioning and the separate OpenSpec compatibility boundary", () => {
   it("COMPARISON maps neighbouring specialists without defining loam against OpenSpec", async () => {
+    // The page was a 2,983-word "loam vs OpenSpec" duel until alpha.1, and was
+    // rewritten as an ecosystem map on purpose: loam's position is a governed
+    // system, not a rival framework, and OpenSpec's real compatibility concern —
+    // the one-way migration and its pinned corpus — lives in the migration guide.
+    // That is why this test used to forbid the name outright.
+    //
+    // It no longer can, and the reason is the reader. Whoever evaluates loam
+    // holds it against OpenSpec, Spec Kit and Kiro, and a page silent on all
+    // three left them to guess what those tools already do across repositories.
+    // So the names may come back in ONE place: a dated "Spec-driven change
+    // tools" section, facts with sources, which these tools' weekly releases
+    // will age — the date is what lets a reader see how stale it is. Anywhere
+    // else on the page they would be the duel coming back, and that is still
+    // what this test refuses.
     const comparison = await read("COMPARISON.md");
-    expect(comparison).not.toMatch(/OpenSpec/i);
+    const heading = /^## Spec-driven change tools, as of (January|February|March|April|May|June|July|August|September|October|November|December) \d{4}$/m;
+    const at = comparison.search(heading);
+    expect(at, "COMPARISON's spec-driven section must keep its dated heading").toBeGreaterThan(-1);
+    const end = comparison.indexOf("\n## ", at + 1);
+    const dated = comparison.slice(at, end === -1 ? undefined : end);
+    const outside = comparison.slice(0, at) + (end === -1 ? "" : comparison.slice(end));
+    for (const tool of [/OpenSpec/i, /Spec Kit/i, /\bKiro\b/i]) {
+      expect(outside, `COMPARISON names ${tool.source} outside its dated section`).not.toMatch(tool);
+      expect(dated, `the dated section no longer covers ${tool.source}`).toMatch(tool);
+    }
+    expect(dated, "the dated section must say the day it was checked").toMatch(/checked \d{4}-\d{2}-\d{2}/);
     const neighbours = [
       "LikeC4",
       "Backstage",

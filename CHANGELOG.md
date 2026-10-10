@@ -82,6 +82,48 @@ No code, CLI flag or payload key was added, changed or retired. The `audit-opens
   OpenSpec canary" is the runbook. The README's note that `--baseline` defaults to `canary` was
   wrong — it defaults to `release` — and now says so.
 
+### Added — documentation: running loam where service work runs, a CLI-only first ten minutes, and what loam costs an agent
+
+No code, flag, command or payload key was added, changed or retired; the binary is unchanged. The
+new paths are `docs/SERVICE-TEAMS.md` and `scripts/payload-sizes.ts`.
+
+- **README has a service-repo CI recipe** beside the docs repo's fleet-edges one. The workflow
+  checks out the service and the docs repo as sibling subdirectories of the workspace, so a
+  committed relative `docsDir` such as `../docs` resolves. It does not use `path: ../docs`, which
+  `actions/checkout` refuses. It runs `loam validate --service <id> --json` at the same pinned
+  version, and two `jq` programs turn the findings, or a refusal, into `::error` / `::warning`
+  annotations and a `$GITHUB_STEP_SUMMARY` table. A deploy pipeline can add
+  `loam gate --service <id> --since <ref>`. It is followed by setup for cloud agents in a service
+  repo: a `copilot-setup-steps.yml` and a Codex environment setup script, each cloning the docs
+  repo into the committed `docsDir` with a read token from a secret.
+- **README's day-zero binding passes `--agent-profile service`**, and says why: the profile
+  defaults to `full`, which puts `loam-feature` and `loam-ship` into every service checkout.
+  QUICKSTART's command for joining a shared docs repo passes it too.
+- **QUICKSTART opens with ten minutes of CLI only.** A two-service `fleet.yaml`, `loam seed`, one
+  provider `openapi.yaml` and one misspelled `op` on an edge give `spine.op-undefined`, with no
+  agent and no adoption. A requirements-only `loam new --touches … --touches …` then validates and
+  plans its archive before either service is adopted. Every output shown was produced by running
+  the commands. The single-project path moves to sections 3–6.
+- **`docs/SERVICE-TEAMS.md`, one screen for a team whose repository is one service in a fleet:**
+  four commands, five slash commands, what a person signs when they vouch, and the fifteen codes
+  they will actually meet. README, QUICKSTART and the Docs list link to it.
+- **COMPARISON.md names OpenSpec, Spec Kit and Kiro again, in one dated section.** "Spec-driven
+  change tools, as of October 2026" sets out what each offers for a change that crosses
+  repositories: OpenSpec Stores and worksets, `show --diff` and the Cloud Agent; Spec Kit's
+  contract-driven guide, `/speckit.converge` and MCP server; Kiro's Design-First specs and Kiro
+  Web. It records what is still open upstream (OpenSpec #725, Spec Kit #4583) and where loam
+  differs, including the two gaps it has against them. Each claim links its source. The rest of
+  the page stays an ecosystem map, and `test/docs-drift.test.ts` now allows the three names only
+  inside that dated section.
+- **`docs/BENCHMARKS.md` has a table of agent-facing payload sizes**, in bytes and ~tokens:
+  the generated `AGENTS.md`, `loam adopt --service <id> --json` with and without `--targets`,
+  every `loam instructions` page with and without `--no-fix-tables`, and `loam explain <code>
+  --json` across the whole vocabulary. `npx tsx scripts/payload-sizes.ts --write` generates it from
+  the tree, and `test/docs-facts.test.ts` regenerates it and fails when the committed table
+  differs. README's adopt row now points at that table instead of quoting a dated figure.
+  `test/docs-drift.test.ts` now also requires every exact `@ybotok/loam@<version>` in README to be
+  this checkout's version.
+
 ### Fixed — a writer waiting on the lock no longer deletes the next writer's live lock
 
 No code, flag, path or payload key was added, changed or retired. What changes is that concurrent
