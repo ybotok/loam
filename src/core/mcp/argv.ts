@@ -77,18 +77,42 @@ function checkedStrings(property: string, value: unknown): Checked {
   return { ok: true, tokens };
 }
 
+/**
+ * The positionals, in declaration order — and refused when one would land in
+ * another's slot.
+ *
+ * A positional reaches argv by POSITION, so an optional one left out leaves no
+ * gap: whatever follows it moves up into its place. `loam_list` with `{name:
+ * "services"}` built `list services` and answered ok:true with the services
+ * listing, a wrong answer with nothing in it saying so; `loam_instructions`
+ * with `{args: [...]}` and no `workflow` read the first arg as the workflow.
+ * Refused here instead, as the invalid-params problem a missing REQUIRED
+ * positional already is, naming the slot the caller left empty. A later
+ * positional that yields no token — an empty variadic — moves nothing up, so
+ * it passes.
+ */
 function positionalTokens(tool: McpTool, args: Record<string, unknown>): Checked {
   const tokens: string[] = [];
+  let absent: string | undefined;
   for (const positional of tool.positionals) {
     const value = args[positional.property];
     if (value === undefined) {
       if (positional.required) return { ok: false, problem: `required argument '${positional.property}' is missing` };
+      absent ??= positional.property;
       continue;
     }
     const checked = positional.variadic
       ? checkedStrings(positional.property, value)
       : checkedString(positional.property, value);
     if (!checked.ok) return checked;
+    if (absent !== undefined && checked.tokens.length > 0) {
+      return {
+        ok: false,
+        problem:
+          `argument '${positional.property}' requires '${absent}' — positionals are read in order, ` +
+          `so without '${absent}' this value would be read as '${absent}'`,
+      };
+    }
     tokens.push(...checked.tokens);
   }
   return { ok: true, tokens };

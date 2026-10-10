@@ -45,7 +45,8 @@ No code was added. One reserved tag prefix, one list section and one positional 
   `--json`). The campaign flags (`--subsystem`, `--owners`) refuse `suites` as they refuse every
   section but `services`.
 - The MCP tool `loam_list` gains the matching optional `name` argument, and its `section`
-  description now lists `glossary` and `suites`.
+  description now lists `glossary` and `suites`. `name` without `section` is refused as invalid
+  params (`-32602`) rather than read as a section.
 - `examples/docs` tags its one use case `#suite-smoke` and `#suite-notifications`, so
   `loam list suites` there answers checkout-web, notification-service and order-service, with
   `customer` and the `#external` topic `kafka.orderEvents` named as unresolved.
@@ -249,6 +250,16 @@ No code or flag was added. Existing warnings now fill a payload key that was alw
 - `openapi.component-modified` and `asyncapi.component-modified` do not name consumers. A
   component's consumers are the operations or messages whose `$ref` closure reaches it, and loam
   has no index of those.
+
+### Fixed — an MCP tool argument is never read in another argument's slot
+
+No code, flag or payload key was added, changed or retired.
+
+- **A `tools/call` that supplies an optional positional argument while leaving out an earlier one is
+  refused as invalid params (`-32602`)**, naming the argument left out, as a missing required
+  argument already is. Positionals reach the command by position, so the later value used to be read
+  as the earlier one: `loam_instructions` with `args` and no `workflow` took the first arg as the
+  workflow name. An empty `args` still passes. The defect is present in `0.2.0-alpha.8`.
 
 ### Fixed — `loam validate` reports an unreadable verification record from the docs repo
 
