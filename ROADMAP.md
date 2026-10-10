@@ -747,10 +747,11 @@ item gets promoted — it went from here to `## Now` and from there to
   cross-service journeys as fleet-level dynamic views before main grew its own use-case axis; it was
   closed as superseded on 2026-10-10, its one piece main lacked outright — suites, the participant
   union a test stand needs — was ported onto that axis (`#suite-<name>`, `loam list suites`), and its
-  reference implementation stays reachable at the tag `archive/flows-dynamic-views`
-  (`git show archive/flows-dynamic-views:<path>`). Five things remain, and each waits for the same
-  evidence — pilot teams actually writing tagged use cases — because each would freeze a code, a
-  grammar or a generated file, and the two checks among them are advisory heuristics:
+  reference implementation stays reachable at the tag `archive/flows-dynamic-views` — commit
+  `d90b6f9`, the closed branch's head, which is the name to use where the tag was never fetched
+  (`git show d90b6f9:<path>`). Five things remain, and each waits for the same evidence — pilot
+  teams actually writing tagged use cases — because each would freeze a code, a grammar or a
+  generated file, and the two checks among them are advisory heuristics:
   - **Per-view outcome counting against scenarios** — a view's `alt`/`opt`/`try` arms summed (not
     multiplied) and compared with the scenarios covering it (it would be spelled
     usecase.outcomes-uncovered, warn). `core/c4/parsed/dynamic-views.ts` flattens the block tree
