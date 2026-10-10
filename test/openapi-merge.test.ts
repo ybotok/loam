@@ -202,7 +202,7 @@ components:
   });
 
   it("grows a `components` section on a living contract that had none", () => {
-    // The components twin of the appended `paths:` block: `setComponentValue`
+    // The components twin of the appended `paths:` block: `setKeyed`
     // falls through to `setIn`, which has to create both levels, and the result
     // still has to parse.
     const noComponents = `openapi: 3.1.0

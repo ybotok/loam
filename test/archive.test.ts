@@ -937,7 +937,7 @@ describe("openapi merge", () => {
   });
 
   it("a living openapi with no components key gets a components block appended and still parses", async () => {
-    // The twin of the test above, one section over: `setComponentValue` falls
+    // The twin of the test above, one section over: `setKeyed` falls
     // through to `setIn`, which has to create `components:` AND its `schemas:`
     // child on a document that has neither. LIVING_OPENAPI has no components
     // section at all, so this is the first write into both levels. (A delta

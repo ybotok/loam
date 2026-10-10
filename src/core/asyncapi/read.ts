@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { parse } from "yaml";
 import { danglingRefs, deref, payloadUndeclared } from "./depth.js";
-import { isSlotRemoval, removalMarkerPaths } from "./digest.js";
+import { entriesOf, isSlotRemoval, removalMarkerPaths } from "./digest.js";
 import { closureDigester } from "../openapi/digest.js";
 import type { AsyncapiDoc, EventMessage } from "./model.js";
 import type { FleetContext } from "../fleet-context.js";
@@ -71,12 +71,6 @@ export function messageName(node: unknown, key: string): string {
     if (typeof name === "string" && name.trim().length > 0) return name.trim();
   }
   return key;
-}
-
-/** Entries of a mapping node, or nothing — every structural read here goes through it. */
-function entriesOf(node: unknown): [string, unknown][] {
-  if (node === null || typeof node !== "object" || Array.isArray(node)) return [];
-  return Object.entries(node as Record<string, unknown>);
 }
 
 /**

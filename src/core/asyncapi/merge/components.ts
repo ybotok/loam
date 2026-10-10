@@ -20,11 +20,12 @@ import { isDeepStrictEqual } from "node:util";
 import type { Document } from "yaml";
 import { entryFor, surfaceIn, type BaselineRecord } from "../../openapi/baseline/record.js";
 import { classifyBaselineDigests, valueDigest, withoutFeatureKeysDeep } from "../../openapi/digest.js";
-// The OpenAPI axis's component writer, imported rather than respelled: it is
+// The OpenAPI axis's keyed writer, imported rather than respelled: it is
 // path-agnostic and string-key-matched, so a numeric component name (`404:` is
 // the YAML number) is REPLACED rather than appended a second time — the same
-// hazard every slot writer on this axis goes through `slotPair` for.
-import { setComponentValue } from "../../openapi/merge/components.js";
+// hazard every slot write on this axis goes through it for, and every slot
+// read through `slotPair`.
+import { setKeyed } from "../../openapi/merge/components.js";
 import { asyncapiSurfaces } from "../baseline/surfaces.js";
 import { writableSection } from "./markers.js";
 
@@ -118,7 +119,7 @@ export function mergeAsyncapiComponents(input: AsyncapiComponentsInput): Asyncap
     // every use of the anchor, so writing a surface through it would rewrite
     // every other node that aliases it.
     writableSection(living, livingPlain, ["components", kind], service);
-    setComponentValue(living, kind, name, value);
+    setKeyed(living, ["components", kind], name, value);
   }
 
   return { componentsModified, componentsQuoted, componentsStale, copied: copies.length > 0 };
