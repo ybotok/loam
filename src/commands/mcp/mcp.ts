@@ -1,12 +1,13 @@
 /**
  * `loam mcp` — serve the read surface, plus bounded writers under `--author`.
  *
- * The action picks the tool table and hands it, with the real stdio triple, to
- * `startMcp`, which resolves the table once and serves it until stdin EOF;
- * everything else with a decision in it lives in `./serve.ts`,
- * `./dispatch.ts` and `src/core/mcp/`. This module carries the one command
- * registration of the package (test/agents.test.ts counts registrations by
- * their literal spelling, so the sibling modules must never spell one).
+ * The action asks `mcpToolTable` which table its flag selects and hands it,
+ * with the real stdio triple, to `startMcp`, which resolves the table once and
+ * serves it until stdin EOF; everything else with a decision in it lives in
+ * `./serve.ts`, `./dispatch.ts` and `src/core/mcp/`. This module carries the
+ * one command registration of the package (test/agents.test.ts counts
+ * registrations by their literal spelling, so the sibling modules must never
+ * spell one).
  */
 import type { Command } from "commander";
 import { toolRunner } from "./dispatch.js";
@@ -31,9 +32,29 @@ export function registerMcp(program: Command): void {
     // is JSON-RPC frames either way; there is no human rendering to switch off.
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (opts: McpOptions) => {
-      const tools = opts.author ? [...MCP_TOOLS, ...MCP_AUTHOR_TOOLS] : MCP_TOOLS;
-      await startMcp(tools, { input: process.stdin, output: process.stdout, log: process.stderr });
+      await startMcp(mcpToolTable(opts.author === true), {
+        input: process.stdin,
+        output: process.stdout,
+        log: process.stderr,
+      });
     });
+}
+
+/**
+ * The table `loam mcp` serves: the read surface, and the bounded writers after
+ * it only when the server was launched with `--author`.
+ *
+ * A function of its own, exported, because nothing pinned it inline. The
+ * in-process tests hand `startMcp` a table directly and the stdio smoke
+ * spawned `loam mcp` only without the flag, so this choice written as
+ * `MCP_TOOLS` alone left every test green — while every config `loam init
+ * --mcp-author` writes launches `loam mcp --author`, and those hosts would
+ * have lost the authoring tools without a word. test/mcp-serve.test.ts holds
+ * both values here; test/mcp-stdio.test.ts spawns `loam mcp --author` and holds
+ * the flag to it.
+ */
+export function mcpToolTable(author: boolean): readonly McpTool[] {
+  return author ? [...MCP_TOOLS, ...MCP_AUTHOR_TOOLS] : MCP_TOOLS;
 }
 
 /**

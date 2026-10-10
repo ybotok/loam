@@ -13,7 +13,7 @@ import { coherentFixture, makeProject, makeTmpDir, runLoam, treeHashes, type Pro
 import { rm } from "node:fs/promises";
 import { serve, type ToolRunner } from "../src/commands/mcp/serve.js";
 import { captureConsole, resolveRegistrars, toolRunner, type Sinks } from "../src/commands/mcp/dispatch.js";
-import { startMcp } from "../src/commands/mcp/mcp.js";
+import { mcpToolTable, startMcp } from "../src/commands/mcp/mcp.js";
 import { LOAM_VERSION } from "../src/core/envelope/version.js";
 import { MCP_TOOLS, type McpTool } from "../src/core/mcp/tools.js";
 import { MCP_AUTHOR_TOOLS } from "../src/core/mcp/author-tools.js";
@@ -389,16 +389,25 @@ describe("every advertised tool is a command the dispatcher can actually run", (
     expect(written).toEqual([]);
   });
 
-  it("`loam mcp` serves the table it was started with — tools/list advertises the author roster under --author", async () => {
-    const input = new PassThrough();
-    const output = new PassThrough();
-    const log = new PassThrough();
-    const out: string[] = [];
-    output.on("data", (chunk) => out.push(String(chunk)));
-    input.end(JSON.stringify(request(1, "tools/list")) + "\n");
-    await startMcp([...MCP_TOOLS, ...MCP_AUTHOR_TOOLS], { input, output, log });
-    const frame = JSON.parse(out.join("").trim()) as { result: { tools: Array<{ name: string }> } };
-    expect(frame.result.tools.map((tool) => tool.name)).toEqual([...MCP_TOOLS, ...MCP_AUTHOR_TOOLS].map((tool) => tool.name));
+  it("`--author` selects the author roster and its absence the read roster — tools/list advertises the table `loam mcp` selected", async () => {
+    // The selection is `mcpToolTable`, the one place the flag is read, and
+    // both of its answers are held here through the server that advertises
+    // them: written as `MCP_TOOLS` alone, the authoring tools vanish from
+    // every `loam init --mcp-author` host. That the action hands the flag to
+    // it is test/mcp-stdio.test.ts's, which spawns `loam mcp --author`.
+    const listed = async (author: boolean): Promise<string[]> => {
+      const input = new PassThrough();
+      const output = new PassThrough();
+      const log = new PassThrough();
+      const out: string[] = [];
+      output.on("data", (chunk) => out.push(String(chunk)));
+      input.end(JSON.stringify(request(1, "tools/list")) + "\n");
+      await startMcp(mcpToolTable(author), { input, output, log });
+      const frame = JSON.parse(out.join("").trim()) as { result: { tools: Array<{ name: string }> } };
+      return frame.result.tools.map((tool) => tool.name);
+    };
+    expect(await listed(true)).toEqual([...MCP_TOOLS, ...MCP_AUTHOR_TOOLS].map((tool) => tool.name));
+    expect(await listed(false)).toEqual(MCP_TOOLS.map((tool) => tool.name));
   });
 
   it("without the author roster, no authoring writer is registered at all", async () => {

@@ -4,7 +4,8 @@
  * in-process by test/mcp-serve.test.ts (which is also where coverage comes
  * from — a child process is not instrumented); what only a real spawn can
  * prove is the bin wiring: stdin EOF ends the loop, cli.ts lets the process
- * drain to exit 0, and real stdout carries frames and nothing else.
+ * drain to exit 0, real stdout carries frames and nothing else, and the
+ * `--author` flag a host passes reaches the table the server advertises.
  *
  * Flakiness discipline: every request line is written up front and stdin is
  * closed immediately (spawnLoamStdio), so there are no response-timed writes
@@ -15,6 +16,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { coherentFixture, makeProject } from "./helpers/harness.js";
 import { assertNoLiveChildren, spawnLoamStdio } from "./helpers/cli-process.js";
 import { MCP_TOOLS } from "../src/core/mcp/tools.js";
+import { MCP_AUTHOR_TOOLS } from "../src/core/mcp/author-tools.js";
 
 const p = await makeProject(coherentFixture());
 
@@ -26,8 +28,20 @@ const run = spawnLoamStdio(p.workDir, [
   JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "loam_status", arguments: {} } }),
 ]);
 
+/**
+ * The launch every `loam init --mcp-author` config writes. Only a spawn reads
+ * the flag the way a host passes it: the in-process tests hand `startMcp` a
+ * table, so an action that ignored `--author` passed all of them.
+ */
+const authorRun = spawnLoamStdio(
+  p.workDir,
+  [JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" })],
+  ["--author"],
+);
+
 afterAll(async () => {
   await run;
+  await authorRun;
   assertNoLiveChildren();
   await p.destroy();
 });
@@ -69,5 +83,12 @@ describe("the real stdio server", () => {
 
   it("the startup line went to stderr, not stdout", async () => {
     expect((await run).stderr).toContain("loam mcp: serving");
+  });
+
+  it("`loam mcp --author` advertises the authoring tools after the read surface", async () => {
+    const { code, stdout } = await authorRun;
+    expect(code).toBe(0);
+    const frame = JSON.parse(stdout.trim()) as { result: { tools: Array<{ name: string }> } };
+    expect(frame.result.tools.map((tool) => tool.name)).toEqual([...MCP_TOOLS, ...MCP_AUTHOR_TOOLS].map((tool) => tool.name));
   });
 });
