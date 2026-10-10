@@ -275,8 +275,9 @@ paths:
   });
 
   it("a path-level or anonymous marker retired nothing, so it is never named as the retirer", async () => {
-    // Neither shape deletes anything at archive — the merge removes only a
-    // living operation whose id the marker names — so a feature carrying them
+    // Neither shape deletes anything at archive — the merge removes a living
+    // operation only when the one at the marker's own method and path carries
+    // the id the marker names, and these name none — so a feature carrying them
     // through `--approve` leaves createOrderV1 living. Removed later by HAND,
     // the operation is gone with no marker anywhere: the documented limit,
     // where the check falls back to calling a quote of it new. Indexing the
@@ -306,6 +307,112 @@ paths:
 
     contractOnly(f, "FEAT-304", "FEAT-304-v1-notes", QUOTED_V1);
     const all = findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-304", "--json")).stdout);
+    expect(ofCode(all, "openapi.op-revived")).toEqual([]);
+  });
+
+  it("a marker the merge never carried out retired nothing — a genuinely new operation it named is not a revival", async () => {
+    // FEAT-210's markers both miss: GET /orders/export never existed
+    // (remove-target-missing), and GET /orders/{id} holds getOrder, not
+    // archiveOrder (remove-target-mismatch). Archived past both under
+    // --approve, the merge deleted nothing — so FEAT-211 adding either id for
+    // the first time is an addition, as its snapshot pre-image proves.
+    const f = await exampleFleet();
+    contractOnly(
+      f,
+      "FEAT-210",
+      "FEAT-210-drop-export",
+      `openapi: 3.1.0
+paths:
+  /orders/export:
+    get:
+      operationId: exportOrders
+      x-loam-remove: true
+  /orders/{id}:
+    get:
+      operationId: archiveOrder
+      x-loam-remove: true
+`,
+    );
+    const forced = await runLoam(f.fleet, "archive", "FEAT-210", "--approve");
+    expect(forced.code, forced.out).toBe(0);
+    expect(f.read(LIVING_ORDER_API)).toContain("operationId: getOrder");
+    contractOnly(
+      f,
+      "FEAT-211",
+      "FEAT-211-add-export",
+      `openapi: 3.1.0
+paths:
+  /orders/export:
+    get:
+      operationId: exportOrders
+      responses:
+        "200":
+          description: The export.
+          content:
+            application/json:
+              schema: { type: object }
+  /orders/{id}/archive:
+    post:
+      operationId: archiveOrder
+      responses:
+        "204":
+          description: Archived.
+`,
+    );
+    const revived = async (): Promise<Finding[]> =>
+      ofCode(findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-211", "--json")).stdout), "openapi.op-revived");
+    expect(await revived()).toEqual([]);
+
+    // With no pre-image to check them against, the markers count as written —
+    // what the index did before it read pre-images, and the documented limit.
+    await rm(join(f.fleet, "features/archive/FEAT-210-drop-export/.loam-before"), { recursive: true });
+    expect((await revived()).map((r) => r.message.match(/spells '(\w+)'/)![1])).toEqual(["exportOrders", "archiveOrder"]);
+  });
+
+  it("a marker in a contract its own archive created retired nothing — there was nothing before it", async () => {
+    // checkout-web has no openapi.yaml: FEAT-212's archive creates one (the
+    // snapshot records the file as created, with no pre-image), so its
+    // marker had nothing to take — and FEAT-213 adding that id is new.
+    const f = await exampleFleet();
+    const feature = (id: string, dir: string, openapi: string): void => {
+      f.write(`features/${dir}/intent.md`, `---\nfeature: ${id}\ntitle: ${dir}\nstatus: in_progress\nowner: web-team\nservices: [checkout-web]\n---\n\n# ${id}\n\n## Why\nThe web front end grows an API.\n`);
+      f.write(`features/${dir}/specs/checkout-web/openapi.yaml`, openapi);
+    };
+    feature(
+      "FEAT-212",
+      "FEAT-212-web-api",
+      `openapi: 3.1.0
+info: { title: checkout-web, version: "1.0" }
+paths:
+  /session:
+    get:
+      operationId: getSession
+      responses:
+        "200":
+          description: The session.
+  /session/legacy:
+    get:
+      operationId: getLegacySession
+      x-loam-remove: true
+`,
+    );
+    const forced = await runLoam(f.fleet, "archive", "FEAT-212", "--approve");
+    expect(forced.code, forced.out).toBe(0);
+    expect(f.read("services/checkout-web/openapi.yaml")).toContain("operationId: getSession");
+    feature(
+      "FEAT-213",
+      "FEAT-213-legacy-session",
+      `openapi: 3.1.0
+paths:
+  /session/legacy:
+    get:
+      operationId: getLegacySession
+      responses:
+        "200":
+          description: The legacy session.
+`,
+    );
+    const all = findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-213", "--json")).stdout);
     expect(ofCode(all, "openapi.op-revived")).toEqual([]);
   });
 });
@@ -568,6 +675,64 @@ components:
     expect(rebased.code, rebased.out).toBe(0);
     const revived = (JSON.parse(rebased.stdout) as { revived: Array<{ code: string }> }).revived;
     expect(revived.map((r) => r.code)).toEqual(["asyncapi.slot-revived", "asyncapi.slot-revived", "asyncapi.slot-revived"]);
+  });
+
+  it("a slot marker the merge never carried out retired nothing — on a key the living contract lacked, or a message name it did not declare there", async () => {
+    // `channels.ghostEvents` never existed (remove-target-missing), and the
+    // living `components.messages.Legacy` declares payment.Legacy, not
+    // payment.Ghost (remove-target-mismatch): the merge deletes neither, so
+    // FEAT-43 declaring them for the first time is an addition.
+    const p = await makeProject({
+      "services/payment-service/spec.md": EVENTS_SPEC,
+      "services/payment-service/asyncapi.yaml": LIVING_EVENTS,
+      "features/FEAT-42-ghosts/intent.md": INTENT("FEAT-42"),
+      "features/FEAT-42-ghosts/specs/payment-service/asyncapi.yaml": `asyncapi: 3.0.0
+channels:
+  ghostEvents:
+    x-loam-remove: true
+components:
+  messages:
+    Legacy:
+      name: payment.Ghost
+      x-loam-remove: true
+`,
+    });
+    cleanups.push(() => p.destroy());
+    const forced = await runLoam(p.workDir, "archive", "FEAT-42", "--approve");
+    expect(forced.code, forced.out).toBe(0);
+    expect(await p.read("services/payment-service/asyncapi.yaml")).toContain("name: payment.Legacy");
+    await p.write("features/FEAT-43-ghosts-for-real/intent.md", INTENT("FEAT-43"));
+    await p.write(
+      "features/FEAT-43-ghosts-for-real/specs/payment-service/asyncapi.yaml",
+      `asyncapi: 3.0.0
+channels:
+  ghostEvents:
+    address: payment.ghost.v1
+components:
+  messages:
+    Ghost:
+      name: payment.Ghost
+      payload:
+        type: object
+`,
+    );
+    // FEAT-42's merge wrote nothing (every marker missed), so its manifest has
+    // no row for the contract: an answer, not a gap.
+    expect(await eventFindings(p, "FEAT-43")).toEqual([]);
+
+    // No pre-image to check against: counted as written, the documented limit —
+    // and a manifest row that cannot be read might have been this contract's,
+    // so absence is not concluded past it either.
+    const counted = ["channels.ghostEvents", "message 'payment.Ghost' (components.messages.Ghost)"];
+    const declared = async (): Promise<string[]> =>
+      (await eventFindings(p, "FEAT-43")).map((w) => w.message.match(/declares (.*?), which/)![1]!);
+    const manifestPath = join(p.docsDir, "features/archive/FEAT-42-ghosts/.loam-before/manifest.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { files: unknown[] };
+    expect(manifest.files).toEqual([]);
+    await writeFile(manifestPath, JSON.stringify({ ...manifest, files: [42] }), "utf8");
+    expect(await declared()).toEqual(counted);
+    await rm(join(p.docsDir, "features/archive/FEAT-42-ghosts/.loam-before"), { recursive: true });
+    expect(await declared()).toEqual(counted);
   });
 
   it("rebase's standalone read and the gate's walk give one answer on one tree — living present, absent, or unreadable", async () => {

@@ -14,15 +14,33 @@
  *
  * The record of a retirement is files, not history. An archived feature keeps
  * its delta under `features/archive/<FEAT>/specs/<svc>/`, and the removal
- * markers in it say what that merge deleted — read through the same rule the
- * gate grades an in-flight delta by (./retirement.ts), so relocations are not
- * retirements here either. No git: the docs semantics stay a property of the
- * tree. One thing the delta does not spell: a CHANNEL-slot removal retires the
- * messages its living channel declared inline, and those names exist only in
- * the contract the merge ran against — so they are read from the feature's
- * snapshot pre-image (`.loam-before/`, staging/snapshot/manifest.ts), and a
- * feature archived without one contributes its channel slot and not the
- * inline names.
+ * markers in it say what that merge was ASKED to delete — read through the
+ * same rule the gate grades an in-flight delta by (./retirement.ts), so
+ * relocations are not retirements here either. No git: the docs semantics stay
+ * a property of the tree.
+ *
+ * Asked is not done. The OpenAPI merge deletes only when the living operation
+ * AT the marker's method and path carries the marker's operationId
+ * (openapi/merge/merge.ts); the event merge deletes a channel or operation slot
+ * only when the living contract has that key, and a `components.messages` slot
+ * only when the message declared there carries the marker's name
+ * (asyncapi/merge/merge.ts). A marker that missed — `remove-target-missing` or
+ * `remove-target-mismatch`, archived past under `--approve` — deleted nothing,
+ * and counting it called a genuinely new operation a revival and refused it.
+ * So every marker is checked against the contract the merge ran against: the
+ * feature's snapshot pre-image (`.loam-before/`, staging/snapshot/manifest.ts).
+ * A contract the archive CREATED, or never wrote at all (a merge whose every
+ * marker missed changes nothing, and archive snapshots only what it writes),
+ * lost nothing to that merge, and reads as an empty pre-image. A feature with
+ * no intact snapshot (archived before the snapshot existed, or the snapshot
+ * edited or removed since) cannot be checked, and its markers count as
+ * written — what the index did before it read pre-images at all.
+ *
+ * The pre-image answers one more thing the delta does not spell: a
+ * CHANNEL-slot removal retires the messages its living channel declared
+ * inline, and those names exist only in the contract the merge ran against. A
+ * feature archived without a pre-image contributes its channel slot and not
+ * the inline names.
  *
  * What it cannot see, and SCHEMA.md says so: a removal made by hand-editing a
  * living contract leaves no marker anywhere, and an archived feature deleted
@@ -32,10 +50,10 @@
  * OpenAPI markers count only when they name an operationId. A marker with
  * none (`openapi.remove-marker-anonymous`) or one written at PATH level
  * (`openapi.remove-marker-path-level`) retires nothing at archive — the merge
- * deletes only a living operation whose id the marker names, and has since the
- * marker existed — so an archived feature that carried one under `--approve`
- * left the operation living, and indexing its slot would attribute a
- * retirement that never happened.
+ * matches a marker to the living operation by the operationId it names, at
+ * its own method and path, and these name none — so an archived feature that
+ * carried one under `--approve` left the operation living, and indexing its
+ * slot would attribute a retirement that never happened.
  */
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
@@ -46,9 +64,9 @@ import type { RawServiceId } from "../../kernel/ids/service.js";
 import type { FeatureEntry } from "../../repo/entries.js";
 import { archiveDir, ARTIFACT_FILES, featureSpecPaths } from "../../repo/paths.js";
 import { listFeatures } from "../../repo/repo.js";
-import { readOpenapi } from "../../openapi/doc.js";
+import { openapiFromText, readOpenapi } from "../../openapi/doc.js";
 import { readOr } from "../../openapi/contract-text.js";
-import { asyncapiSlots } from "../../asyncapi/digest.js";
+import { asyncapiSlots, slotKey, slotsByKey, type AsyncapiSlot } from "../../asyncapi/digest.js";
 import { asyncapiFromText, readAsyncapi } from "../../asyncapi/read.js";
 import type { AsyncapiDoc } from "../../asyncapi/model.js";
 import { readSnapshotPreImage } from "../../staging/snapshot/manifest.js";
@@ -147,7 +165,7 @@ async function readRetiredIndex(docsDir: DocsDir, context?: FleetContext): Promi
   return index;
 }
 
-/** One archived feature's retirements on one service. */
+/** One archived feature's retirements on one service — only the markers its merge carried out. */
 async function serviceRetirements(
   feature: FeatureEntry,
   service: RawServiceId,
@@ -158,32 +176,74 @@ async function serviceRetirements(
   // An absent delta reads as an empty document; an unreadable one retired
   // nothing loam could have merged (archive refuses `merge-failed`).
   const api = await readOpenapi(paths.openapi, context);
-  if (!api.unreadable) {
-    for (const id of operationRetirements(api.ops).net) found.operations.push(retiredKey(service, id));
+  if (!api.unreadable && api.ops.some((op) => op.remove)) {
+    const before = await preImage(feature.dir, service, ARTIFACT_FILES.openapi);
+    const held = before === undefined ? undefined : openapiFromText(before);
+    // The merge's own match: the operation the pre-image held AT the marker's
+    // slot carries the marker's id. Markers that missed are dropped before the
+    // rule runs, so a relocation whose old-slot marker missed is no
+    // relocation either — it moved nothing out.
+    const carried = api.ops.filter(
+      (op) =>
+        !op.remove ||
+        held === undefined ||
+        held.unreadable ||
+        held.ops.some((h) => !h.remove && h.id === op.id && h.method === op.method && h.path === op.path),
+    );
+    for (const id of operationRetirements(carried).net) found.operations.push(retiredKey(service, id));
   }
   if (!existsSync(paths.asyncapi)) return found;
   const events = await readAsyncapi(paths.asyncapi, context);
   const text = events.unreadable ? undefined : await readOr(paths.asyncapi, context);
   if (text === undefined) return found;
   const eventSlots = asyncapiSlots(parse(text));
-  const removed = eventSlots.filter((s) => s.remove && s.section !== "components.messages");
-  for (const slot of removed) found.slots.push(retiredKey(service, slot.section, slot.key));
-  // The pre-image is asked only when a channel went: that is the one
-  // retirement whose names the delta does not spell.
-  const before = removed.some((s) => s.section === "channels")
-    ? await preImageEvents(feature.dir, service)
-    : NOTHING_DECLARED;
-  for (const name of messageRetirements(events, eventSlots, before).net) found.messages.push(retiredKey(service, name));
+  if (!eventSlots.some((s) => s.remove)) return found;
+  const before = await preImageEvents(feature.dir, service);
+  // Presence is the whole match for a channel or operation slot — its
+  // identity IS the key. A message marker must also name the message the
+  // pre-image declared at that key, the merge's exactness on the message axis.
+  const carriedSlots = eventSlots.filter((s) => !s.remove || before === undefined || before.slots.has(slotKey(s)));
+  const carriedEvents: AsyncapiDoc = {
+    ...events,
+    messages: events.messages.filter(
+      (m) =>
+        m.remove !== true ||
+        before === undefined ||
+        before.doc.messages.some((b) => b.remove !== true && b.slot === m.slot && b.name === m.name),
+    ),
+  };
+  for (const slot of carriedSlots) {
+    if (slot.remove && slot.section !== "components.messages") found.slots.push(retiredKey(service, slot.section, slot.key));
+  }
+  const retired = messageRetirements(carriedEvents, carriedSlots, before?.doc ?? NOTHING_DECLARED);
+  for (const name of retired.net) found.messages.push(retiredKey(service, name));
   return found;
 }
 
 const NOTHING_DECLARED: AsyncapiDoc = asyncapiFromText("");
 
-async function preImageEvents(featureDir: string, service: string): Promise<AsyncapiDoc> {
-  const text = await readSnapshotPreImage(featureDir, { service, artifact: ARTIFACT_FILES.asyncapi });
-  if (text === null) return NOTHING_DECLARED;
+/**
+ * The contract one artifact held as this feature's merge found it, or
+ * undefined when the snapshot holds nothing to trust. An artifact the merge
+ * created, or never wrote, lost nothing to it — which is exactly what an empty
+ * pre-image says: every marker in the delta missed, and no channel took inline
+ * names with it.
+ */
+async function preImage(featureDir: string, service: string, artifact: string): Promise<string | undefined> {
+  const found = await readSnapshotPreImage(featureDir, { service, artifact });
+  if (found === null) return undefined;
+  return found.kind === "held" ? found.text : "";
+}
+
+/** The event pre-image as the reader and the slot walk see it — undefined when absent or unreadable. */
+async function preImageEvents(
+  featureDir: string,
+  service: string,
+): Promise<{ doc: AsyncapiDoc; slots: ReadonlyMap<string, AsyncapiSlot> } | undefined> {
+  const text = await preImage(featureDir, service, ARTIFACT_FILES.asyncapi);
+  if (text === undefined) return undefined;
   const doc = asyncapiFromText(text);
-  return doc.unreadable ? NOTHING_DECLARED : doc;
+  return doc.unreadable ? undefined : { doc, slots: slotsByKey(asyncapiSlots(parse(text))) };
 }
 
 function isDirectory(path: string): boolean {

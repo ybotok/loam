@@ -41,11 +41,17 @@ Two codes, both added to the `IssueCode` union, and one additive `--json` key we
   revival above. They now say to re-read the living contract and delete the quote unless the
   feature deliberately brings it back. The `/loam-check` rows and `loam explain` say the same.
 - **What it reads, and what it cannot see.** Only files under `features/archive/` — the archived
-  deltas' removal markers and, for a channel's inline messages, the snapshot pre-image; no git. A
-  removal made by hand-editing a living contract, or an archived feature deleted from disk, leaves
-  nothing to read, and a quote of such an operation still grades as an addition. A marker with no
-  `operationId` or one written at path level retired nothing when its feature archived, so it is
-  never named as the retirer.
+  deltas' removal markers and each feature's `.loam-before/` snapshot; no git. A marker counts only
+  if the merge carried it out: the snapshot's pre-image must hold the marker's operationId at its
+  method and path (an event marker: its channel or operation key, or its message name at its
+  `components.messages` key), and a contract the archive created or never wrote lost nothing. A
+  marker archived past `openapi.remove-target-missing` / `-mismatch` (or the `asyncapi.*` twins)
+  under `--approve` deleted nothing, so a genuinely new operation it happened to name is not a
+  revival. A feature with no intact snapshot cannot be checked, and its markers count as written.
+  A removal made by hand-editing a living contract, or an archived feature deleted from disk,
+  leaves nothing to read, and a quote of such an operation still grades as an addition. A marker
+  with no `operationId` or one written at path level retired nothing when its feature archived, so
+  it is never named as the retirer.
 
 ### Added — `#suite-<name>` tags and `loam list suites`: which services a test suite needs up
 
