@@ -10,8 +10,9 @@
  *
  *   NAMED — the code arrives as a `code:` property: a `"…"` literal, either arm
  *   of a `code: cond ? "…" : "…"` ternary, an IssueCode/ErrorCode union member
- *   in issue.ts or json.ts, or the one code that exists only as a text marker
- *   (validate's `⚠ sources.unverifiable-from-here:` summary line).
+ *   in issue.ts or json.ts, or a code spelled in a text marker (validate's
+ *   `⚠ sources.unverifiable-from-here:` summary line — once the only place
+ *   that code was visible, before its emission became a `code:` literal).
  *
  *   POSITIONAL — the code arrives as an ARGUMENT to a helper. This is the hole
  *   that let a whole family drift: all 23 `openspec.*` diagnostics go through

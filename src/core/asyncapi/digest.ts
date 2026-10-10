@@ -32,10 +32,8 @@ import {
   isRemoval,
   OPENAPI_BASELINE_KEY,
   OPENAPI_BASELINES_KEY,
-  OPENAPI_REMOVE_KEY,
   operationBaselineOf,
   operationDigest,
-  withoutOperationBaseline,
 } from "../openapi/digest.js";
 
 /**
@@ -63,9 +61,6 @@ export const ASYNCAPI_BASELINE_KEY = OPENAPI_BASELINE_KEY;
  */
 export const ASYNCAPI_BASELINES_KEY = OPENAPI_BASELINES_KEY;
 
-/** The feature-only explicit removal marker's key — the OpenAPI axis's, aliased. */
-export const ASYNCAPI_REMOVE_KEY = OPENAPI_REMOVE_KEY;
-
 /** The three sections whose entries are slots. */
 export type AsyncapiSection = "channels" | "operations" | "components.messages";
 
@@ -91,17 +86,13 @@ export const isSlotRemoval = isRemoval;
 export const slotBaselineOf = operationBaselineOf;
 
 /**
- * The slot without its own baseline marker — what a digest is taken over. A
- * pin is a statement ABOUT a delta, never part of the slot it describes:
- * inside the digest input, no baseline could ever be self-consistent. The
- * OpenAPI rule, aliased — the key is the same key.
- */
-export const withoutSlotBaseline = withoutOperationBaseline;
-
-/**
  * The identity of a slot's CONTENT: sha256 of its canonical form, pin
  * excluded. `operationDigest` under this axis's name — the same canonical
- * JSON, the same cut, so a pin either axis writes means the same thing.
+ * JSON, the same cut, so a pin either axis writes means the same thing. The
+ * pin is cut because it is a statement ABOUT a delta, never part of the slot
+ * it describes: inside the digest input, no baseline could ever be
+ * self-consistent (`withoutOperationBaseline` in ../openapi/digest.ts has the
+ * whole argument).
  */
 export const slotDigest = operationDigest;
 
@@ -109,15 +100,6 @@ export const slotDigest = operationDigest;
 function entriesOf(node: unknown): [string, unknown][] {
   if (node === null || typeof node !== "object" || Array.isArray(node)) return [];
   return Object.entries(node as Record<string, unknown>);
-}
-
-/**
- * The document path of one slot — where the pin and the merge write. Spelled
- * here so `rebase`'s stamp and the merge's upsert cannot disagree about which
- * node a (section, key) pair addresses.
- */
-export function slotPath(section: AsyncapiSection, key: string): string[] {
-  return section === "components.messages" ? ["components", "messages", key] : [section, key];
 }
 
 /**

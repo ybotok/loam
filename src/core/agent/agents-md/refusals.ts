@@ -1,9 +1,13 @@
 /**
  * What loam REFUSES: the OpenSpec migration surface, the containment and
  * unreadable-file findings, and the error-envelope codes. What happens to a
- * SHIPPED change — the archive gate, unarchive, and dropping a feature — is
- * the continuation section in ./shipped/archive-gate.ts, split there because
- * the two subjects had grown past one file's ceiling.
+ * SHIPPED change — the archive gate, unarchive, and dropping a feature — used
+ * to be a continuation section beside this one, split off when the two
+ * subjects had grown past one file's ceiling. Nothing assembled it into
+ * anything loam shipped once AGENTS.md became ../agents-md.ts's ORIENTATION,
+ * and it was deleted: that teaching is the `loam-ship` protocol
+ * (../workflows/closing.ts) and ORIENTATION's own "Reading loam's output" and
+ * "Safety and hand-back" sections.
  *
  * Codes here are LISTED by the command that raises them, not glossed; the
  * meanings come from `loam explain <code>`, out of the running binary. See
@@ -20,11 +24,11 @@
  * resolve, so a family can never quietly lose its gloss and its explanation
  * at once.
  *
- * One section of the AGENTS.md template. ../agents-md.ts assembles the
- * document by PLAIN CONCATENATION — no join separator — so every section
- * starts at the first character of its opening line and ends with the newline
- * that closes its last one. Keep that shape when editing, or two sections glue
- * onto one line in every docs repo loam scaffolds from now on.
+ * The last part of the `loam-codes` page, not a section of AGENTS.md any more:
+ * ../workflows/reference/codes.ts assembles that page by PLAIN CONCATENATION —
+ * no join separator — so this string starts at the first character of its
+ * opening line and ends with the newline that closes its last one. Keep that
+ * shape when editing, or two parts glue onto one line on the printed page.
  */
 export const REFUSALS = `- \`loam audit-openspec <root>\` is the read-only OpenSpec inventory; an explicit
   \`--write-mapping\` writes a non-overwriting, digest-bound decision skeleton
@@ -248,6 +252,7 @@ somebody says the code was built and showed evidence (\`verify\`). A feature can
 valid and unverified, or verified and incoherent. Read the one you meant.
 `;
 
-/* The archive gate, unarchive, and dropping a feature continue in
- * ./shipped/archive-gate.ts — one document section split at its own subject
- * seam, concatenated after this one by ../agents-md.ts. */
+/* The archive gate, unarchive, and dropping a feature are not continued here:
+ * the section that once followed this one was never assembled again after
+ * AGENTS.md became ORIENTATION, and was deleted — see this file's header for
+ * where that teaching ships now. */

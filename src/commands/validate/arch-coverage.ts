@@ -114,9 +114,9 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
   // this is where agent-built code cuts its corners — the outbox, the retries,
   // the alerts — because no business scenario was ever going to mention them.
   // Grouping-only elements take the same exemptions the fleet map applies
-  // (person kinds, #external) — one set, in checks/vocabulary.ts, so "not a
-  // service" cannot mean two things. Warnings, never archive gates; `--strict`
-  // escalates.
+  // (person kinds, #external) — one set, in core/vocabulary/maturity.ts, so
+  // "not a service" cannot mean two things. Warnings, never archive gates;
+  // `--strict` escalates.
   //
   // Only requirements the archive will MERGE grant coverage here. In a delta,
   // BASE means "the living state, quoted": it merges nothing, emits no

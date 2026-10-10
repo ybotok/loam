@@ -6,9 +6,10 @@
  * file-line limit, so the pack's documentation lives down here and is
  * concatenated after the map.
  *
- * Same assembly contract as every section: ../../../agents-md.ts concatenates
- * with NO join separator, so this string starts at the first character of its
- * opening line and ends with the newline that closes its last one.
+ * Same assembly contract as every part of the `loam-codes` page:
+ * ../../../workflows/reference/codes.ts concatenates with NO join separator,
+ * so this string starts at the first character of its opening line and ends
+ * with the newline that closes its last one.
  */
 export const CONTEXT_COMMAND = `- \`loam context <service>\` assembles the docs slice bound to one service as a
   single deterministic briefing — the pack an agent loads before working in
