@@ -32,6 +32,7 @@ import { capabilityUnknownIssues } from "../capabilities/findings.js";
 import type { Requirement } from "../document/spec.js";
 import { openapiBaselineIssues } from "../openapi/baseline/gate.js";
 import { readOpenapi } from "../openapi/doc.js";
+import { operationRetirements } from "./retired/retirement.js";
 import type { FleetContext } from "../fleet-context.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
@@ -185,15 +186,10 @@ export async function declaredByService(
       }
       const featOps = featDoc.ops;
       const removals = featOps.filter((op) => op.remove);
-      // A relocation — same operationId, removal marker on the old slot, upsert
-      // on the new one — retires nothing. Every rule that asks "is this operation
-      // going away" must therefore ask the NET set (markers this feature does not
-      // redefine), while "did the author write a marker at all" asks the raw one.
-      // Conflating them made moving an endpoint fail three checks at once for a
-      // change that removes nothing.
-      const redefined = new Set(featOps.filter((op) => !op.remove).map((op) => op.id));
-      const markerIds = new Set(removals.map((op) => op.id));
-      const netRemoved = new Set([...markerIds].filter((id) => !redefined.has(id)));
+      // The raw marker set and the NET one (markers minus relocations) —
+      // ./retired/retirement.ts owns the rule and says why the two differ; the
+      // retired index reads every archived feature through the same function.
+      const { markerIds, net: netRemoved } = operationRetirements(featOps);
       removingOps.set(svc, netRemoved);
       allMarkerIds.set(svc, markerIds);
       anonymousMarkers.set(svc, featDoc.anonymousRemovals.length > 0);

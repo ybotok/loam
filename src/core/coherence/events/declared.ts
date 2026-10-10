@@ -37,6 +37,7 @@ import type { DocsDir, FeatureDir } from "../../kernel/ids/dirs.js";
 import { gradeBaselines, gradeMarkers } from "./grades.js";
 import { mergedAsyncapiDoc } from "./merged.js";
 import { readOr } from "../../openapi/contract-text.js";
+import { messageRetirements } from "../retired/retirement.js";
 
 /** The three facts this walk needs about the feature it is reading. */
 export interface EventDeltaScope {
@@ -213,25 +214,12 @@ export async function declaredEvents(
       }
     }
 
-    // A relocation — same message name, marker on the old key, declaration
-    // at a new one — retires nothing. "Is this message going away" asks the
-    // NET set; "did the author write a marker" asks the raw one,
-    // ../declared.ts's distinction verbatim. Two raw sets, because the two
-    // marker shapes carry different debts: a message-slot marker must be
-    // justified by a REMOVED requirement, while a channel-slot removal needs
-    // exactness only (requirements join on message names, never channel
-    // keys — SCHEMA.md) and its living inline interior leaves with it.
-    const markerNames = new Set(
-      featDoc.messages.filter((m) => m.remove === true && m.slot.startsWith("components.messages.")).map((m) => m.name),
-    );
-    const channelRemovals = featSlots.filter((s) => s.section === "channels" && s.remove).map((s) => s.key);
-    const inlineRetired = new Set(
-      livingDoc.messages
-        .filter((m) => channelRemovals.some((ck) => m.slot.startsWith(`channels.${ck}.messages.`)))
-        .map((m) => m.name),
-    );
-    const redeclared = new Set(featDoc.messages.filter((m) => m.remove !== true).map((m) => m.name));
-    const net = new Set([...markerNames, ...inlineRetired].filter((name) => !redeclared.has(name)));
+    // The raw marker sets and the NET one (minus relocations) —
+    // ../retired/retirement.ts owns the rule and says why each set exists;
+    // the retired index reads every archived feature through the same
+    // function, against that feature's snapshot pre-image instead of the
+    // living contract on disk.
+    const { markerNames, inlineRetired, redeclared, net } = messageRetirements(featDoc, featSlots, livingDoc);
     netRemoved.set(svc, net);
 
     for (const name of markerNames) {
