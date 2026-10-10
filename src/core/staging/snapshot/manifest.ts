@@ -122,8 +122,13 @@ export async function readSnapshotChecklist(featureDir: string): Promise<string 
  * the artifact: nothing. `created` is a row archive wrote for a file it
  * created (there was nothing before it); `unwritten` is an intact manifest
  * with no row for the artifact at all — archive records every file it writes,
- * and a merge that changes nothing writes nothing (a delta whose every marker
- * missed its target is exactly that), so the artifact is what the merge found.
+ * so the artifact is what the merge found. Only the EVENT merge leaves a
+ * contract unwritten: it returns no text when it changes nothing
+ * (asyncapi/merge/merge.ts, `text: null` — a delta whose every marker missed
+ * its target is exactly that). The OpenAPI merge returns text whenever the
+ * delta has a path entry, so its no-op is an ordinary row whose pre-image
+ * equals what it wrote — `held`, which answers the same question the same
+ * way: every marker misses against it again.
  */
 export type SnapshotPreImage =
   | { kind: "held"; text: string }
