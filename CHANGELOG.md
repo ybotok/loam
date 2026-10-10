@@ -10,6 +10,16 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Added — `loam_adopt`: the adopt brief on the MCP server
+
+- **`loam mcp` serves a sixteenth read tool, `loam_adopt`**, mirroring `loam adopt [--service <id>]
+  [--subsystem <name>] [--targets] --json` (JSON arguments `service`, `subsystem`, `targets`). Its
+  result is the CLI's `adopt` envelope, verbatim. It is advertised `readOnlyHint: true` like every
+  base tool, because `adopt` writes nothing: it hands the agent the brief, and the agent writes the
+  baseline. Until now an MCP-only host could fetch the loam-adopt protocol through
+  `loam_instructions` and could not run its first step, `loam adopt --service <id> --json`. No
+  code, flag or payload key was added to the CLI; `tools/list` returns one more tool.
+
 ### Fixed — a writer waiting on the lock no longer deletes the next writer's live lock
 
 No code, flag, path or payload key was added, changed or retired. What changes is that concurrent

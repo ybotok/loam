@@ -733,9 +733,9 @@ both text and JSON. See [SCHEMA.md](SCHEMA.md) for the lifecycle contract.
 
 ## The MCP server
 
-For hosts that reach tools through MCP rather than a shell, `loam mcp` serves the fifteen read
+For hosts that reach tools through MCP rather than a shell, `loam mcp` serves the sixteen read
 commands — `validate`, `status`, `list`, `show`, `delta`, `tasks`, `explore`, `dependencies`,
-`diff`, `doctor`, `context`, `gate`, `steps`, `explain`, `instructions` — as MCP tools
+`diff`, `doctor`, `context`, `adopt`, `gate`, `steps`, `explain`, `instructions` — as MCP tools
 (`loam_validate` … `loam_instructions`) over stdio, newline-delimited JSON-RPC 2.0, protocol
 revision 2025-06-18 (older revisions negotiated down; JSON-RPC batch arrays refused). Every tool is
 advertised `readOnlyHint: true` and `openWorldHint: false`, which is what a host needs to run one

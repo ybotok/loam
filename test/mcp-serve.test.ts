@@ -9,7 +9,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PassThrough } from "node:stream";
-import { coherentFixture, makeProject, makeTmpDir, runLoam, type Project } from "./helpers/harness.js";
+import { coherentFixture, makeProject, makeTmpDir, runLoam, treeHashes, type Project } from "./helpers/harness.js";
 import { rm } from "node:fs/promises";
 import { serve, type ToolRunner } from "../src/commands/mcp/serve.js";
 import { captureConsole, runToolArgv, type Sinks } from "../src/commands/mcp/dispatch.js";
@@ -170,6 +170,34 @@ describe("a full session over the coherent fixture", () => {
   it("logging stays on the log stream: the startup line names the served directory", () => {
     expect(main.log).toContain("loam mcp: serving");
     expect(main.log).toContain("over stdio");
+  });
+});
+
+describe("loam_adopt: the brief an MCP-only host could read about and never receive", () => {
+  it("returns the CLI's adopt envelope verbatim, narrowed by --targets, and writes nothing", async () => {
+    // The loam-adopt protocol opens with `loam adopt --service <id> --json`;
+    // before the tool existed an MCP-only host could fetch that protocol
+    // through loam_instructions and then not run its first step. The tree
+    // fingerprint is the read-only half of the claim: readOnlyHint is only
+    // true of this tool because adopt hands the writing to the agent.
+    const p = await makeProject(coherentFixture());
+    try {
+      const before = await treeHashes(p.docsDir);
+      const res = await session(p.workDir, [
+        call(1, "loam_adopt", { service: "payment-service" }),
+        call(2, "loam_adopt", { service: "payment-service", targets: true }),
+      ]);
+      const full = resultOf(res.frames, 1);
+      expect(full["isError"]).toBe(false);
+      const direct = await runLoam(p.workDir, "adopt", "--service", "payment-service", "--json");
+      expect(envelopeOf(full)).toEqual(JSON.parse(direct.stdout));
+      const narrowed = envelopeOf(resultOf(res.frames, 2));
+      expect(narrowed).toMatchObject({ ok: true, command: "adopt", service: "payment-service" });
+      expect(typeof narrowed["full"]).toBe("string");
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+    } finally {
+      await p.destroy();
+    }
   });
 });
 

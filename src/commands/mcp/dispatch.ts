@@ -37,6 +37,7 @@ import { registerExplore } from "../explore.js";
 import { registerDependencies } from "../dependencies.js";
 import { registerDoctor } from "../doctor.js";
 import { registerContext } from "../context/context.js";
+import { registerAdopt } from "../adopt/adopt.js";
 import { registerGate } from "../gate/gate.js";
 import { registerExplain } from "../explain/explain.js";
 import { registerInstructions } from "../instructions.js";
@@ -133,6 +134,7 @@ function readProgram(sinks: Sinks, authoring = false): Command {
   registerDependencies(program);
   registerDoctor(program);
   registerContext(program);
+  registerAdopt(program);
   registerGate(program);
   registerExplain(program);
   // The two that read no config at all. They are here for the same reason they
