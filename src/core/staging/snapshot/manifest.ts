@@ -116,33 +116,52 @@ export async function readSnapshotChecklist(featureDir: string): Promise<string 
 }
 
 /**
+ * What a snapshot says about one service artifact as this feature's merge found
+ * it. `held` is the pre-image itself. The other two are answers too, and the
+ * same one for the question the reader asks — what did the merge take OUT of
+ * the artifact: nothing. `created` is a row archive wrote for a file it
+ * created (there was nothing before it); `unwritten` is an intact manifest
+ * with no row for the artifact at all — archive records every file it writes,
+ * and a merge that changes nothing writes nothing (a delta whose every marker
+ * missed its target is exactly that), so the artifact is what the merge found.
+ */
+export type SnapshotPreImage =
+  | { kind: "held"; text: string }
+  | { kind: "created" }
+  | { kind: "unwritten" };
+
+/**
  * The bytes one service artifact held the moment this feature merged — the
- * pre-image the snapshot parked under `files/` — as text, or null when there is
- * none to trust.
+ * pre-image the snapshot parked under `files/` — or one of the two answers
+ * that say the merge took nothing out of it ({@link SnapshotPreImage}), or
+ * null when there is nothing to trust.
  *
- * Read for the one question only the pre-image can answer: what a merge TOOK
- * that its delta never spelled. A channel-slot removal in an asyncapi delta is
+ * Read for the questions only the pre-image can answer, both asked by the
+ * retired-operation revival check (core/coherence/retired/): what a merge TOOK
+ * that its delta never spelled — a channel-slot removal in an asyncapi delta is
  * a bare marker, while the messages it retired with the channel are written in
- * the living contract it merged into and nowhere else; the retired-operation
- * revival check (core/coherence/retired/) names them from here. Here, beside
- * `readSnapshotChecklist`, for that reader's reason: the readers are read-only
- * commands, and this module is the half of the snapshot they may import.
+ * the living contract it merged into and nowhere else — and whether a removal
+ * marker took anything at all, since the merge deletes only what it finds at
+ * the marker's slot. Here, beside `readSnapshotChecklist`, for that reader's
+ * reason: the readers are read-only commands, and this module is the half of
+ * the snapshot they may import.
  *
  * The entry is found by `(service, artifact)` on a version-3 manifest — the
  * key that survives a subsystem re-cut — and by the literal path's last two
  * segments on a version-2 one, which recorded nothing else. Tolerant to the
  * last byte, like the checklist reader: no manifest, a layout this loam would
- * have to guess at, no entry, an entry archive CREATED (there was nothing
- * before it), a path that does not stay inside `files/`, a pre-image that no
- * longer hashes to the digest the manifest recorded for it, or bytes that are
- * not UTF-8 — every one is "no pre-image", and the caller grades without it.
- * An edited pre-image is refused rather than read for the reason `unarchive`
- * refuses to restore one: its bytes are no longer what the merge saw.
+ * have to guess at, no row for the artifact while some row cannot be read (it
+ * might have been this one's, so absence cannot be concluded past it), a path
+ * that does not stay inside `files/`, a pre-image that no longer hashes to the digest
+ * the manifest recorded for it, or bytes that are not UTF-8 — every one is
+ * null, and the caller grades without it. An edited pre-image is refused
+ * rather than read for the reason `unarchive` refuses to restore one: its
+ * bytes are no longer what the merge saw.
  */
 export async function readSnapshotPreImage(
   featureDir: string,
   key: { service: string; artifact: string },
-): Promise<string | null> {
+): Promise<SnapshotPreImage | null> {
   const manifest = await manifestRecord(featureDir);
   if (manifest === null || !Array.isArray(manifest.files)) return null;
   if (manifest.version !== SNAPSHOT_VERSION && manifest.version !== SNAPSHOT_COMPAT_VERSION) return null;
@@ -150,7 +169,14 @@ export async function readSnapshotPreImage(
   // `any` from spreading past the row being read (snapshot.ts's reason).
   const rows: unknown[] = manifest.files;
   const entry = rows.find((row) => isRecord(row) && entryIs(row, key));
-  if (!isRecord(entry) || typeof entry.path !== "string" || typeof entry.before !== "string") return null;
+  if (entry === undefined) {
+    // Absence is an answer only when every row could be read: a row that is
+    // not a record with a path might have been this artifact's.
+    return rows.every((row) => isRecord(row) && typeof row.path === "string") ? { kind: "unwritten" } : null;
+  }
+  if (!isRecord(entry) || typeof entry.path !== "string") return null;
+  if (entry.existed === false && entry.before === null) return { kind: "created" };
+  if (typeof entry.before !== "string") return null;
   let bytes: Buffer;
   try {
     // The manifest is data and this path is one we go and read: the lexical
@@ -162,7 +188,7 @@ export async function readSnapshotPreImage(
     return null;
   }
   if (sha256(bytes) !== entry.before || !isUtf8(bytes)) return null;
-  return bytes.toString("utf8");
+  return { kind: "held", text: bytes.toString("utf8") };
 }
 
 /** Does this manifest row record `key`'s artifact? The version-3 key when it has one, the literal path otherwise. */

@@ -1564,11 +1564,19 @@ the source for tests.
   the decision to the author. A channel-slot removal retires the messages its living channel
   declared inline, which the delta never spells, so those names are read from the archived
   feature's undo snapshot (`.loam-before/`, the pre-image of the contract the merge ran against) —
-  only while that pre-image still hashes to what the manifest recorded. Two marker shapes are not
-  sources, because neither retires anything at archive: a marker with no `operationId`
+  only while that pre-image still hashes to what the manifest recorded. A marker is a request, not a
+  record of what happened: the OpenAPI merge deletes a living operation only when the one at the
+  marker's own method and path carries the marker's `operationId`, and the event merge deletes a
+  `channels` or `operations` slot only when the living contract has that key, and a
+  `components.messages` slot only when the message declared there carries the marker's name. A
+  marker that missed — archived past `remove-target-missing` or `remove-target-mismatch` under
+  `--approve` — deleted nothing, so each marker counts only if the same pre-image held its target
+  (a contract the archive created, or never wrote, lost nothing to it); a feature with no intact
+  snapshot cannot be checked, and its markers count as written. Two marker
+  shapes are never sources, because neither can match anything: a marker with no `operationId`
   (`openapi.remove-marker-anonymous`) and one written at path level
-  (`openapi.remove-marker-path-level`) — the merge deletes only a living operation whose id the
-  marker names, so a feature archived past either under `--approve` left the operation living.
+  (`openapi.remove-marker-path-level`) — a feature archived past either under `--approve` left the
+  operation living.
   **The honest limit:** the check knows only what the files under `features/archive/` record. A
   removal made by hand-editing a living contract leaves no marker anywhere, and an archived feature
   deleted from disk takes its markers with it; both read as "never retired", and a quote of such an

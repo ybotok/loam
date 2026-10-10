@@ -36,8 +36,12 @@ export interface OperationRetirements {
  * change that removes nothing.
  *
  * A marker with no `operationId` is not here at all: the reader lists it apart
- * (`anonymousRemovals`), and the merge deletes only a living operation whose id
- * the marker names, so it retires nothing either.
+ * (`anonymousRemovals`), and the merge deletes a living operation only when the
+ * one at the marker's own method and path carries the id the marker names — a
+ * marker naming none matches nothing, so it retires nothing either. That match
+ * is also why a marker is a REQUEST rather than a record: one that missed its
+ * slot deleted nothing, and the retired index (./archived.ts) checks each
+ * against the contract its merge ran against before counting it.
  */
 export function operationRetirements(ops: readonly Operation[]): OperationRetirements {
   const redefined = new Set(ops.filter((op) => !op.remove).map((op) => op.id));
