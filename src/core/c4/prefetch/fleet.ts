@@ -24,6 +24,7 @@
  * cannot leak one docs repo into the next.
  */
 import { resolve } from "node:path";
+import { memo } from "../../kernel/concurrency.js";
 import type { DocsDir } from "../../kernel/ids/dirs.js";
 import type { ServicePaths } from "../../repo/paths.js";
 import type { LoadedDoc } from "../likec4.js";
@@ -50,16 +51,6 @@ export interface ModelDeps {
   known: (docsDir: DocsDir) => Promise<ReadonlySet<string>>;
   /** Parse one `.likec4` document ALONE, through the caller's own document memo, so a prefetched parse is a hit. */
   standalone: (path: string) => Promise<LoadedDoc>;
-}
-
-/** One in-flight promise per key, created on first ask — the memo idiom, once. */
-function memo<T>(store: Map<string, Promise<T>>, k: string, make: () => Promise<T>): Promise<T> {
-  let pending = store.get(k);
-  if (pending === undefined) {
-    pending = make();
-    store.set(k, pending);
-  }
-  return pending;
 }
 
 export class ServiceModels {
