@@ -761,8 +761,9 @@ both text and JSON. See [SCHEMA.md](SCHEMA.md) for the lifecycle contract.
 A retirement also stays retired. The archive gate reads the removal markers every feature under
 `features/archive/` left behind, and refuses a delta that spells an HTTP operation, a channel, an
 event operation or a message one of them retired while the living contract no longer holds it —
-or spells one at the address one of them moved it away from, which would put it back beside its
-new one (`openapi.op-revived`, `asyncapi.slot-revived` — warnings that gate). Without it, a parallel
+or spells one at an address one of them retired it from or moved it away from while it lives on
+elsewhere, which would put it back beside where it lives, judged on the contract the merge would
+write (`openapi.op-revived`, `asyncapi.slot-revived` — warnings that gate). Without it, a parallel
 feature that had merely quoted the operation archived second and put it back at exit 0.
 `--approve` re-adds it on purpose, and the archive output names what came back and whose
 retirement it reverses. A removal made by hand-editing a living contract, or an archive deleted

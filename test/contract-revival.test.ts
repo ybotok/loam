@@ -585,9 +585,69 @@ ${CANCEL_OP}`);
     );
     expect(more).toEqual([]);
     expect(warned!.message).toContain(
-      "archived FEAT-200 moved it to POST /orders/{id}/cancellation; it lives at POST /orders/{id}/abort now, and archiving this delta would put it back at POST /orders/{id}/cancel as well",
+      "archived FEAT-200 moved it to POST /orders/{id}/cancellation; it lives at POST /orders/{id}/abort now, and archiving this delta would put it back at POST /orders/{id}/cancel beside POST /orders/{id}/abort",
     );
     expect(warned!.message).toContain("make any change at POST /orders/{id}/abort");
+  });
+
+  it("retired at its address, re-added at another, then quoted at the first: one operationId at two addresses, refused", async () => {
+    // Nothing MOVED cancelOrder — FEAT-204 retired it at /cancel and FEAT-205
+    // re-added it at /abort — yet a quote of /cancel would put it at both.
+    // The index recorded a retirement by id alone, never the address it
+    // vacated, so with the id living elsewhere this archived at exit 0.
+    const f = await exampleFleet();
+    contractOnly(f, "FEAT-204", "FEAT-204-retire-cancel", `openapi: 3.1.0
+paths:
+  /orders/{id}/cancel:
+    post:
+      operationId: cancelOrder
+      x-loam-remove: true
+`);
+    expect((await runLoam(f.fleet, "archive", "FEAT-204", "--approve")).code).toBe(0);
+    contractOnly(f, "FEAT-205", "FEAT-205-abort", `openapi: 3.1.0
+paths:
+  /orders/{id}/abort:
+    post:
+${CANCEL_OP}`);
+    expect((await runLoam(f.fleet, "archive", "FEAT-205", "--approve")).code).toBe(0);
+
+    contractOnly(f, "FEAT-201", "FEAT-201-quote-cancel", QUOTED_CANCEL);
+    const [warned, ...more] = ofCode(
+      findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-201", "--json")).stdout),
+      "openapi.op-revived",
+    );
+    expect(more).toEqual([]);
+    expect(warned).toMatchObject({ severity: "warn", gates: true });
+    expect(warned!.message).toContain(
+      "spells 'cancelOrder' at POST /orders/{id}/cancel, an address the living contract no longer has — archived FEAT-204 retired it there; it lives at POST /orders/{id}/abort now, and archiving this delta would put it back at POST /orders/{id}/cancel beside POST /orders/{id}/abort: one operationId at two addresses",
+    );
+    expect(warned!.message).toContain("Delete the quote at POST /orders/{id}/cancel if you only restated it, and make any change at POST /orders/{id}/abort");
+    expect(warned!.message).toContain("add a removal marker for 'cancelOrder' at POST /orders/{id}/abort to this same delta");
+    const rebased = JSON.parse((await runLoam(f.fleet, "rebase", "FEAT-201", "--dry-run", "--json")).stdout) as { revived: Array<{ message: string }> };
+    expect(rebased.revived.map((r) => r.message)).toEqual([warned!.message]);
+    expect((await runLoam(f.fleet, "archive", "FEAT-201")).code).toBe(1);
+  });
+
+  it("a removal marker at an address the operation does not live at takes it out of nowhere, so the quote of the vacated address is still refused", async () => {
+    // The merge deletes only where the living operation at the marker's own
+    // method and path carries its id; DELETE /orders/{id} holds nothing, so
+    // cancelOrder stays at /cancellation and the quote adds /cancel beside it.
+    // Any marker naming the id used to excuse the quote, wherever it stood.
+    const f = await moved();
+    contractOnly(f, "FEAT-210", "FEAT-210-stray-marker", `openapi: 3.1.0
+paths:
+  /orders/{id}:
+    delete:
+      operationId: cancelOrder
+      x-loam-remove: true
+  /orders/{id}/cancel:
+    post:
+${CANCEL_OP}`);
+    const all = findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-210", "--json")).stdout);
+    expect(ofCode(all, "openapi.remove-target-missing")).toHaveLength(1);
+    const [warned, ...more] = ofCode(all, "openapi.op-revived");
+    expect(more).toEqual([]);
+    expect(warned!.message).toContain("archived FEAT-200 moved it to POST /orders/{id}/cancellation, where it lives now");
   });
 
   it("several movers away from one address are each named with where they put it — one clause per destination, in id order", async () => {
@@ -673,6 +733,22 @@ ${CANCEL_OP}`;
     expect(ofCode(all, "openapi.op-revived")).toEqual([]);
   });
 
+  it("a swap whose replacement carries no operationId is a move back too — the merge writes per method and path, whatever the id", async () => {
+    // Only operations with an id reached the swap exemption, so this was
+    // refused as one operationId at two addresses, with a remedy (a marker at
+    // /cancellation) that could not be written beside the new operation.
+    const f = await moved();
+    const anonymous = SWAP_BACK.replace("      operationId: requestCancellation\n", "      summary: Request a cancellation\n");
+    expect(anonymous).not.toContain("requestCancellation");
+    contractOnly(f, "FEAT-209", "FEAT-209-swap-cancel", anonymous);
+    const all = findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-209", "--json")).stdout);
+    expect(ofCode(all, "openapi.op-revived")).toEqual([]);
+    expect((JSON.parse((await runLoam(f.fleet, "rebase", "FEAT-209", "--dry-run", "--json")).stdout) as { revived: unknown[] }).revived).toEqual([]);
+    const archived = await runLoam(f.fleet, "archive", "FEAT-209", "--approve");
+    expect(archived.code, archived.out).toBe(0);
+    expect(f.read(LIVING_ORDER_API).match(/operationId: cancelOrder\b/g)).toHaveLength(1);
+  });
+
   it("a QUOTE of another operation at that address is not written, so cancelOrder stays there and the quote of the old address is still refused", async () => {
     // Pinned to its own content, the /cancellation definition is a quote —
     // the merge keeps the living operation — and archiving would answer
@@ -689,6 +765,11 @@ ${CANCEL_OP}`;
     );
     expect(more).toEqual([]);
     expect(warned!.message).toContain("spells 'cancelOrder' at POST /orders/{id}/cancel");
+    // The key a marker would need already holds the quote: the remedy names
+    // the address to drop and the override, never a marker nobody can write.
+    expect(warned!.message).not.toContain("removal marker");
+    expect(warned!.message).toContain("Delete the quote at POST /orders/{id}/cancel if you only restated it");
+    expect(warned!.message).toContain("archive with --approve if the feature brings it back there on purpose");
   });
 });
 
@@ -1161,6 +1242,134 @@ components:
     expect(ofCode(pinned, "asyncapi.slot-revived")).toHaveLength(1);
   });
 
+  it("retired at its key, re-declared under another, then declared at the first: one message name in two places, refused", async () => {
+    // The event twin of the operation case: FEAT-40 retired payment.Legacy at
+    // components.messages.Legacy, FEAT-41 re-declared it at LegacyNew, and a
+    // declaration at Legacy would put the name in both. Only moves were
+    // recorded by address, so with the name living elsewhere this was silent.
+    const p = await eventFleet(LIVING_EVENTS, RETIRE_EVENTS);
+    await p.write("features/FEAT-41-legacy-new/intent.md", INTENT("FEAT-41"));
+    await p.write(
+      "features/FEAT-41-legacy-new/specs/payment-service/asyncapi.yaml",
+      `asyncapi: 3.0.0
+components:
+  messages:
+    LegacyNew:
+      name: payment.Legacy
+      payload:
+        type: object
+`,
+    );
+    expect((await runLoam(p.workDir, "archive", "FEAT-41", "--approve")).code).toBe(0);
+    await p.write("features/FEAT-45-quote-legacy/intent.md", INTENT("FEAT-45"));
+    await p.write(
+      "features/FEAT-45-quote-legacy/specs/payment-service/asyncapi.yaml",
+      `asyncapi: 3.0.0
+components:
+  messages:
+    Legacy:
+      name: payment.Legacy
+      payload:
+        type: object
+`,
+    );
+    const [warned, ...more] = await eventFindings(p, "FEAT-45");
+    expect(more).toEqual([]);
+    expect(warned!.message).toContain(
+      "declares message 'payment.Legacy' at components.messages.Legacy, a key the living contract no longer has — archived FEAT-40 retired it there; it is declared at components.messages.LegacyNew now, and archiving this delta would declare it at components.messages.Legacy beside components.messages.LegacyNew: one message name in two places",
+    );
+    expect(warned!.message).toContain("to move it back on purpose, retire it at components.messages.LegacyNew in this same delta");
+    expect((await runLoam(p.workDir, "archive", "FEAT-45")).code).toBe(1);
+  });
+
+  it("a removal marker for the name at a key it is not declared at retires nothing, so the declaration at the vacated key is still refused", async () => {
+    // Any marker naming the message used to excuse the declaration as the
+    // delta's own relocation. LegacyX holds nothing, so the merge leaves
+    // payment.Legacy at LegacyV2, and the quote declares it at Legacy too.
+    const p = await makeProject({
+      "services/payment-service/spec.md": EVENTS_SPEC,
+      "services/payment-service/asyncapi.yaml": LIVING_EVENTS,
+      "features/FEAT-44-rekey-legacy/intent.md": INTENT("FEAT-44"),
+      "features/FEAT-44-rekey-legacy/specs/payment-service/asyncapi.yaml": `asyncapi: 3.0.0
+channels:
+  legacyEvents:
+    address: payment.legacy.v1
+    messages:
+      Legacy:
+        $ref: '#/components/messages/LegacyV2'
+components:
+  messages:
+    Legacy:
+      name: payment.Legacy
+      x-loam-remove: true
+    LegacyV2:
+      name: payment.Legacy
+      payload:
+        type: object
+`,
+      "features/FEAT-45-quote-legacy/intent.md": INTENT("FEAT-45"),
+      "features/FEAT-45-quote-legacy/specs/payment-service/asyncapi.yaml": `asyncapi: 3.0.0
+components:
+  messages:
+    LegacyX:
+      name: payment.Legacy
+      x-loam-remove: true
+    Legacy:
+      name: payment.Legacy
+      payload:
+        type: object
+`,
+    });
+    cleanups.push(() => p.destroy());
+    expect((await runLoam(p.workDir, "archive", "FEAT-44", "--approve")).code).toBe(0);
+    const all = findings((await runLoam(p.workDir, "validate", "--feature", "FEAT-45", "--json")).stdout);
+    expect(ofCode(all, "asyncapi.remove-target-missing")).toHaveLength(1);
+    const [warned, ...more] = ofCode(all, "asyncapi.slot-revived");
+    expect(more).toEqual([]);
+    expect(warned!.message).toContain("archived FEAT-44 moved it to components.messages.LegacyV2, where it is declared now");
+  });
+
+  it("swapping it back — another message declared at the key it moved to — leaves the name in one place, and is not graded", async () => {
+    const p = await makeProject({
+      "services/payment-service/spec.md": EVENTS_SPEC,
+      "services/payment-service/asyncapi.yaml": LIVING_EVENTS,
+      "features/FEAT-44-rekey-legacy/intent.md": INTENT("FEAT-44"),
+      "features/FEAT-44-rekey-legacy/specs/payment-service/asyncapi.yaml": `asyncapi: 3.0.0
+channels:
+  legacyEvents:
+    address: payment.legacy.v1
+    messages:
+      Legacy:
+        $ref: '#/components/messages/LegacyV2'
+components:
+  messages:
+    Legacy:
+      name: payment.Legacy
+      x-loam-remove: true
+    LegacyV2:
+      name: payment.Legacy
+      payload:
+        type: object
+`,
+      "features/FEAT-49-swap-legacy/intent.md": INTENT("FEAT-49"),
+      "features/FEAT-49-swap-legacy/specs/payment-service/asyncapi.yaml": `asyncapi: 3.0.0
+components:
+  messages:
+    LegacyV2:
+      name: payment.Other
+      payload:
+        type: object
+    Legacy:
+      name: payment.Legacy
+      payload:
+        type: object
+`,
+    });
+    cleanups.push(() => p.destroy());
+    expect((await runLoam(p.workDir, "archive", "FEAT-44", "--approve")).code).toBe(0);
+    expect(await eventFindings(p, "FEAT-49")).toEqual([]);
+  });
+
   it("a message re-keyed twice: the quote of its first key names the key the first mover chose, and apart from it where it is declared now", async () => {
     // FEAT-44 moved payment.Legacy from Legacy to LegacyV2, FEAT-48 from
     // LegacyV2 to LegacyV3. FEAT-44 never wrote LegacyV3.
@@ -1206,7 +1415,7 @@ components:
     const [warned, ...more] = await eventFindings(p, "FEAT-45");
     expect(more).toEqual([]);
     expect(warned!.message).toContain(
-      "archived FEAT-44 moved it to components.messages.LegacyV2; it is declared at components.messages.LegacyV3 now, and archiving this delta would declare it at components.messages.Legacy as well",
+      "archived FEAT-44 moved it to components.messages.LegacyV2; it is declared at components.messages.LegacyV3 now, and archiving this delta would declare it at components.messages.Legacy beside components.messages.LegacyV3",
     );
   });
 

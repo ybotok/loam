@@ -88,13 +88,14 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
   }
 
   // A revival: a slot or message this delta declares that the living
-  // contract no longer has because an ARCHIVED feature retired it — the
-  // contract axis's `openapi.op-revived`, on the slot and the message name
-  // (../retired/revived.ts). Asked of the index only when something is
-  // absent from its living contract at all.
-  for (const [svc, absent] of declared.revivalCandidates) {
-    if (absent.slots.length === 0 && absent.messages.length === 0) continue;
-    issues.push(...revivedEvents(svc, absent, await request.retired()));
+  // contract no longer has because an ARCHIVED feature retired it, or a
+  // message name declared again at a key an archived feature took it out of
+  // — the contract axis's `openapi.op-revived`, on the slot and the message
+  // name (../retired/revived.ts). Asked of the index only when the merged
+  // contract declares something the living one does not.
+  for (const [svc, arrived] of declared.revivalCandidates) {
+    if (arrived.slots.length === 0 && arrived.messages.length === 0) continue;
+    issues.push(...revivedEvents(svc, arrived, await request.retired()));
   }
 
   // Two features declaring one (service, message): both deltas apply

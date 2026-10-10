@@ -77,15 +77,18 @@ export function openapiBaselineIssues(input: BaselineGateInput): Issue[] {
       // quote then archived as an addition and put the operation back — and
       // for a move the retirement advice is wrong too: the id still lives, so
       // archiving past `openapi.op-revived` would answer it at both slots.
-      // The living contract says which: a move leaves the id at another slot.
-      // The third way — a pin hand-written onto a genuinely new operation —
-      // is the rare one. The two addresses are a condition ("while it still
-      // lives there"), not a forecast: a delta swapping the id back defines
-      // another operation at the address it lives at, and the merge replaces
-      // it there — the revival check (coherence/retired/revived.ts) stands
-      // down for exactly that delta, so this must not tell its author the
-      // opposite. For the same delta a removal marker at that address cannot
-      // be written beside the other operation, hence the second remedy.
+      // The living contract says which: a move leaves the id at another slot
+      // (and so does a retirement here followed by a re-add there, which
+      // reads the same from this side). The third way — a pin hand-written
+      // onto a genuinely new operation — is the rare one. The two addresses
+      // are a condition ("while it still lives there"), not a forecast: a
+      // delta swapping the id back defines another operation at the address
+      // it lives at, with or without an operationId, and the merge replaces
+      // it there. The revival check (coherence/retired/revived.ts) reads the
+      // contract that merge would write and stands down whenever it answers
+      // the id at one address, so this must not tell the author otherwise —
+      // and for that delta a removal marker at the address cannot be written
+      // beside the other operation, hence the second remedy.
       const movedTo = livingDoc.ops.filter((l) => !l.remove && l.id === op.id).map((l) => `${l.method.toUpperCase()} ${l.path}`);
       issues.push({
         severity: "error",

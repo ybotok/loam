@@ -16,8 +16,8 @@
  * value edge from here up into events/ would be a package cycle. The merge
  * simulation (./merged.ts) is here for the same reason, and rides on the pair
  * as `merged()`: the walk grades the post-archive contract with it, and the
- * revival check asks it where a message name will still be declared once the
- * delta merges — one simulation per pair, whichever asks first.
+ * revival check compares it with the living contract — one simulation per
+ * pair, whichever asks first.
  */
 import { existsSync } from "node:fs";
 import { parse } from "yaml";
@@ -55,20 +55,25 @@ export interface EventPairRead extends EventPair {
    */
   livingAnswers: boolean;
   /**
-   * The living contract as the archive-time merge would leave it (./merged.ts),
-   * computed on first ask and kept: undefined where there is no living text to
-   * merge into (absent or unreadable) or the merge refuses the pair.
+   * The living contract as the archive would leave it (./merged.ts), computed
+   * on first ask and kept — the create branch's document where no living
+   * contract exists; undefined where the living side does not answer, or the
+   * merge refuses the pair. The walk asks it only with a living text in hand.
    */
   merged(): AsyncapiDoc | undefined;
 }
 
-/** Where the two documents live, and their parses — read by the caller, which needs them before this. */
-export interface EventPairSides {
+/**
+ * Where one service's two contracts of one axis live, and their parses — read
+ * by the caller, which needs them before this. The OpenAPI revival read
+ * (./revived.ts) takes the same shape.
+ */
+export interface PairSides<Doc = AsyncapiDoc> {
   featPath: string;
-  /** Readable: an unreadable feature delta is `asyncapi.invalid`, and nothing is graded against it. */
-  featDoc: AsyncapiDoc;
+  /** Readable: an unreadable feature delta is `asyncapi.invalid` (`openapi.invalid`), and nothing is graded against it. */
+  featDoc: Doc;
   livingPath: string;
-  livingDoc: AsyncapiDoc;
+  livingDoc: Doc;
   /** The service the pair belongs to — what a refusal of the simulated merge would name. */
   service: string;
 }
@@ -79,19 +84,20 @@ export interface EventPairSides {
  * tree, and a second `parse` of the same bytes is a second chance for the two
  * halves to disagree about what the delta declares.
  */
-export async function readEventPair(sides: EventPairSides, context?: FleetContext): Promise<EventPairRead> {
+export async function readEventPair(sides: PairSides, context?: FleetContext): Promise<EventPairRead> {
   const { featPath, featDoc, livingPath, livingDoc, service } = sides;
   const featText = await readOr(featPath, context);
   const featPlain: unknown = featText === undefined ? {} : parse(featText);
   const livingExists = existsSync(livingPath);
   const livingText = !livingExists || livingDoc.unreadable ? undefined : await readOr(livingPath, context);
   const livingPlain: unknown = livingText === undefined ? {} : parse(livingText);
+  const livingAnswers = livingText !== undefined || !livingExists;
   // Lazy: most pairs never need it on the rebase path, and the walk asks for
   // it once. Boxed, so an `undefined` answer is remembered too.
   let simulated: { doc: AsyncapiDoc | undefined } | undefined;
   const merged = (): AsyncapiDoc | undefined =>
     (simulated ??= {
-      doc: livingText === undefined || featText === undefined
+      doc: !livingAnswers || featText === undefined
         ? undefined
         : mergedAsyncapiDoc({ livingText, livingDoc, featureText: featText, service }),
     }).doc;
@@ -104,7 +110,7 @@ export async function readEventPair(sides: EventPairSides, context?: FleetContex
     livingSlots: slotsByKey(asyncapiSlots(livingPlain)),
     livingText,
     livingPlain,
-    livingAnswers: livingText !== undefined || !livingExists,
+    livingAnswers,
     merged,
   };
 }

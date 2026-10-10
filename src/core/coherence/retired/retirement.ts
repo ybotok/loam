@@ -17,7 +17,7 @@
  */
 import type { Operation } from "../../openapi/doc.js";
 import type { AsyncapiSlot } from "../../asyncapi/digest.js";
-import type { AsyncapiDoc } from "../../asyncapi/model.js";
+import type { AsyncapiDoc, EventMessage } from "../../asyncapi/model.js";
 
 /** The OpenAPI half: every id a removal marker names, and the ones genuinely retired. */
 export interface OperationRetirements {
@@ -60,6 +60,13 @@ export interface MessageRetirements {
   redeclared: Set<string>;
   /** `markerNames ∪ inlineRetired`, minus `redeclared`. */
   net: Set<string>;
+  /**
+   * The declarations behind the first two sets, each where it stood — the
+   * `components.messages` markers, and the living inline declarations under
+   * a removed channel. What the retired index (./archived.ts) records as the
+   * addresses an archived feature vacated, read off this one spelling.
+   */
+  vacated: EventMessage[];
 }
 
 /**
@@ -83,16 +90,12 @@ export function messageRetirements(
   featSlots: readonly AsyncapiSlot[],
   living: AsyncapiDoc,
 ): MessageRetirements {
-  const markerNames = new Set(
-    featDoc.messages.filter((m) => m.remove === true && m.slot.startsWith("components.messages.")).map((m) => m.name),
-  );
+  const markers = featDoc.messages.filter((m) => m.remove === true && m.slot.startsWith("components.messages."));
   const channelRemovals = featSlots.filter((s) => s.section === "channels" && s.remove).map((s) => s.key);
-  const inlineRetired = new Set(
-    living.messages
-      .filter((m) => channelRemovals.some((ck) => m.slot.startsWith(`channels.${ck}.messages.`)))
-      .map((m) => m.name),
-  );
+  const inline = living.messages.filter((m) => channelRemovals.some((ck) => m.slot.startsWith(`channels.${ck}.messages.`)));
+  const markerNames = new Set(markers.map((m) => m.name));
+  const inlineRetired = new Set(inline.map((m) => m.name));
   const redeclared = new Set(featDoc.messages.filter((m) => m.remove !== true).map((m) => m.name));
   const net = new Set([...markerNames, ...inlineRetired].filter((name) => !redeclared.has(name)));
-  return { markerNames, inlineRetired, redeclared, net };
+  return { markerNames, inlineRetired, redeclared, net, vacated: [...markers, ...inline] };
 }
