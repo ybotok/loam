@@ -207,12 +207,8 @@ export function registerGherkin(program: Command): void {
         version: LOAM_VERSION,
       });
 
-      // Orphans of THIS scope, inside loam/ and nowhere else. Feature mode owns
-      // only its own emissions: stamped files carrying this feature's tag whose
-      // file is no longer in the plan (a requirement renamed or dropped).
-
-      // `Set<string>`, not the ids' own brand: this set answers membership
-      // questions for tags read out of .feature files — document text.
+      // `Set<string>`, not the ids' own brand — core/gherkin/stale.ts's reason:
+      // it answers membership for tags read out of .feature files.
       const activeIds = new Set<string>((await listFeatures(config.docsDir)).map((f) => f.id));
       let reconciled;
       try {
@@ -223,11 +219,8 @@ export function registerGherkin(program: Command): void {
       }
       const { actions, orphans, conflicts } = reconciled;
 
-      // All or nothing: one conflicting file refuses the whole emission, so a
-      // half-written suite can never be the state an agent has to reason about.
-      // Only a feature run can conflict — living mode keeps the in-flight file
-      // rather than refusing — and standing inside that scope is also how the
-      // message names the feature without asserting there is one.
+      // All or nothing, and only a feature run can conflict — `./reconcile.ts`
+      // records why, where the conflicts are collected.
       if (scope.mode === "feature" && conflicts.length > 0) {
         const detail = conflicts
           .map((c) => `${rel(c.path)} is @${c.owners.join(" @")} (requirement '${c.requirement.name}')`)

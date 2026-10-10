@@ -16,9 +16,6 @@
  */
 import { parseDocument, type Document } from "yaml";
 
-// Every `isRecord` below asks one question of a resolved plain tree: is this a
-// node that can hold OpenAPI keys — an object, not an array?
-
 export type OpenapiMergeSource = "feature" | "living";
 
 /** A document the merge planner cannot read. Commands map this domain error to their own envelope. */

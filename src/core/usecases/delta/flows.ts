@@ -33,15 +33,16 @@
  * `core/c4/splice/delta-blocks.ts` goes on refusing a `dynamic view` inside
  * `delta.likec4` and now names this slot as the place it belongs.
  *
- * ONE CALL for the walk. `architectureDocuments` already implements "every
+ * ONE CALL for the walk (`relativeDocuments`, which the topology axis in
+ * `core/deployment/delta.ts` shares). `architectureDocuments` already implements "every
  * `.likec4` under a directory, recursively, in a stable order, and an absent
  * directory is an empty list" — which is the whole of what a feature's flow
  * directory is. A second walk would be two implementations free to disagree
  * about what a flow file is, and they would disagree first about nesting.
  */
 import { existsSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
-import { architectureDocuments } from "../../c4/project/documents.js";
+import { join } from "node:path";
+import { relativeDocuments } from "../../c4/project/documents.js";
 import { architectureDir } from "../../c4/project/architecture.js";
 import { featureUseCasesDir } from "../../repo/authored/paths.js";
 import type { DocsDir, FeatureDir } from "../../kernel/ids/dirs.js";
@@ -71,10 +72,7 @@ export interface FeatureFlow {
  * answers an absent directory with an empty list rather than a throw.
  */
 export async function featureFlows(featureDir: FeatureDir): Promise<FeatureFlow[]> {
-  const dir = featureUseCasesDir(featureDir);
-  const paths = await architectureDocuments(dir);
-  const base = resolve(dir);
-  return paths.map((path) => ({ rel: relative(base, path).split(/[\\/]/).join("/"), path }));
+  return relativeDocuments(featureUseCasesDir(featureDir));
 }
 
 /**

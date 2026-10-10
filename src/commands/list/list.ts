@@ -152,7 +152,7 @@ export function registerList(program: Command): void {
           ? await listFeatures(docsDir, { includeArchived: opts.archived }, fleet)
           : undefined;
         const verification = features
-          ? await Promise.all(features.map((f) => featureVerification(docsDir, f)))
+          ? await Promise.all(features.map((f) => featureVerification(docsDir, f, fleet)))
           : undefined;
 
         // The capability section: the vocabulary's own verdict decides the shape.

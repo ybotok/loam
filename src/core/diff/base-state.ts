@@ -208,7 +208,12 @@ function classifyBaseDirs(paths: string[]): { dirs: BaseDir[]; ambiguous: Map<st
   return { dirs: accepted, ambiguous: collisions(accepted) };
 }
 
-function collisions(dirs: BaseDir[]): Map<string, string[]> {
+/**
+ * Ids claimed by more than one enumerated directory, with every claimant named
+ * — the base side's grouping and `./current-state.ts`'s, so the two sides of a
+ * diff refuse the same ambiguity the same way.
+ */
+export function collisions(dirs: readonly { id: string; dir: string }[]): Map<string, string[]> {
   const byId = new Map<string, string[]>();
   for (const d of dirs) byId.set(d.id, [...(byId.get(d.id) ?? []), d.dir]);
   return new Map([...byId].filter(([, claimants]) => claimants.length > 1));

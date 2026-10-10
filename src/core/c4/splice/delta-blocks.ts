@@ -57,7 +57,7 @@
  * (`core/usecases/delta/flows.ts`), and it is a views-only document — which is
  * exactly why it stages beside the map when this one cannot.
  */
-import { maskSource, matchBrace } from "../source-mask.js";
+import { maskSource, topLevelBlocks } from "../source-mask.js";
 import { LandscapeSpliceError } from "./contract.js";
 
 /**
@@ -100,20 +100,13 @@ const FLOW_HOME =
  * `scanModel` splices under, and for the same reason: this refuses an archive,
  * and a refusal a comment can provoke is worse than the silence it replaced.
  *
- * Brace depth is tracked in one forward pass rather than recounted per match:
- * only a block at depth 0 is a top-level declaration, and `deployment` at depth
- * 1 is an ordinary `specification { deploymentNode … }` or a view predicate.
+ * Only a block at depth 0 is a top-level declaration (`topLevelBlocks`), and
+ * `deployment` at depth 1 is an ordinary `specification { deploymentNode … }`
+ * or a view predicate.
  */
 export function assertMergeableDelta(deltaText: string): void {
   const { code } = maskSource(deltaText);
-  let depth = 0;
-  let cursor = 0;
-  for (const m of code.matchAll(TOP_LEVEL_BLOCK)) {
-    for (; cursor < m.index; cursor += 1) {
-      if (code[cursor] === "{") depth += 1;
-      else if (code[cursor] === "}") depth -= 1;
-    }
-    if (depth !== 0) continue;
+  for (const { match: m, body: inner } of topLevelBlocks(code, TOP_LEVEL_BLOCK)) {
     const block = m[1]!;
     if (block !== "views") {
       refuse(
@@ -130,9 +123,6 @@ export function assertMergeableDelta(deltaText: string): void {
         block === "deployment" ? DEPLOYMENT_HOME : LANDSCAPE_HOME,
       );
     }
-    const open = m.index + m[0].length - 1;
-    const close = matchBrace(code, open);
-    const inner = code.slice(open + 1, close === -1 ? code.length : close);
     const authored = AUTHORED_VIEW.exec(inner);
     if (authored !== null) {
       const kind = authored[1]!;

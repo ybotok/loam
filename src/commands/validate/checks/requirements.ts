@@ -13,7 +13,13 @@
  * requirements and answer in findings.
  */
 import { type Finding } from "../../../core/vocabulary/report.js";
-import { requirementsMissingScenarios } from "../../../core/document/scenarios.js";
+import {
+  assertionlessFindings,
+  examplesFindings,
+  missingScenariosFinding,
+  requirementsMissingScenarios,
+  steplessFindings,
+} from "../../../core/document/scenarios.js";
 import { requirementIdProblems, type Requirement } from "../../../core/document/spec.js";
 import {
   closeIds,
@@ -276,11 +282,22 @@ export function coverageFinding(label: string, reqs: Requirement[]): Finding {
       message: `${label} covered (${reqs.length} requirement${reqs.length === 1 ? "" : "s"}, all with scenarios)`,
     };
   }
-  return {
-    severity: "error",
-    code: "requirements.missing-scenarios",
-    message: `${label}: ${missing.length} requirement(s) without a scenario`,
-    details: missing.map((r) => r.name),
-    text: { detailPrefix: "- " },
-  };
+  return { ...missingScenariosFinding(label, missing), text: { detailPrefix: "- " } };
+}
+
+/**
+ * The scenario-shape run of the battery every requirement document gets, in
+ * report order — stepless, assertionless, examples — spelled once for the four
+ * documents the header names, so they cannot drift apart. What differs between
+ * the four stays at each call site: a delta's coverage finding carries its
+ * service as `subject`, a living spec.md with no requirements reports
+ * `spec.no-requirements` in coverage's place, and duplicate names and
+ * requirement ids are graded on LIVING documents (`duplicateRequirementFindings`).
+ */
+export function scenarioShapeFindings(label: string, subject: string, reqs: Requirement[]): Finding[] {
+  return [
+    ...steplessFindings(label, subject, reqs),
+    ...assertionlessFindings(label, subject, reqs),
+    ...examplesFindings(label, subject, reqs),
+  ];
 }

@@ -13,12 +13,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { repoPath } from "../../envelope/json.js";
 import { resolvePortableFileInsideLexically, UnsafePathError } from "../../kernel/path-safety.js";
-// Every `isRecord` below guards a record loam itself wrote and is reading back
-// — the lock, the snapshot manifest — whose fields are asked for on the very
-// next line, inside a REFUSAL path. `JSON.parse` answers with any JSON value,
-// not with an object, and that is where a thrown `TypeError` costs the most: it
-// does not make the command fail safely, it replaces a designed refusal with
-// `internal`.
+// Every `isRecord` below guards the manifest loam itself wrote, read back inside
+// a REFUSAL path — `../lock.ts` records why that is where a thrown `TypeError`
+// costs the most.
 import { isRecord } from "../../kernel/records.js";
 import { isDigest, sha256, type StagedWrite } from "../writes.js";
 import { message, quietRm } from "../commit.js";

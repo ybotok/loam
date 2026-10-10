@@ -35,6 +35,12 @@ import {
 import { addCounts, issue } from "./shape.js";
 import { type Ingest } from "./workspace.js";
 
+/**
+ * A calendar date, optionally with a time. OpenSpec's template writes the plain
+ * date, but a timestamp is still a date — and rejecting it blocked every change
+ * and every capability in the workspace over one field nobody reads, fixable
+ * only by editing the source migration promises not to touch.
+ */
 const CHANGE_CREATED_RE = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
 
 export async function inspectChangeMetadata(

@@ -39,10 +39,10 @@ export function registerMcp(program: Command): void {
       // actionable, by the agent on the other end. The server serves the
       // repository it was started in (each call resolves loam.json through
       // process.cwd()) and never changes directory.
+      // One table decides both what `tools/list` advertises and which commands
+      // a `tools/call` can reach (`./dispatch.ts`'s `readProgram`).
       const tools = opts.author ? [...MCP_TOOLS, ...MCP_AUTHOR_TOOLS] : MCP_TOOLS;
-      const run = opts.author
-        ? (argv: readonly string[]) => runToolArgv(argv, true)
-        : runToolArgv;
+      const run = (argv: readonly string[]) => runToolArgv(argv, tools);
       await serve({ input: process.stdin, output: process.stdout, log: process.stderr }, run, tools);
     });
 }

@@ -323,19 +323,11 @@ export function resolveRequirementTags(
 
 /**
  * Close ids for a slug nothing in the document matches — suggested against the
- * SLUGS, then mapped back to the real ids, exactly as `closeCapabilityIds`
- * does and for its two reasons: comparing on slugs is what lets a typo reach an
+ * SLUGS, then mapped back to the real ids: `closeCapabilityIds` over this
+ * document's ids, for its two reasons: comparing on slugs is what lets a typo reach an
  * id whose awkward character sits where the typo does not, and mapping back is
  * what keeps the suggestion writable.
  */
 function closeRequirementIds(slug: string, ids: ReadonlySet<string>): string[] {
-  const bySlug = new Map<string, string[]>();
-  for (const id of ids) {
-    const key = tagSlug(id);
-    const found = bySlug.get(key);
-    if (found === undefined) bySlug.set(key, [id]);
-    else found.push(id);
-  }
-  const near = closeIds(slug, [...bySlug.keys()]);
-  return [...new Set(near.flatMap((s) => bySlug.get(s) ?? []))].sort(compareIds);
+  return closeCapabilityIds(slug, idsBySlug([...ids]));
 }

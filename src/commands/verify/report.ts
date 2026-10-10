@@ -20,9 +20,18 @@ import {
   type Verification,
   verificationVerdict,
 } from "../../core/verify/record.js";
-import { recordLocation, verificationDir } from "../../core/verify/location.js";
+import { verificationDir } from "../../core/verify/location.js";
 import { EXPLAIN_FOOTER, plural } from "../policy/format.js";
-import { answeredMark, contestedNotices, contractReportLine, forkedChecklistNotices, MARK, noticesFor, reportLine } from "./frozen.js";
+import {
+  answeredMark,
+  contestedNotices,
+  contractReportLine,
+  forkedChecklistNotices,
+  MARK,
+  noticesFor,
+  recordedPayload,
+  reportLine,
+} from "./frozen.js";
 
 export interface ClaimStatus {
   id: string;
@@ -56,20 +65,6 @@ export function statuses(checklist: Checklist, claims: Checklist["claims"], reco
 }
 
 /**
- * The read view.
- *
- * `lens` is `--service`: the same checklist, narrowed to the claims that
- * service's code answers. It exists because in a ten-repo fleet the whole
- * checklist is never one repository's business, and an agent that cannot ask
- * "what do I still owe on FEAT-1?" answers the question by guessing. Narrowing
- * narrows the verdict too — `verified` then means "every claim owned by this
- * service is confirmed", which is why the payload names the service it applied.
- *
- * `bound` is loam.json's `service` — what this repository says it is. It only
- * shapes the footer, and it is the whole of how federation is discoverable:
- * the recording form printed here is the one that will actually work from here.
- */
-/**
  * Which feature is being reported on, and in what voice.
  *
  * Three of these travelled as loose strings beside two booleans through every
@@ -89,6 +84,20 @@ export interface VerifyTarget {
   recovered?: CommitRecovery | null;
 }
 
+/**
+ * The read view.
+ *
+ * `lens` is `--service`: the same checklist, narrowed to the claims that
+ * service's code answers. It exists because in a ten-repo fleet the whole
+ * checklist is never one repository's business, and an agent that cannot ask
+ * "what do I still owe on FEAT-1?" answers the question by guessing. Narrowing
+ * narrows the verdict too — `verified` then means "every claim owned by this
+ * service is confirmed", which is why the payload names the service it applied.
+ *
+ * `bound` is loam.json's `service` — what this repository says it is. It only
+ * shapes the footer, and it is the whole of how federation is discoverable:
+ * the recording form printed here is the one that will actually work from here.
+ */
 export function report(
   target: VerifyTarget,
   checklist: Checklist,
@@ -100,17 +109,13 @@ export function report(
   const owners = [...new Set(checklist.claims.map((c) => c.subject))].sort();
   const scoped = lens === undefined ? checklist.claims : checklist.claims.filter((c) => c.subject === lens);
   const claims = statuses(checklist, scoped, recorded);
-  const count = (v: string): number => claims.filter((c) => c.verdict === v).length;
-  const summary = {
-    claims: claims.length,
-    confirmed: count("confirmed"),
-    unconfirmed: count("unconfirmed"),
-    unanswered: count("unanswered"),
-  };
+  const tally = tallyAnswers(claims);
+  // The payload's `summary` is the tally without its `attested` count, which
+  // travels as a key of its own beside it.
+  const summary = { claims: tally.claims, confirmed: tally.confirmed, unconfirmed: tally.unconfirmed, unanswered: tally.unanswered };
   // A record that answers a different question set is not an answer to this one,
   // however complete it looks — so staleness disqualifies it as a whole.
   const stale = recorded !== null && recorded.checklist !== checklist.digest;
-  const tally = tallyAnswers(claims);
   const verdict = verificationVerdict(tally, stale);
   // `verified` keeps its name and its type, and loses its old meaning: a
   // scenario claim on an agent's word is answered, not run, so it no longer
@@ -146,18 +151,7 @@ export function report(
       attested: tally.attested,
       summary,
       services: owners,
-      recorded:
-        recorded === null
-          ? null
-          : {
-              path: repoPath(docsDir, recordLocation(featureDir)),
-              recorded: recorded.recorded,
-              checklist: recorded.checklist,
-              stale,
-              ...(recorded.attestations === undefined ? {} : { attestations: recorded.attestations }),
-              ...(recorded.report === undefined ? {} : { report: recorded.report }),
-              ...(recorded.contractReport === undefined ? {} : { contractReport: recorded.contractReport }),
-            },
+      recorded: recorded === null ? null : recordedPayload(target, recorded, { stale }),
       claims,
       ...(notices.length === 0 ? {} : { notices }),
     });
@@ -270,19 +264,3 @@ export function federationNote(scope: { lens?: string; bound?: string }, owners:
   }
   return [];
 }
-
-/**
- * The frozen view: an archived feature's record, verbatim. No checklist is
- * derived and no staleness is judged — there is nothing current to judge
- * against, and pretending otherwise is how a true record reads as a lie.
- * `frozen` is the marker a consumer branches on.
- *
- * The verdict is recounted from `claims[]`, never taken from `summary`: this is
- * the post-ship verdict on a feature nobody can re-derive a checklist for, so a
- * record whose counts had drifted from its own answers reported a shipped
- * feature as fully confirmed. (A record that contradicts itself never reaches
- * here — `readVerificationState` refuses it — so the recount and the summary
- * agree; the recount is what says WHY.) No record at all is reported as exactly
- * that, with `summary: null`, not zero claims, which would falsely say the
- * feature promised nothing.
- */

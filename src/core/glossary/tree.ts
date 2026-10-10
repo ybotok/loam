@@ -24,11 +24,11 @@
  * document is prose for a human, and the one thing loam reads from it — the
  * links it writes — is read by `core/links/`, where every other document's are.
  */
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { compareIds } from "../repo/entries.js";
-import { entryIs } from "../repo/tree/fs.js";
+import { entryIs, markDescended } from "../repo/tree/fs.js";
 
 /** The one filename under `glossary/` that is not a term. */
 const INDEX_PAGE = "README.md";
@@ -71,8 +71,9 @@ interface WalkState {
  * A fleet is expected to hold tens to low hundreds of these — a domain's
  * vocabulary, not its data — so the cost is one `readdir` per directory and the
  * walk's expense is a non-question. The symlink-cycle guard is the one
- * `core/repo/tree/walk.ts` and the capability walk both carry, and for the same
- * reason: `entryIs` follows symlinks on purpose, and a followed cycle without a
+ * `core/repo/tree/walk.ts` and the capability walk both carry
+ * (`core/repo/tree/fs.ts`'s `markDescended`), and for the same reason:
+ * `entryIs` follows symlinks on purpose, and a followed cycle without a
  * visited set recurses until the stack ends.
  */
 export async function readGlossary(root: string): Promise<Glossary> {
@@ -85,7 +86,7 @@ export async function readGlossary(root: string): Promise<Glossary> {
 
 /** Collect the terms in one directory and walk what is beneath it. */
 async function visit(spot: Spot, state: WalkState): Promise<void> {
-  if (!descended(spot.dir, state)) return;
+  if (!markDescended(spot.dir, state.visited)) return;
   const entries = (await readdir(spot.dir, { withFileTypes: true })).filter((e) => !e.name.startsWith("."));
   for (const entry of entries.filter((e) => e.name.endsWith(".md")).sort((a, b) => compareIds(a.name, b.name))) {
     if (entry.name === INDEX_PAGE || !entryIs(spot.dir, entry, "file")) continue;
@@ -100,17 +101,4 @@ async function visit(spot: Spot, state: WalkState): Promise<void> {
   for (const child of entries.filter((e) => entryIs(spot.dir, e, "dir")).map((e) => e.name).sort()) {
     await visit({ dir: join(spot.dir, child), chain: [...spot.chain, child] }, state);
   }
-}
-
-/** Mark a directory as descended-into; false when it (or another name for it) already was. */
-function descended(dir: string, state: WalkState): boolean {
-  let real: string;
-  try {
-    real = realpathSync(dir);
-  } catch {
-    return false;
-  }
-  if (state.visited.has(real)) return false;
-  state.visited.add(real);
-  return true;
 }

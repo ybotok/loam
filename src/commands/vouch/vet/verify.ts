@@ -16,6 +16,7 @@ import { SPEC_AXES } from "../../../core/repo/paths.js";
 import { locateServicePaths } from "../../../core/repo/service-target.js";
 import { NotUtf8Error, readUtf8 } from "../../../core/staging/writes.js";
 
+/** A spec-axis file whose sources all check out, carrying what the stamp needs. */
 export interface VerifiedSpec {
   ok: true;
   path: string;

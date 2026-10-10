@@ -9,8 +9,9 @@
  */
 import { createHash } from "node:crypto";
 import { lstat, readFile, readdir, stat } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { isPathInside } from "../../kernel/path-safety.js";
 import { asRecord } from "../../kernel/records.js";
 import { compareIds } from "../../repo/entries.js";
 
@@ -28,10 +29,7 @@ export function portable(root: string, path: string): string {
 
 /** Stable inventory namespace: planning-root relative, with one explicit external prefix. */
 export function sourceInventoryPath(root: string, absolute: string): string {
-  const rel = relative(root, absolute);
-  if (rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel))) {
-    return rel.split(sep).join("/");
-  }
+  if (isPathInside(root, absolute)) return portable(root, absolute);
   return `@workspace/${portable(dirname(root), absolute)}`;
 }
 
@@ -63,6 +61,9 @@ export async function hiddenSubdirs(path: string): Promise<string[]> {
  * unbound source trees. One walk serves both answers because a link's Dirent
  * is neither a directory nor a file, so recording links separately leaves the
  * file set and the set of directories descended exactly what two walks gave.
+ * A `Dirent` reports a link as a link, never as what it points at, so a link
+ * to a directory is recorded and never descended: the walk cannot leave the
+ * tree through one.
  */
 export async function walkTree(path: string): Promise<{ files: string[]; links: string[] }> {
   const files: string[] = [];

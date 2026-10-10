@@ -33,12 +33,12 @@
  * the reason `./rollup.ts` states: this package is imported by
  * `core/fleet-context.ts` and may never import it back.
  */
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { compareIds } from "../repo/entries.js";
 import { capabilityDocPathsAt } from "../repo/authored/paths.js";
-import { entryIs } from "../repo/tree/fs.js";
+import { entryIs, markDescended, subdirNames } from "../repo/tree/fs.js";
 
 /** One authored capability: where its directory is, and where its document is. */
 export interface CapabilityDoc {
@@ -94,7 +94,9 @@ export async function readCapabilityTree(root: string): Promise<CapabilityTree> 
   const tree: CapabilityTree = { present: existsSync(root), docs: [], undocumented: [] };
   if (!tree.present) return tree;
   const state: WalkState = { tree, visited: new Set() };
-  if (descended(root, state)) {
+  // The same guard `core/repo/tree/walk.ts` carries (`markDescended`), for
+  // the same reason: `entryIs` follows symlinks on purpose.
+  if (markDescended(root, state.visited)) {
     for (const name of await subdirNames(root)) {
       await visit({ dir: join(root, name), chain: [name] }, state);
     }
@@ -102,30 +104,6 @@ export async function readCapabilityTree(root: string): Promise<CapabilityTree> 
   tree.docs.sort((a, b) => compareIds(a.id, b.id));
   tree.undocumented.sort(compareIds);
   return tree;
-}
-
-/**
- * Mark a directory as descended-into; false when it (or another name for it)
- * already was. The same guard `core/repo/tree/walk.ts` carries and for the same
- * reason: `entryIs` follows symlinks on purpose, and a followed cycle without a
- * visited set recurses until the stack ends.
- */
-function descended(dir: string, state: WalkState): boolean {
-  let real: string;
-  try {
-    real = realpathSync(dir);
-  } catch {
-    return false;
-  }
-  if (state.visited.has(real)) return false;
-  state.visited.add(real);
-  return true;
-}
-
-/** Sorted non-dot subdirectory names — the walk's deterministic child order. */
-async function subdirNames(dir: string): Promise<string[]> {
-  const entries = await readdir(dir, { withFileTypes: true });
-  return entries.filter((e) => !e.name.startsWith(".") && entryIs(dir, e, "dir")).map((e) => e.name).sort();
 }
 
 /**
@@ -146,7 +124,7 @@ async function visit(spot: Spot, state: WalkState): Promise<boolean> {
   if (documented) state.tree.docs.push({ id: spot.chain.join("/"), dir: spot.dir, spec: paths.spec });
 
   let beneath = false;
-  if (descended(spot.dir, state)) {
+  if (markDescended(spot.dir, state.visited)) {
     const dirs = entries.filter((e) => entryIs(spot.dir, e, "dir")).map((e) => e.name).sort();
     for (const child of dirs) {
       // Sequential, not Promise.all: the visited set is shared mutable state and

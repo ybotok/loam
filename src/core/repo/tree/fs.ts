@@ -6,7 +6,7 @@
  * package direction is `repo → repo/tree` (never back — `walk.ts` says why),
  * so the shared spelling lives on this side of the edge.
  */
-import { existsSync, statSync, type Dirent } from "node:fs";
+import { existsSync, realpathSync, statSync, type Dirent } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -60,4 +60,30 @@ export async function markdownFiles(dir: string): Promise<string[]> {
 /** How many markdown files sit directly in `dir` — the ADR count, over the corpus above. */
 export async function countMarkdown(dir: string): Promise<number> {
   return (await markdownFiles(dir)).length;
+}
+
+/**
+ * Mark a directory as descended-into; false when it (or another name for it)
+ * already was. The symlink-cycle guard every walk that follows links through
+ * `entryIs` carries — the service tree (`./walk.ts`), the capability tree, the
+ * glossary, the generated-gherkin scan — and for one reason: a followed cycle
+ * without a visited set recurses until the stack ends. A path realpath cannot
+ * resolve is one whose children cannot be read either, so it is never entered.
+ */
+export function markDescended(dir: string, visited: Set<string>): boolean {
+  let real: string;
+  try {
+    real = realpathSync(dir);
+  } catch {
+    return false;
+  }
+  if (visited.has(real)) return false;
+  visited.add(real);
+  return true;
+}
+
+/** Sorted non-dot subdirectory names, links followed — a tree walk's deterministic child order. */
+export async function subdirNames(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  return entries.filter((e) => !e.name.startsWith(".") && entryIs(dir, e, "dir")).map((e) => e.name).sort();
 }

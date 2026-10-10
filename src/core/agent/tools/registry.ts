@@ -4,7 +4,7 @@
  * tool is in use. Paths and wrappers follow each tool's own documented
  * convention and are pinned byte-for-byte in test/agents.test.ts.
  */
-import type { AgentTool } from "../contract.js";
+import type { AgentTool, CommandContent } from "../contract.js";
 import {
   describedMd,
   hintedMd,
@@ -26,6 +26,17 @@ import {
 type CommandEmittingTool = AgentTool & Required<Pick<AgentTool, "path" | "format">>;
 
 /**
+ * The shape most entries share: `<dir>/<sub>/<name>.md` command files in the
+ * given dialect, skills under `<dir>/skills/`, and the tool's own dot-directory
+ * as its one sighting. An entry that departs from any of the three — another
+ * extension, a namespace directory, a second marker, no commands at all — is
+ * written out in full below, so the departure is what its entry shows.
+ */
+function dotTool(dir: string, sub: string, format: (c: CommandContent) => string): CommandEmittingTool {
+  return { path: (name) => [dir, sub, `${name}.md`], format, skill: skillsIn(dir), detect: [dir] };
+}
+
+/**
  * The original target and the default. This WRAPPER must stay byte-identical
  * to what loam has always written — SLASH_COMMANDS (scaffold.ts) derives
  * through it —
@@ -43,24 +54,17 @@ type CommandEmittingTool = AgentTool & Required<Pick<AgentTool, "path" | "format
  * Named and typed, both mistakes are typecheck failures instead. The registry
  * still lists it first, and the emitted bytes are unchanged.
  */
-export const CLAUDE: CommandEmittingTool = {
-  path: (name) => [".claude", "commands", `${name}.md`],
-  format: (c) =>
-    `---\ndescription: ${c.description}\nargument-hint: ${c.argumentHint}\n---\n\n${c.body}`,
-  skill: skillsIn(".claude"),
-  detect: [".claude"],
-};
+export const CLAUDE: CommandEmittingTool = dotTool(
+  ".claude",
+  "commands",
+  (c) => `---\ndescription: ${c.description}\nargument-hint: ${c.argumentHint}\n---\n\n${c.body}`,
+);
 
 export const AGENT_TOOLS: Record<string, AgentTool> = {
   claude: CLAUDE,
   // Cursor invokes by flat file name (`/loam-check`); its frontmatter `name`
   // field spells that invocation form.
-  cursor: {
-    path: (name) => [".cursor", "commands", `${name}.md`],
-    format: (c) => `---\nname: /${c.name}\n---\n\n${c.body}`,
-    skill: skillsIn(".cursor"),
-    detect: [".cursor"],
-  },
+  cursor: dotTool(".cursor", "commands", (c) => `---\nname: /${c.name}\n---\n\n${c.body}`),
   // Copilot prompt files: `.prompt.md` extension, description-only frontmatter.
   // Detection cannot use `.github/` — almost every repo has one and almost none
   // of them means Copilot — so it looks for the files Copilot itself reads.
@@ -88,44 +92,24 @@ export const AGENT_TOOLS: Record<string, AgentTool> = {
     skill: skillsIn(".gemini"),
     detect: [".gemini"],
   },
-  opencode: {
-    path: (name) => [".opencode", "commands", `${name}.md`],
-    format: describedMd,
-    skill: skillsIn(".opencode"),
-    detect: [".opencode"],
-  },
+  opencode: dotTool(".opencode", "commands", describedMd),
   // Cline reads workflows from `.clinerules/` — plain markdown, no frontmatter —
   // but its skills from `.cline/`. The two directories are unrelated, so both
   // count as a sighting.
   cline: {
     path: (name) => [".clinerules", "workflows", `${name}.md`],
-    format: (c) => `# ${c.name}\n\n${c.body}`,
+    format: titledMd,
     skill: skillsIn(".cline"),
     detect: [".cline", ".clinerules"],
   },
   // Amazon Q surfaces these as its PROMPT library, not as commands: the file is
   // invoked `@loam-check`, never `/loam-check`. Same file shape regardless.
-  "amazon-q": {
-    path: (name) => [".amazonq", "prompts", `${name}.md`],
-    format: describedMd,
-    skill: skillsIn(".amazonq"),
-    detect: [".amazonq"],
-  },
+  "amazon-q": dotTool(".amazonq", "prompts", describedMd),
   // Antigravity's directory is `.agent/`, which is why the id and the directory
   // do not match here as they do almost everywhere else.
-  antigravity: {
-    path: (name) => [".agent", "workflows", `${name}.md`],
-    format: describedMd,
-    skill: skillsIn(".agent"),
-    detect: [".agent"],
-  },
+  antigravity: dotTool(".agent", "workflows", describedMd),
   // Auggie is the Augment CLI: id `auggie`, directory `.augment/`.
-  auggie: {
-    path: (name) => [".augment", "commands", `${name}.md`],
-    format: hintedMd,
-    skill: skillsIn(".augment"),
-    detect: [".augment"],
-  },
+  auggie: dotTool(".augment", "commands", hintedMd),
   // Skills-only, deliberately: Codex does not load custom command files, so it
   // declares no command emitter at all rather than laying down files nothing
   // will ever open.
@@ -175,26 +159,11 @@ export const AGENT_TOOLS: Record<string, AgentTool> = {
     skill: skillsIn(".devin"),
     detect: [".devin", ".windsurf"],
   },
-  factory: {
-    path: (name) => [".factory", "commands", `${name}.md`],
-    format: hintedMd,
-    skill: skillsIn(".factory"),
-    detect: [".factory"],
-  },
-  junie: {
-    path: (name) => [".junie", "commands", `${name}.md`],
-    format: describedMd,
-    skill: skillsIn(".junie"),
-    detect: [".junie"],
-  },
+  factory: dotTool(".factory", "commands", hintedMd),
+  junie: dotTool(".junie", "commands", describedMd),
   // Kilo Code workflows carry no frontmatter — the title line is all the
   // wrapper there is.
-  kilocode: {
-    path: (name) => [".kilocode", "workflows", `${name}.md`],
-    format: titledMd,
-    skill: skillsIn(".kilocode"),
-    detect: [".kilocode"],
-  },
+  kilocode: dotTool(".kilocode", "workflows", titledMd),
   // Kiro uses Copilot's `.prompt.md` extension under its own directory.
   kiro: {
     path: (name) => [".kiro", "prompts", `${name}.prompt.md`],
@@ -204,25 +173,10 @@ export const AGENT_TOOLS: Record<string, AgentTool> = {
   },
   // Qwen Code retired its TOML commands in favour of markdown + frontmatter,
   // so this is markdown despite the Gemini lineage.
-  qwen: {
-    path: (name) => [".qwen", "commands", `${name}.md`],
-    format: describedMd,
-    skill: skillsIn(".qwen"),
-    detect: [".qwen"],
-  },
+  qwen: dotTool(".qwen", "commands", describedMd),
   // Roo/Zoo Code: id `roocode`, directory `.roo/`, no frontmatter.
-  roocode: {
-    path: (name) => [".roo", "commands", `${name}.md`],
-    format: titledMd,
-    skill: skillsIn(".roo"),
-    detect: [".roo"],
-  },
-  trae: {
-    path: (name) => [".trae", "commands", `${name}.md`],
-    format: namedMd,
-    skill: skillsIn(".trae"),
-    detect: [".trae"],
-  },
+  roocode: dotTool(".roo", "commands", titledMd),
+  trae: dotTool(".trae", "commands", namedMd),
   // The vendor-neutral skills root, and the only id here that names no vendor.
   // `.agents/skills/<name>/SKILL.md` is read by six of the tools that already
   // have entries above, each documenting it in its own words:

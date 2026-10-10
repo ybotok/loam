@@ -74,6 +74,9 @@ export async function reconcile(
   activeIds: ReadonlySet<string>,
 ): Promise<Reconciliation> {
   const { root, repoDir } = where;
+  // Orphans of THIS scope, inside loam/ and nowhere else. Feature mode owns
+  // only its own emissions: stamped files carrying this feature's tag whose
+  // file is no longer in the plan (a requirement renamed or dropped).
   // Living mode owns the whole suite — any .feature not in the plan goes —
   // EXCEPT files tagged with a feature still in flight: those answer to
   // their feature's delta until it archives, and `loam gherkin <FEAT>` is

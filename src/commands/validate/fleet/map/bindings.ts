@@ -11,9 +11,7 @@
  * caller's business, which is why this is one function rather than four.
  *
  * A sub-package of `fleet/` for `./isolation.ts`'s reason, and with its rule: it
- * imports NOTHING from `fleet/` itself — a child reaching back into its parent
- * while the parent calls the child is the package cycle
- * `scripts/package-graph.mjs` refuses — so the two census derivations arrive as
+ * imports NOTHING from `fleet/` itself, so the two census derivations arrive as
  * data on the input record rather than as an import of `../census.js`.
  */
 import { type Elem } from "../../../../core/c4/likec4.js";

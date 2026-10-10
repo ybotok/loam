@@ -13,11 +13,12 @@ import { existsSync } from "node:fs";
 import { mkdir, realpath, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { stringify as stringifyYaml } from "yaml";
+import { isPathInside } from "../../../core/kernel/path-safety.js";
 import { dictionary, ownValue } from "../../../core/kernel/records.js";
 import { activeRenameEntries, type OpenSpecMapping, type OpenSpecMappingSkeleton } from "../../../core/openspec/model/mapping.js";
 import { type OpenSpecInventory } from "../../../core/openspec/model/model.js";
 import { OpenSpecCommandError } from "./error.js";
-import { canonicalForCreate, contains } from "./paths.js";
+import { canonicalForCreate } from "./paths.js";
 
 export async function writeMappingSkeleton(
   inventory: OpenSpecInventory,
@@ -27,7 +28,7 @@ export async function writeMappingSkeleton(
   const output = resolve(outputArg);
   const canonicalOutput = await canonicalForCreate(output);
   const canonicalSource = await realpath(inventory.inputRoot);
-  if (contains(canonicalSource, canonicalOutput)) {
+  if (isPathInside(canonicalSource, canonicalOutput)) {
     throw new OpenSpecCommandError(
       "invalid-option",
       `Refusing to write the mapping inside the OpenSpec source workspace: ${output}`,

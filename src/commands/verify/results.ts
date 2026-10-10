@@ -9,6 +9,7 @@
 import { execFile } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import { resolvePortableFileInside } from "../../core/kernel/path-safety.js";
+import { GIT_TIMEOUT_MS } from "../../core/provenance/git.js";
 import { isScenarioReport, readCucumberReport, readScenarioReport, type ReportScenario } from "../../core/results.js";
 import { type Answer } from "../../core/verify/answers.js";
 import { citedLine, pinnedDigest, sourceLines, type EvidencePin } from "../../core/verify/pins/pin.js";
@@ -309,12 +310,16 @@ interface GitResult {
  * HOLDS the docs lock: a `git rev-parse` blocked on a credential-helper prompt
  * used to hang this process forever with the lock in hand, wedging every
  * archive, rebase and record in the fleet behind a live pid that
- * `breakStaleLock` rightly refuses to break. The timeout mirrors
- * `core/provenance/git.ts`; the cap is sized for `git show` of a source file
- * an attestation cites (the default 1 MiB refused sound evidence the moment a
- * generated client crossed it), not for arbitrary blobs.
+ * `breakStaleLock` rightly refuses to break. The timeout IS
+ * `core/provenance/git.ts`'s (imported, so the two cannot drift); the cap is
+ * sized for `git show` of a source file an attestation cites (the default
+ * 1 MiB refused sound evidence the moment a generated client crossed it), not
+ * for arbitrary blobs.
+ *
+ * Not `gitText` itself: its answer carries no signal, so a child killed by
+ * the deadline and one killed from outside would read alike, and the
+ * deadline's own message below is the one that names the fix.
  */
-const GIT_TIMEOUT_MS = 10_000;
 const GIT_MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 
 function git(repoDir: string, args: string[]): Promise<GitResult> {

@@ -32,7 +32,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { inOrder } from "../../kernel/concurrency.js";
-import { maskSource, matchBrace } from "../source-mask.js";
+import { maskSource, topLevelBlocks } from "../source-mask.js";
 
 export type ModelShape = "standalone" | "extending";
 
@@ -72,11 +72,7 @@ export function modelShape(text: string): ModelShape {
   // module-level-state hazard AGENTS.md names, arriving through a constant that
   // looks immutable.
   const specification = /\bspecification\s*\{/g;
-  for (let match = specification.exec(code); match !== null; match = specification.exec(code)) {
-    const open = match.index + match[0].length - 1;
-    if (depthBefore(code, match.index) !== 0) continue;
-    const close = matchBrace(code, open);
-    const body = close === -1 ? code.slice(open + 1) : code.slice(open + 1, close);
+  for (const { body } of topLevelBlocks(code, specification)) {
     if (ELEMENT_KIND.test(body)) return "standalone";
   }
   return "extending";
@@ -111,18 +107,4 @@ export async function readModelShape(path: string): Promise<ModelShape> {
 export async function readModelShapes(paths: readonly string[]): Promise<Map<string, ModelShape>> {
   const entries = await inOrder(paths, async (path) => [resolve(path), await readModelShape(path)] as const);
   return new Map(entries);
-}
-
-/**
- * How many blocks are open at `index` in masked code. A plain count, because
- * the mask has already blanked every brace inside a string or a comment — the
- * one thing that would make counting lie.
- */
-function depthBefore(code: string, index: number): number {
-  let depth = 0;
-  for (let i = 0; i < index; i += 1) {
-    if (code[i] === "{") depth += 1;
-    else if (code[i] === "}") depth -= 1;
-  }
-  return depth;
 }

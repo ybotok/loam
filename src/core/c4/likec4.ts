@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { relative } from "node:path";
 import { LikeC4 } from "likec4";
 import { declaredService, type DeclaredService } from "../kernel/ids/service.js";
 import { readDynamicViews, type ParsedView } from "./parsed/dynamic-views.js";
@@ -41,6 +42,19 @@ export interface LikeC4Error {
 export function errorText(e: LikeC4Error): string {
   const message = boundedMessage(e.message);
   return typeof e.line === "number" ? `L${e.line + 1}: ${message}` : message;
+}
+
+/**
+ * The documents a project's diagnostics name, docs-relative POSIX, deduped and
+ * sorted — the one spelling of "which files broke" behind `landscape.invalid`,
+ * `spine.landscape-invalid`, the brief's unparseable arm, the work packet and
+ * `loam explore`. Those surfaces are read one after another on the same tree,
+ * and an agent has to be able to tell that they name the same file.
+ */
+export function brokenDocumentPaths(docsDir: string, errors: readonly LikeC4Error[]): string[] {
+  return [...new Set(errors.map((e) => e.sourceFsPath).filter((p): p is string => p !== undefined))]
+    .map((abs) => relative(docsDir, abs).split(/[\\/]/).join("/"))
+    .sort();
 }
 
 /**
@@ -357,13 +371,23 @@ export async function loadSource(src: string): Promise<LoadedDoc> {
  * parsed stage. Shared with `./workspace.ts`'s batch loader, which used to
  * spell the same six reads out again: an adapter wired into one loader and not
  * the other reads as an absence rather than an error, the failure
- * test/likec4-batch-parity.test.ts exists to catch. `./project/load.ts` keeps
- * its own `cleanProjectDoc` because a project's record requires the fields this
- * one leaves optional.
+ * test/likec4-batch-parity.test.ts exists to catch. `./project/load.ts`'s
+ * `cleanProjectDoc` wraps the same reads in a project's record, whose error
+ * shape differs and which requires the fields `LoadedDoc` leaves optional.
  */
 export function cleanDoc(model: ReadableModel): LoadedDoc {
+  return { errors: [], ...readParsedModel(model) };
+}
+
+/**
+ * The six reads themselves — one spelling under every loader (`cleanDoc`
+ * above, `./project/load.ts`'s `cleanProjectDoc`), so the parity test guards
+ * one function rather than a convention. The return type is inferred on
+ * purpose: it is `LoadedDoc` minus `errors` with every read PRESENT, which is
+ * what lets a project's record, whose fields are required, spread it.
+ */
+export function readParsedModel(model: ReadableModel) {
   return {
-    errors: [],
     specification: readSpecification(model.specification),
     views: readDynamicViews(model),
     viewIds: readViewIds(model),

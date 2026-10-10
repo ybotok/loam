@@ -10,11 +10,9 @@
  * the grades; this owns which inputs they are handed, which is the part that has
  * twice been got wrong and is worth stating in one place.
  *
- * A sub-package of `fleet/` for `map/isolation.ts`'s reason, and with its rule:
- * it imports NOTHING from `fleet/` itself — a child reaching back into its
- * parent while the parent calls the child is the package cycle
- * `scripts/package-graph.mjs` refuses — so everything it needs arrives in one
- * record the caller fills.
+ * A sub-package of `fleet/` for `./isolation.ts`'s reason, and with its rule:
+ * it imports NOTHING from `fleet/` itself, so everything it needs arrives in
+ * one record the caller fills.
  */
 import { capabilityRequirementIndex, gradableCapabilityIds } from "../../../../core/capabilities/findings.js";
 import { FleetContext } from "../../../../core/fleet-context.js";

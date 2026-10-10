@@ -18,8 +18,7 @@
  * `import type { BriefTarget }`, which `verbatimModuleSyntax` erases, so this
  * package value-imports nothing from `../` and the package graph stays acyclic.
  */
-import { relative } from "node:path";
-import type { LikeC4Error } from "../../c4/likec4.js";
+import { brokenDocumentPaths, type LikeC4Error } from "../../c4/likec4.js";
 import { spellCall, edgeTemplates, type AttestedCall } from "../../c4/resolve/attested.js";
 import { serviceElementId } from "../../c4/seed/template.js";
 import type { BriefTarget } from "../targets.js";
@@ -195,13 +194,11 @@ export interface BrokenMap {
  * Spelled exactly as `commands/validate/fleet/landscape.ts` spells it for
  * `landscape.invalid` — deduped, relative to the docs root, `/`-joined — because
  * the two surfaces are read one after the other on the same tree and an agent
- * has to be able to tell that they name the same file.
+ * has to be able to tell that they name the same file: both go through
+ * `c4/likec4.ts`'s `brokenDocumentPaths`.
  */
 export function brokenDocuments(docsDir: string, land: { errors: readonly LikeC4Error[] }): BrokenMap {
-  const paths = [...new Set(land.errors.map((e) => e.sourceFsPath).filter((p): p is string => p !== undefined))]
-    .map((abs) => relative(docsDir, abs).split(/[\\/]/).join("/"))
-    .sort();
-  return { paths, errors: land.errors.length };
+  return { paths: brokenDocumentPaths(docsDir, land.errors), errors: land.errors.length };
 }
 
 /** The inputs of `instructionFor` — a record, because the function sat at the parameter cap. */

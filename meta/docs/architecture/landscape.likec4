@@ -330,6 +330,7 @@ model {
   loam.commands.list -> loam.core.links
   loam.commands.list -> loam.core.owners
   loam.commands.list -> loam.core.repo
+  loam.commands.list -> loam.core.status
   loam.commands.list -> loam.core.usecases
   loam.commands.list -> loam.core.verify
   loam.commands.list -> loam.core.vocabulary

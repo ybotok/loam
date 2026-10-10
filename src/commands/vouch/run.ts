@@ -248,5 +248,3 @@ export function planStamp(v: VerifiedSpec, req: VouchRequest): { write: PlannedW
     },
   };
 }
-
-/** A spec-axis file whose sources all check out, carrying what the stamp needs. */
