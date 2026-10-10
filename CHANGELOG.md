@@ -192,8 +192,9 @@ No code or flag was added. Existing warnings now fill a payload key that was alw
 - **`openapi.op-modified` and `asyncapi.message-modified` now say who the overwrite affects.**
   Each message ends with one of three phrases: `N current consumer(s) still name it`,
   `whether current consumers name it could not be fully answered`, or
-  `no current consumer names it`. The warning's `details` in `archive --json` `warnings[]` (until
-  now always `[]`) list the consumers:
+  `no current consumer names it`. The warning's `details` (until now always `[]`) list the
+  consumers, in `archive --json` `warnings[]` and, when the contract merge is refused as
+  `not-coherent`, in the same warning's entry in `issues[]`:
   - landscape edges;
   - other services' living requirements;
   - use-case hops;
