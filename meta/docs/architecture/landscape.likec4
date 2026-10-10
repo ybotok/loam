@@ -4,9 +4,9 @@
 // there is not another one — loam is a single binary, and ROADMAP.md's
 // "Self-hosting: loam on loam" is the standing statement of what that costs.
 //
-// THE COLLAPSE RULE, and it is the whole design of this file. `src/` holds 486
-// modules in 149 package directories (`npm run arch:graph` prints both). Drawing
-// 149 boxes would model the tree's INDENTATION; drawing three would model
+// THE COLLAPSE RULE, and it is the whole design of this file. `src/` holds 487
+// modules in 150 package directories (`npm run arch:graph` prints both). Drawing
+// 150 boxes would model the tree's INDENTATION; drawing three would model
 // nothing. The unit here is the TOP-LEVEL SUBJECT — exactly what
 // `docs/DESIGN.md`'s package-layout table has one row for:
 //

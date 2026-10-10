@@ -536,7 +536,7 @@ cannot hold.
 |---|---|---|
 | `loam init` | `--docs <dir>` `--service <id>` `--create` `--force` `--tools <ids>` `--agent-profile <full\|service\|docs>` `--example <dir>` `--no-commands` `--no-skills` `--mcp` `--mcp-author` | Bind this repository to the single shared docs repo: a committed local `loam.json`, plus command and Agent Skill pointers for detected AI tools. Profiles narrow the six lifecycle workflows to a repo's role; the support-only `loam-report` stays in every profile. Re-running init refreshes only unchanged loam-owned pointers; edited files are preserved. `--mcp` writes the read-only host entry, while `--mcp-author` opts into the bounded authoring tools. `--create` scaffolds the docs repo; `--example` copies the packaged example and stops |
 | `loam seed` | `--from <file>` | Template the fleet map and one `services/<id>/` directory per service from a tiny human-authored `fleet.yaml`. Mechanical, never a guess: a human stated every fact. Refuses once the landscape has been hand-edited |
-| `loam list [services\|features\|capabilities\|glossary]` | `--archived` `--needs-work` `--review-order` `--subsystem <name>` `--owners <path>` | What is in the docs repo, and what is missing from it. `capabilities` rolls up who realizes each promise; `glossary` rolls up each term with the documents that cite it |
+| `loam list [services\|features\|capabilities\|glossary\|suites]` | `--archived` `--needs-work` `--review-order` `--subsystem <name>` `--owners <path>` | What is in the docs repo, and what is missing from it. `capabilities` rolls up who realizes each promise; `glossary` rolls up each term with the documents that cite it; `suites` groups the use cases by `#suite-` tag and names the services each suite needs up (`loam list suites <name>` shows one) |
 | `loam status [<FEAT>]` | `--service <id>` | Where the work stands and what to do next, as a projection over the two gates. Each `next[]` row has an `execution` object that says whether it is runnable, where, and what input or edit is still needed. Derived every run; writes nothing |
 | `loam doctor` | — | Read-only preflight for runtime, config, docs-repo access, fleet roots, counts, and the current service binding. Blockers exit 1; incomplete optional bindings stay warnings |
 | `loam dependencies [<FEAT>]` | — | The active-feature dependency graph and same-identity conflicts, derived from requirement deltas and OpenAPI operationIds |
@@ -726,7 +726,7 @@ authored-capability axes with the `Realizes:` join, use cases graded as `dynamic
 `architecture/obligations.yaml` architectural obligations checked through `#obl-` tags and
 `Covers:`. Known limits, each with its owner in [ROADMAP.md](ROADMAP.md): the scheduled CI
 `stability` job has still to be observed green. Speculative `render`, health composition and UI
-generation come later. Behind that status stand **182 test files** (counted 2026-10-10): the count is graded
+generation come later. Behind that status stand **183 test files** (counted 2026-10-10): the count is graded
 against a live readdir by `test/docs-facts.test.ts`, so this sentence fails the suite the moment it
 trails the tree.
 
