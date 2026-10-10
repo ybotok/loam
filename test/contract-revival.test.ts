@@ -929,11 +929,16 @@ components:
     expect(revived.map((r) => r.code)).toEqual(["asyncapi.slot-revived", "asyncapi.slot-revived", "asyncapi.slot-revived"]);
   });
 
-  it("a slot marker the merge never carried out retired nothing — on a key the living contract lacked, or a message name it did not declare there", async () => {
-    // `channels.ghostEvents` never existed (remove-target-missing), and the
-    // living `components.messages.Legacy` declares payment.Legacy, not
-    // payment.Ghost (remove-target-mismatch): the merge deletes neither, so
-    // FEAT-43 declaring them for the first time is an addition.
+  /**
+   * FEAT-42 (archived under --approve) carries two markers that miss:
+   * `channels.ghostEvents` never existed (remove-target-missing), and the
+   * living `components.messages.Legacy` declares payment.Legacy, not
+   * payment.Ghost (remove-target-mismatch). The merge deletes neither, so
+   * FEAT-43 declaring them for the first time is an addition. `alongside` is
+   * whatever else FEAT-42's delta declares — what decides whether its merge
+   * writes the contract at all.
+   */
+  async function ghosts(alongside: string): Promise<{ p: Project; declared: () => Promise<string[]>; manifestPath: string }> {
     const p = await makeProject({
       "services/payment-service/spec.md": EVENTS_SPEC,
       "services/payment-service/asyncapi.yaml": LIVING_EVENTS,
@@ -942,7 +947,7 @@ components:
 channels:
   ghostEvents:
     x-loam-remove: true
-components:
+${alongside}components:
   messages:
     Legacy:
       name: payment.Ghost
@@ -968,23 +973,43 @@ components:
         type: object
 `,
     );
-    // FEAT-42's merge wrote nothing (every marker missed), so its manifest has
-    // no row for the contract: an answer, not a gap.
-    expect(await eventFindings(p, "FEAT-43")).toEqual([]);
-
-    // No pre-image to check against: counted as written, the documented limit —
-    // and a manifest row that cannot be read might have been this contract's,
-    // so absence is not concluded past it either.
-    const counted = ["channels.ghostEvents", "message 'payment.Ghost' (components.messages.Ghost)"];
     const declared = async (): Promise<string[]> =>
       (await eventFindings(p, "FEAT-43")).map((w) => w.message.match(/declares (.*?), which/)![1]!);
-    const manifestPath = join(p.docsDir, "features/archive/FEAT-42-ghosts/.loam-before/manifest.json");
+    return { p, declared, manifestPath: join(p.docsDir, "features/archive/FEAT-42-ghosts/.loam-before/manifest.json") };
+  }
+
+  /** What FEAT-43 is told when FEAT-42's markers are counted as written. */
+  const COUNTED = ["channels.ghostEvents", "message 'payment.Ghost' (components.messages.Ghost)"];
+
+  it("a slot marker the merge never carried out retired nothing — on a key the living contract lacked, or a message name it did not declare there", async () => {
+    // One slot that survives makes the merge WRITE, so the manifest holds a
+    // real pre-image: the Legacy-key marker then matches on its key and
+    // misses on the message NAME, the comparison this pins. With nothing
+    // written the pre-image is empty and the key alone drops both markers —
+    // which is why this test once could not reach the name at all.
+    const { p, declared, manifestPath } = await ghosts(`  auditEvents:
+    address: payment.audit.v1
+`);
+    expect(await p.read("services/payment-service/asyncapi.yaml")).toContain("auditEvents:");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { files: unknown[] };
+    expect(manifest.files).toEqual([expect.objectContaining({ service: "payment-service", artifact: "asyncapi.yaml" })]);
+    expect(await declared()).toEqual([]);
+
+    // No pre-image to check against: counted as written, the documented limit.
+    await rm(join(p.docsDir, "features/archive/FEAT-42-ghosts/.loam-before"), { recursive: true });
+    expect(await declared()).toEqual(COUNTED);
+  });
+
+  it("an event merge whose every marker missed writes nothing, so the manifest has no row for the contract — an answer, not a gap", async () => {
+    const { declared, manifestPath } = await ghosts("");
     const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { files: unknown[] };
     expect(manifest.files).toEqual([]);
+    expect(await declared()).toEqual([]);
+
+    // A manifest row that cannot be read might have been this contract's, so
+    // absence is not concluded past it: counted as written.
     await writeFile(manifestPath, JSON.stringify({ ...manifest, files: [42] }), "utf8");
-    expect(await declared()).toEqual(counted);
-    await rm(join(p.docsDir, "features/archive/FEAT-42-ghosts/.loam-before"), { recursive: true });
-    expect(await declared()).toEqual(counted);
+    expect(await declared()).toEqual(COUNTED);
   });
 
   it("rebase's standalone read and the gate's walk give one answer on one tree — living present, absent, or unreadable", async () => {
