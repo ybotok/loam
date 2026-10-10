@@ -10,6 +10,27 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Added — `loam new --modifies <Req-ID>`: a small change is new → edit → archive
+
+- **New repeatable flag `--modifies <Req-ID>` on `loam new`.** Each value names a living
+  requirement, by its `Requirement-ID:`, in a service the feature `--touches`. The scaffold copies
+  that requirement into the service's delta, uncommented, under `## MODIFIED Requirements`, with
+  its `Based-On:` pin already set. It is the same pin `loam rebase` writes, so a rebase right after
+  reports it `unchanged`, and the living text moving before archive is still `delta.baseline-stale`.
+  An `arch.spec.md` requirement lands in a scaffolded `specs/<svc>/arch.spec.md`. Before this, the
+  author copied the requirement by hand and ran `loam rebase` to pin it.
+- **When every touched service has a `--modifies` and no `--new-service` or `--capability` is
+  given, no `delta.likec4` is written.** A feature that only rewrites requirements changes no
+  architecture, and the scaffold already told authors to delete the file in that case. `created`
+  in `--json` simply omits it. Any other combination scaffolds `delta.likec4` as before.
+- **Refusals use existing codes.** An id that no touched service's living spec carries is
+  `unknown-target`. The message names the close ids in those specs, or the untouched service that
+  does carry the id (`add --touches <svc>`). A value that is not a Requirement-ID, or an id two
+  touched documents both carry, is `invalid-option`. A living spec loam cannot decode is
+  `merge-failed`, as `loam rebase` refuses it. Every refusal writes nothing.
+- The opt-in MCP author tool `loam_new` gains the matching `modifies` argument. No code or payload
+  key was added.
+
 ### Added — `loam_adopt`: the adopt brief on the MCP server
 
 - **`loam mcp` serves a sixteenth read tool, `loam_adopt`**, mirroring `loam adopt [--service <id>]

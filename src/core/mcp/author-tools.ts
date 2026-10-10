@@ -19,7 +19,7 @@ export const MCP_AUTHOR_TOOLS: readonly McpTool[] = [
     command: "new",
     description:
       "Scaffold a feature in the docs repo. Opt-in writer; refuses an existing feature. " +
-      "CLI equivalent: loam new <featureId> [--title <text>] [--touches <id>...] [--new-service <id>...] [--capability <id>...] --json",
+      "CLI equivalent: loam new <featureId> [--title <text>] [--touches <id>...] [--new-service <id>...] [--capability <id>...] [--modifies <Req-ID>...] --json",
     positionals: [
       { property: "featureId", required: true, variadic: false, description: "new feature id, e.g. FEAT-101" },
     ],
@@ -28,6 +28,7 @@ export const MCP_AUTHOR_TOOLS: readonly McpTool[] = [
       { property: "touches", flag: "--touches", kind: "strings", description: "existing services changed; repeatable" },
       { property: "newServices", flag: "--new-service", kind: "strings", description: "services introduced; repeatable" },
       { property: "capabilities", flag: "--capability", kind: "strings", description: "business capabilities changed; repeatable" },
+      { property: "modifies", flag: "--modifies", kind: "strings", description: "living Requirement-IDs of touched services this feature rewrites, scaffolded as pinned MODIFIED blocks; repeatable" },
     ],
     annotations: WRITE_ANNOTATIONS,
   },

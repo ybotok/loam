@@ -18,6 +18,8 @@
  *  - what each template contains, and that the delta parses
  *  - --touches vs --new-service
  *  - --capability, the inversion of --touches
+ *  - --modifies, the small-change lane: a living requirement scaffolded as a
+ *    pinned, uncommented MODIFIED block, and no delta.likec4 when that is all
  *  - the clean-validate criterion
  *  - --json contract and failure modes
  */
@@ -26,7 +28,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseRequirements } from "../src/core/document/parse.js";
 import { REQUIREMENT_ID_RE } from "../src/core/document/spec.js";
-import { makeProject, makeTmpDir, runLoam, treeHashes, type Project } from "./helpers/harness.js";
+import { makeProject, makeTmpDir, pinFor, runLoam, treeHashes, type Project } from "./helpers/harness.js";
 import { spawnLoam } from "./helpers/cli-process.js";
 import { stageWrites, swapStaged } from "../src/core/staging/commit.js";
 import { COMMIT_INTENT } from "../src/core/staging/interrupted.js";
@@ -959,4 +961,198 @@ describe("two real processes scaffolding one feature", () => {
       expect((await readdir(p.docsDir)).filter((n) => n.startsWith("."))).toEqual([]);
     });
   }, 60_000);
+});
+
+/* ------------------------------------------------------------------ */
+/* --modifies: the small-change lane                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A living service whose requirements carry ids — what `--modifies` addresses.
+ * `REFUND-1` sits in spec.md and `OUTBOX-1` in arch.spec.md, so one fixture
+ * reaches both axes.
+ */
+function identifiedService(svc: string): Record<string, string> {
+  return {
+    ...livingService(svc),
+    [`services/${svc}/spec.md`]: `# ${svc}
+
+## Requirements
+
+### Requirement: Refund within five days
+Requirement-ID: REFUND-1
+
+The service SHALL refund a captured payment within five days.
+
+#### Scenario: A refund lands
+- **Given** a captured payment
+- **When** a refund is requested
+- **Then** the money is back within five days
+
+### Requirement: Refuse a second refund
+Requirement-ID: REFUND-2
+
+The service SHALL refuse a second refund of one payment.
+
+#### Scenario: A repeat is refused
+- **Given** a refunded payment
+- **When** a refund is requested again
+- **Then** it is refused
+`,
+    [`services/${svc}/arch.spec.md`]: `# ${svc} — architecture
+
+## Requirements
+
+### Requirement: Publish through the outbox
+Requirement-ID: OUTBOX-1
+
+The service SHALL publish every event through its outbox.
+
+Covers: svc
+
+#### Scenario: A crash loses nothing
+- **Given** an event written to the outbox
+- **When** the process dies before publishing
+- **Then** the event is published after restart
+`,
+  };
+}
+
+describe("--modifies", () => {
+  it("scaffolds the living requirement UNCOMMENTED under MODIFIED, pinned exactly as rebase would, and no delta.likec4", async () => {
+    await withProject(identifiedService("pay"), async (p) => {
+      const res = await runLoam(p.workDir, "new", "FEAT-1", "--touches", "pay", "--modifies", "REFUND-1", "--json");
+      expect(res.code, res.out).toBe(0);
+      const created = JSON.parse(res.stdout).created as string[];
+      expect(created).toEqual(["features/FEAT-1/intent.md", "features/FEAT-1/specs/pay/spec.md"]);
+      expect(p.exists("features/FEAT-1/delta.likec4")).toBe(false);
+
+      const delta = parseRequirements(await p.read("features/FEAT-1/specs/pay/spec.md"));
+      // One live requirement: the template's ADDED example stays inside its comment.
+      expect(delta).toHaveLength(1);
+      const [modified] = delta;
+      expect(modified!.kind).toBe("MODIFIED");
+      expect(modified!.id).toBe("REFUND-1");
+      const living = await p.read("services/pay/spec.md");
+      expect(modified!.basedOn).toBe(pinFor(living, "Refund within five days"));
+      // Verbatim: the delta's body and scenarios ARE the living requirement's, pin aside.
+      const livingReq = parseRequirements(living).find((r) => r.id === "REFUND-1")!;
+      expect(modified!.scenarios.map(({ name, lines }) => ({ name, lines })))
+        .toEqual(livingReq.scenarios.map(({ name, lines }) => ({ name, lines })));
+      expect(modified!.text.filter((l) => !l.startsWith("Based-On:")).join("\n").trim())
+        .toBe(livingReq.text.join("\n").trim());
+
+      // Rebase finds nothing to do, and validate grades the pin current.
+      const rebase = await runLoam(p.workDir, "rebase", "FEAT-1", "--dry-run", "--json");
+      expect(JSON.parse(rebase.stdout).pins).toEqual([expect.objectContaining({ kind: "MODIFIED", status: "unchanged" })]);
+      const validated = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
+      expect(validated.code, validated.out).toBe(0);
+      const codes = (JSON.parse(validated.stdout).targets[0].findings as Array<{ code: string }>).map((f) => f.code);
+      expect(codes).not.toContain("delta.baseline-missing");
+      expect(codes).not.toContain("delta.baseline-stale");
+      expect(codes).not.toContain("delta.modified-unknown");
+    });
+  });
+
+  it("is new -> edit -> archive: the edited text replaces the living requirement, with no rebase in between", async () => {
+    await withProject(identifiedService("pay"), async (p) => {
+      expect((await runLoam(p.workDir, "new", "FEAT-1", "--touches", "pay", "--modifies", "REFUND-1")).code).toBe(0);
+      const specPath = "features/FEAT-1/specs/pay/spec.md";
+      await p.write(specPath, (await p.read(specPath)).replace("within five days.", "within three days."));
+      const intent = "features/FEAT-1/intent.md";
+      await p.write(intent, (await p.read(intent)).replace("## Why\n", "## Why\n\nCustomers wait too long for refunds.\n"));
+
+      const shipped = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(shipped.code, shipped.out).toBe(0);
+      const living = await p.read("services/pay/spec.md");
+      expect(living).toContain("The service SHALL refund a captured payment within three days.");
+      expect(living).not.toContain("within five days.");
+      // The pin is bookkeeping about the delta, never merged into the living text.
+      expect(living).not.toContain("Based-On:");
+      // The untouched sibling survives the merge.
+      expect(living).toContain("Requirement-ID: REFUND-2");
+    });
+  });
+
+  it("an architecture requirement lands in arch.spec.md, the template a touched service is otherwise not handed", async () => {
+    await withProject(identifiedService("pay"), async (p) => {
+      const res = await runLoam(
+        p.workDir, "new", "FEAT-1", "--touches", "pay", "--modifies", "OUTBOX-1", "--modifies", "REFUND-2", "--json",
+      );
+      expect(res.code, res.out).toBe(0);
+      const arch = parseRequirements(await p.read("features/FEAT-1/specs/pay/arch.spec.md"));
+      expect(arch.map((r) => [r.kind, r.id])).toEqual([["MODIFIED", "OUTBOX-1"]]);
+      expect(arch[0]!.basedOn).toBe(pinFor(await p.read("services/pay/arch.spec.md"), "Publish through the outbox"));
+      const spec = parseRequirements(await p.read("features/FEAT-1/specs/pay/spec.md"));
+      expect(spec.map((r) => [r.kind, r.id])).toEqual([["MODIFIED", "REFUND-2"]]);
+    });
+  });
+
+  it("keeps delta.likec4 when the feature does more than rewrite requirements", async () => {
+    // A touched service with no --modifies of its own, or a service introduced
+    // alongside, is a feature that may well move the architecture: the
+    // requirements-only reading needs every touched service rewritten and
+    // nothing introduced.
+    await withProject({ ...identifiedService("pay"), ...livingService("ledger") }, async (p) => {
+      await runLoam(p.workDir, "new", "FEAT-1", "--touches", "pay", "--touches", "ledger", "--modifies", "REFUND-1");
+      expect(p.exists("features/FEAT-1/delta.likec4")).toBe(true);
+      await runLoam(p.workDir, "new", "FEAT-2", "--touches", "pay", "--new-service", "svc-new", "--modifies", "REFUND-1");
+      expect(p.exists("features/FEAT-2/delta.likec4")).toBe(true);
+    });
+  });
+
+  it("refuses an id no touched living spec carries, with the close ids, and writes nothing", async () => {
+    await withProject(identifiedService("pay"), async (p) => {
+      const before = await treeHashes(p.docsDir);
+      const res = await runLoam(p.workDir, "new", "FEAT-1", "--touches", "pay", "--modifies", "REFUND-3", "--json");
+      expect(res.code).toBe(1);
+      const error = JSON.parse(res.stdout).error as { code: string; message: string };
+      expect(error.code).toBe("unknown-target");
+      expect(error.message).toContain("'REFUND-1'");
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+    });
+  });
+
+  it("names the service that does carry the id when --touches names another, or none", async () => {
+    await withProject({ ...identifiedService("pay"), ...livingService("ledger") }, async (p) => {
+      for (const touches of [["--touches", "ledger"], []]) {
+        const res = await runLoam(p.workDir, "new", "FEAT-1", ...touches, "--modifies", "REFUND-1", "--json");
+        expect(res.code).toBe(1);
+        const error = JSON.parse(res.stdout).error as { code: string; message: string };
+        expect(error.code).toBe("unknown-target");
+        expect(error.message).toContain("add --touches pay");
+        expect(p.exists("features/FEAT-1")).toBe(false);
+      }
+    });
+  });
+
+  it("refuses a value that is not a Requirement-ID, and an id two touched documents both carry", async () => {
+    await withProject({ ...identifiedService("pay"), ...identifiedService("ledger") }, async (p) => {
+      const heading = await runLoam(
+        p.workDir, "new", "FEAT-1", "--touches", "pay", "--modifies", "Refund within five days", "--json",
+      );
+      expect(JSON.parse(heading.stdout).error.code).toBe("invalid-option");
+      const ambiguous = await runLoam(
+        p.workDir, "new", "FEAT-1", "--touches", "pay", "--touches", "ledger", "--modifies", "REFUND-1", "--json",
+      );
+      expect(ambiguous.code).toBe(1);
+      const error = JSON.parse(ambiguous.stdout).error as { code: string; message: string };
+      expect(error.code).toBe("invalid-option");
+      expect(error.message).toContain("services/pay/spec.md");
+      expect(error.message).toContain("services/ledger/spec.md");
+      expect(p.exists("features/FEAT-1")).toBe(false);
+    });
+  });
+
+  it("will not pin a copy of a living spec it cannot decode — merge-failed, as rebase refuses it", async () => {
+    // A NUL is the UTF-16-without-BOM signature decodeDocument refuses: read
+    // anyway, the requirement would be absent and the refusal a false
+    // unknown-target, or worse, a pin taken over mojibake.
+    await withProject({ ...identifiedService("pay"), "services/pay/spec.md": "# pay\u0000\n" }, async (p) => {
+      const res = await runLoam(p.workDir, "new", "FEAT-1", "--touches", "pay", "--modifies", "REFUND-1", "--json");
+      expect(res.code).toBe(1);
+      expect(JSON.parse(res.stdout).error.code).toBe("merge-failed");
+      expect(p.exists("features/FEAT-1")).toBe(false);
+    });
+  });
 });

@@ -266,6 +266,10 @@ describe("tools/list", () => {
     });
     expect(errorOf(replyOf(request(3, "tools/call", { name: "loam_new", arguments: { featureId: "FEAT-1" } }))).code)
       .toBe(INVALID_PARAMS);
+    // The small-change lane reaches the author profile too: a repeatable flag
+    // repeats per value, exactly as --touches does.
+    expect(toArgv(toolByName("loam_new", tools)!, { featureId: "FEAT-1", touches: ["pay"], modifies: ["REF-1", "REF-2"] }))
+      .toEqual({ ok: true, argv: ["new", "FEAT-1", "--touches", "pay", "--modifies", "REF-1", "--modifies", "REF-2", "--json"] });
   });
 
   it("the AGENTS.md mcp section's hand-listed roster names every served command", () => {
