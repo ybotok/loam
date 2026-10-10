@@ -15,7 +15,7 @@
  */
 import type { Command } from "commander";
 import { resolve } from "node:path";
-import { loadSource } from "../../core/c4/likec4.js";
+import { errorText, loadSource } from "../../core/c4/likec4.js";
 import { readFleetFile, type SeedFileProblem } from "../../core/c4/seed/fleet-file.js";
 import { sealLandscape } from "../../core/c4/seed/stamp.js";
 import { renderLandscape } from "../../core/c4/seed/template.js";
@@ -105,7 +105,7 @@ export function registerSeed(program: Command): void {
           json,
           "internal",
           `loam's own templater produced a landscape that does not parse — a bug in loam, not ` +
-            `in ${fromArg}; nothing was written. First error: ${firstError.message}`,
+            `in ${fromArg}; nothing was written. First error: ${errorText(firstError)}`,
         );
       }
 

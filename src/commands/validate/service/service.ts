@@ -293,9 +293,10 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
       elements,
       relationships,
       // The one fact that tells "this service models nothing" apart from "this
-      // service's model could not be read": both arrive here as empty lists, and
+      // service's model could not be read" — its map does not parse, or it does
+      // not itself (`c4.invalid` above): both arrive here as empty lists, and
       // only the second one must silence `covers.unknown`.
-      mapUnreadable: model?.mapUnreadable === true,
+      modelUnreadable: model !== null && (model.mapUnreadable || model.doc.errors.length > 0),
       land,
       known,
       docsDir,

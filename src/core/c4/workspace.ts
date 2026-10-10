@@ -7,8 +7,8 @@
  * 120-service benchmark fixture, docs/BENCHMARKS.md). This module copies every
  * document into a mkdtemp workspace as one single-file PROJECT each (a
  * `likec4.config.json` per folder), calls `LikeC4.fromWorkspace` once, splits
- * `getErrors()` per document, and flattens each clean project through the same
- * `flattenModel` the per-file path uses. Parity — byte-identical error
+ * `getErrors()` per document, and reads each clean project through the same
+ * `cleanDoc` the per-file path uses. Parity — byte-identical error
  * messages/lines and identical elements/relationships — is pinned by
  * test/likec4-batch-parity.test.ts, which is also the tripwire for the exact
  * likec4 version pin: multi-project workspaces are public API, but this use of
@@ -41,11 +41,7 @@ import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { LikeC4 } from "likec4";
-import { flattenModel, type LikeC4Error, type LoadedDoc, type ReadableModel } from "./likec4.js";
-import { readDynamicViews } from "./parsed/dynamic-views.js";
-import { readGlobalStyleIds, readViewIds } from "./parsed/view-ids.js";
-import { readSpecification } from "./parsed/specification.js";
-import { readDeployment } from "./parsed/deployment.js";
+import { cleanDoc, distinctErrors, type LikeC4Error, type LoadedDoc, type ReadableModel } from "./likec4.js";
 
 /** A staged document: the real path it came from, and its workspace project. */
 interface StagedDoc {
@@ -92,11 +88,14 @@ async function stage(root: string, targets: string[]): Promise<StagedDoc[]> {
  * (`/var/...` becomes `/private/var/...`) in some environments and the literal
  * mkdtemp path in others, and a prefix compare silently attributes every error
  * to nobody in exactly one of those two worlds. The segment survives both.
+ *
+ * Read through `distinctErrors` exactly as `loadSource` reads them, so a
+ * document's list is the same one in both modes.
  */
 function groupErrors(likec4: LikeC4, staged: StagedDoc[]): Map<string, LikeC4Error[]> {
   const pathOf = new Map(staged.map((doc) => [doc.project, doc.path]));
   const grouped = new Map<string, LikeC4Error[]>();
-  for (const err of likec4.getErrors()) {
+  for (const err of distinctErrors(likec4.getErrors())) {
     const project = err.sourceFsPath.split(/[\\/]/).find((segment) => pathOf.has(segment));
     if (project === undefined) {
       // An error this walk cannot attribute would otherwise be DROPPED — and a
@@ -148,20 +147,12 @@ export async function loadBatch(paths: string[]): Promise<Map<string, LoadedDoc>
         if (errors.length > 0) {
           out.set(path, { errors, elements: [], relationships: [] });
         } else {
-          const model = (await likec4.parsedModel(project)) as ReadableModel;
-          // The specification travels with the batch loader too, and must: this
-          // is the loader `validate --all` reads the landscape through, so a
-          // kind-tag check wired only into `loadSource` would be a check the
-          // fleet gate — the one run it exists for — never actually ran.
-          out.set(path, {
-            errors,
-            specification: readSpecification(model.specification),
-            views: readDynamicViews(model),
-            viewIds: readViewIds(model),
-            globalStyles: readGlobalStyleIds(model),
-            deployment: readDeployment(model),
-            ...flattenModel(model),
-          });
+          // Through `cleanDoc`, the one assembly `loadSource` uses too. The
+          // specification travels with the batch loader and must: this is the
+          // loader `validate --all` reads the landscape through, so a kind-tag
+          // check wired only into `loadSource` would be a check the fleet gate
+          // — the one run it exists for — never actually ran.
+          out.set(path, cleanDoc((await likec4.parsedModel(project)) as ReadableModel));
         }
       }
     } finally {

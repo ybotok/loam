@@ -13,7 +13,7 @@
  * letting it read as "no partners".
  */
 import { existsSync } from "node:fs";
-import { type Elem, type Rel } from "../c4/likec4.js";
+import { errorText, type Elem, type Rel } from "../c4/likec4.js";
 import { serviceResolver } from "../c4/resolve/service.js";
 import {
   ACTOR_KINDS,
@@ -192,9 +192,11 @@ export async function partnerScan(req: PartnerScanRequest): Promise<PartnerScan>
       if (doc.errors.length > 0) {
         landscape = "invalid";
         const first = doc.errors[0];
+        // Through `errorText` — the raw message had no line, and a dropped
+        // quote's is a parser token list of thousands of lines.
         landscapeProblem =
           `${doc.errors.length} parse error(s)` +
-          (first === undefined ? "" : ` — first: ${first.message}`);
+          (first === undefined ? "" : ` — first: ${errorText(first)}`);
       } else {
         landscape = "read";
         elements = doc.elements;
