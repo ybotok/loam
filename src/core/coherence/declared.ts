@@ -31,9 +31,9 @@ import type { CapabilityRequirementIndex } from "../capabilities/realizes/join.j
 import { capabilityUnknownIssues } from "../capabilities/findings.js";
 import type { Requirement } from "../document/spec.js";
 import { openapiBaselineIssues } from "../openapi/baseline/gate.js";
-import { readOpenapi, type Operation } from "../openapi/doc.js";
+import { readOpenapi } from "../openapi/doc.js";
 import { operationRetirements } from "./retired/retirement.js";
-import { absentOperations, type Absent } from "./retired/revived.js";
+import { operationArrivals, type Arrival } from "./retired/revived.js";
 import type { FleetContext } from "../fleet-context.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
@@ -60,14 +60,13 @@ export interface Declared {
    */
   unreadableApis: Set<string>;
   /**
-   * Per service: the feature operations the living contract does not hold as
-   * spelled — by id (new, or RETIRED by an archived feature), or at a slot the
-   * living contract leaves empty while the id lives elsewhere (new there, or
-   * MOVED away by an archived feature) — which the living contract alone
+   * Per service: every (operationId, address) the contract the archive would
+   * write has and the living one lacks — an addition, or a revival of what an
+   * archived feature retired or moved away, which the living contract alone
    * cannot tell apart. coherence.ts asks the retired index (./retired/) only
    * when one of these lists is non-empty.
    */
-  revivalCandidates: Map<PathableService, Absent<Operation>[]>;
+  revivalCandidates: Map<PathableService, Arrival[]>;
 }
 
 /** The three facts this walk needs about the feature it is reading. */
@@ -94,7 +93,7 @@ export async function declaredByService(
     const anonymousMarkers = new Map<string, boolean>();
     const featureApiOps = new Set<string>();
     const unreadableApis = new Set<string>();
-    const revivalCandidates = new Map<PathableService, Absent<Operation>[]>();
+    const revivalCandidates = new Map<PathableService, Arrival[]>();
     // The capability gate's vocabulary, once per call. Absent or invalid stays
     // SILENT here — capability.invalid is validate --all's one finding about a
     // broken file, and an absent file means the fleet never opted in — so with
@@ -222,9 +221,11 @@ export async function declaredByService(
         });
       }
 
-      const livingDoc = await readOpenapi((await locateServicePaths(docsDir, svc, context)).openapi, context);
+      const livingOpenapiPath = (await locateServicePaths(docsDir, svc, context)).openapi;
+      const livingDoc = await readOpenapi(livingOpenapiPath, context);
       const livingOps = livingDoc.ops;
-      revivalCandidates.set(svc, absentOperations(featDoc, livingDoc));
+      const sides = { featPath: paths.openapi, featDoc, livingPath: livingOpenapiPath, livingDoc, service: svc };
+      revivalCandidates.set(svc, await operationArrivals(sides, context));
       for (const id of livingDoc.duplicateIds) {
         const slots = livingOps.filter((op) => op.id === id).map((op) => `${op.method} ${op.path}`);
         issues.push({
@@ -240,7 +241,6 @@ export async function declaredByService(
       // read when there is one, mirroring the readRequirements pattern above;
       // the gate itself never touches the filesystem.
       if (existsSync(paths.openapi)) {
-        const livingOpenapiPath = (await locateServicePaths(docsDir, svc, context)).openapi;
         // `readOr` (../openapi/contract-text.ts, which says why): `context.readText`
         // throws on non-UTF-8 bytes where the no-context `readFile` lets
         // `readOpenapi` flag the document unreadable — the exact

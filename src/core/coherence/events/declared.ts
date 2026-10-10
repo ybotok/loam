@@ -34,7 +34,7 @@ import type { FleetContext } from "../../fleet-context.js";
 import type { DocsDir, FeatureDir } from "../../kernel/ids/dirs.js";
 import { gradeBaselines, gradeMarkers } from "./grades.js";
 import { messageRetirements } from "../retired/retirement.js";
-import { absentEvents, type AbsentEvents } from "../retired/revived.js";
+import { eventArrivals, type EventArrivals } from "../retired/revived.js";
 import { readEventPair } from "../retired/event-pair.js";
 
 /** The three facts this walk needs about the feature it is reading. */
@@ -87,12 +87,14 @@ export interface DeclaredEvents {
   /** Services whose FEATURE asyncapi.yaml exists but does not parse — every event check suspends for them. */
   unreadable: Set<string>;
   /**
-   * Per touched service: the slots and messages the delta declares that the
-   * living contract does not hold — new, or RETIRED by an archived feature,
-   * which the living contract alone cannot tell apart. ./events.ts asks the
-   * retired index (../retired/) only when one of these is non-empty.
+   * Per touched service: the slots the delta declares that the living
+   * contract lacks, and the message names the contract the archive would
+   * write declares where the living one does not — new, or a revival of what
+   * an archived feature retired or moved away, which the living contract
+   * alone cannot tell apart. ./events.ts asks the retired index (../retired/)
+   * only when one of these is non-empty.
    */
-  revivalCandidates: Map<PathableService, AbsentEvents>;
+  revivalCandidates: Map<PathableService, EventArrivals>;
 }
 
 /**
@@ -140,7 +142,7 @@ export async function declaredEvents(
   const stoppedSending = new Map<string, string[]>();
   const links = new Map<PathableService, EventLink[]>();
   const unreadable = new Set<string>();
-  const revivalCandidates = new Map<PathableService, AbsentEvents>();
+  const revivalCandidates = new Map<PathableService, EventArrivals>();
   for (const svc of svcNames) {
     const featPath = featureSpecPaths(featureDir, svc).asyncapi;
     const { removed: justifiedMsgs, links: svcLinks } = await deltaEventLines(scope, svc, context);
@@ -194,13 +196,13 @@ export async function declaredEvents(
     // the guards: absent living is an answer, unreadable living is not).
     const read = await readEventPair({ featPath, featDoc, livingPath, livingDoc, service: svc }, context);
     const { featSlots, livingText } = read;
-    revivalCandidates.set(svc, absentEvents(read));
+    revivalCandidates.set(svc, eventArrivals(read));
 
     if (livingText !== undefined) {
       gradeBaselines({ ...read, svc, featureId }, issues);
       gradeMarkers(read, svc, issues);
-      // The pair's one simulation — the revival candidates above may already
-      // have asked it where a message name survives the merge.
+      // The pair's one simulation — the revival candidates above have already
+      // asked it, comparing it with the living contract.
       const merged = read.merged();
       if (merged !== undefined) {
         mergedDocs.set(svc, merged);

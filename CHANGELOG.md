@@ -27,24 +27,32 @@ Two codes, both added to the `IssueCode` union, and one additive `--json` key we
   or `operations` slot by its key, or a message by its name, that an archived feature retired. A
   channel-slot removal's inline messages are named from that feature's `.loam-before/` snapshot
   pre-image, read only while it still hashes to the digest its manifest recorded.
-- **Both codes also cover a MOVE.** An archived feature that relocated an operation (a marker on
-  the old slot, the same operationId defined at a new one) vacated the old address, and a later
-  delta quoting the operation there — unpinned — archived at exit 0 and put the id back beside its
-  new address, one operationId at two slots (only the advisory `openapi.duplicate-operationid`
-  said so afterwards): the slot-keyed baseline gate saw nothing living at the slot, and the
-  id-keyed check saw the id living. That quote is now `openapi.op-revived` too, and its message
-  says which archived feature moved the operation, where it moved it to, and — apart from that,
-  since anything landed after the move can have moved it again — where it lives now. A delta that
-  carries its own removal marker for the id is its own relocation (moving it back on purpose) and
-  is not graded, nor is one that defines another operation at the address the id lives at (a swap
-  — the merge replaces what stands at that method and path). On the event axis the one slot a move
-  vacates is a `components.messages` key whose message name the archived delta declared again
-  elsewhere — under another key, or inline under a channel; a declaration at the old key is
-  `asyncapi.slot-revived`, naming where the name is declared now, unless the merge would take it
-  out of there: a delta that restates that channel with a `$ref`, or retires it, is moving the
-  message back. For an inline declaration the remedy names the channel (restate it with a `$ref`,
-  or retire it), never a marker nested on the inline message, which retires nothing. A channel or
-  operation slot is its key, so a "moved" one is a retirement, as before.
+- **Both codes also cover an address an archived feature VACATED.** An archived feature that
+  relocated an operation (a marker on the old slot, the same operationId defined at a new one)
+  vacated the old address — and so did one that retired it there, once a later feature re-added it
+  somewhere else. A later delta quoting the operation at that address — unpinned — archived at
+  exit 0 and put the id back beside where it lives, one operationId at two slots (only the advisory
+  `openapi.duplicate-operationid` said so afterwards): the slot-keyed baseline gate saw nothing
+  living at the slot, and the id-keyed check saw the id living. That quote is now
+  `openapi.op-revived` too. Both codes are judged on the contract the archive would write: the
+  check runs the archive's own merge of the delta over the living contract and compares where each
+  operationId (each message name) stands there with where it stands now. One the merged contract
+  answers at two or more addresses — one of them new, and vacated by an archived feature — is the
+  finding; one it answers at exactly one address is not, whether the delta moves it back with its
+  own removal marker where it lives now or swaps another operation in there (with or without an
+  operationId — the merge replaces what stands at that method and path). A removal marker standing
+  where the id does not live deletes nothing, so it no longer excuses the quote. The message says
+  which archived feature moved the operation and where to, or retired it there, and — apart from
+  that, since anything landed after can have moved it again — where it lives now; its remedy names
+  the address to drop: delete the quote, or, to move it back on purpose, add a removal marker where
+  it lives now — and where the delta already spells that address, so no marker can be written
+  there, archive with `--approve` instead. On the event axis the vacated addresses are
+  `components.messages` keys (a marker there) and the inline declarations a channel removal took; a
+  delta that restates the channel a name stands inline in with a `$ref`, or retires it, takes the
+  name out of there and is not graded. For an inline declaration the remedy names the channel
+  (restate it with a `$ref`, or retire it), never a marker nested on the inline message, which
+  retires nothing. A channel or operation slot is its key, so a "moved" one is a retirement, as
+  before.
 - **Exit code: `loam archive` now exits 1 (`not-coherent`) on this shape** without `--approve`;
   with `--approve` it merges as before, and the operation lands in `overridden[]` and the text
   output's "archiving despite" list, naming what came back and whose retirement it reverses.

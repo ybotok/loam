@@ -180,17 +180,18 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
     reqOps, removingOps, featureApiOps, unreadableApis, revivalCandidates,
   } = await declaredByService(scope, svcNames, issues, context);
 
-  // A revival: an operation this delta spells that the living contract no
-  // longer has because an ARCHIVED feature retired it — or spells at an
-  // address an archived feature moved it away from — and the merge would read
-  // it as an addition and put it back (./retired/ says why the gate could not
-  // see this before). One lazy handle for both contract axes, so the walk of
-  // features/archive/ is paid once per call at most, and only when some entry
-  // is absent from its living contract at all.
+  // A revival: an operation the merged contract would answer that the living
+  // contract no longer has because an ARCHIVED feature retired it — or would
+  // answer again at an address an archived feature took it out of, beside
+  // where it lives now — and the merge would read it as an addition and put
+  // it back (./retired/ says why the gate could not see this before). One
+  // lazy handle for both contract axes, so the walk of features/archive/ is
+  // paid once per call at most, and only when the merged contract answers
+  // something at an address the living one does not.
   const retired = retiredLookup(docsDir, context);
-  for (const [svc, absent] of revivalCandidates) {
-    if (absent.length === 0) continue;
-    issues.push(...revivedOperations(svc, absent, await retired()));
+  for (const [svc, arrived] of revivalCandidates) {
+    if (arrived.length === 0) continue;
+    issues.push(...revivedOperations(svc, arrived, await retired()));
   }
   const {
     governedByLivingSpec, edgeConsumers, requirementConsumers, definedElsewhere,

@@ -1554,30 +1554,39 @@ the source for tests.
   archived feature retired is **`openapi.op-revived`** (by operationId — a
   retired operation quoted at a new path is the same operation back) or **`asyncapi.slot-revived`**
   (a `channels` or `operations` slot by its key; a message by its *name*, wherever it is declared).
-  A relocation retires nothing but vacates an address, so the index records moves too — the marker
-  ids the relocation rule takes out of the retired set are exactly the moved ids, and their old
-  slots are on the markers. A delta operation at a slot the living contract leaves empty, whose
-  operationId it holds at another slot, and whose old address an archived feature moved it away
-  from, is `openapi.op-revived` as well: archived, it would answer the id at both addresses. A
-  delta that carries its own removal marker for the id is its own relocation and is not graded,
-  and neither is one that defines another operation at every address the id lives at: the merge
-  writes per method and path, so that swap leaves the id at one address. "Lives at" means what
-  the merge would leave, not what the living contract holds today.
-  On the event axis the one slot a move vacates is a `components.messages` key (marker on the old
-  key, the message name declared again elsewhere): a declaration at the old key of a name the
-  living contract declares elsewhere — and the merge would leave declared there — is
-  `asyncapi.slot-revived`. Read off the merge itself: a delta that restates the channel an inline
-  declaration stands in (with the message as a `$ref`) or retires that channel takes the name out,
-  since a channel upsert replaces the channel's interior; a marker nested on the inline message
-  does not (`asyncapi.remove-marker-inline`), so the finding names the channel as the remedy. A
-  channel or operation slot's identity is its key, so moving one is a retirement plus an
-  addition, graded as such.
+  A relocation retires nothing, but it VACATES an address — and so does a retirement, once a later
+  feature re-adds the id somewhere else — so the index records, per id, every address an archived
+  feature's executed marker vacated, which feature, and for a move where its delta put the id. The
+  finding is judged on the contract the archive would WRITE: the check runs the archive's own
+  merge of the delta over the living contract and compares where each operationId stands there with
+  where it stands now. An (operationId, address) the merged contract has and the living one lacks
+  is `openapi.op-revived` when the living contract holds the id nowhere and an archived feature
+  retired it (anywhere — by identity) or moved it away from that very address, or when the merged
+  contract answers the id at two or more addresses and an archived feature retired it at, or moved
+  it away from, that very address: archived, it would answer the id at both. An id the merged
+  contract answers at exactly one address is never a revival — a delta moving it back with its own
+  removal marker where it lives now, or swapping another operation in there (named or not: the
+  merge writes per method and path), leaves it at one address — while a marker standing where the
+  id does not live deletes nothing, and excuses nothing. Reading the merged contract replaced a
+  case-by-case re-derivation of the merge that each review found a new hole in.
+  On the event axis the same rule runs on the message name, over the event merge: the addresses a
+  feature vacates are `components.messages` keys (a marker there) and the inline declarations a
+  channel removal took. A delta that restates the channel an inline declaration stands in (with
+  the message as a `$ref`) or retires that channel takes the name out, since a channel upsert
+  replaces the channel's interior; a marker nested on the inline message does not
+  (`asyncapi.remove-marker-inline`), so the finding names the channel as the remedy. A channel or
+  operation slot's identity is its key, so moving one is a retirement plus an addition, graded as
+  such.
   Both are warnings that **gate** the archive, `openapi.baseline-missing`'s doctrine: the document
   is legal, and re-adding a retired operation can be exactly what a feature means — a retirement
   rolled back — so `--approve` carries the call, and the archive output then names what came back
   and whose retirement it reverses. The message offers both remedies: delete the quote if it only
   restated the operation; archive with `--approve` if the feature brings it back on purpose (a pin
-  over nothing is `openapi.baseline-invalid`, so a deliberate re-add drops it first). `loam rebase`
+  over nothing is `openapi.baseline-invalid`, so a deliberate re-add drops it first). At a vacated
+  address beside a living one it names the address to drop instead: delete the quote, or, to move
+  the id back on purpose, take it out of where it lives now in the same delta (a removal marker
+  there; for a message declared inline, restate or retire its channel) — and where the delta
+  already spells that address, so no marker can stand there, archive with `--approve`. `loam rebase`
   never pins such an entry as new: it prints the same finding (`revived[]` in `--json`) and leaves
   the decision to the author. A channel-slot removal retires the messages its living channel
   declared inline, which the delta never spells, so those names are read from the archived
