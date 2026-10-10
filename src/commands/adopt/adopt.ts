@@ -4,7 +4,7 @@ import { InvalidIdError, assertServiceId, type PathableService } from "../../cor
 import { configOrRefuse, emitJson, fail, NO_SERVICE_MESSAGE, repoPath } from "../../core/envelope/json.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { listFleetTree, listServices } from "../../core/repo/repo.js";
-import { findInTree, nearestTreeNames } from "../../core/repo/tree/find.js";
+import { closeNamesHint, findInTree } from "../../core/repo/tree/find.js";
 import { servicePathsUnder, type ServicePaths } from "../../core/repo/paths.js";
 import { serviceBrief, type Brief } from "../../core/brief/brief.js";
 import { docsRepoReady } from "../policy/gate.js";
@@ -47,12 +47,11 @@ async function subsystemTarget(
   const tree = await listFleetTree(docsDir);
   const hit = findInTree(tree, name);
   if (hit === null) {
-    const close = nearestTreeNames(name, tree.subsystems.map((s) => s.name));
     fail(
       json,
       "unknown-target",
       `No subsystem '${name}' in the tree.` +
-        (close.length > 0 ? ` Close names: ${close.join(", ")}.` : " `loam subsystem new` creates one; `loam subsystem list` shows what exists."),
+        closeNamesHint(name, tree.subsystems.map((s) => s.name), " `loam subsystem new` creates one; `loam subsystem list` shows what exists."),
     );
     return null;
   }
