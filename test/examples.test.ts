@@ -215,6 +215,37 @@ describe("examples/docs vs the subsystem tree", () => {
   });
 });
 
+describe("examples/docs vs loam list suites", () => {
+  it("puts the one journey in two suites, and names what each needs up — and what no directory stands for", async () => {
+    // uc_order_notification carries `#suite-smoke` AND `#suite-notifications`:
+    // many-to-many is the reason a suite is a tag rather than a directory, and
+    // the example would teach the opposite if each suite had a journey of its
+    // own. The environment is the union of the journey's participants resolved
+    // to services/ — notification-service through its filing under platform/,
+    // which is why the ids are compared, never paths — and the two participants
+    // nothing stands up are NAMED: the customer who drives the flow, and the
+    // topic, #external through its KIND in the landscape's specification.
+    const res = await runLoam(workDir, "list", "suites", "--json");
+    expect(res.code).toBe(0);
+    const payload = JSON.parse(res.stdout);
+    const environment = {
+      views: [{ id: "uc_order_notification", file: "architecture/usecases/order-notification.likec4" }],
+      services: ["checkout-web", "notification-service", "order-service"],
+      unresolved: [
+        { element: "customer", external: false },
+        { element: "kafka.orderEvents", external: true },
+      ],
+    };
+    expect(payload.suites).toEqual([
+      { name: "notifications", ...environment },
+      { name: "smoke", ...environment },
+    ]);
+    // The fleet's only use case is in a suite, so no journey is left out.
+    expect(payload.ungrouped).toEqual([]);
+    expect(payload.useCases).toEqual({ state: "ok", unreadable: false });
+  });
+});
+
 describe("examples/docs vs loam archive FEAT-101 --dry-run", () => {
   it("plans a coherent seven-file merge plus the move, warning only that the new service has no model", async () => {
     const res = await runLoam(workDir, "archive", "FEAT-101", "--dry-run", "--json");
