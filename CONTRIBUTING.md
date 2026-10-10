@@ -71,6 +71,43 @@ workflow. When adding a new suite that touches LikeC4, extend the workflow's sui
 change. GitHub disables scheduled workflows after sixty days without repository activity, so after a
 quiet stretch check that the canary is still enabled.
 
+## The OpenSpec canary
+
+[openspec-canary.yml](https://github.com/ybotok/loam/blob/main/.github/workflows/openspec-canary.yml)
+is the same kind of early-warning smoke for the OpenSpec migration, weekly on Thursday with manual
+dispatch. It resolves the newest `vX.Y.Z` OpenSpec tag with `git ls-remote`, shallow-clones it, and
+runs `npm run test:openspec-corpus -- --baseline latest` against it. Like the LikeC4 canary it has no
+push or pull-request trigger and blocks nothing. The certified claim is the exact-commit corpus job
+in `ci.yml`, whose `release` pin is `OPENSPEC_BASELINES.release` in
+`src/core/openspec/model/model.ts`. When the newest tag is that pin, the sweep re-checks it exactly
+and the summary says there is nothing newer.
+
+What a red run means, by failing step. A red sweep means a file in the newest upstream corpus no
+longer survives the migration's read/serialize/read round trip; the log names the file. A red audit
+means `audit-openspec` could not complete on OpenSpec's own workspace — a YAML, root or I/O refusal,
+not a blocker, since blockers are only listed. A red resolve or clone step is infrastructure: GitHub,
+or a tag scheme upstream changed. The parser-source diff never fails. It warns when upstream's
+readers (`src/core/parsers/`), archive merge (`src/core/specs-apply.ts`) or validation rules
+(`src/core/validation/`) moved since the pin, and it is the step to read first. The 1.13 grammar
+changes appeared in no upstream spec file, so a green sweep says nothing about them.
+
+Reproduce locally:
+
+```sh
+git clone --depth 1 --branch <tag> https://github.com/Fission-AI/OpenSpec.git /tmp/OpenSpec
+npm run test:openspec-corpus -- --baseline latest /tmp/OpenSpec
+npm run dev -- audit-openspec /tmp/OpenSpec
+```
+
+Moving the pin is an ordinary pull request. Run the sweep and the documented audit, mapping and
+staged-apply path against the new release. Read the parser diff and give loam's OpenSpec reader
+(`src/core/openspec/scan/shape.ts`) whatever grammar it shows, each with a test. Then update
+`OPENSPEC_BASELINES.release` and the `release` totals in `scripts/openspec-corpus.ts`, the `ci.yml`
+matrix, and the pin tables in MIGRATING-from-OpenSpec.md and `test/fixtures/openspec/README.md`.
+The outgoing release becomes the `previous` pin, and the pin it displaces either gets a name of its
+own or a recorded reason to go. The banner and `baselines.release` under `--json` change, so the
+move needs a CHANGELOG entry.
+
 ## Releases
 
 Only maintainers create release tags. A release is driven by an exact `v<package.version>` tag and

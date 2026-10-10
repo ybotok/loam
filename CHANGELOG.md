@@ -51,6 +51,37 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   prints the single-repo trial's hour, and a join still prints neither. Human output only: no code,
   flag or payload key was added, and the `--json` envelope is unchanged for both variants.
 
+### Changed — the OpenSpec compatibility pin moves to v1.14.1, and a weekly canary watches the newest release
+
+No code, CLI flag or payload key was added, changed or retired. The `audit-openspec` /
+`migrate-openspec` payload shape is unchanged, but the value it reports as the certified release moves.
+
+- **`audit-openspec` and `migrate-openspec` now report OpenSpec v1.14.1 as the certified release.**
+  The banner line and `baselines.release` under `--json` carry `1.14.1` / `v1.14.1` /
+  `87c3595ace6a2e22957f39ebe5b74c2f2316e0cb` (released 2026-10-05) instead of `1.9.0` / `2826b88`.
+  `baselines.mainCanary` is unchanged. The corpus gate's `--baseline release` is now the v1.14.1
+  corpus: 223 Markdown files, 765 requirements and 2475 scenarios, every file round-tripped. v1.9.0
+  stays as the new `--baseline previous` regression pin beside `legacy` (v1.7.0) and `canary`, and
+  the scheduled `ci.yml` matrix runs all four. The sweep found no parser gap. The grammar OpenSpec
+  1.13 added — a closing `#` run, `*`/`+` bullets on `REMOVED` and `RENAMED`, repeated delta
+  sections — was already read by the migration, and a new test pins the repeated sections.
+  `audit-openspec` and `migrate-openspec --apply`, run on OpenSpec's own v1.14.1 workspace, staged
+  all 251 living requirements and 747 scenarios across 36 services. The seven vendored fixtures stay
+  at v1.9.0, since v1.14.1 has no shape they lack. MIGRATING-from-OpenSpec.md's version matrix
+  records all of this.
+- **The corpus sweep reads each file through the migration's own reader.** That reader is the one
+  `audit-openspec` and `--apply` use: loam's parser plus the grammar only OpenSpec accepts. The
+  sweep used to read with loam's parser alone. Every pinned corpus gives the same totals either way.
+- **A new scheduled workflow, `.github/workflows/openspec-canary.yml`, watches the newest OpenSpec
+  release.** It runs weekly and on manual dispatch. It resolves the newest `vX.Y.Z` tag with
+  `git ls-remote` and sweeps it with the new `--baseline latest` mode of `npm run
+  test:openspec-corpus`. That mode reports how the totals moved from the certified pin instead of
+  refusing an unpinned commit, and still fails on a file that does not round-trip. The workflow also
+  audits OpenSpec's own workspace and diffs upstream's parser sources against the pin, in its step
+  summary. It has no push or pull-request trigger and blocks nothing; CONTRIBUTING.md's "The
+  OpenSpec canary" is the runbook. The README's note that `--baseline` defaults to `canary` was
+  wrong — it defaults to `release` — and now says so.
+
 ### Fixed — a writer waiting on the lock no longer deletes the next writer's live lock
 
 No code, flag, path or payload key was added, changed or retired. What changes is that concurrent

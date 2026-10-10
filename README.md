@@ -547,9 +547,9 @@ npm run arch:check          # package-level dependency graph stays acyclic
 npm test                   # vitest
 npm run test:coverage      # full src/**/*.ts coverage with enforced thresholds
 npm run test:package       # clean, pack, install the tarball, run its loam binary
-# optional, against the exact upstream checkout named in MIGRATING-from-OpenSpec.md (the
-# flag matters: --baseline defaults to canary, and the sweep refuses a checkout
-# at any other HEAD):
+# optional, against the exact upstream checkout named in MIGRATING-from-OpenSpec.md
+# (--baseline defaults to release, the certified pin; every pinned baseline refuses a
+# checkout at any other HEAD, and only --baseline latest sweeps an unpinned one):
 npm run test:openspec-corpus -- --baseline release /path/to/OpenSpec
 ```
 
