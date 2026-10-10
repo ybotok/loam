@@ -13,7 +13,6 @@
  */
 import { compareIds } from "../../repo/entries.js";
 import {
-  type OpenSpecMapping,
   type CapabilityMappingDecision,
   type OpenSpecChangeDecision,
   type OpenSpecMappingIssue,
@@ -34,7 +33,6 @@ import { sortIssues } from "../scan/changes.js";
 /** Everything a finished read produced, before it is graded into a verdict. */
 export interface Findings {
   located: { inputRoot: string; root: string; kind: OpenSpecInventory["workspace"]["kind"] };
-  mapping: OpenSpecMapping;
   inventoryDigest: string;
   config: OpenSpecInventory["workspace"]["config"];
   storeMetadataPath: string | null;

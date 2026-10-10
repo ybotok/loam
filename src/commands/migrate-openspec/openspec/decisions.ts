@@ -14,7 +14,7 @@ import { mkdir, realpath, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { stringify as stringifyYaml } from "yaml";
 import { dictionary, ownValue } from "../../../core/kernel/records.js";
-import { type OpenSpecMapping, type OpenSpecMappingSkeleton } from "../../../core/openspec/model/mapping.js";
+import { activeRenameEntries, type OpenSpecMapping, type OpenSpecMappingSkeleton } from "../../../core/openspec/model/mapping.js";
 import { type OpenSpecInventory } from "../../../core/openspec/model/model.js";
 import { OpenSpecCommandError } from "./error.js";
 import { canonicalForCreate, contains } from "./paths.js";
@@ -33,11 +33,12 @@ export async function writeMappingSkeleton(
       `Refusing to write the mapping inside the OpenSpec source workspace: ${output}`,
     );
   }
-  if (existsSync(output)) {
-    throw new OpenSpecCommandError("already-exists", `Mapping output already exists; refusing to overwrite it: ${output}`);
-  }
   await mkdir(dirname(output), { recursive: true });
   try {
+    // `wx` is the existence check: an output already there (a file, a
+    // directory, or a symlink, dangling or not) fails the exclusive create, so
+    // no separate pre-check is needed — one used to sit above, saying the same
+    // `already-exists` this catch says.
     await writeFile(output, stringifyYaml(skeleton, { lineWidth: 0 }), { encoding: "utf8", flag: "wx" });
   } catch (error) {
     if (existsSync(output)) {
@@ -71,16 +72,7 @@ export function normalizedMapping(inventory: OpenSpecInventory, mapping: OpenSpe
         title: decision.title,
       },
     ])),
-    renames: Object.fromEntries(
-      inventory.renamed
-        .filter((rename) => rename.scope === "active")
-        .map((rename) => [rename.key, {
-          from: rename.from,
-          to: rename.to,
-          existingRequirementId: rename.existingRequirementId,
-          requirementId: rename.requirementId,
-        }]),
-    ),
+    renames: activeRenameEntries(inventory),
     artifacts: Object.fromEntries(inventory.artifactDecisions.map((decision) => [
       decision.path,
       {

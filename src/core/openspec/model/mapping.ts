@@ -117,23 +117,15 @@ export interface OpenSpecMappingSkeleton {
 }
 
 export function emptyMapping(mapping?: OpenSpecMapping): OpenSpecMapping {
-  if (mapping === undefined) {
-    return {
-      source: null,
-      capabilities: dictionary(),
-      changes: dictionary(),
-      renames: dictionary(),
-      artifacts: dictionary(),
-    };
-  }
   // Keep the core inventory tolerant of programmatic v0 callers while the CLI
   // parser enforces the complete v1 document, including explicit `changes`.
+  // No mapping at all is the same answer with every field defaulted.
   return {
-    source: mapping.source ?? null,
-    capabilities: mapping.capabilities ?? dictionary(),
-    changes: mapping.changes ?? dictionary(),
-    renames: mapping.renames ?? dictionary(),
-    artifacts: mapping.artifacts ?? dictionary(),
+    source: mapping?.source ?? null,
+    capabilities: mapping?.capabilities ?? dictionary(),
+    changes: mapping?.changes ?? dictionary(),
+    renames: mapping?.renames ?? dictionary(),
+    artifacts: mapping?.artifacts ?? dictionary(),
   };
 }
 
@@ -157,22 +149,7 @@ export function createOpenSpecMappingSkeleton(inventory: OpenSpecInventory): Ope
         title: decision.title,
       },
     ])),
-    renames: Object.fromEntries(
-      inventory.renamed
-        .filter((rename) => rename.scope === "active")
-        .map((rename) => [rename.key, {
-          from: rename.from,
-          to: rename.to,
-          existingRequirementId: rename.existingRequirementId,
-          // The identity the inventory settled on, which is the field the
-          // skeleton is asking a human to fill in. `existingRequirementId` is
-          // the living source's own id and happens to equal it on the only path
-          // that reaches here today — but a caller that audits WITH a mapping
-          // would have a settled id and no existing one, and the skeleton would
-          // hand that decision back as unmade.
-          requirementId: rename.requirementId,
-        }]),
-    ),
+    renames: activeRenameEntries(inventory),
     artifacts: Object.fromEntries(inventory.artifactDecisions.map((decision) => [
       decision.path,
       {
@@ -182,4 +159,30 @@ export function createOpenSpecMappingSkeleton(inventory: OpenSpecInventory): Ope
       },
     ])),
   };
+}
+
+/**
+ * The active RENAMED pairs as a mapping document records them, keyed by rename
+ * key — one shape for the blank skeleton the audit hands over and the
+ * normalized record a migration writes beside the staged docs
+ * (commands/migrate-openspec/openspec/decisions.ts), so the two cannot
+ * disagree about what a rename entry holds.
+ */
+export function activeRenameEntries(inventory: OpenSpecInventory): OpenSpecMappingSkeleton["renames"] {
+  return Object.fromEntries(
+    inventory.renamed
+      .filter((rename) => rename.scope === "active")
+      .map((rename) => [rename.key, {
+        from: rename.from,
+        to: rename.to,
+        existingRequirementId: rename.existingRequirementId,
+        // The identity the inventory settled on, which is the field the
+        // skeleton is asking a human to fill in. `existingRequirementId` is
+        // the living source's own id and happens to equal it on the only path
+        // that reaches here today — but a caller that audits WITH a mapping
+        // would have a settled id and no existing one, and the skeleton would
+        // hand that decision back as unmade.
+        requirementId: rename.requirementId,
+      }]),
+  );
 }
