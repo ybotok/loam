@@ -50,6 +50,14 @@ export function printGate(
     const attested = f.attested > 0 ? `, ${f.attested} on an agent's word` : "";
     const shipped = f.archived === true ? " · archived" : "";
     console.log(`  ${f.id} · ${f.verdict} (${f.state}; ${f.confirmed}/${f.claims} confirmed${attested})${shipped}`);
+    // A record read as frozen history because its archive captured no
+    // checklist (`checklistAtArchive: null`) was not held to the feature that
+    // shipped; a deploy log must not read that row as one that was.
+    if (f.archived === true && f.checklistAtArchive === null && f.state === "recorded") {
+      console.log(
+        "    its archive captured no checklist (archived by an older loam), so whether the record still answered the feature when it shipped is unknown — read as frozen history",
+      );
+    }
   }
   if (report.features.length === 0) {
     console.log(

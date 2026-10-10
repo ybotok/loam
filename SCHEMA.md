@@ -98,7 +98,7 @@ docs/
     verification/<svc>.yaml          the done-check, one file per attesting service: claims + verdicts + evidence  [loam verify --service <id> --record]
     verification.yaml                the same answered all at once, and every record from before the directory — read forever  [loam verify --record]
   features/archive/<FEAT>/           a shipped change — the same files, plus:
-    .loam-before/                    the bytes the merge overwrote        [written by loam]
+    .loam-before/                    the bytes the merge overwrote, and the checklist it shipped with  [written by loam]
   .loam-lock                         transient: one writer at a time      [archive/unarchive only]
   .loam-commit                       transient: the commit intent journal [archive/unarchive only]
 ```
@@ -2218,6 +2218,19 @@ which carry them across loam upgrades. Correspondingly, `archive` refuses to rep
 version-3 claim graded at its service's current directory: the previous archive's writes are still
 in the docs and those files are the only way back.
 
+The manifest also carries one key that is not about bytes, added without a version bump because
+nothing that restores reads it: **`checklist`**, the digest of the checklist a fresh `loam verify`
+derived for the feature just before the merge — written when the feature carried a readable
+verification record then, absent otherwise and in every manifest an older loam wrote. It is the
+question the feature asked as it shipped. Once archived, a record is frozen history and the checklist
+cannot be re-derived (the merge moved the feature's operations into the living contract, so a
+derivation after it can only mismatch), so this is the one thing an archived record can still be
+held to: `loam gate --since` grades the record against it, and a record that answered an older
+checklist reads `stale`. `unarchive` takes the snapshot away with the rest of it, so a feature
+archived again gets a fresh capture. `list`, `status` and `verify` keep reading an archived record as
+frozen history; a manifest with no `checklist` leaves the gate reading it that way too, and saying
+so.
+
 Some checks run at plan time rather than in the gate, because only the computed merge can see them.
 A **living** requirement sitting outside `## Requirements` refuses the whole archive
 (`living.requirement-outside-requirements`, error): the merge rewrites only that section, so the
@@ -2397,8 +2410,12 @@ anything that does not answer the *current* checklist, each under its own `--jso
 `answers-mismatch` (an id nobody asked about, a claim with no answer, or one answered twice),
 `answers-unevidenced` (a `confirmed` with no `file:line` behind it, or one citing a file or a line
 that does not exist in the repository the record is written from — the all-at-once form included,
-which binds to no commit but no longer takes a citation on trust). An unchecked claim must never be
-able to masquerade as checked.
+which binds to no commit but no longer takes a citation on trust). The all-at-once form checks what
+is shaped like a citation and only that: an evidence entry that is one token ending in `:<digits>`
+and is not a URL must name a regular file inside the repository with that line, while prose ("manual
+QA by Alice"), a URL or a path with no line is recorded as it always was. The federated form keeps
+its stricter contract — every agent entry a `file:line` bound to the attested commit. An unchecked
+claim must never be able to masquerade as checked.
 
 **`--results <report.json>` answers the `scenario.tested` claims mechanically, from a cucumber JSON
 test report** — the format `cucumber-js --format json` emits, and cucumber-jvm, behave,
@@ -2677,13 +2694,25 @@ writers on one checkout only; a fleet records from many. With a file per service
 touch two different paths and merge cleanly. Recording a service again replaces that service's file
 and nothing else; another service's file is never rewritten, and its pins never touched.
 
-The record answers **one version of the checklist**: the one its newest file answered (by
-`recorded`, a later service id breaking a same-day tie). A file that answered a different version
-keeps its attestation in the list — `verify.checklist-forked` names it — but its answers do not
-count until that service records again. The one shared file used to settle this by rewriting: the
-last writer pruned everybody's answers to its own checklist. Per-service files are never rewritten by
-anyone else, so nothing can prune them, and counting an answer filed against another question set
-would let an id the feature no longer asks fill the slot of the question that replaced it.
+The record answers **one version of the checklist**: the one the feature asks now — `loam verify`
+(read and record alike), `tasks`, and `status`, `list` and `gate` for an in-flight feature all
+derive it, and the files that answered it are the ones that count. Only where no reader knows the
+current version (the frozen view of an archived feature) or no file answered it does the newest
+file decide (by `recorded`, a later service id breaking a same-day tie). Newest-by-date used to
+decide always, and `recorded` is a date: a service that recorded the current checklist lost a
+same-day tie to a service with a later id that had recorded an older one, so the current answers
+were dropped and every reader called the record stale. A file that answered a different version
+keeps its attestation in the list — `verify.checklist-forked` names it, on the recording run's
+output as well as the read view — but its answers do not count until that service records again.
+The one shared file used to settle this by rewriting: the last writer pruned everybody's answers to
+its own checklist. Per-service files are never rewritten by anyone else, so nothing can prune them,
+and counting an answer filed against another question set would let an id the feature no longer
+asks fill the slot of the question that replaced it.
+
+**`features/<FEAT>/verification/` is loam's.** Every non-dot `*.yaml` in it is read as one
+service's attestation file — the file name is the claim about whose word it holds — so a file there
+that is not one (a hand-made `k6.yaml`, say) makes the record `record-unreadable`, exactly like a
+damaged attestation. Keep anything else beside the feature, not inside that directory.
 
 **The one-file record is read forever.** A `verification.yaml` written before the directory existed
 — a federated record with several attestations in it, active or archived — reads exactly as it
@@ -2851,7 +2880,11 @@ is no current checklist to be stale against (the merge itself moved the feature'
 the living OpenAPI, so a re-derived checklist could only disagree): `loam verify` on an archived
 feature renders the record verbatim as **frozen history** (`frozen: true` under `--json`, no
 staleness judgment), and `--record` refuses (`invalid-option` — there is no current checklist for
-the answers to answer): the record is about the words that shipped, and it stays that way.
+the answers to answer): the record is about the words that shipped, and it stays that way. One
+reader holds it to something all the same: `loam gate --since <ref>` grades an archived record
+against the checklist digest `archive` captured as the feature merged (the snapshot manifest's
+`checklist`, above), because the deploy question is whether what shipped was what was checked — a
+record that had gone stale before the archive is `stale` there, never `verified` again.
 
 **Verification does not gate `archive`.** Coherence gates because loam computed it from the
 documents; a verdict is an agent's word about code loam never read, and a gate in front of shipping

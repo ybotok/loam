@@ -70,22 +70,36 @@ export interface GateFeature extends VerificationState {
    * byte the one it was before the flag existed.
    */
   archived?: true;
+  /**
+   * Present only beside `archived`: the checklist digest `loam archive`
+   * captured as the feature merged — what its frozen record was graded
+   * against, so a record that had stopped answering the feature before it
+   * shipped reads `stale` — or null when that archive captured none (a loam
+   * that predates the capture, or a feature that had no record then). Under
+   * null a record is read as frozen history, exactly as before the capture
+   * existed, and the row says so rather than letting that reading pass for a
+   * checked one.
+   */
+  checklistAtArchive?: string | null;
 }
 
 /**
  * `--since <ref>`, resolved: the docs-repo commit a deploy pipeline last
  * shipped from, and the `features/archive/` directory names that already
- * existed there. Without it the verification check reads in-flight features
- * only, and a feature drops out of the gate the moment it is archived — which
- * under `--strict` made archiving the cheapest way past an unverified-feature
- * warning. With it, every feature archived AFTER the ref (its directory absent
- * there) is graded too. Nothing is stored: the pipeline already knows its last
- * deployed docs commit, and git already knows what was archived at it.
+ * existed there AND still hold what they held then. Without it the
+ * verification check reads in-flight features only, and a feature drops out of
+ * the gate the moment it is archived — which under `--strict` made archiving
+ * the cheapest way past an unverified-feature warning. With it, every feature
+ * archived AFTER the ref is graded too: its directory absent there, or changed
+ * since — a feature unarchived, edited and archived again ships again, at the
+ * same path. Nothing is stored: the pipeline already knows its last deployed
+ * docs commit, and git already knows what was archived at it.
  */
 export interface GateSince {
   ref: string;
   commit: string;
-  archivedAtRef: ReadonlySet<string>;
+  /** Archive directory names an earlier deploy already shipped exactly as they stand — the ones this gate leaves out. */
+  shippedAtRef: ReadonlySet<string>;
 }
 
 export interface GateReport {

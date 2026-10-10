@@ -310,10 +310,16 @@ maturity rung of every service is unchanged.
   there is no second writer to collide with and no service to name a file after — and is still
   refused `record-federated` over any record carrying attestations, now including per-service files.
 - **When services answered different versions of the checklist**, a record kept as per-service files
-  counts the answers of the files that answered its newest version only; the others stay in
-  `attestations` and are named by `verify.checklist-forked` until they record again. A one-file
-  record keeps its old reading. The `verify.checklist-forked` message no longer suggests accepting
-  the split.
+  counts the answers of the files that answered the version the feature asks NOW — `loam verify`
+  (read and `--record`), `loam tasks`, and `status`, `list` and `gate` for an in-flight feature all
+  derive it — and falls back to the newest file (by `recorded` date, a later service id breaking a
+  same-day tie) only for an archived feature's frozen view or when no file answered the current
+  version. The others stay in `attestations` and are named by `verify.checklist-forked` until they
+  record again — now on the recording run's own output (`notices` under `--json`) as well as the
+  read view, so the service whose answers a tally leaves out is named where the tally is printed. A
+  same-day record from a service with a later id against an older checklist no longer drops the
+  current answers and makes every reader call the record stale. A one-file record keeps its old
+  reading. The `verify.checklist-forked` message no longer suggests accepting the split.
 - **`record-unreadable` names the file that failed and the repair that is safe for it.** Git conflict
   markers in any record file are detected before the YAML is parsed and named with their lines. A
   service's own `verification/<svc>.yaml` is that service's word alone, so its advice is to repair
@@ -329,7 +335,22 @@ maturity rung of every service is unchanged.
   `verification/<svc>.yaml` under `--service`. The `path` inside `recorded` on the read and frozen views, and the
   `verification` artifact's `path` in `status`, name the `verification/` directory once it exists,
   the one file otherwise. `archive` and `unarchive` carry the directory with the feature they move.
-  No code, flag or payload key was added, changed or retired.
+  No code or flag was added, changed or retired, and no payload key was added or removed. What
+  changes is the VALUE of four `path` keys, and each may now name a DIRECTORY: `path` on a recording
+  `verify --json`, the `path` inside `recorded` on the read and frozen views, the `verification` artifact's
+  `path` in `status --json`, and the `path` on a `next.verify` step in `status --json` (which follows
+  the artifact's). A script that opens one of them as a file must now expect
+  `features/<FEAT>/verification` — a directory — once any service has recorded under `--service`.
+- **A loam older than this release does not read `verification/<svc>.yaml`.** It sees only
+  `verification.yaml`, so `status`, `gate` and `verify` under an older pin report a feature recorded
+  this way as having no record (`gate --strict` then exits 1 on `gate.feature-unverified`), and an
+  older all-at-once `--record` writes a `verification.yaml` that this release ignores beside the
+  directory (its answers carry no attestation). Upgrade every repository that records or gates a
+  feature together — the docs repo's pipelines and each service repo's pin.
+- **`features/<FEAT>/verification/` is loam's from this release.** Every non-dot `*.yaml` in it is
+  read as one service's attestation file, and one that is not (a hand-made `k6.yaml`, say) is
+  `record-unreadable`: `verify` refuses and `status` shows the record as unreadable. Keep anything
+  else beside the feature, not inside that directory.
 
 ### Changed — `verified` means a run of the stamped scenario, and the runner-neutral path is findable
 
@@ -355,15 +376,21 @@ maturity rung of every service is unchanged.
   any other runner"; the `check` in the `done` block `loam tasks` prints for a `scenario.tested` unit names both
   report shapes; the `verify.scenario-attested` message's suggested command reads
   `--results <report.json>` and names both; WORKFLOW, the verify, implement and done-check protocols
-  and the cycle `loam explain` teaches say the same.
-- **The all-at-once `--record` checks that each citation exists.** Without `--service` it accepted
-  any non-empty evidence — `src/foo.py:1` for a file that does not exist — and printed `verified`,
-  while the federated form refused the same citation. Each `file:line` of an agent-confirmed answer
-  must now be a canonical relative path to a regular file inside the repository loam.json was found
-  in, with that line in it; otherwise `answers-unevidenced`. The form still binds to no commit and
-  stamps no pins. Evidence that lives in another service's repository is recorded from there, with
-  `--service`. A missing cited file is now named in the repository's own spelling ("does not exist
-  in this repository") in both forms, never through the machine's absolute path.
+  and the cycle `loam explain` teaches say the same. So does the `next.verify-attested` step in
+  `status --json` — its `statement` names both shapes and its `command` now reads
+  `loam verify <FEAT> --results <report.json>` (it was `--results <cucumber-report.json>`) — and
+  `loam explain next.verify-attested`.
+- **The all-at-once `--record` checks each evidence entry shaped like a `file:line`.** Without
+  `--service` it accepted any non-empty evidence — `src/foo.py:1` for a file that does not exist —
+  and printed `verified`, while the federated form refused the same citation. An evidence entry of
+  an agent-confirmed answer that is shaped like a `file:line` (one token ending in `:<digits>`, not
+  a URL) must now be a canonical relative path to a regular file inside the repository loam.json was
+  found in, with that line in it; otherwise `answers-unevidenced`, exit 1, where it used to be
+  recorded. Every other entry — prose ("manual QA by Alice"), a URL, a path with no line — is
+  recorded exactly as before. The form still binds to no commit and stamps no pins. Evidence that
+  lives in another service's repository is recorded from there, with `--service`. A missing cited
+  file is now named in the repository's own spelling ("does not exist in this repository") in both
+  forms, never through the machine's absolute path.
 - No code, flag, path or payload key was added, changed or retired.
 
 ### Added — `loam gate --since <ref>`: the deploy gate no longer forgets a feature at archive
@@ -376,20 +403,38 @@ maturity rung of every service is unchanged.
   the new flag that is still exactly what the gate does, and `--help`, WORKFLOW.md and
   `loam explain gate.feature-unverified` now say so.
 - **New flag `--since <ref>`** on `loam gate`: a docs-repo git ref — the docs commit the pipeline's
-  last deploy recorded. Every feature archived after it (its `features/archive/<FEAT>/` directory
-  absent at the ref) that carries a `specs/<service>/` delta is graded too, by its frozen
-  verification record, under the existing warn-only `gate.feature-unverified` (or the reused
-  `verify.scenario-attested`). Its message names the ref and points at `loam unarchive <FEAT>`
-  rather than a `loam verify --record` an archived feature refuses. The ref is read from the docs
-  repo's own git exactly as `loam diff --base` reads its base, and refused the same way:
-  `repository-unavailable` when git cannot answer from the docs repo (or cannot list
-  `features/archive/` at the ref), `unknown-target` when the ref names no commit. No new code;
-  nothing is stored.
+  last deploy recorded. Every feature archived after it that carries a `specs/<service>/` delta is
+  graded too, by its frozen verification record, under the existing warn-only
+  `gate.feature-unverified` (or the reused `verify.scenario-attested`). "Archived after" means its
+  `features/archive/<FEAT>/` directory is absent at the ref, or differs from what it held there —
+  committed since or not — so a feature unarchived, edited and archived again is graded as the new
+  ship it is, not skipped as one an earlier deploy answered for. When git will not say what changed
+  under `features/archive/`, every archived feature touching the service is graded. Its message
+  names the ref and points at `loam unarchive <FEAT>` rather than a `loam verify --record` an
+  archived feature refuses. The ref is read from the docs repo's own git exactly as
+  `loam diff --base` reads its base, and refused the same way: `repository-unavailable` when git
+  cannot answer from the docs repo (or cannot list `features/archive/` at the ref), `unknown-target`
+  when the ref names no commit. No new code; no deployment state is stored.
+- **An archived record is held to the checklist its feature shipped with.** A record gone stale
+  before the archive (a scenario appended after it was written) read `stale`/`unverified` in flight
+  and `verified` with no finding once archived, because an archived record is never judged against
+  a checklist re-derived after the merge. `loam archive` now writes the digest of the checklist a
+  fresh `loam verify` derives just before the merge — when the feature carries a readable record —
+  into its snapshot manifest as a new key, **`checklist`**, in
+  `features/archive/<FEAT>/.loam-before/manifest.json` (additive: the manifest stays version 3,
+  `unarchive` ignores the key, and an older loam reading the manifest is unaffected). `gate --since`
+  grades the frozen record against it: a record answering an older checklist is `state: "stale"`,
+  `verdict: "unverified"`, with a `gate.feature-unverified` saying the feature moved after its
+  record was written. A manifest without the key — an archive made by an older loam — is graded as
+  before, as frozen history, and the row says so. `list`, `status` and `verify` keep reading an
+  archived record as frozen history, never stale.
 - **New `--json` payload keys:** top-level `since` — `{ ref, commit }` under `--since`, `null`
-  without it — and `features[].archived`, present and `true` only on a row `--since` added (an
-  in-flight row carries no such key, so a payload without the flag is unchanged apart from
-  `since: null`). The text view titles the block "verification — in flight, and archived since
-  <ref>" and marks those rows `· archived`.
+  without it — and, only on a row `--since` added, `features[].archived` (`true`) and
+  `features[].checklistAtArchive` (the captured digest, or `null` when the archive captured none).
+  An in-flight row carries neither key, so a payload without the flag is unchanged apart from
+  `since: null`. The text view titles the block "verification — in flight, and archived since
+  <ref>", marks those rows `· archived`, and adds a line under a recorded row whose archive
+  captured no checklist.
 - **The MCP `loam_gate` tool** gains the matching `since` string argument.
 
 ## [0.2.0-alpha.8] - 2026-09-21

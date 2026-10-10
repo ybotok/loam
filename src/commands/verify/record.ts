@@ -27,11 +27,19 @@ import {
   verificationVerdict,
 } from "../../core/verify/record.js";
 import { recordLocation, serviceRecordPath, verificationPath } from "../../core/verify/location.js";
+import type { PathableService } from "../../core/kernel/ids/service.js";
 import { plural, sayDiscarded, sayRecovered } from "../policy/format.js";
 import { readContractResults } from "./evidence/contract.js";
 import { claimTokens, pinAnswers } from "./evidence/pins.js";
 import { readResults, repositoryCommit, validateLocalEvidence, validateServiceEvidence } from "./results.js";
-import { contestedNotices, contestedOperationNotices, contractReportLine, noticesFor, reportLine } from "./frozen.js";
+import {
+  contestedNotices,
+  contestedOperationNotices,
+  contractReportLine,
+  forkedChecklistNotices,
+  noticesFor,
+  reportLine,
+} from "./frozen.js";
 import { type VerifyTarget } from "./report.js";
 
 /** The flags `loam verify --record` reads. */
@@ -56,8 +64,12 @@ export interface VerifyOptions {
  * so the two are never asked about separately.
  */
 export interface Attestor {
-  /** Undefined in the legacy all-at-once form, which answers for every service. */
-  service: string | undefined;
+  /**
+   * Undefined in the legacy all-at-once form, which answers for every service.
+   * Branded because it becomes a file name (`verification/<svc>.yaml`): the
+   * caller hands in loam.json's own validated id, never the raw flag.
+   */
+  service: PathableService | undefined;
   repoDir: string;
   /**
    * The existing record as ONE read — the union the refusals consult and the
@@ -268,9 +280,14 @@ export async function record(
     ];
     const after = new Map([...files.services].map(([svc, file]) => [svc, file.verification]));
     after.set(service, built.record);
+    // Added up against THIS checklist — the one the answers just written
+    // answer. Left to pick by date, a same-day file with a later service id
+    // that answered an older checklist won the tie, and this run printed a
+    // tally its own answers were not in (`core/verify/read/union.ts`).
     verification = assembleRecord(
       built.dropLegacy ? null : (files.legacy?.verification ?? null),
       [...after.keys()].sort().map((svc) => after.get(svc)!),
+      checklist.digest,
     )!;
   }
   // Staged, compared against the locked read's bytes, swapped in by one
@@ -292,6 +309,10 @@ export async function record(
   const verified = verdict === "verified";
   const notices = [
     ...noticesFor(verification.claims, verification.feature),
+    // The read view's notice, on the write that makes it true: a service
+    // whose file answered another version of the checklist is named here,
+    // because its answers are exactly the ones this tally leaves out.
+    ...forkedChecklistNotices(verification, checklist.digest),
     ...contestedNotices(runnerClaims),
     ...contestedOperationNotices(contractClaims),
     ...(pinNotice === null ? [] : [pinNotice]),

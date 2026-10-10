@@ -9,7 +9,9 @@
  * The layout below is pure naming and shape, and the readers that only need
  * to find a snapshot, or read what one recorded, import it from here.
  */
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { isRecord } from "../../kernel/records.js";
 
 /** Where archive parks the pre-images, inside the feature directory so they travel with it — `./snapshot.ts`'s module doc says why. */
 export const SNAPSHOT_DIR = ".loam-before";
@@ -67,9 +69,50 @@ export interface SnapshotManifest {
   feature: string;
   dirName: string;
   archivedAt: string;
+  /**
+   * The digest of the checklist a fresh `loam verify` derived for the feature
+   * just before this merge — present when the feature carried a record then,
+   * absent otherwise and in every manifest an older loam wrote. Additive, so
+   * the layout version does not move: `unarchive` never reads it, and a reader
+   * that predates it ignores it. See {@link readSnapshotChecklist}.
+   */
+  checklist?: string;
   files: SnapshotEntry[];
 }
 
 export function snapshotDir(featureDir: string): string {
   return join(featureDir, SNAPSHOT_DIR);
+}
+
+/**
+ * The checklist digest an archived feature's snapshot captured as it merged,
+ * or null when it carries none.
+ *
+ * It lives in the manifest because the manifest is the one file `archive`
+ * already writes into the feature at the moment of the merge, travels with it
+ * into `features/archive/`, and is taken away by `unarchive` — so a feature
+ * archived again gets a fresh one, captured against what it then asked. A
+ * frozen verification record cannot be judged against a checklist re-derived
+ * after the merge (the merge moved the feature's operations into the living
+ * contract, so the derivation can only mismatch); this is the question as it
+ * stood when the feature shipped, which is what `loam gate --since` holds the
+ * record to. Here rather than beside the writer for the reason this module
+ * exists: the gate is a read-only command, served over MCP as one.
+ *
+ * Tolerant to the last byte, and every failure is "none captured": a manifest
+ * an older loam wrote, a feature archived with no record, a manifest that is
+ * missing or does not parse. The reader that grades on it reads null as the
+ * frozen history it always read, and says so — it never refuses a deploy
+ * question over bookkeeping.
+ */
+export async function readSnapshotChecklist(featureDir: string): Promise<string | null> {
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(await readFile(join(snapshotDir(featureDir), SNAPSHOT_MANIFEST), "utf8"));
+  } catch {
+    return null;
+  }
+  if (!isRecord(manifest)) return null;
+  const { checklist } = manifest;
+  return typeof checklist === "string" && checklist !== "" ? checklist : null;
 }

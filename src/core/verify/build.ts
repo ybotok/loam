@@ -8,8 +8,8 @@
  * record is assembled from attestations that each covered one service and were
  * never expected to cover the rest. They also land in different places: the
  * all-at-once record is the one file `verification.yaml`, while each service's
- * attestation is a file of its own under `verification/` (`./record.ts` says
- * why).
+ * attestation is a file of its own under `verification/` (`./location.ts` says
+ * why, on `verificationDir`).
  */
 import { type Checklist } from "./checklist.js";
 import { type Answer } from "./answers.js";

@@ -174,6 +174,33 @@ describe("the runner-neutral shape is named wherever cucumber is", () => {
     expect(unit.done.check).toContain("cucumber JSON");
     expect(unit.done.check).toContain("loamScenarioReport");
   });
+
+  it("in the next.verify-attested step status prints, and in what `loam explain` says of it", async () => {
+    // The canonical fleet rather than this file's feature-only one: `status`
+    // reads a docs repo, and refuses one with no services/.
+    const p = await makeProject(coherentFixture());
+    cleanups.push(() => p.destroy());
+    await citeable(p.workDir, "src/split.ts:3");
+    const checklist = JSON.parse((await runLoam(p.workDir, "verify", FEAT, "--json")).stdout) as { claims: Array<{ id: string }> };
+    await writeFile(
+      join(p.workDir, "agent.json"),
+      JSON.stringify(checklist.claims.map((c) => ({ id: c.id, verdict: "confirmed", evidence: ["src/split.ts:3"] }))),
+      "utf8",
+    );
+    expect((await runLoam(p.workDir, "verify", FEAT, "--record", "agent.json")).code).toBe(0);
+    const status = JSON.parse((await runLoam(p.workDir, "status", FEAT, "--json")).stdout) as {
+      next: Array<{ code: string; statement: string; command: string }>;
+    };
+    const step = status.next.find((s) => s.code === "next.verify-attested")!;
+    expect(step.statement).toContain("cucumber JSON");
+    expect(step.statement).toContain("loamScenarioReport");
+    // The runner-neutral placeholder, not `<cucumber-report.json>`.
+    expect(step.command).toBe(`loam verify ${FEAT} --results <report.json>`);
+
+    const explained = JSON.parse((await runLoam(p.workDir, "explain", "next.verify-attested", "--json")).stdout);
+    expect(JSON.stringify(explained)).toContain("loamScenarioReport");
+    expect(JSON.stringify(explained)).not.toContain("cucumber-report.json");
+  });
 });
 
 describe("the all-at-once --record checks that each citation exists", () => {
@@ -206,5 +233,33 @@ describe("the all-at-once --record checks that each citation exists", () => {
     const real = await runLoam(p.workDir, "verify", FEAT, "--record", "real.json", "--json");
     expect(real.code, real.out).toBe(0);
     expect((parse(await p.read(RECORD)) as Record<string, unknown>)["attestations"]).toBeUndefined();
+  });
+
+  it("checks only what is shaped like a path:line — prose, URLs and a path with no line record as before", async () => {
+    const p = await makeProject(coherentFixture());
+    cleanups.push(() => p.destroy());
+    const checklist = JSON.parse((await runLoam(p.workDir, "verify", FEAT, "--json")).stdout) as { claims: Array<{ id: string }> };
+    const answers = (evidence: string[]): string =>
+      JSON.stringify(checklist.claims.map((c) => ({ id: c.id, verdict: "confirmed", evidence })));
+
+    // None of these names a line of a file, so none of them can be wrong about
+    // one: the all-at-once form has always recorded them, and still does.
+    const other = ["manual QA by Alice, 2026-10-09", "https://ci.example.test:8443/runs/41", "README.md", "checked at 10:30"];
+    await writeFile(join(p.workDir, "other.json"), answers(other), "utf8");
+    const recorded = await runLoam(p.workDir, "verify", FEAT, "--record", "other.json", "--json");
+    expect(recorded.code, recorded.out).toBe(0);
+    const claims = (parse(await p.read(RECORD)) as { claims: Array<{ evidence: string[] }> }).claims;
+    expect(claims.every((c) => JSON.stringify(c.evidence) === JSON.stringify(other))).toBe(true);
+
+    // Beside them, an entry that IS a citation is still held to its line —
+    // including a badly made one the canonical form would not accept.
+    for (const citation of ["src/missing.py:1", "src/x.py:0"]) {
+      await writeFile(join(p.workDir, "mixed.json"), answers([...other, citation]), "utf8");
+      const mixed = await runLoam(p.workDir, "verify", FEAT, "--record", "mixed.json", "--json");
+      expect(mixed.code, citation).toBe(1);
+      const err = JSON.parse(mixed.stdout).error as { code: string; message: string };
+      expect(err.code, citation).toBe("answers-unevidenced");
+      expect(err.message, citation).toContain(`'${citation}'`);
+    }
   });
 });

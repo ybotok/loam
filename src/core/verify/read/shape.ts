@@ -52,7 +52,8 @@ export function summaryDisagreement(v: Verification): string | null {
 }
 
 /**
- * The shape check `readVerification` stands behind: everything its readers
+ * The shape check `readVerificationState` (`./file.ts`) stands behind:
+ * everything its readers
  * dereference (verify's report/frozen views, list's verification column) must
  * be present and typed, or the cast would manufacture a Verification that
  * crashes them. Deliberately no tighter than the readers need: extra keys pass

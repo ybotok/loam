@@ -2,13 +2,14 @@
  * Git-at-a-ref reader for the DOCS repo — the base side of `loam diff`, and
  * the "what had already shipped" side of `loam gate --since`.
  *
- * Four questions, all read-only: does this docs directory sit in a git
+ * Five questions, all read-only: does this docs directory sit in a git
  * repository and where (`resolveBase`), what did `services/` hold at the base
  * commit (`listBaseTree`), which subdirectories did one docs directory hold
- * there (`listBaseSubdirs` — gate's `features/archive/` question), and what
- * were one file's bytes there (`showBaseFile`). No checkout, no temp writes —
- * the base state is read straight out of the object store with
- * `rev-parse`/`ls-tree`/`show`.
+ * there (`listBaseSubdirs` — gate's `features/archive/` question) and which of
+ * them differ in the working tree now (`subdirsChangedSince` — its second),
+ * and what were one file's bytes there (`showBaseFile`). No checkout, no temp
+ * writes — the base state is read straight out of the object store with
+ * `rev-parse`/`ls-tree`/`show`, and the comparison with `diff`/`ls-files`.
  *
  * Gate takes diff's doctrine below along with the mechanics: a `--since` ref
  * git cannot answer for is a refusal, never "nothing was archived since",
@@ -134,6 +135,51 @@ export async function listBaseSubdirs(
     kind: "ok",
     names: listing.paths.filter((p) => p.startsWith(rel)).map((p) => p.slice(rel.length)),
   };
+}
+
+/**
+ * The NAMES of the immediate subdirectories of one docs directory whose
+ * contents differ between the base commit and the WORKING TREE — committed
+ * since or not — gate's second `features/archive/` question. A directory that
+ * was already there at the ref is not thereby old: `loam unarchive`, an edit
+ * and `loam archive` again leave a feature at the very path it shipped from
+ * before, and reading presence alone graded that re-shipped feature as one an
+ * earlier deploy had already answered for.
+ *
+ * Not a comparison of tree ids, though `ls-tree` has the ref's: the working
+ * tree has no id until somebody commits it, and minting one means writing
+ * objects — this module asks git, it never writes. The same two questions as
+ * `validate --base`'s scope (`./scope/changed-paths.ts`) instead, narrowed to
+ * the one directory: `git diff` for every tracked path that differs from the
+ * ref, `--no-renames` so a moved file names the place it left as well as the
+ * one it reached, and `ls-files --others` for what nobody has committed yet —
+ * the re-archive a pipeline is about to ship is exactly that. Both pathspecs
+ * are relative to `docsDir`, where git runs; both listings answer
+ * root-relative (`git diff` always, `ls-files` under `--full-name`), so the
+ * one prefix strip serves both. A decline is `failed`, and the caller decides
+ * which way that fails.
+ */
+export async function subdirsChangedSince(
+  base: ResolvedBase,
+  dir: string,
+): Promise<{ kind: "ok"; names: Set<string> } | { kind: "failed"; detail: string }> {
+  const rel = `${relative(base.docsDir, dir).split(sep).join("/")}/`;
+  const tracked = await gitText(base.docsDir, ["diff", "--name-only", "--no-renames", "--no-ext-diff", "-z", base.commit, "--", rel]);
+  if (tracked.spawnError !== undefined || tracked.code !== 0 || tracked.overflowed) {
+    return { kind: "failed", detail: tracked.overflowed ? "the changed-path listing exceeded the output cap." : declineDetail(tracked) };
+  }
+  const untracked = await gitText(base.docsDir, ["ls-files", "--others", "--exclude-standard", "--full-name", "-z", "--", rel]);
+  if (untracked.spawnError !== undefined || untracked.code !== 0 || untracked.overflowed) {
+    return { kind: "failed", detail: untracked.overflowed ? "the untracked-path listing exceeded the output cap." : declineDetail(untracked) };
+  }
+  const under = `${base.prefix}${rel}`;
+  const names = new Set<string>();
+  for (const path of [...tracked.out.split("\0"), ...untracked.out.split("\0")]) {
+    if (!path.startsWith(under)) continue;
+    const name = path.slice(under.length).split("/")[0]!;
+    if (name !== "") names.add(name);
+  }
+  return { kind: "ok", names };
 }
 
 /**

@@ -233,19 +233,41 @@ async function resolveCitation(repoDir: string, id: string, evidence: string): P
  * there is nothing to pin and no blob to compare — but it used to check
  * nothing at all, and accepted `src/foo.py:1` for a file that did not exist
  * while printing `verified`, in the same release whose `--service` form refused
- * exactly that citation. One rule for "is this evidence", whichever form
- * records it; the commit binding is the federated form's addition, not the
- * difference between checked and unchecked.
+ * exactly that citation. The commit binding is the federated form's addition,
+ * not the difference between checked and unchecked.
+ *
+ * A CITATION is what is checked, and only a citation: an entry shaped like a
+ * `path:line` (see {@link citesALine}). The all-at-once form has always taken
+ * other evidence — "manual QA by Alice", a CI run's URL, `README.md` with no
+ * line — and still records it as it stands; holding every entry to the
+ * `file:line` grammar refused all of that with `answers-unevidenced`, which
+ * was never the defect. What a `path:line` claims is checkable, so it is
+ * checked; prose claims nothing a file can contradict. The federated form
+ * keeps its stricter contract — every agent entry a `file:line` bound to the
+ * attested commit — because its whole promise is that binding.
  */
 export async function validateLocalEvidence(answers: Answer[], repoDir: string): Promise<{ ok: true } | { ok: false; message: string }> {
   for (const answer of answers) {
     if (answer.verdict !== "confirmed" || answer.answered_by === "runner" || answer.answered_by === "external-runner") continue;
-    for (const evidence of answer.evidence) {
+    for (const evidence of answer.evidence.filter(citesALine)) {
       const cited = await resolveCitation(repoDir, answer.id, evidence);
       if (!cited.ok) return cited;
     }
   }
   return { ok: true };
+}
+
+/**
+ * Is this evidence entry shaped like a `path:line` — something that names a
+ * line of a file and can therefore be wrong about it? One token (no
+ * whitespace: prose such as "checked at 10:30" is not a citation), not a URL
+ * (`https://ci.example:8443` ends in a number too), ending in `:<digits>`.
+ * Deliberately wider than `resolveCitation`'s canonical form: `src/x.py:0` and
+ * `../x.py:3` are citations, badly made, and must be refused rather than
+ * waved through as prose.
+ */
+function citesALine(evidence: string): boolean {
+  return /^\S+:\d+$/.test(evidence) && !/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(evidence);
 }
 
 type CommitResult = { ok: true; commit: string } | { ok: false; message: string };
