@@ -267,6 +267,41 @@ describe("the participant union is the test environment", () => {
   }, 90_000);
 });
 
+describe("#external on an ancestor stops at the first element that stands for a service", () => {
+  it("a service bound inside an #external zone is ours with no directory — the gate's reading, not a double", async () => {
+    // `core/gate/partners.ts` walks the same ancestors and STOPS at the first
+    // element bound to (or titled for) a service: what sits above it is a
+    // grouping, and a grouping's `#external` is the grouping's claim, not the
+    // service's. Walking past it, `list suites` told a stand to bring a double
+    // for `billing` while the gate graded billing as one of ours. The tag on
+    // the bound element ITSELF still counts, in both readings.
+    const landscape = LANDSCAPE.replace("tag suite-payments", "tag suite-payments\n  tag suite-billing").replace(
+      "  events = topic 'order-events'\n",
+      "  events = topic 'order-events'\n" +
+        "  zone = service 'Partner zone' {\n    #external\n    billing = service 'billing' {\n      metadata { service 'billing' }\n    }\n  }\n" +
+        "  ledger = service 'ledger' {\n    #external\n    metadata { service 'ledger' }\n  }\n" +
+        "  payments -> zone.billing 'Bills'\n  payments -> ledger 'Posts'\n",
+    );
+    const p = await makeProject(
+      fleet(
+        { "architecture/usecases/bill.likec4": usecase("uc_bill", ["suite-billing"], "    payments -> zone.billing 'bills'\n    payments -> ledger 'posts'\n") },
+        landscape,
+      ),
+    );
+    try {
+      const { code, payload, out } = await listed(p, "billing");
+      expect(code, out).toBe(0);
+      expect(payload.suites?.[0]?.services).toEqual(["payment-service"]);
+      expect(payload.suites?.[0]?.unresolved).toEqual([
+        { element: "ledger", external: true },
+        { element: "zone.billing", external: false },
+      ]);
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+});
+
 describe("a fleet with no use cases", () => {
   it("reports the state as absent, empty lists, and refuses any named suite", async () => {
     const p = await makeProject(fleet({}));

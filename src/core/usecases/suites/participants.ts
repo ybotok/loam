@@ -16,6 +16,7 @@
  * graph would close a cycle `import/no-cycle` cannot see (docs/DESIGN.md rule
  * 21). `UseCaseScan` crosses as a TYPE only, which erases.
  */
+import type { Elem } from "../../c4/likec4.js";
 import type { ParsedView } from "../../c4/parsed/dynamic-views.js";
 import { ancestorIds } from "../../kernel/ids/fqn/ancestors.js";
 import { compareIds } from "../../repo/entries.js";
@@ -30,9 +31,10 @@ export interface UnresolvedParticipant {
   /** The element id a step drew, exactly as the view spells it. */
   element: string;
   /**
-   * Does the element, or anything it is drawn inside, carry `#external`? Then it
-   * is deliberately not the fleet's, and a stand needs a double for it rather
-   * than a directory. See `isExternal` for why an ancestor's tag counts.
+   * Does the element, or anything it is drawn inside short of a service, carry
+   * `#external`? Then it is deliberately not the fleet's, and a stand needs a
+   * double for it rather than a directory. See `isExternal` for why an
+   * ancestor's tag counts and why the walk stops at a service.
    */
   external: boolean;
 }
@@ -78,27 +80,45 @@ export function participantsOf(scan: ReadScan, views: readonly ParsedView[]): Pa
       }
     }
   }
-  const tagsOf = new Map(scan.model.elements.map((e) => [e.id, e.tags]));
+  const byId = new Map(scan.model.elements.map((e) => [e.id, e]));
   return {
     services: [...services].sort(compareIds),
-    unresolved: [...unresolved].sort(compareIds).map((element) => ({ element, external: isExternal(element, tagsOf) })),
+    unresolved: [...unresolved].sort(compareIds).map((element) => ({ element, external: isExternal(element, byId, known) })),
   };
 }
 
 /**
- * `#external` on the element or on anything it is drawn inside.
+ * `#external` on the element or on anything it is drawn inside — up to, and
+ * including, the first element that stands for a service.
  *
- * The ancestor walk is `core/gate/partners.ts`' reading of the same tag, and it
- * is the one that is true for a stand: `stripe.api` drawn inside an `#external`
- * `stripe` is somebody else's endpoint whether or not the container repeats the
- * tag, and LikeC4 does not inherit tags downward, so reading the element's own
- * tags alone would print "ours, with no directory" over a partner's API. The
- * walk can excuse nothing here — this answer grades nothing, it only says which
- * participants want a double.
+ * The walk is `core/gate/partners.ts`' reading of the same tag (`endFacts`),
+ * stop included, so `list suites` and the gate cannot disagree about whether
+ * an endpoint is ours. Walking up is what is true for a stand: `stripe.api`
+ * drawn inside an `#external` `stripe` is somebody else's endpoint whether or
+ * not the container repeats the tag, and LikeC4 does not inherit tags
+ * downward, so reading the element's own tags alone would print "ours, with no
+ * directory" over a partner's API. Stopping is just as true: an element bound
+ * with `metadata { service '<id>' }`, or titled for a real `services/<id>/`,
+ * IS a service, and what sits above it is a grouping whose `#external` is the
+ * grouping's claim, not the service's. Without the stop a service bound inside
+ * an `#external` zone and not yet given a directory was printed as "bring a
+ * double" while the gate graded it as ours. The tag on that element itself is
+ * read before the stop, as the gate reads it.
+ *
+ * "Stands for a service" is `commands/validate/fleet/census.ts`'
+ * `standsForService`, spelled here rather than imported because core may not
+ * reach into commands — as `core/gate/partners.ts` and `core/verify/checklist.ts`
+ * spell it.
  *
  * A tag a KIND declares (`element topic { #external }`) arrives on every element
  * of that kind in the parsed model, so a topic counts without repeating it.
  */
-function isExternal(element: string, tagsOf: ReadonlyMap<string, readonly string[]>): boolean {
-  return ancestorIds(element).some((id) => tagsOf.get(id)?.includes(EXTERNAL_TAG) ?? false);
+function isExternal(element: string, byId: ReadonlyMap<string, Elem>, known: ReadonlySet<string>): boolean {
+  for (const id of ancestorIds(element)) {
+    const e = byId.get(id);
+    if (e === undefined) continue;
+    if (e.tags.includes(EXTERNAL_TAG)) return true;
+    if (e.service !== undefined || known.has(e.title)) return false;
+  }
+  return false;
 }

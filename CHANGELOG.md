@@ -32,7 +32,8 @@ No code was added. One reserved tag prefix, one list section and one positional 
   listing to one suite. Additive `--json` keys, emitted only with this section: `suites[]` (`name`,
   `views[]` of `{id, file}`, `services[]` — enumerated service ids, sorted — and `unresolved[]` of
   `{element, external}`: the participants that resolve to no service, `external` true when the
-  element or anything it is drawn inside carries `#external`), `ungrouped[]` (`{id, file}` of every
+  element or anything it is drawn inside carries `#external`, the walk stopping at the first
+  element bound to or titled for a service as `loam gate`'s partner reading does), `ungrouped[]` (`{id, file}` of every
   use case carrying no `#suite-` tag, never narrowed by `[name]`), and `useCases` (`state`:
   `absent` | `ok` | `unreadable`, beside `unreadable` and, when unreadable, `error`, spelled as
   `loam list capabilities` spells them). Over an `architecture/` that does not parse the section
