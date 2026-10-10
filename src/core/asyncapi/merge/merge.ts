@@ -187,8 +187,8 @@ export function mergeAsyncapiSlots(
       slot.digest,
       before === undefined ? undefined : slotDigest(before.node),
     );
-    // A QUOTE is not a merge input. The author wrote this slot down because
-    // the document is complete, not because they changed it, so the living
+    // A QUOTE is not a merge input. The author wrote this slot down as a
+    // restatement, not because they changed it, so the living
     // contract keeps whatever it holds — including a change that landed after
     // this delta was written. Mechanical, not a judgement: `--approve` does
     // not turn it back on.

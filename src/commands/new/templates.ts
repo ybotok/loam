@@ -69,6 +69,11 @@ export function intentTemplate(featureId: string, title: string | undefined): st
   // explicit null, which is a claim ("this feature has no owner") rather than
   // the truth ("nobody has said yet") — and every reader then has to tell an
   // absent key from a null one. The prompt survives as a comment.
+  //
+  // `## Open questions` is where loam-feature's analyze step writes, so it is
+  // scaffolded as a heading over a comment and nothing else. `intent.empty`
+  // (coherence/authoring/scaffold.ts) reads past the whole section, so neither
+  // the untouched comment nor a page of questions counts as the Why.
   const frontmatter = stringifyYaml(
     { feature: featureId, ...(title === undefined ? {} : { title }), status: "proposed" },
     { lineWidth: 0 },
@@ -88,6 +93,12 @@ ${frontmatter}
 ## Scope
 
 <!-- Which services this touches — and, more usefully, which it deliberately does not. -->
+
+## Open questions
+
+<!-- Optional, never graded. What the documents leave open: an ambiguous SHALL, a value or
+     window two services state differently, an edge with no stated timeout, retry or
+     compensation. A person answers each by editing this section. -->
 `;
 }
 
@@ -196,10 +207,12 @@ export function specTemplate(featureId: string, service: string): string {
      A \`Publishes:\` / \`Consumes:\` body line does the same for event messages:
      it names what the requirement puts on or takes off the bus, checked
      against the service's AsyncAPI contract. If ${featureId} changes that
-     contract, hand-create specs/${service}/asyncapi.yaml — a complete
-     AsyncAPI 3.0 document, messages declared under \`components.messages\`
-     (loam scaffolds none: an event contract is genuinely optional) — and run
-     \`loam rebase ${featureId}\` so every restated slot pins as a quote.
+     contract, hand-create specs/${service}/asyncapi.yaml — an AsyncAPI 3.0
+     document holding only the slots this feature adds, changes or removes,
+     messages under \`components.messages\` (loam scaffolds none: an event
+     contract is genuinely optional) — and run \`loam rebase ${featureId}\`
+     when it edits a slot the living contract already has, so that slot pins.
+     The same holds for an openapi.yaml beside this file: only what changes.
 
      Copy the block below out of this comment, unindent it, and replace the
      TODOs and every <angle-bracket> fill-in — \`loam archive\` refuses the

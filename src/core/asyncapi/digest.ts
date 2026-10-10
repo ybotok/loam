@@ -39,10 +39,10 @@ import {
 /**
  * The baseline marker: which living version of a slot a FEATURE delta was
  * written against. The OpenAPI axis's key, not a restatement of its
- * spelling, because a feature's asyncapi.yaml is a complete document for
- * the same reason its openapi.yaml is: authors restate the living contract
- * around the slot they change, and the pin is what lets the merge tell a
- * QUOTE from an EDIT.
+ * spelling, because a feature's asyncapi.yaml may restate living slots it
+ * does not change for the same reason its openapi.yaml may — it needs only
+ * the slots it adds, changes or removes, but quoting more is legal — and the
+ * pin is what lets the merge tell a QUOTE from an EDIT.
  */
 export const ASYNCAPI_BASELINE_KEY = OPENAPI_BASELINE_KEY;
 

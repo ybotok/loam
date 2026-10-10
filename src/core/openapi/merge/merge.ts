@@ -213,7 +213,7 @@ export function mergeOpenapiPaths(
         if (HTTP_METHODS.has(m)) {
           const verdict = classifyOperationBaseline(afterPlain, before === undefined ? undefined : beforePlain);
           // A QUOTE is not a merge input. The author wrote this operation down
-          // because the document is complete, not because they changed it, so
+          // as a restatement, not because they changed it, so
           // the living contract keeps whatever it holds — including a change
           // that landed after this delta was written. This is mechanical, not a
           // judgement, so `--approve` does not turn it back on: overriding a

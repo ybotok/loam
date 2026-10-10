@@ -1,12 +1,12 @@
 # API delta for FEAT-101 — payment-split-service (new) gains the split API.
 # On `loam archive` this folds into services/payment-split-service/openapi.yaml (living).
 #
-# A feature contract is a COMPLETE document, not a patch: the author restates the living
-# contract around the slot being changed, and the merge upserts every operation the document
-# spells. Both operations here are new, so neither carries an `x-loam-based-on` pin — there is
-# no living operation for a pin to be the digest of. On a service that already exists, every
-# quoted operation carries one, written by `loam rebase`, and an unpinned restatement is exactly
-# the shape that silently reverts whoever landed in between.
+# A feature contract holds only what the feature adds, changes or removes, and the merge upserts
+# every operation it spells. Both operations here are new, like the service, so neither carries
+# an `x-loam-based-on` pin — there is no living operation for a pin to be the digest of. On a
+# service that already exists, an operation the delta edits carries one, written by `loam
+# rebase`; one it would only quote belongs out of the delta, because a restatement is exactly
+# the shape that silently reverts whoever landed in between unless something pins it.
 openapi: 3.1.0
 info:
   title: payment-split-service

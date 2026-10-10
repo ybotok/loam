@@ -28,7 +28,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { coherentFixture, makeProject, makeTmpDir, runLoam, type Project } from "./helpers/harness.js";
 import { AGENTS_MD } from "../src/core/agent/agents-md.js";
-import { PROTOCOLS } from "../src/core/agent/protocol.js";
+import { AGENT_COMMANDS, PROTOCOLS } from "../src/core/agent/protocol.js";
+import { CODE_MAP } from "../src/core/agent/agents-md/command-map.js";
+import { intentTemplate, specTemplate } from "../src/commands/new/templates.js";
 import { VALIDATE_CHECKS } from "../src/core/brief/checks.js";
 import { UNCHECKED } from "../src/core/brief/unchecked.js";
 import { loadFile } from "../src/core/c4/likec4.js";
@@ -1040,5 +1042,91 @@ describe("SCHEMA documents the parts the CLI now depends on", () => {
     const schema = await readRepo("SCHEMA.md");
     expect(schema).toContain("`landscape.missing`");
     expect(flat(schema)).toMatch(/error\*\* as soon as `services\/` holds at least one service/);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* 8. loam-feature — the lane before it, and the analysis inside it     */
+/* ------------------------------------------------------------------ */
+
+describe("loam-feature says when no feature is owed, and analyzes before it pins", () => {
+  const body = PROTOCOLS["loam-feature"]!;
+  const feature = AGENT_COMMANDS.find((c) => c.name === "loam-feature")!;
+
+  it("step 0 sends a change that moves no requirement, operation or edge down the code-only lane", () => {
+    // The lightest lane loam has was true and written down nowhere: a refactor,
+    // a bump or a fix back to documented behaviour changes nothing in the docs
+    // repo, and the protocol a user reaches for first never said so.
+    const zero = body.indexOf("\n0. ");
+    const one = body.indexOf("\n1. ");
+    expect(zero, "loam-feature has no step 0").toBeGreaterThan(-1);
+    expect(zero).toBeLessThan(one);
+    const step = flat(body.slice(zero, one));
+    expect(step).toMatch(/no requirement, no operation and no fleet edge/);
+    expect(step).toMatch(/needs NONE/);
+    expect(step).toContain("`loam validate --service <id>`");
+    expect(step).toContain("`loam vouch --pack --service <id>`");
+    expect(feature.spine[0]).toMatch(/needs none/);
+  });
+
+  it("the analyze step sits between authoring and rebase, and writes under the heading the scaffold carries", () => {
+    const author = body.indexOf("\n4. Author");
+    const analyze = body.indexOf("\n4b. **Analyze before you pin.**");
+    const rebase = body.indexOf("\n5. **`loam rebase $1`**");
+    expect(author, "loam-feature lost its authoring step").toBeGreaterThan(-1);
+    expect(analyze, "loam-feature has no analyze step").toBeGreaterThan(author);
+    expect(rebase).toBeGreaterThan(analyze);
+    const step = flat(body.slice(analyze, rebase));
+    for (const read of ["`loam show $1 --json`", "`loam context <service> --feature $1 --json`", "`neighbours`"]) {
+      expect(step, `the analyze step never reads ${read}`).toContain(read);
+    }
+    for (const question of [/two ways/, /which side refuses/, /`Realizes:`/, /timeout/, /compensates/, /outside `--touches`/]) {
+      expect(step).toMatch(question);
+    }
+    expect(step).toMatch(/Nothing is graded/);
+    // One spelling: the heading the protocol names is the one `loam new` writes.
+    expect(step).toContain("`## Open questions`");
+    expect(intentTemplate("FEAT-1", "Split")).toMatch(/^## Open questions$/m);
+    const spineAt = (re: RegExp): number => feature.spine.findIndex((s) => re.test(s));
+    expect(spineAt(/Open questions/)).toBeGreaterThan(spineAt(/^author /));
+    expect(spineAt(/Open questions/)).toBeLessThan(spineAt(/^`loam rebase`/));
+  });
+
+  it("no page teaches a contract delta as a restatement of the living contract", async () => {
+    // A partial delta merges: the merge walks only the paths, methods and slots
+    // the feature document spells, local $refs resolve into the living
+    // contract, and a new operation has nothing to pin. Six places taught
+    // "a complete document, not a patch", so an author copied the whole
+    // contract, pinned every quote, and turned each into a future
+    // `openapi.baseline-invalid` the day a parallel feature removed it.
+    const examples = [
+      "examples/docs/features/archive/FEAT-088-refunds/specs/payment-service/openapi.yaml",
+      "examples/docs/features/FEAT-101-payment-splitting/specs/payment-split-service/openapi.yaml",
+      "examples/docs/features/FEAT-101-payment-splitting/specs/payment-service/asyncapi.yaml",
+    ];
+    const corpus: Array<[string, string]> = [
+      ...Object.entries(PROTOCOLS),
+      ["specTemplate", specTemplate("FEAT-1", SVC)],
+      ["SCHEMA.md", await readRepo("SCHEMA.md")],
+      ["WORKFLOW.md", await readRepo("WORKFLOW.md")],
+      ...(await Promise.all(examples.map(async (path): Promise<[string, string]> => [path, await readRepo(path)]))),
+    ];
+    const taught = corpus.flatMap(([where, text]) =>
+      [/complete[^.]{0,60}not a patch/i, /complete AsyncAPI 3\.0 document/i, /COMPLETE document/]
+        // YAML comment markers stripped, so a sentence wrapped across `#` lines reads whole.
+        .filter((re) => re.test(flat(text.replace(/^[ \t]*#[ \t]?/gm, ""))))
+        .map((re) => `${where}: ${re}`),
+    );
+    expect(taught, taught.join("\n")).toEqual([]);
+    expect(flat(await readRepo("SCHEMA.md"))).toMatch(/holding only what the feature adds, changes or removes/);
+    expect(flat(body)).toMatch(/holding ONLY the operations this feature adds, changes or removes/);
+  });
+
+  it("the codes page points at the AGENTS.md section that actually exists", () => {
+    // It named AGENTS.md's own "The reference pages" section after that heading
+    // had become "Reference pages — fetch when needed".
+    const named = /AGENTS\.md's own "([^"]+)" section/.exec(flat(CODE_MAP));
+    expect(named, "the codes page no longer names an AGENTS.md section").not.toBeNull();
+    expect(AGENTS_MD).toContain(`\n## ${named![1]}\n`);
   });
 });

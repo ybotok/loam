@@ -12,16 +12,41 @@ export const LOAM_FEATURE: CommandContent = {
   // $2 is the feature's human title: any string is a legal one.
   placeholders: ["feature", "free"],
   spine: [
+    "decide whether this is a feature at all — a change that touches no requirement, operation or edge needs none",
     "read `AGENTS.md` at the docs repo root — it defines the ID spine everything else depends on",
     "`loam explore` around the services you think are involved: the ring one hop out, and what is already in flight over the same ground",
     "`loam status` / `loam list` / `loam show` — what exists and what is already owed",
     "`loam new` with a `--touches` per service it changes and a `--new-service` per service it introduces",
     "author what the templates left as TODO: intent, the C4 delta, the per-service spec / arch spec / openapi",
-    "`loam rebase` — pin every MODIFIED requirement and every operation to the living version you wrote against",
+    "analyze before you pin — write what the documents leave open under `## Open questions` in intent.md, for a human to answer",
+    "`loam rebase` — pin every MODIFIED requirement and every living operation you edited to the version you wrote against",
     "validate the feature, then read `loam dependencies` before anyone starts building",
   ],
+  // Step 0 and step 4b are the two this protocol was missing, and neither is
+  // graded — on purpose. Step 0 exists because the lightest lane loam has (no
+  // feature at all, for a change that moves no requirement, operation or edge)
+  // was true and written down nowhere, so the work that is most of a legacy
+  // fleet's week either walked the whole feature cycle or routed around loam.
+  // Step 4b exists because every check after it is a join between exact
+  // tokens: two services that agree on every operationId and disagree on what
+  // it means (one confirms a split the other answers 422 for) validate, archive
+  // and ship green, and a `Realizes:` whose requirement does not deliver the
+  // promise reads as a clean join. Nothing in the binary can read meaning, and
+  // a check pretending to would be the false green this tool exists to refuse,
+  // so the step asks for questions and leaves the answers to a person.
   body: `Start a new feature in the loam docs repo (its path is \`docsDir\` in ./loam.json).
 
+0. First decide whether this needs a feature at all. A change that touches no
+   requirement, no operation and no fleet edge — a refactor, a dependency bump,
+   a fix that brings the code back to behaviour the living spec already
+   documents — needs NONE: nothing in the docs repo changes, so there is nothing
+   to scaffold, pin or archive. It is a code PR in the service repo, then
+   \`loam validate --service <id>\` there (the service repo is the only place
+   \`sources.stale\` is visible), then \`loam vouch --pack --service <id>\` to
+   prepare the re-read the moved sources owe — the vouch itself is a human's.
+   If the change alters what a requirement promises, it IS a feature, however
+   small: one \`--touches\`, a Why, the ADDED/MODIFIED requirement, and
+   \`loam rebase\` for a MODIFIED one — the rest of this page still applies.
 1. Read \`AGENTS.md\` at the root of the docs repo first — it defines the ID spine
    everything here depends on.
 2. Understand the current state before proposing a change:
@@ -75,20 +100,60 @@ export const LOAM_FEATURE: CommandContent = {
    - \`specs/<svc>/arch.spec.md\` — the architectural obligations (outbox, retries,
      idempotency, alerts), same grammar; a \`Covers:\` line per requirement naming the
      tagged elements/edges it accounts for, or \`c4.uncovered\` says nothing does
-   - \`specs/<svc>/openapi.yaml\` — define every operationId the edges reference
+   - \`specs/<svc>/openapi.yaml\` — define every operationId the edges reference.
+     A self-contained document holding ONLY the operations this feature adds,
+     changes or removes — never a copy of the living contract. An operation you
+     leave out stays exactly as the living contract has it, and a local \`$ref\`
+     (\`#/components/schemas/Order\`) resolves into the living document, so there
+     is nothing to restate. Every operation you quote costs a pin, and once a
+     parallel feature retires it, a pinned quote is \`openapi.baseline-invalid\`
+     (delete the quote, not the pin) while an unpinned one reads as an addition
+     and puts the retired operation back at archive
    - \`specs/<svc>/asyncapi.yaml\` — the event axis, only when the feature changes
-     what a service puts on or takes off the bus: a complete AsyncAPI 3.0
-     document restating the living contract around the slots you change, new
-     messages under \`components.messages\`, and a \`Publishes:\`/\`Consumes:\` line
-     on each requirement that names them. \`loam new\` scaffolds none — an event
+     what a service puts on or takes off the bus: an AsyncAPI 3.0 document
+     holding only the channel, operation and message slots you add, change or
+     remove (an edited slot is written out whole), new messages under
+     \`components.messages\`, and a \`Publishes:\`/\`Consumes:\` line on each
+     requirement that names them. \`loam new\` scaffolds none — an event
      contract is genuinely optional
+4b. **Analyze before you pin.** Nothing grades this step, which is why it is here:
+   every check after it is a join between exact tokens, so two services that
+   agree on every operationId and disagree on what it means validate, archive
+   and ship green. Read the feature as its reviewer will, before rebase freezes it:
+   - \`loam show $1 --json\` — its \`review\` object joins the intent, the C4
+     objects, the API/event slices and the dependencies
+   - \`loam context <service> --feature $1 --json\` for every service it touches —
+     the living requirements verbatim, the edges one hop out, and this delta
+   - the \`neighbours\` step 2b's \`loam explore\` reported
+   Then write what the documents leave open under \`## Open questions\` in
+   \`intent.md\` (the scaffold already carries the heading), one line per question,
+   naming the requirement id or edge it is about:
+   - a SHALL two engineers could build two ways — an unstated unit, bound,
+     ordering, or an "eventually" with no window
+   - a value, limit or window two services state differently (a refund window,
+     a rounding rule, a retry budget), and which side refuses when they
+     disagree — a caller that accepts what its provider answers 4xx for is a
+     contradiction no check can see
+   - a \`Realizes:\` line whose requirement does not actually deliver the
+     capability promise it names, or a promise this feature changes that no
+     realizing requirement keeps
+   - per call edge in the delta: the timeout, the retry and what makes it safe
+     to repeat, what a partial failure leaves behind, and what compensates it —
+     an edge no requirement answers these for is a question, not a default
+   - each \`explore\` neighbour outside \`--touches\`: why it is untouched, or that
+     it is a candidate — adding one means a \`specs/<svc>/\` delta in this feature,
+     because that directory IS the feature's service list
+   Ask; do not answer for the author. A human answers by editing the file —
+   replacing a question with the decision, or with a change to the delta.
+   Nothing is graded: an empty section is legal, and so is an answered one.
 5. **\`loam rebase $1\`** — the step between authoring and checking, and the one that
    stops two features in flight from silently deleting each other's work. It pins
-   every MODIFIED/REMOVED requirement (\`Based-On:\`), every operation in the
-   contract delta and every asyncapi channel/operation/message slot
-   (\`x-loam-based-on\`) to the living version you wrote against.
-   Run it on the contract axes even if you changed exactly one endpoint: that is
-   what marks the REST of the document as quotation the merge must not write back.
+   every MODIFIED/REMOVED requirement (\`Based-On:\`), and every operation and
+   asyncapi channel/operation/message slot the living contract already holds
+   (\`x-loam-based-on\`), to the living version you wrote against. What the
+   feature ADDS has no living version and takes no pin, so an add-only contract
+   delta needs no rebase. Any living operation or slot the delta spells is one
+   the merge upserts, so it needs its pin even when you changed one line of it.
    Without the pins, \`delta.baseline-missing\` / \`openapi.baseline-missing\` /
    \`asyncapi.baseline-missing\` GATE
    the archive: before they did, the second feature to archive reverted the

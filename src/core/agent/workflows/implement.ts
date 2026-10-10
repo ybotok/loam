@@ -178,6 +178,8 @@ repository, which needs its own committed ./loam.json — if there is none,
 8. \`loam validate --feature $1 --json\` before handing back.
 
 If the requirement is ambiguous, say so and stop — do not invent behaviour and
-leave the spec disagreeing with the code.
+leave the spec disagreeing with the code. Write the question under
+\`## Open questions\` in the feature's \`intent.md\`, where loam-feature's analyze
+step put the ones it found, so a person answers it once for every service.
 `,
 };

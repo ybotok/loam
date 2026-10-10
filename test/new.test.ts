@@ -672,6 +672,56 @@ describe("a fresh scaffold validates without errors, and cannot archive", () => 
     });
   });
 
+  it("scaffolds `## Open questions` for the analyze step — untouched, it neither clears nor trips intent.empty", async () => {
+    // loam-feature's step 4b writes its questions under this heading, so the
+    // scaffold has to carry it. Nothing grades the section, which is exactly
+    // what this pins from both sides: the heading and its comment alone are no
+    // Why (the archive still refuses an unwritten intent), and an author who
+    // writes the Why and leaves the questions untouched ships without being
+    // asked to delete a section loam itself put there.
+    await withProject({}, async (p) => {
+      await scaffoldThenRewriteIntent(p, (text) => text);
+      expect(await p.read("features/FEAT-1-split/intent.md")).toMatch(/^## Open questions$/m);
+
+      const blocked = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(blocked.code).toBe(1);
+      expect(JSON.parse(blocked.stdout + blocked.stderr).issues).toContainEqual(
+        expect.objectContaining({ code: "intent.empty", gates: true }),
+      );
+
+      const path = "features/FEAT-1-split/intent.md";
+      await p.write(
+        path,
+        (await p.read(path)).replace("## Why\n", "## Why\n\nPayments arrive as one amount and land on several ledgers.\n"),
+      );
+      const shipped = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(shipped.code, shipped.out).toBe(0);
+      expect(await p.read("features/archive/FEAT-1-split/intent.md")).toMatch(/^## Open questions$/m);
+    });
+  });
+
+  it("questions written under `## Open questions` are not a Why — intent.empty still refuses", async () => {
+    // The analyze step tells an agent to WRITE here, and `intent.empty` asked
+    // only whether the file held any prose at all. An agent that skipped the
+    // Why and filed three questions would have cleared the gate built to make
+    // somebody say why the feature exists. A Why written in the next scaffold
+    // section over clears it, which is the control.
+    await withProject({}, async (p) => {
+      const questions = "## Open questions\n\n- Which side refuses a split that does not sum?\n";
+      await scaffoldThenRewriteIntent(p, (text) => text.replace(/## Open questions\n[\s\S]*$/, questions));
+      const blocked = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(blocked.code).toBe(1);
+      expect(JSON.parse(blocked.stdout + blocked.stderr).issues).toContainEqual(
+        expect.objectContaining({ code: "intent.empty", gates: true }),
+      );
+
+      const path = "features/FEAT-1-split/intent.md";
+      await p.write(path, (await p.read(path)).replace("## Scope\n", "## Scope\n\nsvc-a only; payouts stay out.\n"));
+      const shipped = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(shipped.code, shipped.out).toBe(0);
+    });
+  });
+
   it("passes `validate --all` alongside everything else", async () => {
     await withProject({}, async (p) => {
       await runLoam(p.workDir, "new", "FEAT-1", "--new-service", "svc-a");
