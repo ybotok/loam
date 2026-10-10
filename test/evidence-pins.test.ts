@@ -31,7 +31,7 @@ import {
   answersFile,
   allClaims,
   FEAT,
-  RECORD,
+  serviceRecord,
   serviceClaims,
   serviceRepo,
   SPLIT,
@@ -165,7 +165,7 @@ describe("federated --record stamps evidence pins", () => {
     );
     expect(res.code, res.out).toBe(0);
 
-    const doc = (await recordOnFile(p)) as { claims: Array<Record<string, any>> };
+    const doc = (await recordOnFile(p, SPLIT)) as { claims: Array<Record<string, any>> };
     const api = doc.claims.find((c) => c["kind"] === "api.exposes")!;
     expect(api["evidence_pins"]).toHaveLength(1);
     const pin = api["evidence_pins"][0];
@@ -218,7 +218,7 @@ describe("federated --record stamps evidence pins", () => {
     const claims = await serviceClaims(p, SPLIT);
     const file = await answersFile(repo, claims, "impl.ts:2");
     expect((await runLoam(repo, "verify", FEAT, "--service", SPLIT, "--record", file, "--json")).code).toBe(0);
-    const doc = (await recordOnFile(p)) as { claims: Array<Record<string, any>> };
+    const doc = (await recordOnFile(p, SPLIT)) as { claims: Array<Record<string, any>> };
     const pin = doc.claims.find((c) => c["kind"] === "api.exposes")!["evidence_pins"][0];
     expect(pin.text).toHaveLength(200);
     expect(pin.text.startsWith("// createSplit")).toBe(true);
@@ -248,7 +248,7 @@ describe("federated --record stamps evidence pins", () => {
     // token here would make every later validate repeat "no longer contains"
     // about a file that never did — with a re-record that re-derives the same
     // state as the only offered repair.
-    const doc = (await recordOnFile(p)) as { claims: Array<Record<string, any>> };
+    const doc = (await recordOnFile(p, SPLIT)) as { claims: Array<Record<string, any>> };
     expect(doc.claims.find((c) => c["kind"] === "api.exposes")!["evidence_pins"][0].token).toBeUndefined();
     // So the untouched tree grades CLEAN from the service repo — warned once,
     // not yellow forever.
@@ -260,7 +260,7 @@ describe("federated --record stamps evidence pins", () => {
     const p = await project();
     const repo = await serviceRepo(p, SPLIT, "split-work");
     await recordPinned(p, repo);
-    const sound = await p.read(RECORD);
+    const sound = await p.read(serviceRecord(SPLIT));
     // The answers to retry with, prepared BEFORE the damage: every read lens
     // refuses an unreadable record too, so nothing here may go through verify.
     const claims = await serviceClaims(p, SPLIT);
@@ -269,18 +269,18 @@ describe("federated --record stamps evidence pins", () => {
     // Break ONE pin's shape the way a hand edit does: a quoted line number.
     const broken = sound.replace("line: 2", 'line: "2"');
     expect(broken).not.toBe(sound);
-    await p.write(RECORD, broken);
+    await p.write(serviceRecord(SPLIT), broken);
     const res = await runLoam(repo, "verify", FEAT, "--service", SPLIT, "--record", file, "--json");
     expect(res.code).toBe(1);
     expect(JSON.parse(res.stdout).error.code).toBe("record-unreadable");
     // The never-overwrite assertion: the damaged bytes are exactly as the hand left them.
-    expect(await p.read(RECORD)).toBe(broken);
+    expect(await p.read(serviceRecord(SPLIT))).toBe(broken);
 
     // Absent is fine: strip every pins key and the record reads again —
     // the regression guard for every record written before pins existed.
     const doc = parse(sound) as { claims: Array<Record<string, unknown>> } & Record<string, unknown>;
     for (const claim of doc.claims) delete claim["evidence_pins"];
-    await p.write(RECORD, stringify(doc, { lineWidth: 0 }));
+    await p.write(serviceRecord(SPLIT), stringify(doc, { lineWidth: 0 }));
     const read = await runLoam(p.workDir, "verify", FEAT, "--json");
     expect(read.code, read.out).toBe(0);
     expect(JSON.parse(read.stdout).recorded).not.toBeNull();
@@ -368,12 +368,12 @@ describe("loam validate re-checks the pins in the service repo", () => {
     // The damage a service repo's CI most plausibly meets: somebody "fixed" a
     // pin by hand and broke the record's shape. The lint family must NAME it —
     // this CI job never runs verify, so a skip here reads as a clean fleet.
-    await p.write(RECORD, (await p.read(RECORD)).replace("line: 2", 'line: "2"'));
+    await p.write(serviceRecord(SPLIT), (await p.read(serviceRecord(SPLIT))).replace("line: 2", 'line: "2"'));
     const { code, valid, findings } = await splitFindings(repo);
     const finding = findings.find((f) => f["code"] === "evidence.record-unreadable")!;
     expect(finding, JSON.stringify(findings)).toBeDefined();
     expect(finding["severity"]).toBe("warn");
-    expect(finding["message"]).toContain("verification.yaml");
+    expect(finding["message"]).toContain(serviceRecord(SPLIT));
     expect(finding["message"]).toContain("repair");
     // Demote-only holds here too: a warn, valid stays true, exit stays 0.
     expect(code).toBe(0);
@@ -386,9 +386,9 @@ describe("loam validate re-checks the pins in the service repo", () => {
     const repo = await serviceRepo(p, SPLIT, "split-work");
     await recordPinned(p, repo);
     // Strip the pins the way a record written by an older loam simply lacks them.
-    const doc = parse(await p.read(RECORD)) as { claims: Array<Record<string, unknown>> } & Record<string, unknown>;
+    const doc = parse(await p.read(serviceRecord(SPLIT))) as { claims: Array<Record<string, unknown>> } & Record<string, unknown>;
     for (const claim of doc.claims) delete claim["evidence_pins"];
-    await p.write(RECORD, stringify(doc, { lineWidth: 0 }));
+    await p.write(serviceRecord(SPLIT), stringify(doc, { lineWidth: 0 }));
     const { valid, findings } = await splitFindings(repo);
     expect(valid).toBe(true);
     const unpinned = findings.find((f) => f["code"] === "evidence.unpinned")!;
@@ -437,7 +437,7 @@ describe("loam validate re-checks the pins in the service repo", () => {
     const { findings } = await splitFindings(repo);
     expect(evidenceCodes(findings)).toEqual(["evidence.checked"]);
     // The pinned text is the trimmed line either way — no \r rides into the record.
-    const doc = (await recordOnFile(p)) as { claims: Array<Record<string, any>> };
+    const doc = (await recordOnFile(p, SPLIT)) as { claims: Array<Record<string, any>> };
     expect(doc.claims.find((c) => c["kind"] === "api.exposes")!["evidence_pins"][0].text).toBe(CITED_LINE);
   });
 });

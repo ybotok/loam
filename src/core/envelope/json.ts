@@ -108,7 +108,7 @@ export type ErrorCode =
   | "repository-unavailable"
   /** `loam verify --record` without `--service` over a federated (schema 2) record: it would erase other repositories' attestations. */
   | "record-federated"
-  /** A `verification.yaml` that exists but cannot be read as a record — never overwritten, never reported as absent. */
+  /** A file of the verification record (`verification.yaml` or a `verification/<svc>.yaml`) that exists but cannot be read — never overwritten, never reported as absent. */
   | "record-unreadable"
   /** `loam verify --record` found the record changed between its locked read and the swap — an editor or a lock-ignoring writer landed first. Nothing was written; re-running merges over the record as it now stands. */
   | "record-raced"

@@ -10,7 +10,7 @@ import type { CapabilityDoc } from "../../capabilities/tree.js";
 import type { PathableService } from "../../kernel/ids/service.js";
 import type { FeatureEntry } from "../../repo/entries.js";
 import { featurePaths, featureSpecPaths } from "../../repo/paths.js";
-import { verificationPath } from "../../verify/record.js";
+import { recordLocation } from "../../verify/record.js";
 import type { Finding } from "../../vocabulary/report.js";
 import { owesContract } from "../contracts.js";
 import type { ServiceEntry } from "../../repo/entries.js";
@@ -223,7 +223,7 @@ export function featureArtifacts(
   out.push({
     id: "verification",
     service: null,
-    path: rel(verificationPath(feature.dir)),
+    path: rel(recordLocation(feature.dir)),
     exists: verification.state !== "absent",
     required: true,
     status: feeders.length === 0 ? "blocked" : verificationStatus(verification),

@@ -43,7 +43,7 @@ import {
   FEATURE_SPEC,
   type Project,
 } from "./helpers/harness.js";
-import { FEAT, RECORD, serviceRepo, SPLIT, type Claim } from "./helpers/federated.js";
+import { anyRecord, FEAT, RECORD, serviceRecord, serviceRepo, SPLIT, type Claim } from "./helpers/federated.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -88,9 +88,9 @@ async function writeAnswers(p: Project, cs: Claim[], evidence = "src/split/Servi
 const notExposes = (cs: Claim[]): Claim[] => cs.filter((c) => c.kind !== "api.exposes");
 const exposes = (cs: Claim[]): Claim[] => cs.filter((c) => c.kind === "api.exposes");
 
-/** The record on disk, parsed — never a command's payload. */
+/** The record on disk, parsed — never a command's payload: the one-file record, or the split service's own file once it federates. */
 async function recordDoc(p: Project): Promise<Record<string, any>> {
-  return parse(await p.read(RECORD)) as Record<string, any>;
+  return parse(await p.read(p.exists(RECORD) ? RECORD : serviceRecord(SPLIT))) as Record<string, any>;
 }
 
 describe("answering api.exposes from a contract report (--contract-results)", () => {
@@ -211,7 +211,7 @@ describe("ownership and refusals", () => {
     const err = JSON.parse(res.stdout).error;
     expect(err.code).toBe("answers-mismatch");
     expect(err.message).toContain(exposes(all)[0]!.id);
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 
   it("--contract-results alone refuses while claims outside its kind are outstanding, listing them", async () => {
@@ -224,7 +224,7 @@ describe("ownership and refusals", () => {
     expect(err.code).toBe("answers-mismatch");
     expect(err.message).toContain("--contract-results answers only the api.exposes claims");
     for (const c of notExposes(all)) expect(err.message).toContain(c.id);
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 
   it("refuses a report it cannot read or recognize, naming the accepted shape — never 'all not exercised'", async () => {
@@ -260,7 +260,7 @@ describe("ownership and refusals", () => {
     expect(bad.code).toBe(1);
     expect(JSON.parse(bad.stdout).error.message).toContain("entry 1");
 
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 
   it("a path that is a directory, and a file that is not UTF-8, refuse with the file named — never internal", async () => {
@@ -281,7 +281,7 @@ describe("ownership and refusals", () => {
     expect(latinErr.code).toBe("answers-unreadable");
     expect(latinErr.message).toContain("not valid UTF-8");
 
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 
   it("refuses on an archived feature exactly as --record does", async () => {
@@ -447,7 +447,7 @@ describe("federated binding", () => {
     const res = await runLoam(repo, "verify", FEAT, "--service", SPLIT, "--contract-results", "../outside.json", "--record", answers, "--json");
     expect(res.code).toBe(1);
     expect(JSON.parse(res.stdout).error.code).toBe("answers-unreadable");
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 
   it("refuses a committed contract report that differs from the attested commit", async () => {
@@ -471,7 +471,7 @@ describe("federated binding", () => {
     const err = JSON.parse(res.stdout).error;
     expect(err.code).toBe("answers-unevidenced");
     expect(err.message).toContain("differs from");
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 
   it("external-runner evidence must name the contract report loam read", async () => {

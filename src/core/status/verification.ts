@@ -8,7 +8,7 @@
 import type { FeatureEntry } from "../repo/entries.js";
 import type { FleetContext } from "../fleet-context.js";
 import { featureChecklist } from "../verify/checklist.js";
-import { readVerificationState } from "../verify/file.js";
+import { readVerificationState } from "../verify/read/file.js";
 import {
   attestedNotice,
   confirmedProvenance,
@@ -157,7 +157,10 @@ export function verifyStep(id: string, verification: VerificationState, view: St
   if (verification.state === "unreadable") {
     return step({
       code: "next.verify",
-      statement: `${record.path} exists but does not read as a record — repair or delete it; nothing will overwrite it while it is unreadable.`,
+      // Never "or delete it": the record may be the one-file verification.yaml
+      // holding other services' attestations, and the command names the file
+      // that actually failed together with the repair that is safe for it.
+      statement: `${id}'s record at ${record.path} does not read as a record — the command names the file that failed and its safe repair; never delete a file other services' attestations may be in. Nothing will overwrite it while it is unreadable.`,
     });
   }
   if (verification.state === "stale") {

@@ -18,7 +18,8 @@
  * `spawnRecord` can take a repo, a service and an answer set and nothing else.
  */
 import { execFile, execFileSync, type ChildProcess } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { expect } from "vitest";
 import { parse } from "yaml";
@@ -28,9 +29,26 @@ import { runLoam, type Project } from "./harness.js";
 /** The feature `coherentFixture()` carries, and the paths and services around it. */
 export const FEAT = "FEAT-1";
 export const DIR = "features/FEAT-1-split";
+/** The one-file record: what the all-at-once form writes, and every federated record from before the directory. */
 export const RECORD = `${DIR}/verification.yaml`;
+/** The federated record: one file per attesting service. */
+export const RECORD_DIR = `${DIR}/verification`;
 export const SPLIT = "payment-split-service";
 export const PAYMENT = "payment-service";
+
+/** One service's attestation file. */
+export function serviceRecord(service: string): string {
+  return `${RECORD_DIR}/${service}.yaml`;
+}
+
+/**
+ * Whether ANY part of a record is on disk. A refusal that writes nothing has
+ * to be checked against both places a record can land — checking only the
+ * one-file path would pass vacuously for a federated write that went wrong.
+ */
+export function anyRecord(p: Project): boolean {
+  return p.exists(RECORD) || p.exists(RECORD_DIR);
+}
 
 /**
  * A claim as `loam verify --json` reports it. Every field the four suites read
@@ -141,7 +159,29 @@ export function spawnRecord(repo: string, service: string, answers: string): Pro
   return startRecord(repo, service, answers).done;
 }
 
-/** The record as it is ON DISK — parsed from the file, never from a command's payload. */
-export async function recordOnFile(p: Project): Promise<Record<string, unknown>> {
-  return parse(await readFile(join(p.docsDir, RECORD), "utf8")) as Record<string, unknown>;
+/**
+ * The record as it is ON DISK — parsed from the file, never from a command's
+ * payload. With a service, that service's own attestation file; without, the
+ * one-file record.
+ */
+export async function recordOnFile(p: Project, service?: string): Promise<Record<string, unknown>> {
+  const path = service === undefined ? RECORD : serviceRecord(service);
+  return parse(await readFile(join(p.docsDir, path), "utf8")) as Record<string, unknown>;
+}
+
+/**
+ * Every service with an attestation file on disk, read from the files
+ * themselves: the attestation INSIDE each file, so a file whose name and
+ * content disagree cannot pass for its name.
+ */
+export async function filedServices(p: Project): Promise<string[]> {
+  const dir = join(p.docsDir, RECORD_DIR);
+  if (!existsSync(dir)) return [];
+  const names = (await readdir(dir)).filter((name) => name.endsWith(".yaml") && !name.startsWith("."));
+  const services: string[] = [];
+  for (const name of names) {
+    const doc = parse(await readFile(join(dir, name), "utf8")) as { attestations?: Array<{ service: string }> };
+    services.push(...(doc.attestations ?? []).map((a) => a.service));
+  }
+  return services.sort();
 }

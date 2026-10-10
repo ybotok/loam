@@ -30,7 +30,8 @@ splits a view title on `/` into browser folders, so that convention lands the
 flow in the same folder as the generated overview of its service. Nothing grades
 the title, and nothing grades the slot's absence: presence is never owed.
 `features/<FEAT>/` holds a change in flight: `intent.md`, `delta.likec4`,
-per-service requirement and contract deltas, and `verification.yaml`.
+per-service requirement and contract deltas, and the verification record —
+`verification/<svc>.yaml`, one file per attesting service.
 `features/archive/` is shipped history.
 
 Living documents are the complete current state. A feature document is a diff

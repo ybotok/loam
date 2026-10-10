@@ -108,7 +108,7 @@ function featureFindings(
       case "absent":
         return `${feature.id} touches '${service}' and has no verification record — nothing has been checked. Derive the checklist and answer it: ${verify}.`;
       case "unreadable":
-        return `${feature.id}'s verification.yaml exists but does not read as a record — repair or delete it, then re-run ${verify}; nothing will overwrite it while it is unreadable.`;
+        return `${feature.id}'s verification record does not read as a record — ${verify} names the file that failed and its safe repair (never delete a file other services' attestations may be in); nothing will overwrite it while it is unreadable.`;
       case "stale":
         return `${feature.id} moved after its record was written — the answers answer a checklist that is no longer the one being asked. Re-derive and re-answer: ${verify}.`;
       case "recorded":

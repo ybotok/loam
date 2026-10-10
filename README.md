@@ -111,7 +111,7 @@ and says what its architecture *means*, and a model that was guessed is worse th
 downstream has to re-derive it to know whether to believe it. So loam takes the half of the job that
 is mechanical: it **states the work** and it **checks the result**. An agent does the reading, and
 both halves are written down: the question in the brief or the checklist, the answer in `sources` or
-`verification.yaml`.
+the verification record.
 
 ### What green means here, and what it does not
 

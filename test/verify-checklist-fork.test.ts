@@ -24,7 +24,7 @@ import { parse } from "yaml";
 import { forkedChecklistNotices } from "../src/commands/verify/frozen.js";
 import type { Verification } from "../src/core/verify/record.js";
 import { coherentFixture, makeProject, runLoam, type Project } from "./helpers/harness.js";
-import { answersFile, FEAT, RECORD, serviceClaims, serviceRepo, SPLIT } from "./helpers/federated.js";
+import { answersFile, FEAT, serviceClaims, serviceRecord, serviceRepo, SPLIT } from "./helpers/federated.js";
 
 function record(attestations: { service: string; checklist?: string }[]): Verification {
   return {
@@ -118,7 +118,7 @@ describe("verify.checklist-forked", () => {
     const run = await runLoam(project.workDir, "verify", FEAT, "--service", SPLIT, "--record", answers);
     expect(run.code, run.out).toBe(0);
 
-    const written = parse(await readFile(join(project.docsDir, RECORD), "utf8")) as Verification;
+    const written = parse(await readFile(join(project.docsDir, serviceRecord(SPLIT)), "utf8")) as Verification;
     const mine = written.attestations!.find((a) => a.service === SPLIT)!;
     expect(mine.checklist).toBe(written.checklist);
     expect(mine.docsCommit).toBe(head);
@@ -138,7 +138,7 @@ describe("verify.checklist-forked", () => {
     // an optional field would break a working fleet for bookkeeping.
     expect(run.code, run.out).toBe(0);
 
-    const written = parse(await readFile(join(project.docsDir, RECORD), "utf8")) as Verification;
+    const written = parse(await readFile(join(project.docsDir, serviceRecord(SPLIT)), "utf8")) as Verification;
     const mine = written.attestations!.find((a) => a.service === SPLIT)!;
     expect(mine.docsCommit).toBeUndefined();
     expect(mine.checklist).toBe(written.checklist);

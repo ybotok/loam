@@ -223,8 +223,11 @@ follows is the other half — which command raises which:
 - \`loam verify --record\` / \`--results\` / \`--contract-results\`:
   \`answers-unreadable\`, \`answers-mismatch\`, \`answers-unevidenced\`,
   \`record-federated\`, \`record-unreadable\` and \`record-raced\`. Two records for
-  different services land in either order — the later one waits, then merges,
-  and both attestations survive.
+  different services land in either order — each writes only its own
+  \`verification/<svc>.yaml\`, so both attestations survive, on one checkout or
+  on two docs-repo branches merged later. A \`record-unreadable\` names the file
+  that failed and its safe repair; never delete the one-file
+  \`verification.yaml\`, which may hold other services' attestations.
 - \`loam open\`: \`no-members\`, \`binding-duplicate\`, \`already-exists\` (the
   workspace file, which loam never silently overwrites — pass \`--out\` or
   \`--force\`) and \`invalid-option\`.

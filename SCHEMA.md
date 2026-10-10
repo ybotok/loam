@@ -95,7 +95,8 @@ docs/
     glossary/<term>.md               a word this feature brings with it; create-only  [authored]
     usecases/<name>.likec4           a FLOW this feature brings; views-only, create-only  [authored]
     adrs/NNNN-*.md                   feature-level decisions             [authored]
-    verification.yaml                the done-check: claims + verdicts + evidence, one attestation per service  [loam verify --service <id> --record]
+    verification/<svc>.yaml          the done-check, one file per attesting service: claims + verdicts + evidence  [loam verify --service <id> --record]
+    verification.yaml                the same answered all at once, and every record from before the directory — read forever  [loam verify --record]
   features/archive/<FEAT>/           a shipped change — the same files, plus:
     .loam-before/                    the bytes the merge overwrote        [written by loam]
   .loam-lock                         transient: one writer at a time      [archive/unarchive only]
@@ -2368,7 +2369,9 @@ design. The heading must be reachable, too — a leading UTF-8 BOM used to hide
 
 ## The verification record
 
-`features/<FEAT>/verification.yaml` is the done-check written down. `loam verify <FEAT>` derives a
+The done-check is written down inside the feature: one `features/<FEAT>/verification/<svc>.yaml` per
+attesting service, or — for the all-at-once form, and every record written before the directory —
+the one file `features/<FEAT>/verification.yaml`. `loam verify <FEAT>` derives a
 **checklist** from the feature's own artifacts — the same files `validate` reads, never the code:
 
 | kind | one claim per | reads |
@@ -2579,7 +2582,7 @@ service's as a pure lens — no repository binding, usable from the docs repo, r
 `unknown-service` when the checklist has no claims owned by that id — and both agents must have
 answered the same scope. Combining the flag with `--record`, `--results` or `--contract-results`
 refuses `invalid-option`, as does any arity other than exactly two files and an archived feature
-(frozen history has no current checklist to answer). A `verification.yaml` too damaged to read does
+(frozen history has no current checklist to answer). A verification record too damaged to read does
 **not** block the diff — the lens never reads the record, and the moment a cross-examination is most
 needed is before re-recording over a broken one.
 
@@ -2599,7 +2602,7 @@ block pins each file's path and the sha256 of the exact bytes read.
 confirmed/unconfirmed/unanswered. The payload also deliberately carries **no `verified`, `verdict`
 or `attested` key at all**: two answer sets agreeing — usually two contexts of the same model, so
 correlated — ranks where a reviewer reads first; it is not verification, it upgrades nothing, and it
-leaves `verification.yaml` byte-identical (no docs lock is taken, and the diff runs while a writer
+leaves the verification record byte-identical (no docs lock is taken, and the diff runs while a writer
 holds one).
 
 ### Attested is not verified
@@ -2634,28 +2637,67 @@ the decision:
 So "a green run is the only thing that confirms a scenario" is a claim about the **record**, not
 about the CLI's flags: the short path still works, and it is legible afterwards as the short path.
 
-### The record is federated: one file, one attestation per service
+### The record is federated: one attestation per service, one file each
 
 A cross-service feature's claims belong to several services, and each service's code lives in its
 own repository — so no single place can honestly answer all of them.
 `loam verify <FEAT> --service <id> --record answers.json`, run **in that service's own repo**,
 narrows the checklist to that service's claims and binds the answers to this repository's commit.
-The result is one `schema: 2` `verification.yaml` holding a list of **`attestations`**, one per
-service: the service id, the commit the answers were bound to, and that service's answered claims.
+The result is that service's **attestation**, written to a file of its own:
+`features/<FEAT>/verification/<id>.yaml` — a `schema: 2` record holding exactly that service's
+attestation (the service id, the commit the answers were bound to, the checklist digest it answered,
+and its answered claims) and nothing of anybody else's. **The directory is the record**, the rule
+`glossary/` and `capabilities/` already follow: loam reads every file in it and adds them up, and
+the verdict and the counts are computed from the union at read time — exactly as they always were,
+since nothing ever trusted a stored `summary`. Each file's own `summary` counts the whole checklist,
+with the claims other services own honestly `unanswered` in it.
 
-The merge semantics are additive and non-destructive. Recording for service B keeps service A's
-attestation exactly as it stood — the new record is the old attestations minus B's previous one,
-plus B's new one. Answers the new record does *not* carry are reported in `discarded`, tagged
-`unattested` (a schema-1 answer, or one whose attestation is gone) or `off-checklist` (a claim the
-current checklist no longer asks). Nothing is dropped silently.
+**Why one file per service.** The record used to be ONE `verification.yaml` for every service, and
+every attestation rewrote its `summary`, its `recorded` date and its checklist-ordered `claims`. Two
+teams recording two different services on two docs-repo branches therefore always conflicted when
+the PRs merged — add/add from an empty start, content conflicts on the summary, the claims and the
+attestations once one had landed — and sorting the attestations did not help, because two
+insertions at one anchor are a conflict whatever the order. The advisory lock below serializes
+writers on one checkout only; a fleet records from many. With a file per service, two teams' records
+touch two different paths and merge cleanly. Recording a service again replaces that service's file
+and nothing else; another service's file is never rewritten, and its pins never touched.
 
-The write behind that merge holds the same advisory lock archive does, and holds it from before the
-feature is resolved to after the record lands — two `--record` runs for different services serialize
-(the later one waits briefly, then merges over what the first left, so **both** attestations
-survive), and a record can no longer be written into a path an `archive` is renaming out from under
-it. The commit itself is staged beside the target and swapped in by one rename over the exact bytes
-the merge was computed from, so a kill mid-record leaves the previous record whole — never truncated
-YAML — and an edit that landed in between refuses instead of being buried:
+The record answers **one version of the checklist**: the one its newest file answered (by
+`recorded`, a later service id breaking a same-day tie). A file that answered a different version
+keeps its attestation in the list — `verify.checklist-forked` names it — but its answers do not
+count until that service records again. The one shared file used to settle this by rewriting: the
+last writer pruned everybody's answers to its own checklist. Per-service files are never rewritten by
+anyone else, so nothing can prune them, and counting an answer filed against another question set
+would let an id the feature no longer asks fill the slot of the question that replaced it.
+
+**The one-file record is read forever.** A `verification.yaml` written before the directory existed
+— a federated record with several attestations in it, active or archived — reads exactly as it
+always did while no service has a file of its own. Once services do, it is read beside them: a
+service that records again supersedes its share of the one-file record (that attestation and its
+answers drop out of the union; the file itself is not rewritten), and the write that leaves nothing
+in it counting removes it. An all-at-once record (no `schema`, no attestations) never counts once a
+service has a file — its answers carry no commit attestation — so the first `--service` write
+removes it in the same commit and lists its answers in `discarded`. Answers a write takes off the
+disk that its new file does not carry are reported in `discarded`, tagged `unattested` (an
+all-at-once answer) or `off-checklist` (a claim the current checklist no longer asks). Nothing is
+dropped silently.
+
+**The all-at-once form keeps the one file, by decision.** `--record` without `--service` answers the
+whole checklist from one place on one word, with no commit and no service — so there is no second
+writer for it to collide with and no service to name a file after, and every record it ever wrote
+(the example fleet's included) stays byte-for-byte what it is. There is one reader either way:
+`loam verify`, `status`, `list`, `tasks`, `gate` and `validate` all read the record through the same
+union, whichever files it is made of.
+
+The write holds the same advisory lock archive does, and holds it from before the feature is
+resolved to after the record lands — two `--record` runs for different services serialize (the
+later one waits briefly, then writes its own file, so **both** attestations survive), and a record
+can no longer be written into a path an `archive` is renaming out from under it. The commit itself
+is staged beside the target and swapped in by one rename over the exact bytes the read found, so a
+kill mid-record leaves the previous record whole — never truncated YAML — and an edit that landed in
+between refuses instead of being buried. A write that also removes a superseded one-file record
+holds that removal to the same compare, and lands the service's own file first, so a kill between
+the two leaves a record that still reads whole:
 
 - `docs-busy` — another writer held the lock longer than the record was willing to wait (5 s).
   Nothing was read or written; re-run once it finishes. The contention runs both ways: `archive`,
@@ -2676,9 +2718,10 @@ Recording refuses rather than guesses, each under its own `--json` `error.code`:
 - `repository-unavailable` — `--service` from a repo that declares none, or one whose commit cannot
   be read. An attestation with nothing to bind to is not an attestation.
 - **`record-federated`** — the legacy all-at-once form (`--record` with **no** `--service`) over a
-  record that already carries attestations. That form writes the whole file from one place, so it
-  would erase every other repository's evidence; loam refuses outright and names the attestors, and
-  never silently migrates or merges. Re-run with `--service`.
+  record that already carries attestations, in per-service files or in a one-file record. That form
+  writes the whole record from one place, so it would put one unattested answer set over every
+  other repository's evidence; loam refuses outright and names the attestors, and never silently
+  migrates or merges. Re-run with `--service`.
 - `record-unreadable` — see below.
 
 Reading is unrestricted: `loam verify <FEAT> --service <id>` **without** `--record` is a pure lens
@@ -2687,12 +2730,26 @@ in `services`, which is how you find out which repositories still owe an attesta
 
 The record is YAML, like the other data artifacts, and holds the claim text next to each verdict so
 it reads without loam. Because it has to survive without loam, human edits are expected — and read
-back defensively. A file that exists but does not read as a record (broken YAML, or a shape missing
+back defensively. A record file that exists but does not read as a record (git conflict markers a
+merge left in it — named before the YAML parser sees them, since the parser either fails on a line
+that is not the problem or reads both sides as one plausible document; broken YAML; a shape missing
 what the readers use — `summary` with its counts, `recorded`, `checklist`, claims each with an `id`
-and a known `verdict`) is **`record-unreadable`**: reported with the YAML line, and **never
+and a known `verdict`; or a `verification/<svc>.yaml` holding anything but that one service's
+attestation and answers) is **`record-unreadable`**: reported with the file and the line, and **never
 overwritten**. It used to count as *no record at all*, which was the wrong direction on the one
 artifact loam cannot reconstruct — "no record" invites writing a fresh one over evidence somebody's
-edit merely broke. Only a genuinely absent file is "no verification record". Extra keys a human adds
+edit merely broke. Only a genuinely absent file is "no verification record".
+
+The refusal names the ONE file that failed and the repair that is safe for it, because the two kinds
+of file call for opposite advice. A service's own `verification/<svc>.yaml` holds that service's
+word and nobody else's — after a merge, both sides of a conflict in it are that service's own
+attestations — so repairing it by hand, or deleting it and recording that service again from its
+repository, loses no other team's evidence. The one-file `verification.yaml` may hold every other
+service's attestation, so its advice is to repair it or **restore it from version control** (after a
+merge, the copy on the branch you merged into) and then record again — **never to delete it**. The
+old one-size advice, "delete it and record again", erased other teams' attestations when followed on
+a shared record, and the miscount advice, "record the answers again", sent the reader straight back
+into this refusal: `--record` will not write over a file it could not read. Both now end in a record. Extra keys a human adds
 still pass through untouched. Every verdict names who answered it — `answered_by: runner` (a
 cucumber report's green run, mechanical), `answered_by: external-runner` (a contract-test report's
 operationId-matched green entry, mechanical too), or `answered_by: agent` (somebody's word about the
@@ -2762,7 +2819,7 @@ next `--record` makes it drift-checkable), warn `evidence.unresolved` (the cited
 unsafe, not a regular file, or the cited line is past its end), `evidence.moved` (the file's digest
 differs while the cited line still reads as pinned), `evidence.line-changed` (the cited line no
 longer says what was recorded), `evidence.token-missing` (the file contained the token at the
-attested commit and no longer does) and `evidence.record-unreadable` (a verification.yaml that
+attested commit and no longer does) and `evidence.record-unreadable` (a verification record file that
 exists but cannot be read — none of its evidence was checked, and a silent skip would read as clean,
 on the very file a hand edit to the pins most plausibly breaks). Archived records are deliberately
 not linted — frozen history, and post-ship code drift is normal evolution. From the docs repo the
@@ -2772,7 +2829,8 @@ verdict in either direction, `attested` never silently becomes `verified`, and t
 fail `validate`; `--strict` remains the CI lever it always was.
 
 It lives inside the feature, so `archive` carries it into `features/archive/<FEAT>/` with everything
-else. `loam verify` re-run later compares `checklist` against the current digest and reports the
+else — the `verification/` directory moves with the feature it sits in, and `unarchive` brings it
+back the same way; the frozen view reads it through the same union. `loam verify` re-run later compares `checklist` against the current digest and reports the
 record as **stale** if the feature moved under it — while the feature is active. Once archived there
 is no current checklist to be stale against (the merge itself moved the feature's operations into
 the living OpenAPI, so a re-derived checklist could only disagree): `loam verify` on an archived
@@ -2792,7 +2850,7 @@ can back up. `loam verify` exits 0 either way; branch on `verified` in the `--js
 `loam verify` answers *answered, and by whom*. `loam tasks <FEAT> [--service <id>] [--next]
 [--json]` answers the other half of the same question — *still open, at which step, and what fact
 closes it* — and it is the identical checklist read in the other direction. It is derived on every
-run from the feature's deltas, the generated suite and `verification.yaml`; it writes nothing,
+run from the feature's deltas, the generated suite and the verification record; it writes nothing,
 anywhere, ever, and it adds no artifact for a later run to disagree with.
 
 **One unit per promise, and a unit's id is the claim's id.** Every claim the checklist derives is
@@ -2812,7 +2870,7 @@ agent reads beside this one, and a third meaning for either word is how a consum
 on the wrong field.
 
 **Done is a fact, not a tick.** A closed unit simply stops appearing, and exactly one thing closes
-one: a claim recorded `confirmed` in a `verification.yaml` that is **not stale** against the current
+one: a claim recorded `confirmed` in a verification record that is **not stale** against the current
 checklist. A stale record closes nothing — the words moved under the answers, which is the state
 `loam verify` already reports. An agent-attested scenario never vanishes either: it stays visible at
 `attested`, because attested is not verified, and a work list that hid the difference would be
@@ -3212,7 +3270,7 @@ says what its architecture means, and two generated models of the same code disa
 every run — a done-check built on diffing them would flap until somebody turned it off. What is
 deterministic is the **question**: which files, in which grammar, bound to which existing elements;
 which operations, which edges, which scenarios. loam owns the questions and the checking; an agent
-owns the reading. `sources` and `verification.yaml` are where the answers are written down.
+owns the reading. `sources` and the verification record are where the answers are written down.
 
 ## Status
 
