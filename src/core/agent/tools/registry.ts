@@ -126,9 +126,24 @@ export const AGENT_TOOLS: Record<string, AgentTool> = {
     skill: skillsIn(".augment"),
     detect: [".augment"],
   },
-  // Skills-only, deliberately: Codex reads `.codex/skills/` and does not load
-  // custom command files, so it declares no command emitter at all rather than
-  // laying down files nothing will ever open.
+  // Skills-only, deliberately: Codex does not load custom command files, so it
+  // declares no command emitter at all rather than laying down files nothing
+  // will ever open.
+  //
+  // The skill path is `.codex/skills/`, and that is NOT what Codex documents.
+  // Its own skills page (Build skills — developers.openai.com/codex/skills,
+  // which now redirects to learn.chatgpt.com/docs/build-skills; checked
+  // 2026-10-09) lists only `.agents/skills` — in the working directory, its
+  // parents up to the repository root — and never mentions `.codex/skills`;
+  // the `agents` entry below quotes it. `.codex/skills/` is undocumented but
+  // still loaded (Codex PR #10317 and third-party guides describe it as the
+  // older location, slated for deprecation), so the files this entry writes
+  // are read today and the break is latent: the day Codex drops it, a repo
+  // scaffolded for `codex` alone loses every skill silently. The path stays
+  // put on purpose — moving it re-points files in every repo already
+  // scaffolded, which is a migration with its own entry, not a comment fix —
+  // and choosing `agents` alongside `codex` already gives Codex the
+  // documented root.
   codex: {
     skill: skillsIn(".codex"),
     detect: [".codex"],

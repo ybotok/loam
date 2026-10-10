@@ -298,6 +298,13 @@ No code, flag, path or payload key was added, changed or retired; only documenta
   truth; the drift test forbids the publication claim in README and in the CHANGELOG section of the
   checkout's own version. The `0.2.0-alpha.8` section below carries a dated note that it was never
   published.
+- The `0.2.0-alpha.3` section said `npm i @ybotok/loam@alpha` installs it. That release was tagged
+  and withdrawn before its publish step, which only the `0.2.0-alpha.4` section said. It now carries
+  the same kind of dated note.
+- README said Codex reads `.codex/skills/`. That is the folder the `codex` target writes, and Codex
+  still loads it, but Codex's skills documentation names only `.agents/skills`. README now says so
+  and points at the `agents` target for the documented root. The `codex` target's path is
+  unchanged.
 - README and WORKFLOW no longer quote byte sizes and code counts that had gone stale (the
   `loam-check` page, the AGENTS.md orientation, the finding-code total). A finding- or refusal-code
   count quoted on a shipped page is now graded against `loam explain --codes`.
@@ -1864,7 +1871,10 @@ now rewrites the bytes of every view beneath it.
 ## [0.2.0-alpha.3] - 2026-09-03
 
 The generated subsystem views, made readable — and the defect that hunt found underneath them.
-Still a prerelease on the `alpha` line: `npm i @ybotok/loam@alpha` installs it. Nothing below is
+Still a prerelease on the `alpha` line. **Not published (noted 2026-10-10):** the `v0.2.0-alpha.3`
+tag was cut, but it was withdrawn before its publish step — the `0.2.0-alpha.4` section above says
+so, and that release carries everything here — so `npm i @ybotok/loam@alpha` never installed this
+version, and `npm view @ybotok/loam dist-tags` is the record of what does. Nothing below is
 breaking, and one entry is a change every repo NOTICES: the generated file's bytes move, so the
 first `loam validate --all` after upgrading asks for one `loam subsystem sync`.
 
