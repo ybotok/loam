@@ -743,6 +743,34 @@ item gets promoted — it went from here to `## Now` and from there to
   five-file-capped package, so a new non-ok code forces a split-module commit before any behaviour
   can land, and that split should be chosen for a seam rather than for a code. Promote when a second
   fleet reports a flow that rendered and was graded by nothing.
+- **What the closed `flows-dynamic-views` branch had and main still lacks.** The branch drew
+  cross-service journeys as fleet-level dynamic views before main grew its own use-case axis; it was
+  closed as superseded on 2026-10-10, its one piece main lacked outright — suites, the participant
+  union a test stand needs — was ported onto that axis (`#suite-<name>`, `loam list suites`), and its
+  reference implementation stays reachable at the tag `archive/flows-dynamic-views`
+  (`git show archive/flows-dynamic-views:<path>`). Five things remain, and each waits for the same
+  evidence — pilot teams actually writing tagged use cases — because each would freeze a code, a
+  grammar or a generated file, and the two checks among them are advisory heuristics:
+  - **Per-view outcome counting against scenarios** — a view's `alt`/`opt`/`try` arms summed (not
+    multiplied) and compared with the scenarios covering it (it would be spelled
+    usecase.outcomes-uncovered, warn). `core/c4/parsed/dynamic-views.ts` flattens the block tree
+    it would need, and the count says how many outcomes lack a scenario, never which. Waits for
+    flows with branches being written and a team asking which outcomes go untested.
+  - **A feature-scope warning for a `#FEAT` cross-service edge no journey traverses** (it would be
+    spelled usecase.edge-unrepresented, adopt-gated on the fleet having a tagged use case). Main sees
+    only the removal direction (`diff.op-removed-consumed`). Waits for a fleet whose journeys are
+    kept at all — on one with none it is noise.
+  - **`Covers: view:<id>`** — a join from an arch-axis requirement to a journey that needs no
+    capability axis. It runs the opposite way to `#req-` (two answers to "what covers this flow"),
+    and a bare view id can now be stolen by a service-local view of the same name. Waits for
+    evidence that legacy teams will not write `capabilities/` — the one case where main has no way
+    to join a cross-service flow to a runner-verified arch-level outcome.
+  - **Generated per-suite views** (a `flow-groups.likec4`, a sync verb, a staleness code) —
+    rendering only. Waits for a team asking to SEE a suite rather than list it.
+  - **Changing an existing journey through a feature** (replace by view id, with a conflict
+    warning). Main declined it on purpose — the feature route is create-only and an existing flow is
+    edited in the pull request — and it waits for concurrent journey edits conflicting more often
+    than review absorbs.
 - **Landscape scaling:** retain one landscape while conflicts are exceptional, and half of what
   this row once asked for arrived on 2026-09-04. Per-service internals now live in
   `services/<svc>/model.likec4` by default: `loam archive` routes a delta's fqn-spelled interior
