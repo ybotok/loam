@@ -1327,9 +1327,9 @@ the slots the feature adds, changes or removes**, exactly as an openapi delta ho
 operations: the merge walks only the slots the delta declares, so a slot it leaves out stays as the
 living contract has it, and an edited slot is written out whole. A slot restated without being
 changed is legal and the machinery tells it from an edit, but it buys nothing and costs a pin,
-which a parallel feature's removal turns into `asyncapi.baseline-invalid` — or, unpinned, into
-`asyncapi.slot-revived`, the contract axis's revival check (under *Living spec vs delta* below) on
-this axis's identity. Identity is the **slot** — the pair
+which a parallel feature's removal turns into `asyncapi.baseline-invalid` and `asyncapi.slot-revived`
+— or, unpinned, into `asyncapi.slot-revived` alone, the contract axis's revival check (under *Living
+spec vs delta* below) on this axis's identity. Identity is the **slot** — the pair
 (section, key) over the three named sections `channels.<key>`, `operations.<key>` and
 `components.messages.<key>` — and the join token stays the message name. Three feature-only keys,
 spelled and shaped exactly as on the OpenAPI axis: `x-loam-based-on` inside a slot's value (written
