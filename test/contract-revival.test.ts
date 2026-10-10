@@ -417,6 +417,143 @@ paths:
   });
 });
 
+/** The living `cancelOrder`, quoted at the address it stands at in the example. */
+const CANCEL_OP = `      operationId: cancelOrder
+      summary: Cancel an order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The order is cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        "409":
+          description: The order has already been handed to fulfilment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+`;
+const QUOTED_CANCEL = `openapi: 3.1.0
+paths:
+  /orders/{id}/cancel:
+    post:
+${CANCEL_OP}`;
+/** FEAT-200: moves cancelOrder to /cancellation — a marker on the old slot, the definition on the new one. */
+const MOVE_CANCEL = `openapi: 3.1.0
+paths:
+  /orders/{id}/cancel:
+    post:
+      operationId: cancelOrder
+      x-loam-remove: true
+  /orders/{id}/cancellation:
+    post:
+${CANCEL_OP}`;
+
+describe("openapi.op-revived — an operation an archived feature MOVED, quoted at the address it left", () => {
+  // The baseline gate keys on the slot (nothing living there) and the id check
+  // keys on the operationId (still living, at the new slot), so a quote of the
+  // old address used to archive at exit 0 and put cancelOrder back beside its
+  // new one — one operationId at two addresses, only the advisory
+  // openapi.duplicate-operationid saying so afterwards.
+  async function moved(): Promise<Fleet> {
+    const f = await exampleFleet();
+    contractOnly(f, "FEAT-200", "FEAT-200-move-cancel", MOVE_CANCEL);
+    const archived = await runLoam(f.fleet, "archive", "FEAT-200");
+    expect(archived.code, archived.out).toBe(0);
+    expect(f.read(LIVING_ORDER_API)).not.toContain("/orders/{id}/cancel:");
+    expect(f.read(LIVING_ORDER_API)).toContain("/orders/{id}/cancellation:");
+    return f;
+  }
+
+  it("archive refuses the unpinned quote, naming the move and where the operation lives now", async () => {
+    const f = await moved();
+    contractOnly(f, "FEAT-201", "FEAT-201-quote-cancel", QUOTED_CANCEL);
+    const [warned, ...more] = ofCode(
+      findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-201", "--json")).stdout),
+      "openapi.op-revived",
+    );
+    expect(more).toEqual([]);
+    expect(warned).toMatchObject({ severity: "warn", gates: true, subject: "order-service" });
+    expect(warned!.message).toContain("spells 'cancelOrder' at POST /orders/{id}/cancel, an address the living contract no longer has");
+    expect(warned!.message).toContain("archived FEAT-200 moved it to POST /orders/{id}/cancellation, where it lives now");
+    expect(warned!.message).toContain("one operationId at two addresses");
+
+    const refused = await runLoam(f.fleet, "archive", "FEAT-201", "--json");
+    expect(refused.code, refused.out).toBe(1);
+    expect((JSON.parse(refused.stdout) as { error: { code: string } }).error.code).toBe("not-coherent");
+    expect(f.read(LIVING_ORDER_API)).not.toContain("/orders/{id}/cancel:");
+  });
+
+  it("the pinned quote: baseline-invalid says it MOVED and where, never to archive past op-revived — and op-revived fires beside it", async () => {
+    const f = await exampleFleet();
+    // Pinned while cancelOrder still stood at /cancel — what rebase wrote then.
+    contractOnly(f, "FEAT-201", "FEAT-201-quote-cancel", pinOpenapi(QUOTED_CANCEL, f.read(LIVING_ORDER_API)));
+    contractOnly(f, "FEAT-200", "FEAT-200-move-cancel", MOVE_CANCEL);
+    expect((await runLoam(f.fleet, "archive", "FEAT-200")).code).toBe(0);
+
+    const all = findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-201", "--json")).stdout);
+    const [invalid] = ofCode(all, "openapi.baseline-invalid");
+    expect(invalid!.message).toContain("'cancelOrder' lives at POST /orders/{id}/cancellation now: a parallel feature moved it");
+    expect(invalid!.message).not.toContain("past `openapi.op-revived`");
+    expect(ofCode(all, "openapi.op-revived").map((r) => r.message)).toEqual([
+      expect.stringContaining("archived FEAT-200 moved it to POST /orders/{id}/cancellation"),
+    ]);
+
+    const rebased = JSON.parse((await runLoam(f.fleet, "rebase", "FEAT-201", "--dry-run", "--json")).stdout) as {
+      revived: Array<{ code: string; message: string }>;
+    };
+    expect(rebased.revived.map((r) => r.code)).toEqual(["openapi.op-revived"]);
+  });
+
+  it("moving it back on purpose — with a marker at its new address — is a relocation, not a revival", async () => {
+    const f = await moved();
+    contractOnly(
+      f,
+      "FEAT-202",
+      "FEAT-202-move-back",
+      `openapi: 3.1.0
+paths:
+  /orders/{id}/cancellation:
+    post:
+      operationId: cancelOrder
+      x-loam-remove: true
+  /orders/{id}/cancel:
+    post:
+${CANCEL_OP}`,
+    );
+    const all = findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-202", "--json")).stdout);
+    expect(ofCode(all, "openapi.op-revived")).toEqual([]);
+  });
+
+  it("a different operation at the vacated address is new — identity is the operationId", async () => {
+    const f = await moved();
+    contractOnly(
+      f,
+      "FEAT-203",
+      "FEAT-203-cancel-request",
+      `openapi: 3.1.0
+paths:
+  /orders/{id}/cancel:
+    post:
+      operationId: requestCancellation
+      responses:
+        "202":
+          description: Cancellation requested.
+`,
+    );
+    const all = findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-203", "--json")).stdout);
+    expect(ofCode(all, "openapi.op-revived")).toEqual([]);
+  });
+});
+
 /* ------------------------------------------------------------------ */
 /* The event axis                                                      */
 /* ------------------------------------------------------------------ */
@@ -792,6 +929,73 @@ components:
     // Even the reused `components.messages.Legacy` KEY is silent: a message is
     // its name, and payment.Fresh was never retired.
     expect(await eventFindings(p, "FEAT-41")).toEqual([]);
+  });
+
+  it("a message an archived feature MOVED to another key, quoted at the key it left: refused unpinned, and baseline-invalid says where it went when pinned", async () => {
+    // The event axis's one slot move: a components.messages marker whose name
+    // the same delta declares again under another key. A quote of the old key
+    // read as nothing at all — the name is living (so no revival candidate)
+    // and the key is empty (so no baseline) — and archived the name back at
+    // its old key beside the new one.
+    const LEGACY_QUOTE = `asyncapi: 3.0.0
+components:
+  messages:
+    Legacy:
+      name: payment.Legacy
+      payload:
+        type: object
+        properties:
+          paymentId:
+            type: string
+`;
+    const p = await makeProject({
+      "services/payment-service/spec.md": EVENTS_SPEC,
+      "services/payment-service/asyncapi.yaml": LIVING_EVENTS,
+      "features/FEAT-44-rekey-legacy/intent.md": INTENT("FEAT-44"),
+      "features/FEAT-44-rekey-legacy/specs/payment-service/asyncapi.yaml": `asyncapi: 3.0.0
+channels:
+  legacyEvents:
+    address: payment.legacy.v1
+    messages:
+      Legacy:
+        $ref: '#/components/messages/LegacyV2'
+components:
+  messages:
+    Legacy:
+      name: payment.Legacy
+      x-loam-remove: true
+    LegacyV2:
+      name: payment.Legacy
+      payload:
+        type: object
+        properties:
+          paymentId:
+            type: string
+`,
+      "features/FEAT-45-quote-legacy/intent.md": INTENT("FEAT-45"),
+      "features/FEAT-45-quote-legacy/specs/payment-service/asyncapi.yaml": LEGACY_QUOTE,
+      // Pinned while Legacy still stood at its old key — what rebase wrote then.
+      "features/FEAT-46-pinned-legacy/intent.md": INTENT("FEAT-46"),
+      "features/FEAT-46-pinned-legacy/specs/payment-service/asyncapi.yaml": pinAsyncapi(LEGACY_QUOTE, LIVING_EVENTS),
+    });
+    cleanups.push(() => p.destroy());
+    // --approve past the channel restated unpinned: setup, not the subject.
+    const rekeyed = await runLoam(p.workDir, "archive", "FEAT-44", "--approve");
+    expect(rekeyed.code, rekeyed.out).toBe(0);
+    const living = await p.read("services/payment-service/asyncapi.yaml");
+    expect(living).toContain("LegacyV2:");
+    expect(living).not.toMatch(/^ {4}Legacy:/m);
+
+    const [warned, ...more] = await eventFindings(p, "FEAT-45");
+    expect(more).toEqual([]);
+    expect(warned!.message).toContain("declares message 'payment.Legacy' at components.messages.Legacy, a key the living contract no longer has");
+    expect(warned!.message).toContain("archived FEAT-44 moved it to components.messages.LegacyV2, where it is declared now");
+
+    const pinned = findings((await runLoam(p.workDir, "validate", "--feature", "FEAT-46", "--json")).stdout);
+    const [invalid] = ofCode(pinned, "asyncapi.baseline-invalid");
+    expect(invalid!.message).toContain("message 'payment.Legacy' is declared at components.messages.LegacyV2 now: a parallel feature moved it");
+    expect(invalid!.message).not.toContain("past `asyncapi.slot-revived`");
+    expect(ofCode(pinned, "asyncapi.slot-revived")).toHaveLength(1);
   });
 });
 

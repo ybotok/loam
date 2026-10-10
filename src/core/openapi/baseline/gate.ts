@@ -68,18 +68,26 @@ export function openapiBaselineIssues(input: BaselineGateInput): Issue[] {
     }
     const verdict = classifyBaselineDigests(op.basedOn, op.digest, livingOp?.digest);
     if (verdict === "unfounded") {
-      // Two ways here, and the message must not pick the wrong one for the
+      // Three ways here, and the message must not pick the wrong one for the
       // author. A pin is only ever written over a living operation, so a pin
       // with nothing living behind it usually means the operation was there
-      // and LEFT — a parallel feature retired it. This used to say "drop the
-      // marker", and dropping it is exactly how the quote then archived as an
-      // addition and put the retired operation back. The other way — a pin
-      // hand-written onto a genuinely new operation — is the rare one.
+      // and LEFT — a parallel feature retired it, or MOVED it to another slot
+      // (moving an endpoint is the most common contract edit there is). This
+      // used to say "drop the marker", and dropping it is exactly how the
+      // quote then archived as an addition and put the operation back — and
+      // for a move the retirement advice is wrong too: the id still lives, so
+      // archiving past `openapi.op-revived` would answer it at both slots.
+      // The living contract says which: a move leaves the id at another slot.
+      // The third way — a pin hand-written onto a genuinely new operation —
+      // is the rare one.
+      const movedTo = livingDoc.ops.filter((l) => !l.remove && l.id === op.id).map((l) => `${l.method.toUpperCase()} ${l.path}`);
       issues.push({
         severity: "error",
         code: "openapi.baseline-invalid",
         subject: service,
-        message: `${service}: ${where} ('${op.id}') carries ${OPENAPI_BASELINE_KEY}, but the living contract has no operation at that slot — the version it was pinned to is gone. If a parallel feature retired it, re-read the living contract and delete this operation from the delta, unless this feature deliberately brings it back (then drop the pin and archive with --approve past \`openapi.op-revived\`). A genuinely new operation has no living version to be based on and carries no pin.`,
+        message: movedTo.length > 0
+          ? `${service}: ${where} ('${op.id}') carries ${OPENAPI_BASELINE_KEY}, but the living contract has no operation at that slot — '${op.id}' lives at ${movedTo.join(" and ")} now: a parallel feature moved it. Re-read it there and delete this operation from the delta, making any change at its new address; archived as it stands, it would put '${op.id}' back at ${where} as well, one operationId at two addresses. To move it back on purpose, drop the pin and add a removal marker for '${op.id}' at ${movedTo.join(" and ")} to this delta.`
+          : `${service}: ${where} ('${op.id}') carries ${OPENAPI_BASELINE_KEY}, but the living contract has no operation at that slot — the version it was pinned to is gone. If a parallel feature retired it, re-read the living contract and delete this operation from the delta, unless this feature deliberately brings it back (then drop the pin and archive with --approve past \`openapi.op-revived\`). A genuinely new operation has no living version to be based on and carries no pin.`,
       });
     } else if (verdict === "stale") {
       issues.push({
@@ -176,10 +184,11 @@ export function openapiBaselineIssues(input: BaselineGateInput): Issue[] {
     // 0, and every count covers only values the living contract already has —
     // a genuinely new operation, key or component never trips it. That is
     // also why it cannot see a quote of an operation a parallel feature
-    // RETIRED: absent from living, it reads exactly like a new one. Telling
-    // the two apart takes the archived features' removal markers, which this
-    // gate never reads — `openapi.op-revived` (core/coherence/retired/) asks
-    // that question. `loam rebase` pins a whole service in one command;
+    // RETIRED: absent from living, it reads exactly like a new one — nor of
+    // one a parallel feature MOVED, quoted at the slot it left, since nothing
+    // living stands at that slot. Telling either apart from an addition takes
+    // the archived features' removal markers, which this gate never reads —
+    // `openapi.op-revived` (core/coherence/retired/) asks that question. `loam rebase` pins a whole service in one command;
     // `--approve` says the unpinned merge is meant.
     issues.push({
       severity: "warn",

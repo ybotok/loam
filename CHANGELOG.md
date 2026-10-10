@@ -27,6 +27,18 @@ Two codes, both added to the `IssueCode` union, and one additive `--json` key we
   or `operations` slot by its key, or a message by its name, that an archived feature retired. A
   channel-slot removal's inline messages are named from that feature's `.loam-before/` snapshot
   pre-image, read only while it still hashes to the digest its manifest recorded.
+- **Both codes also cover a MOVE.** An archived feature that relocated an operation (a marker on
+  the old slot, the same operationId defined at a new one) vacated the old address, and a later
+  delta quoting the operation there — unpinned — archived at exit 0 and put the id back beside its
+  new address, one operationId at two slots (only the advisory `openapi.duplicate-operationid`
+  said so afterwards): the slot-keyed baseline gate saw nothing living at the slot, and the
+  id-keyed check saw the id living. That quote is now `openapi.op-revived` too, and its message
+  says which archived feature moved the operation and where it lives now. A delta that carries its
+  own removal marker for the id is its own relocation (moving it back on purpose) and is not
+  graded. On the event axis the one slot a move vacates is a `components.messages` key whose
+  message name the archived delta declared again under another key; a declaration at the old key
+  is `asyncapi.slot-revived`, naming the new one. A channel or operation slot is its key, so a
+  "moved" one is a retirement, as before.
 - **Exit code: `loam archive` now exits 1 (`not-coherent`) on this shape** without `--approve`;
   with `--approve` it merges as before, and the operation lands in `overridden[]` and the text
   output's "archiving despite" list, naming what came back and whose retirement it reverses.
@@ -39,7 +51,12 @@ Two codes, both added to the `IssueCode` union, and one additive `--json` key we
 - **`openapi.baseline-invalid` and `asyncapi.baseline-invalid` reworded** for a pin whose living
   operation or slot is gone: they used to say "drop the marker", which turned the quote into the
   revival above. They now say to re-read the living contract and delete the quote unless the
-  feature deliberately brings it back. The `/loam-check` rows and `loam explain` say the same.
+  feature deliberately brings it back. When the living contract still holds the operationId (or,
+  for a `components.messages` key, the message name) elsewhere, the message instead says a
+  parallel feature MOVED it and where it lives now, and to make any change there — never to
+  archive past the revival finding, which would answer it at both addresses. The `/loam-check`
+  rows and `loam explain` say the same. `loam rebase`'s text says such items were retired by an
+  archived feature "or moved to another address by one".
 - **What it reads, and what it cannot see.** Only files under `features/archive/` — the archived
   deltas' removal markers and each feature's `.loam-before/` snapshot; no git. A marker counts only
   if the merge carried it out: the snapshot's pre-image must hold the marker's operationId at its

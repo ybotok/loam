@@ -1554,6 +1554,16 @@ the source for tests.
   archived feature retired is **`openapi.op-revived`** (by operationId — a
   retired operation quoted at a new path is the same operation back) or **`asyncapi.slot-revived`**
   (a `channels` or `operations` slot by its key; a message by its *name*, wherever it is declared).
+  A relocation retires nothing but vacates an address, so the index records moves too — the marker
+  ids the relocation rule takes out of the retired set are exactly the moved ids, and their old
+  slots are on the markers. A delta operation at a slot the living contract leaves empty, whose
+  operationId it holds at another slot, and whose old address an archived feature moved it away
+  from, is `openapi.op-revived` as well: archived, it would answer the id at both addresses. A
+  delta that carries its own removal marker for the id is its own relocation and is not graded.
+  On the event axis the one slot a move vacates is a `components.messages` key (marker on the old
+  key, the message name declared again elsewhere): a declaration at the old key of a name the
+  living contract declares elsewhere is `asyncapi.slot-revived`. A channel or operation slot's
+  identity is its key, so moving one is a retirement plus an addition, graded as such.
   Both are warnings that **gate** the archive, `openapi.baseline-missing`'s doctrine: the document
   is legal, and re-adding a retired operation can be exactly what a feature means — a retirement
   rolled back — so `--approve` carries the call, and the archive output then names what came back
