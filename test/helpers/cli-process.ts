@@ -92,14 +92,18 @@ export function spawnLoam(cwd: string, ...args: string[]): Promise<SpawnedResult
 }
 
 /**
- * The real MCP server end to end: `tsx src/cli.ts mcp` in `cwd`, every request
- * line fed up front, stdin closed immediately. The server answers each frame in
- * order and exits on the EOF — so the child's lifetime is bounded by its input,
- * not by any timing assumption, and the 60s deadline above only ever fires on a
- * genuine wedge.
+ * The real MCP server end to end: `tsx src/cli.ts mcp [flags]` in `cwd`, every
+ * request line fed up front, stdin closed immediately. The server answers each
+ * frame in order and exits on the EOF — so the child's lifetime is bounded by
+ * its input, not by any timing assumption, and the 60s deadline above only ever
+ * fires on a genuine wedge.
  */
-export function spawnLoamStdio(cwd: string, requestLines: readonly string[]): Promise<SpawnedResult> {
-  return spawnProcess(tsxBin, [cliEntry, "mcp"], { cwd, stdin: requestLines.join("\n") + "\n" });
+export function spawnLoamStdio(
+  cwd: string,
+  requestLines: readonly string[],
+  flags: readonly string[] = [],
+): Promise<SpawnedResult> {
+  return spawnProcess(tsxBin, [cliEntry, "mcp", ...flags], { cwd, stdin: requestLines.join("\n") + "\n" });
 }
 
 /**
