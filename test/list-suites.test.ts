@@ -284,6 +284,10 @@ describe("a fleet with no use cases", () => {
       expect(named.code).toBe(1);
       expect(named.payload.error?.code).toBe("unknown-target");
       expect(named.payload.error?.message).toContain("No suite 'smoke'");
+      // Scoped to the map, because only the map's use cases are listed: a
+      // `#suite-` flow drawn beside a service's model is a use case `validate`
+      // grades, and "no use case carries the tag" was false about it.
+      expect(named.payload.error?.message).toContain("No use case under architecture/ carries a `#suite-` tag.");
     } finally {
       await p.destroy();
     }

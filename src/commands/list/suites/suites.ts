@@ -93,7 +93,7 @@ export async function suitesSection(req: SuitesRequest): Promise<SuitesSection |
           req.name,
           names,
           names.length === 0
-            ? " No use case carries a `#suite-` tag yet."
+            ? " No use case under architecture/ carries a `#suite-` tag."
             : ` Declared suites: ${names.join(", ")}.`,
         ),
     );
@@ -138,7 +138,7 @@ function printSuites(suites: readonly Suite[], ungrouped: readonly ParsedView[],
     );
     return;
   }
-  if (suites.length === 0) console.log("no suites — no use case carries a #suite- tag");
+  if (suites.length === 0) console.log("no suites — no use case under architecture/ carries a #suite- tag");
   for (const [i, suite] of suites.entries()) {
     if (i > 0) console.log("");
     console.log(
