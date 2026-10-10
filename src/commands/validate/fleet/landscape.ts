@@ -9,7 +9,6 @@
  * `unreadableLandscape` in `./load.ts`.
  */
 import { existsSync } from "node:fs";
-import { relative } from "node:path";
 import { readFile } from "node:fs/promises";
 import { type Elem, type LoadedDoc } from "../../../core/c4/likec4.js";
 import { serviceResolver } from "../../../core/c4/resolve/service.js";
@@ -215,7 +214,6 @@ export async function validateLandscape(
     // reported as the landscape having errors, which sent the author to the
     // wrong file with a line number that pointed at somebody else's text.
     const broken = brokenDocumentPaths(docsDir, land.errors);
-    const spell = (abs: string): string => relative(docsDir, abs).split(/[\\/]/).join("/");
     const named = broken.length === 0 ? "architecture/landscape.likec4" : broken.join(", ");
     // The verb agrees with the LIST, not with the count after it: `named` is a
     // comma-joined series once two documents broke, and "a, b has 6 error(s)"
@@ -241,10 +239,13 @@ export async function validateLandscape(
         "name the SERVICE on the map, and the container in that service's own model (a container-level " +
         "flow lives beside the model that declares it)",
       // Every line carries its own file, because one project's errors can come
-      // from more than one document and a bare `L8:` is unactionable then.
-      details: land.errors.map((e) =>
-        e.sourceFsPath === undefined || broken.length < 2 ? errorText(e) : `${spell(e.sourceFsPath)} ${errorText(e)}`,
-      ),
+      // from more than one document and a bare `L8:` is unactionable then. The
+      // prefix is `brokenDocumentPaths`'s spelling of that one error's document,
+      // so the message's file list and each line's prefix are one rule.
+      details: land.errors.map((e) => {
+        const [file] = broken.length < 2 ? [] : brokenDocumentPaths(docsDir, [e]);
+        return file === undefined ? errorText(e) : `${file} ${errorText(e)}`;
+      }),
     });
     return report;
   }

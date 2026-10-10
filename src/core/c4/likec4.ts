@@ -49,7 +49,8 @@ export function errorText(e: LikeC4Error): string {
  * sorted — the one spelling of "which files broke" behind `landscape.invalid`,
  * `spine.landscape-invalid`, the brief's unparseable arm, the work packet and
  * `loam explore`. Those surfaces are read one after another on the same tree,
- * and an agent has to be able to tell that they name the same file.
+ * and an agent has to be able to tell that they name the same file. Given ONE
+ * error it spells that error's document: validate's detail-line prefix.
  */
 export function brokenDocumentPaths(docsDir: string, errors: readonly LikeC4Error[]): string[] {
   return [...new Set(errors.map((e) => e.sourceFsPath).filter((p): p is string => p !== undefined))]
