@@ -24,22 +24,19 @@
  * The one thing a delta holds that addresses another file — `metadata { op }` —
  * has its own resolution and its own findings.
  */
-import { featureCapabilityDeltas } from "../capabilities/delta/tree.js";
-import { readCapabilityTree } from "../capabilities/tree.js";
 import type { FleetContext } from "../fleet-context.js";
 import { featureGlossary } from "../glossary/delta.js";
 import { readGlossary } from "../glossary/tree.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 import { featurePaths, featureSpecPaths, fleetAdrsDir, servicePathsAt, type ServicePaths } from "../repo/paths.js";
-import { capabilityDocsDir, glossaryDir } from "../repo/authored/paths.js";
+import { glossaryDir } from "../repo/authored/paths.js";
 import { featureSpecServices, listFeatures, listServices } from "../repo/repo.js";
 import { markdownFiles } from "../repo/tree/fs.js";
 
 /**
  * One service's authored documents: the two requirement specs, the runbook, and
- * every ADR. The specs cost nothing extra when a `FleetContext` is in play — it
- * has already read both to parse their requirements, and the memo hands back the
- * same text.
+ * every ADR. The specs cost nothing extra: the run's `FleetContext` has already
+ * read both to parse their requirements, and the memo hands back the same text.
  */
 export async function serviceDocuments(paths: ServicePaths): Promise<string[]> {
   return [paths.spec, paths.archSpec, paths.runbook, ...(await markdownFiles(paths.adrsDir))];
@@ -49,15 +46,14 @@ export async function serviceDocuments(paths: ServicePaths): Promise<string[]> {
  * One feature's authored documents: the intent, each addressed service's two
  * spec deltas, every ADR, and each capability delta document.
  */
-export async function featureDocuments(featureDir: FeatureDir, fleet?: FleetContext): Promise<string[]> {
+export async function featureDocuments(featureDir: FeatureDir, fleet: FleetContext): Promise<string[]> {
   const paths = featurePaths(featureDir);
   const docs = [paths.intent, ...(await markdownFiles(paths.adrsDir))];
   for (const svc of await featureSpecServices(featureDir, fleet)) {
     const spec = featureSpecPaths(featureDir, svc);
     docs.push(spec.spec, spec.archSpec);
   }
-  const capabilities =
-    fleet === undefined ? await featureCapabilityDeltas(featureDir) : await fleet.featureCapabilityDeltas(featureDir);
+  const capabilities = await fleet.featureCapabilityDeltas(featureDir);
   docs.push(...capabilities.docs.map((d) => d.spec));
   // The definitions this feature introduces. Their own links are graded like
   // any other document's — a term that cites a term the feature is not adding
@@ -75,11 +71,8 @@ export async function featureDocuments(featureDir: FeatureDir, fleet?: FleetCont
  * `capability.invalid` already follow, and for the same reason: a finding about
  * the fleet repeated on every service target is the report.
  */
-export async function fleetDocuments(docsDir: DocsDir, fleet?: FleetContext): Promise<string[]> {
-  const capabilities =
-    fleet === undefined
-      ? await readCapabilityTree(capabilityDocsDir(docsDir))
-      : (await fleet.capabilities(docsDir)).tree;
+export async function fleetDocuments(docsDir: DocsDir, fleet: FleetContext): Promise<string[]> {
+  const capabilities = (await fleet.capabilities(docsDir)).tree;
   const glossary = await readGlossary(glossaryDir(docsDir));
   return [
     ...(await markdownFiles(fleetAdrsDir(docsDir))),
@@ -99,7 +92,7 @@ export async function fleetDocuments(docsDir: DocsDir, fleet?: FleetContext): Pr
  * retroactive error against a record nobody may edit. `listFeatures` excludes
  * them by default, which is the same judgement one enumeration up.
  */
-export async function allAuthoredDocuments(docsDir: DocsDir, fleet?: FleetContext): Promise<string[]> {
+export async function allAuthoredDocuments(docsDir: DocsDir, fleet: FleetContext): Promise<string[]> {
   const docs = await fleetDocuments(docsDir, fleet);
   for (const service of await listServices(docsDir, fleet)) {
     docs.push(...(await serviceDocuments(servicePathsAt(service.dir))));

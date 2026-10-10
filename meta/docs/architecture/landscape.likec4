@@ -17,8 +17,8 @@
 //     src/commands/<name>.ts   -> loam.commands.<name>     (the 5 loose modules)
 //
 // 73 containers, and one edge for every VALUE import that crosses two of them:
-// 456 of them — 180 out of core (its packages and its loose modules alike), 208
-// from a command into core, 38 command to command, 30 out of cli.ts. These are
+// 454 of them — 178 out of core (its packages and its loose modules alike), 207
+// from a command into core, 39 command to command, 30 out of cli.ts. These are
 // the counts `npm run meta:check` prints (units / import edges) and
 // `node scripts/self-model.mjs --print` lists; they were last moved on
 // 2026-10-10 and drift with every package added, so trust the script over this
@@ -233,7 +233,6 @@ model {
 
   loam.commands.archive -> loam.core.asyncapi
   loam.commands.archive -> loam.core.c4
-  loam.commands.archive -> loam.core.capabilities
   loam.commands.archive -> loam.core.coherence
   loam.commands.archive -> loam.core.diff
   loam.commands.archive -> loam.core.document
@@ -610,14 +609,12 @@ model {
   loam.core.gate -> loam.core.status
   loam.core.gate -> loam.core.vocabulary
 
-  loam.core.gherkin -> loam.core.document
   loam.core.gherkin -> loam.core.kernel
   loam.core.gherkin -> loam.core.repo
   loam.core.gherkin -> loam.core.vocabulary
 
   loam.core.glossary -> loam.core.repo
 
-  loam.core.links -> loam.core.capabilities
   loam.core.links -> loam.core.envelope
   loam.core.links -> loam.core.glossary
   loam.core.links -> loam.core.kernel

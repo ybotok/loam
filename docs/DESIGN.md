@@ -79,8 +79,8 @@ parsed. If a second reader of the same claims appears, that is the seam to move.
 | L2 | `agent/` `document/` `staging/` | Parse one document kind into a record; the write path |
 | L3 | `repo/` | The read model over the docs tree, and the fan-in hub of the whole layer stack |
 | L4 | `c4/` `gherkin/` `glossary/` `openapi/` `openspec/` `provenance/` `workspace/` | Read and write one artifact family. Not "cheap": `c4/likec4.ts` is the most expensive module in the repo and sits here |
-| L5 | `asyncapi/` `brief/` `capabilities/` `deployment/` `doctor/` | One artifact family that needs another one first |
-| L6 | `explain/` `links/` `projection/` `usecases/` | One link, one flow, projected onto the model |
+| L5 | `asyncapi/` `brief/` `capabilities/` `deployment/` `doctor/` `links/` | One artifact family that needs another one first |
+| L6 | `explain/` `projection/` `usecases/` | One flow, projected onto the model |
 | L7 | `delta/` `dependencies/` `diff/` `explore/` `mcp/` `pack/` `verify/` | One feature, and the whole-fleet reads |
 | L8 | `coherence/` | Cross-artifact rules producing `Issue[]` / `Finding[]` |
 | L9 | `status/` | Aggregate answers for a feature or a fleet |
@@ -120,7 +120,7 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/c4/` | `likec4` `arch` `source-mask` `source-scan`, with `parsed/` `project/` `resolve/` beneath | kernel, repo |
 | `core/c4/splice/` | `contract` `landscape-merge` `authored-source` `placement` | c4 |
 | `core/c4/seed/` | `loam seed`'s file grammar and templater: `fleet-file` (`items` reads one node) `template` `stamp` | c4, kernel |
-| `core/gherkin/` | the generated `.feature` files and the step catalogue over them | document, kernel, repo, vocabulary |
+| `core/gherkin/` | the generated `.feature` files and the step catalogue over them | kernel, repo, vocabulary |
 | `core/glossary/` | `glossary/<term>.md` as a tree where presence classifies, and the fleet-wide backlinks into it | repo |
 | `core/openapi/` | the synchronous contract axis; `openapi/merge/` is the delta path | kernel, repo |
 | `core/openspec/` | the OpenSpec model (`model/`), the scan, and the decisions over it | document, kernel, repo |
@@ -133,7 +133,7 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/doctor/` | the repository's own health: conflict markers, interrupted writes, a stale AGENTS.md | agent, c4, conflict-markers, docs, envelope, gherkin, kernel, repo, staging |
 | `core/delta/` | does the diff apply | capabilities, document, repo, usecases |
 | `core/explain/` | `loam explain`'s lookup — a finding code, a refusal code or a concept term in, one discriminated explanation out | agent, brief |
-| `core/links/` | the corpus of authored documents loam reads links out of, and whether each link resolves | capabilities, envelope, glossary, kernel, repo |
+| `core/links/` | the corpus of authored documents loam reads links out of, and whether each link resolves | envelope, glossary, kernel, repo |
 | `core/projection/` | one feature projected onto one service — the API, event and C4 slices `loam delta` and `loam context` share | asyncapi, c4, kernel, openapi, repo |
 | `core/usecases/` | the fleet's declared use cases and the join from a flow's steps onto the model, with `delta/` beneath for the flows one FEATURE brings and `service/` beneath for the flows one SERVICE keeps beside its model | c4, capabilities, repo |
 | `core/coherence/` | do the three axes agree | asyncapi, c4, capabilities, conflict-markers, delta, document, envelope, glossary, kernel, openapi, repo, usecases |
