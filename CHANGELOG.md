@@ -31,9 +31,9 @@ Two codes, both added to the `IssueCode` union, and one additive `--json` key we
   relocated an operation (a marker on the old slot, the same operationId defined at a new one)
   vacated the old address — and so did one that retired it there, once a later feature re-added it
   somewhere else. A later delta quoting the operation at that address — unpinned — archived at
-  exit 0 and put the id back beside where it lives, one operationId at two slots (only the advisory
-  `openapi.duplicate-operationid` said so afterwards): the slot-keyed baseline gate saw nothing
-  living at the slot, and the id-keyed check saw the id living. That quote is now
+  exit 0 and put the id back beside where it lives, one operationId at two slots (only the
+  advisory `openapi.duplicate-operationid` said so afterwards): the slot-keyed baseline gate saw
+  nothing living at the slot, and the id-keyed check saw the id living. That quote is now
   `openapi.op-revived` too. Both codes are judged on the contract the archive would write: the
   check runs the archive's own merge of the delta over the living contract and compares where each
   operationId (each message name) stands there with where it stands now. One the merged contract
@@ -44,15 +44,18 @@ Two codes, both added to the `IssueCode` union, and one additive `--json` key we
   where the id does not live deletes nothing, so it no longer excuses the quote. The message says
   which archived feature moved the operation and where to, or retired it there, and — apart from
   that, since anything landed after can have moved it again — where it lives now; its remedy names
-  the address to drop: delete the quote, or, to move it back on purpose, add a removal marker where
-  it lives now — and where the delta already spells that address, so no marker can be written
-  there, archive with `--approve` instead. On the event axis the vacated addresses are
-  `components.messages` keys (a marker there) and the inline declarations a channel removal took; a
-  delta that restates the channel a name stands inline in with a `$ref`, or retires it, takes the
-  name out of there and is not graded. For an inline declaration the remedy names the channel
-  (restate it with a `$ref`, or retire it), never a marker nested on the inline message, which
-  retires nothing. A channel or operation slot is its key, so a "moved" one is a retirement, as
-  before.
+  the address to drop: delete the quote, or, to move it back on purpose, add a removal marker
+  where it lives now — and where the delta already spells that address, so no marker can be
+  written there, archive with `--approve` instead. A quote of an address an archived feature moved
+  the operation away from is the finding even where the living contract holds the operation
+  nowhere (taken out of its new address by a hand edit, which leaves no marker): the move is on
+  the record, and the message reads as a retirement brought back, naming the move. On the event
+  axis the vacated addresses are `components.messages` keys (a marker there) and the inline
+  declarations a channel removal took; a delta that restates the channel a name stands inline in
+  with a `$ref`, or retires it, takes the name out of there and is not graded. For an inline
+  declaration the remedy names the channel (restate it with a `$ref`, or retire it), never a
+  marker nested on the inline message, which retires nothing. A channel or operation slot is its
+  key, so a "moved" one is a retirement, as before.
 - **Exit code: `loam archive` now exits 1 (`not-coherent`) on this shape** without `--approve`;
   with `--approve` it merges as before, and the operation lands in `overridden[]` and the text
   output's "archiving despite" list, naming what came back and whose retirement it reverses.
@@ -71,9 +74,10 @@ Two codes, both added to the `IssueCode` union, and one additive `--json` key we
   feature deliberately brings it back. When the living contract still holds the operationId (or,
   for a `components.messages` key, the message name) elsewhere, the message instead says a
   parallel feature MOVED it there (or retired it here, and another re-added it there) and where it
-  lives now, and to make any change there — never to archive past the revival finding, which
-  would answer it at both addresses. The `/loam-check` rows and `loam explain` say the same. `loam rebase`'s text says such items were retired by an
-  archived feature "or moved to another address by one".
+  lives now, and to make any change there — never to archive past the revival finding, which would
+  answer it at both addresses. The `/loam-check` rows and `loam explain` say the same. `loam
+  rebase`'s text says such items were retired by an archived feature "or moved to another address
+  by one".
 - **What it reads, and what it cannot see.** Only files under `features/archive/` — the archived
   deltas' removal markers and each feature's `.loam-before/` snapshot; no git. A marker counts only
   if the merge carried it out: the snapshot's pre-image must hold the marker's operationId at its
