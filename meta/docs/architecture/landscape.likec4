@@ -358,6 +358,7 @@ model {
   loam.commands.migrate_openspec -> loam.core.staging
 
   loam.commands.new -> loam.commands.policy
+  loam.commands.new -> loam.core.c4
   loam.commands.new -> loam.core.capabilities
   loam.commands.new -> loam.core.coherence
   loam.commands.new -> loam.core.document

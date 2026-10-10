@@ -78,6 +78,28 @@ Operations: authorizePayment
 `;
 }
 
+/** An architecture spec for payment-service, its owner line spelled by the caller. */
+function archSpec(ownerLine: string): string {
+  return `---
+service: ${SVC}
+status: draft
+${ownerLine}
+---
+
+# ${SVC} — architecture
+
+## Requirements
+
+### Requirement: Authorizations are idempotent
+The service SHALL treat a repeated authorization request as the original.
+
+#### Scenario: A retry arrives
+- **Given** an authorization already recorded
+- **When** the same request arrives again
+- **Then** the recorded outcome is returned
+`;
+}
+
 /** The coherent fixture with payment-service's spec frontmatter replaced. */
 function fixtureWith(frontmatter: string): Record<string, string> {
   const files = coherentFixture();
@@ -244,6 +266,35 @@ The service SHALL authorize.
         expect(finding.message).toContain("verifed");
       },
     );
+  });
+
+  it("spec.md and arch.spec.md naming two owners is one warning naming both — never an error", async () => {
+    // `loam show` and `loam context` print spec.md's owner alone, so a second
+    // value in arch.spec.md was an answer nobody saw and nothing flagged.
+    const files = fixtureWith("service: payment-service\nstatus: draft\nowner: payments-team");
+    files[`services/${SVC}/arch.spec.md`] = archSpec("owner: some-departed-team");
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      const found = JSON.parse(res.stdout).targets[0].findings.filter(
+        (f: { code: string }) => f.code === "frontmatter.owner-mismatch",
+      );
+      expect(found).toHaveLength(1);
+      expect(found[0].severity).toBe("warn");
+      expect(found[0].details).toEqual(["spec.md: payments-team", "arch.spec.md: some-departed-team"]);
+      expect(found[0].message).toContain("some-departed-team");
+    });
+  });
+
+  it("agreeing owners, or an arch.spec.md that names none, say nothing about ownership", async () => {
+    // Absence is frontmatter.field-missing's finding; one fact gets one code.
+    for (const archOwner of ["owner: payments-team", "owner: ''", ""]) {
+      const files = fixtureWith("service: payment-service\nstatus: draft\nowner: payments-team");
+      files[`services/${SVC}/arch.spec.md`] = archSpec(archOwner);
+      await withProject(files, { service: SVC }, async (p) => {
+        const json = JSON.parse((await runLoam(p.workDir, "validate", "--json")).stdout);
+        expect(codesOf(json)).not.toContain("frontmatter.owner-mismatch");
+      });
+    }
   });
 
   it("a feature's intent is held to the feature vocabulary, not the service one", async () => {

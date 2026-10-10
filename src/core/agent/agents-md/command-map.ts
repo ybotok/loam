@@ -321,7 +321,10 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   editing fleet.yaml and re-running regenerates the map, and the first hand
   edit anywhere in the file, including above the stub, makes it yours — seed
   then refuses \`seed-landscape-edited\`
-  rather than overwrite. Then adopt each service: \`loam adopt --service <id>\`.
+  rather than overwrite. So seed is a day-zero step: fleet.yaml has no spelling
+  for \`metadata { op }\`, and once an edge carries one the map grows through
+  adopt briefs and feature C4 deltas, not through seed. Then adopt each
+  service: \`loam adopt --service <id>\`.
 - \`loam instructions [<page>] [args...]\` prints one of the six workflow
   protocols — \`loam-adopt\`, \`loam-feature\`, \`loam-implement\`, \`loam-check\`,
   \`loam-verify\`, \`loam-ship\` — with \`$1\`, \`$2\` filled in from the arguments you

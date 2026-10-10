@@ -10,7 +10,7 @@
  * shapes this emits; `./living.js` is the same corpus read for the other half.
  */
 import { join } from "node:path";
-import { parseRequirements } from "../../../core/document/parse.js";
+import { openspecRequirements } from "../../../core/openspec/scan/shape.js";
 import { type Requirement } from "../../../core/document/spec.js";
 import { ownValue } from "../../../core/kernel/records.js";
 import { type OpenSpecMapping } from "../../../core/openspec/model/mapping.js";
@@ -143,7 +143,7 @@ export async function materializeActiveChanges(
     };
 
     for (const spec of change.specs) {
-      const requirements = parseRequirements(await readSourceArtifact(inventory.root, spec.path))
+      const requirements = openspecRequirements(await readSourceArtifact(inventory.root, spec.path))
         .filter((requirement) => requirement.kind !== "BASE");
       for (const parsed of requirements) {
         const matchingRenames = changeRenames.filter((rename) =>

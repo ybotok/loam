@@ -35,7 +35,8 @@ import { interruptedCommitFinding } from "../../../core/staging/recovery/finding
 import { FleetContext } from "../../../core/fleet-context.js";
 import { serviceLinkFindings } from "../links/corpus.js";
 import { sourceScopeFindings } from "../checks/sources.js";
-import { apiAxisFindings, generatedContractFindings } from "./api.js";
+import { apiAxisFindings } from "./api.js";
+import { generatedContractFindings } from "./contracts/generated.js";
 import { evidencePinFindings } from "./evidence-pins.js";
 import { spineFindings } from "./spine.js";
 import { eventAxisFindings } from "./events/events.js";

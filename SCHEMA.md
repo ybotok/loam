@@ -708,7 +708,10 @@ so running loam from a subdirectory works; `loam init` writes the file where it 
   this repo, digests that document and compares it with the committed
   `services/<id>/openapi.yaml`: `openapi.generated-stale` (warn) when they differ,
   `contracts.source-missing` (error) when nothing is there, `contracts.source-invalid` (error) when
-  the path escapes the repository or the file does not parse.
+  the path escapes the repository or the file does not parse. The stale warning's `details` name
+  the operationIds that differ (served but not in the committed copy, committed but no longer
+  served), and its message says when the two sets agree, so a reworded description no longer reads
+  the same as twenty vanished endpoints.
 
   **loam reads it and never writes it.** The copy into the docs repo stays a human `cp` reviewed in
   a pull request — that is what keeps the committed contract a document somebody agreed to rather
@@ -1211,9 +1214,11 @@ A `paymentService -> kafka 'Publishes PaymentAuthorized'` edge used to read as f
 while naming no contract anybody could check. The event axis is the API axis's mirror, in **AsyncAPI
 3.0** — only 3.0, because its operations are named top-level objects carrying
 `action: send|receive`, the exact analog of an `operationId`, where 2.x spells the same thing as
-`publish`/`subscribe` under a channel and leaves whose perspective they take ambiguous. A 2.x
-document declares no `operations` and reads as a contract with no messages rather than as a
-mis-parsed one. Like OpenAPI it is read with a shallow structural walk over the `yaml` parse, never
+`publish`/`subscribe` under a channel and leaves whose perspective they take ambiguous. A document
+whose `asyncapi:` field says 1.x or 2.x is refused as one `asyncapi.invalid` naming the version, and
+nothing on the event axis is graded against it: reading it as a 3.0 contract with no messages used
+to turn every edge and requirement into a misleading `spine.message-undefined`. The AsyncAPI CLI's
+`asyncapi convert --target-version=3.0.0` upgrades it. Like OpenAPI it is read with a shallow structural walk over the `yaml` parse, never
 a real AsyncAPI parser: the slice loam joins on is small enough that the parser's model would be
 dead weight, and adding it would be a fourth runtime dependency.
 

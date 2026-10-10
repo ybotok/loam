@@ -105,7 +105,7 @@ export const REFUSAL_MEANINGS = {
   "seed-unknown-subsystem":
     "A service's `subsystem:` in fleet.yaml names nothing `subsystems:` declares — the message carries a did-you-mean over the names the file really declares; add the subsystem or fix the spelling, then re-run.",
   "seed-landscape-edited":
-    "architecture/landscape.likec4 carries hand edits (the line-1 stamp's digest no longer matches) or was authored some other way, which includes anything written ABOVE the scaffold's stub — `loam seed` never overwrites human work and wrote nothing; fold the edits into fleet.yaml and delete the file, or keep the hand-authored map and stop using seed.",
+    "architecture/landscape.likec4 carries hand edits (the line-1 stamp's digest no longer matches) or was authored some other way, which includes anything written ABOVE the scaffold's stub — `loam seed` never overwrites human work and wrote nothing. Seed runs once, before any operation is drawn: fleet.yaml cannot carry `metadata { op }`, publishes or consumes, so once the map holds them it grows without seed — `loam adopt --service <id>` for a new service, a feature's C4 delta for everything else. Folding the edits into fleet.yaml and deleting the file works only when every edit is a service, subsystem or plain call fleet.yaml can say.",
   internal:
     "An unexpected throw — the one refusal with no stable meaning; it exists so a `--json` consumer still receives an envelope instead of a stack trace, and a repeatable `internal` is a loam defect worth reporting.",
 } as const satisfies Record<ErrorCode, string>;

@@ -18,9 +18,17 @@ import type { FleetContext } from "../fleet-context.js";
  * `action: send|receive`, which is the exact analog of an `operationId`; 2.x
  * spells the same thing as `publish`/`subscribe` nested under a channel, where
  * the two words are notoriously ambiguous about whose perspective they take.
- * Supporting one dialect is cheaper than supporting two, and a 2.x document
- * declares no `operations` at all — so it reads as a contract with no messages
- * rather than as a silently mis-parsed one.
+ * Supporting one dialect is cheaper than supporting two. A 2.x (or 1.x)
+ * document declares no `operations` at all, and it used to read as a contract
+ * with no messages: one `asyncapi.yaml` copied in from an older service turned
+ * into a `spine.message-undefined` per landscape edge, a
+ * `spec-event.message-undefined` per requirement and a knock-on
+ * `spine.message-unproduced` on every consumer, none of them naming the
+ * version and every fix text saying "declare the operation" about a file that
+ * does declare it, as `publish`/`subscribe`. That is exactly the false
+ * diagnosis the unreadable policy below exists to prevent, so an older
+ * version now reads as UNREADABLE (`asyncapiDocOf`): one `asyncapi.invalid`
+ * naming the version and the upgrade command, and nothing graded against it.
  *
  * WHAT THIS READER MUST NEVER DO: join on anything inside a message's `payload`.
  * The payload is JSON Schema today and may be Avro later, and that switch is
@@ -128,6 +136,21 @@ export function asyncapiDocOf(doc: unknown): AsyncapiDoc {
   if (doc === null) return empty();
 
   const root = doc as Record<string, unknown>;
+  // A pre-3.0 document is not a 3.0 document with nothing in it, so it takes
+  // the unreadable path rather than the empty one (see the module header).
+  // Only a version that SAYS 1.x or 2.x is refused: a file with no `asyncapi:`
+  // key at all (a hand-trimmed feature delta that restates slots and not the
+  // header) keeps reading as 3.0, and so does any later major, which is a
+  // question for the day it exists rather than a guess made now. A bare `2`
+  // or `2.6` parses as a YAML number, hence the String() and the `$`.
+  const version = root["asyncapi"];
+  if ((typeof version === "string" || typeof version === "number") && /^[12](\.|$)/.test(String(version))) {
+    return {
+      ...empty(),
+      unreadable: true,
+      error: `AsyncAPI ${String(version)}: loam reads AsyncAPI 3.0 only; \`asyncapi convert --target-version=3.0.0\` upgrades it`,
+    };
+  }
   const messages: EventMessage[] = [];
   const seen = new Map<string, string[]>();
   const declare = (name: string, slot: string, node: unknown): void => {

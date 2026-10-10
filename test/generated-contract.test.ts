@@ -45,7 +45,7 @@ afterEach(async () => {
 async function withBuild(
   contracts: Record<string, string> | undefined,
   write: (committed: string) => Promise<string> | string,
-): Promise<{ codes: string[]; out: string }> {
+): Promise<{ codes: string[]; out: string; stale: StaleFinding | undefined }> {
   project = await makeProject(coherentFixture(), { service: SERVICE });
   const committed = await project.read(`services/${SERVICE}/openapi.yaml`);
   await mkdir(join(project.workDir, "build"), { recursive: true });
@@ -60,14 +60,19 @@ async function withBuild(
     "utf8",
   );
   const run = await runLoam(project.workDir, "validate", "--service", SERVICE, "--json");
-  const parsed = JSON.parse(run.stdout) as { targets?: { findings?: { code: string }[] }[] };
+  const parsed = JSON.parse(run.stdout) as { targets?: { findings?: StaleFinding[] }[] };
+  const findings = (parsed.targets ?? []).flatMap((t) => t.findings ?? []);
   return {
-    codes: (parsed.targets ?? [])
-      .flatMap((t) => t.findings ?? [])
-      .map((f) => f.code)
-      .filter((c) => c.startsWith("contracts.") || c === "openapi.generated-stale"),
+    codes: findings.map((f) => f.code).filter((c) => c.startsWith("contracts.") || c === "openapi.generated-stale"),
     out: run.out,
+    stale: findings.find((f) => f.code === "openapi.generated-stale"),
   };
+}
+
+interface StaleFinding {
+  code: string;
+  message: string;
+  details?: string[];
 }
 
 describe("the generated contract check", () => {
@@ -104,6 +109,35 @@ describe("the generated contract check", () => {
     // A warning, never an error: the divergence is a fact to review, and the
     // human decides which side is right. loam never copies the file across.
     expect(out).not.toContain("copied");
+  });
+
+  it("names the operationIds that moved, both ways, so a removed endpoint reads apart from a reworded one", async () => {
+    // One whole-document digest made 29 vanished endpoints and a reworded
+    // description the same warning. The digest still decides; the sets explain.
+    const { stale } = await withBuild({ openapi: "build/openapi.yaml" }, (committed) => {
+      const doc = parseYaml(committed) as { paths: Record<string, Record<string, { operationId?: string }>> };
+      const [firstPath] = Object.keys(doc.paths);
+      const gone = Object.values(doc.paths[firstPath!]!).map((op) => op.operationId).filter(Boolean);
+      expect(gone.length).toBeGreaterThan(0);
+      delete doc.paths[firstPath!];
+      doc.paths["/payments/{id}/void"] = {
+        post: { operationId: "voidPayment", responses: { "200": { description: "ok" } } } as { operationId: string },
+      };
+      return stringifyYaml(doc);
+    });
+    expect(stale?.details).toContain("served, not in the committed copy: voidPayment");
+    expect(stale?.details?.some((d) => d.startsWith("committed, no longer served: "))).toBe(true);
+    expect(stale?.message).toMatch(/1 operation\(s\) served but not committed, [1-9]\d* committed but no longer served/);
+  });
+
+  it("says the operationId sets agree when only an operation's prose moved", async () => {
+    const { stale } = await withBuild({ openapi: "build/openapi.yaml" }, (committed) => {
+      const doc = parseYaml(committed) as { info: Record<string, unknown> };
+      doc.info["description"] = "Reworded by a newer generator.";
+      return stringifyYaml(doc);
+    });
+    expect(stale?.message).toContain("Every operationId matches");
+    expect(stale?.details ?? []).toEqual([]);
   });
 
   it("reports contracts.source-missing when the build has not run", async () => {

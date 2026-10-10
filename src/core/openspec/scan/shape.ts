@@ -12,8 +12,9 @@
  */
 import { readFile } from "node:fs/promises";
 import { ownValue } from "../../kernel/records.js";
+import { fenceTracker } from "../../kernel/fences.js";
 import { isRequirementsHeading, parseRequirements, sectionHeadings } from "../../document/parse.js";
-import { requirementIdProblems } from "../../document/spec.js";
+import { KIND_RE, requirementIdProblems } from "../../document/spec.js";
 import { type Ingest } from "./workspace.js";
 import { portable } from "./walk.js";
 import {
@@ -36,12 +37,58 @@ export function addCounts(target: OpenSpecCounts, source: OpenSpecCounts): void 
   target.scenarios += source.scenarios;
 }
 
+/**
+ * An ATX heading's optional closing run — `### Requirement: Foo ###` renders as
+ * `Foo`, so the run is not part of the name (OpenSpec 1.13.1 strips it the same
+ * way). Only a run after a space or tab closes a heading, so `C#` keeps its `#`.
+ */
+const CLOSING_HASHES = /[ \t]+#+[ \t]*$/;
+
+/** A REMOVED entry written as a bullet carrying the heading — any CommonMark marker. */
+const REMOVED_BULLET = /^\s*[-*+]\s*`?###\s*Requirement:\s*(.+?)`?\s*$/;
+
 export function cleanRenameName(value: string): string {
   return value
     .trim()
     .replace(/^`|`$/g, "")
     .replace(/^###\s+Requirement:\s*/i, "")
+    .replace(CLOSING_HASHES, "")
     .trim();
+}
+
+/**
+ * OpenSpec's requirement grammar, as `parseRequirements` reads it. The two read
+ * the same Markdown except where OpenSpec accepts more, and every OpenSpec
+ * read in the migration goes through here so audit and `--apply` cannot
+ * disagree about a name:
+ *
+ * - a closing `#` run on a `### Requirement:` / `#### Scenario:` heading is
+ *   dropped. Kept, a living `### Requirement: Invoice totals ###` audited
+ *   "ready", staged under the name `Invoice totals ###`, and the change's
+ *   MODIFIED `Invoice totals` then failed `loam validate` as
+ *   `delta.modified-unknown` with a "Did you mean ADDED?" that sent the author
+ *   the wrong way.
+ * - a `## REMOVED Requirements` list of bullets (`-`, `*` or `+`) each naming
+ *   a requirement heading reads as that heading. v1.9.0 already accepted the
+ *   `-` list and 1.13.0 added the other two markers; loam read neither, so a
+ *   removal-only change was `openspec.change-empty`.
+ *
+ * A line-for-line rewrite, never a reflow, so every line number a finding
+ * cites still points at the author's file — and loam's own parser is not
+ * touched: a closing run in a loam document is the author's to keep.
+ */
+export function openspecRequirements(raw: string): ReturnType<typeof parseRequirements> {
+  const lines = raw.replace(/^\uFEFF/, "").split(/\r?\n/);
+  const fenced = fencedLines(lines);
+  let removed = false;
+  const rewritten = lines.map((line, index) => {
+    if (fenced[index] === true) return line;
+    if (/^##\s+/.test(line) && !line.startsWith("###")) removed = KIND_RE.exec(line)?.[1]?.toUpperCase() === "REMOVED";
+    const bullet = removed ? REMOVED_BULLET.exec(line) : null;
+    const heading = bullet === null ? line : `### Requirement: ${bullet[1]!}`;
+    return /^(###\s+Requirement:|####\s+Scenario:)/.test(heading) ? heading.replace(CLOSING_HASHES, "") : heading;
+  });
+  return parseRequirements(rewritten.join("\n"));
 }
 
 export function changeSpecCoordinates(
@@ -54,21 +101,18 @@ export function changeSpecCoordinates(
 }
 
 /**
- * Which lines are fenced content, marker included \u2014 the same rule
- * `parseRequirements` and `sectionHeadings` apply, which spec.ts keeps private.
+ * Which lines are fenced content, marker included — the same rule
+ * `parseRequirements` and `sectionHeadings` apply, read from the one place it
+ * is spelled (`core/kernel/fences.ts`). This used to be a private copy of it,
+ * written while the rule still lived inside the parser module; a second copy is
+ * how two walks of one file come to disagree about where a fence ends.
  * Without it a FROM/TO line inside a fenced example of the rename syntax became
  * a phantom pair, and the only cure was editing the OpenSpec source migration
  * promises never to touch.
  */
 export function fencedLines(lines: string[]): boolean[] {
-  let fence: string | null = null;
-  return lines.map((line) => {
-    const marker = /^\s*(```|~~~)/.exec(line);
-    if (marker === null) return fence !== null;
-    if (fence === null) fence = marker[1]!;
-    else if (fence === marker[1]!) fence = null;
-    return true;
-  });
+  const fenced = fenceTracker();
+  return lines.map((line) => fenced(line));
 }
 
 export function renameUsages(
@@ -90,13 +134,17 @@ export function renameUsages(
     for (let line = heading.line; line < end - 1; line += 1) {
       if (fenced[line] === true) continue;
       const text = lines[line] ?? "";
-      const from = /^\s*-\s*FROM:\s*(.*?)\s*$/i.exec(text);
+      // The bullet is optional and any CommonMark marker counts, as in
+      // OpenSpec since 1.13.0 (v1.9.0 already took a bare `FROM:`): a `*`
+      // pair used to read as no pair at all, `openspec.renamed-malformed`
+      // saying "must contain a FROM/TO pair" about a section that had one.
+      const from = /^\s*[-*+]?\s*FROM:\s*(.*?)\s*$/i.exec(text);
       if (from !== null) {
         if (pendingFrom !== null) pairs.push({ from: pendingFrom, to: null });
         pendingFrom = cleanRenameName(from[1] ?? "");
         continue;
       }
-      const to = /^\s*-\s*TO:\s*(.*?)\s*$/i.exec(text);
+      const to = /^\s*[-*+]?\s*TO:\s*(.*?)\s*$/i.exec(text);
       if (to !== null) {
         pairs.push({ from: pendingFrom, to: cleanRenameName(to[1] ?? "") });
         pendingFrom = null;
@@ -146,7 +194,7 @@ export function inspectLivingShape(
   raw: string,
   unsupported: OpenSpecUnsupportedShape[],
 ): void {
-  const requirements = parseRequirements(raw);
+  const requirements = openspecRequirements(raw);
   if (requirements.length === 0) {
     issue(unsupported, "living", {
       code: "openspec.living-empty",
@@ -181,7 +229,7 @@ export function inspectChangeShape(
   found: { scope: "active" | "archive"; renames: OpenSpecRenamedUsage[] },
 ): void {
   const { scope, renames } = found;
-  const requirements = parseRequirements(raw);
+  const requirements = openspecRequirements(raw);
   const fileRenames = renames.filter((rename) => rename.path === path);
   for (const rename of fileRenames) {
     if (rename.from === null || rename.from === "" || rename.to === null || rename.to === "") {
@@ -258,7 +306,7 @@ export async function inspectSpecFile(
   const { root, mapping, renamed, unsupported } = ingest;
   const path = portable(root, absolute);
   const raw = await readFile(absolute, "utf8");
-  const requirements = parseRequirements(raw);
+  const requirements = openspecRequirements(raw);
   const counts = { specFiles: 1, ...countsFor(requirements) };
   const issueScope = kind === "living" ? "living" : scope ?? "active";
   for (const problem of requirementIdProblems(requirements)) {

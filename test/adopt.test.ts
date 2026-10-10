@@ -264,6 +264,10 @@ describe("what already exists around the service", () => {
     expect(b.landscape.elements).toEqual([]);
     expect(b.landscape.modelled).toBe(false);
     expect(JSON.stringify(b)).toContain("landscape.service-unmodelled");
+    // The element it hands over is spelled the way `loam seed` spells one, so a
+    // seeded fleet's map, its briefs and `loam new` all name the box alike —
+    // the brief used to suggest `billingService`, a third convention.
+    expect(target(b, "landscape.likec4").example).toContain("svc_billing_service = softwareSystem 'billing-service'");
   });
 
   it("degrades honestly when the landscape does not parse, instead of reporting an empty fleet", async () => {

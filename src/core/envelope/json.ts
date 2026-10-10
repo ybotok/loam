@@ -146,7 +146,7 @@ export type ErrorCode =
   | "seed-duplicate-service"
   /** A service's `subsystem:` in fleet.yaml names nothing `subsystems:` declares; the message carries a did-you-mean hint over the names the file really declares. Fix the spelling (or add the subsystem) and re-run. */
   | "seed-unknown-subsystem"
-  /** architecture/landscape.likec4 carries hand edits (the line-1 stamp's digest no longer matches) or was authored some other way (no stamp, and not the scaffold's untouched stub). Seed never overwrites human work and nothing was written; re-running cannot succeed until the file is deleted or the edits are folded into fleet.yaml. */
+  /** architecture/landscape.likec4 carries hand edits (the line-1 stamp's digest no longer matches) or was authored some other way (no stamp, and not the scaffold's untouched stub). Seed never overwrites human work and nothing was written; re-running cannot succeed until the file is deleted, which loses nothing only while every edit is something fleet.yaml can say. Once an edge carries an op (which fleet.yaml cannot), the map grows through `loam adopt` and feature C4 deltas instead, never through seed again. */
   | "seed-landscape-edited"
   | "internal";
 
