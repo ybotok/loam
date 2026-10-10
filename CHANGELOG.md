@@ -10,6 +10,25 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Fixed — a writer waiting on the lock no longer deletes the next writer's live lock
+
+No code, flag, path or payload key was added, changed or retired. What changes is that concurrent
+writers no longer fail, or share one commit window, when a lock holder exits while another writer
+waits for it.
+
+- **A stale `.loam-lock` is broken only while the holder judged dead still holds it.** A writer
+  that finds the lock held reads the holder, and if that pid no longer exists on this host, it
+  breaks the lock. Under CPU load the holder could release normally and exit between that read and
+  the pid check, and a third writer could take the lock in the same gap. The waiter then deleted
+  the third writer's live lock and took one of its own, so two writers were inside one commit window.
+  One of four concurrent `loam gherkin --json` runs failed as `merge-failed` (`ENOENT … rename
+  '….feature.loam-<pid>-…tmp'`): the second writer's recovery read the first's in-flight journal as
+  an interrupted commit and swept its staged files. The code is shared by every writer that takes
+  the lock (`archive`, `unarchive`, `new`, `seed`, `rebase`, `subsystem`, `verify --record`, `vouch`,
+  `gherkin`), and the defect is present in `0.2.0-alpha.8`. The waiter now re-reads the lock after
+  its verdict, and moves it to a private name before removing it. Anything it moved that is not the
+  lock it judged goes back in place. A crashed holder's lock is still reclaimed as before.
+
 ### Fixed — `validate --all --base` grades the landscape by what the branch changed in it
 
 No code, flag, path or payload key was added, changed or retired; the unscoped `validate --all` is
