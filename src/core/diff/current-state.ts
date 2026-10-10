@@ -7,12 +7,14 @@
  * Containment discipline, per subject and per axis: an artifact that EXISTS
  * but cannot be read (non-UTF-8 spec bytes, a directory sitting where a file
  * belongs, broken contract YAML) degrades that one axis to `unreadable` with
- * its path — never a thrown enumeration, never an empty list a diff would
- * read as "everything was removed". Absence stays absence: a file deleted
+ * its path, and the hash of its bytes when there are bytes to hash — never a
+ * thrown enumeration, never an empty list a diff would read as "everything
+ * was removed". Absence stays absence: a file deleted
  * between the existence probe and the read is classified by its errno
  * (ENOENT), the same TOCTOU discipline `loadConfig` documents.
  */
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import type { Requirement } from "../document/spec.js";
 import type { Operation } from "../openapi/doc.js";
 import type { EventMessage } from "../asyncapi/model.js";
@@ -21,7 +23,7 @@ import { servicePathsAt } from "../repo/paths.js";
 import { inOrder } from "../kernel/concurrency.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 import type { FleetContext } from "../fleet-context.js";
-import type { AxisState, ServiceState } from "./base-state.js";
+import { bytesDigest, type AxisState, type ServiceState } from "./base-state.js";
 
 export interface CurrentFleet {
   /** By service id, in the enumeration's (sorted-walk) order. Ids the `ambiguous` map claims are excluded. */
@@ -36,10 +38,28 @@ export interface CurrentFleet {
   ambiguous: Map<string, string[]>;
 }
 
-function readFailure(e: unknown, rel: string): { kind: "absent" } | { kind: "unreadable"; path: string; error: string } {
+/**
+ * The unreadable arm, carrying the hash of the bytes that would not read
+ * (`AxisState`'s `bytes`, which the base side's `axisFrom` fills the same
+ * way). The readers this module goes through hand back a parsed document and
+ * not its bytes, so this is a second read — paid only on this path, which a
+ * healthy fleet never takes.
+ */
+async function unreadableAt(abs: string, rel: string, error: string): Promise<AxisState<never>> {
+  try {
+    return { kind: "unreadable", path: rel, error, bytes: bytesDigest(await readFile(abs)) };
+  } catch {
+    // No bytes to hash (a directory where the file belongs, a file deleted
+    // since the first read): an unhashed side proves no identity, so the axis
+    // suspends exactly as it always did.
+    return { kind: "unreadable", path: rel, error };
+  }
+}
+
+async function readFailure(e: unknown, file: { abs: string; rel: string }): Promise<AxisState<never>> {
   const errno = e as NodeJS.ErrnoException;
   if (errno.code === "ENOENT") return { kind: "absent" };
-  return { kind: "unreadable", path: rel, error: e instanceof Error ? e.message : String(e) };
+  return unreadableAt(file.abs, file.rel, e instanceof Error ? e.message : String(e));
 }
 
 /** One spec-axis file (`spec.md` / `arch.spec.md`) as parsed requirements. */
@@ -50,7 +70,7 @@ async function requirementsAxis(context: FleetContext, abs: string, rel: string)
   } catch (e) {
     // decodeDocument's non-UTF-8 refusal lands here too: bytes that would
     // parse as zero requirements must suspend the axis, not empty it.
-    return readFailure(e, rel);
+    return readFailure(e, { abs, rel });
   }
 }
 
@@ -59,10 +79,10 @@ async function openapiAxis(context: FleetContext, abs: string, rel: string): Pro
   try {
     const doc = await context.readOpenapi(abs);
     return doc.unreadable
-      ? { kind: "unreadable", path: rel, error: doc.error ?? "not a readable OpenAPI document" }
+      ? await unreadableAt(abs, rel, doc.error ?? "not a readable OpenAPI document")
       : { kind: "read", value: doc.ops.filter((op) => !op.remove) };
   } catch (e) {
-    return readFailure(e, rel);
+    return readFailure(e, { abs, rel });
   }
 }
 
@@ -71,10 +91,10 @@ async function asyncapiAxis(context: FleetContext, abs: string, rel: string): Pr
   try {
     const doc = await context.readAsyncapi(abs);
     return doc.unreadable
-      ? { kind: "unreadable", path: rel, error: doc.error ?? "not a readable AsyncAPI document" }
+      ? await unreadableAt(abs, rel, doc.error ?? "not a readable AsyncAPI document")
       : { kind: "read", value: doc.messages.filter((m) => m.remove !== true) };
   } catch (e) {
-    return readFailure(e, rel);
+    return readFailure(e, { abs, rel });
   }
 }
 

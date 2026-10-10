@@ -46,7 +46,9 @@ export const DIFF_COMMAND = `- \`loam diff --base <ref>\` reports the fleet-mean
   (\`breaking: true\` in \`--json\`), or a subject whose artifact could not be
   read on either side — those axes are SUSPENDED and reported (\`unreadable\`
   in the payload and the summary), never graded as "nothing changed" or
-  "everything added". Refusals reuse existing codes: \`repository-unavailable\`
+  "everything added". An unreadable openapi.yaml or asyncapi.yaml whose bytes
+  the base holds identically is skipped instead: the branch did not touch it.
+  Refusals reuse existing codes: \`repository-unavailable\`
   when the docs repo has no git history to ask, and \`unknown-target\` when
   \`--base\` resolves to no commit there. For the byte-level breaking-change
   catalogue, run oasdiff (OpenAPI) or \`asyncapi diff\` (AsyncAPI) on the two

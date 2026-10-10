@@ -12,7 +12,10 @@
  * error-severity finding (a removal the fleet still consumes — which is what
  * makes this a free gate on a docs-repo PR), and for a diff with suspended
  * axes — "nobody could look" must not exit as "nothing changed"
- * (`loam context` set that precedent for silent holes).
+ * (`loam context` set that precedent for silent holes). A contract that cannot
+ * be read but is byte-identical at the base is not a suspended axis: the branch
+ * did not touch it, and core/diff/semantic.ts skips it rather than failing every
+ * PR over a file nobody changed.
  */
 import type { Command } from "commander";
 import { loadConfig } from "../../core/envelope/config.js";
