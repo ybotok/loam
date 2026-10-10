@@ -54,3 +54,13 @@ export async function inOrder<T, R>(
   );
   return out;
 }
+
+/** One in-flight promise per key, created on first ask — the memo idiom, once. */
+export function memo<T>(store: Map<string, Promise<T>>, k: string, make: () => Promise<T>): Promise<T> {
+  let pending = store.get(k);
+  if (pending === undefined) {
+    pending = make();
+    store.set(k, pending);
+  }
+  return pending;
+}
