@@ -25,6 +25,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadProjectBatch, type ProjectRequest } from "../src/core/c4/project/batch.js";
 import { loadProject, type ProjectDoc } from "../src/core/c4/project/load.js";
+import { flattenModel, type ReadableModel } from "../src/core/c4/likec4.js";
 import { makeTmpDir, writeFiles } from "./helpers/harness.js";
 
 /** The fleet map: three services bound to directories, plus a broker with a nested topic. */
@@ -228,4 +229,63 @@ describe("loadProjectBatch degrades rather than inventing an answer", () => {
       await rm(root, { recursive: true, force: true });
     }
   }, 60_000);
+});
+
+/**
+ * Why the parity above could fail on an unchanged commit, pinned without luck.
+ *
+ * A scheduled CI run on 2026-09-28 failed the relationships assertion: the
+ * batch and the per-project load handed payment-service's two edges back in
+ * opposite orders. LikeC4 keys its relations by a hash of the document URI,
+ * every loader stages under a fresh random folder, and a JavaScript object
+ * enumerates an all-digit key ahead of every other — so roughly one hash in
+ * 2,200 moved its edge to the front on that run only. A test that loads twice
+ * and compares can only catch that by luck, so this one goes to the function
+ * every loader shares and hands it the SAME edges in every order there is.
+ */
+describe("relationship order is a function of the documents, never of the run", () => {
+  type RawRel = ReturnType<ReadableModel["relationships"]> extends Iterable<infer R> ? R : never;
+  const raw = (source: string, target: string, title: string | null, extra: Partial<RawRel> = {}): RawRel => ({
+    source: { id: source },
+    target: { id: target },
+    title,
+    ...extra,
+  });
+  const EDGES: RawRel[] = [
+    raw("web", "orders", "Calls createOrder", { metadata: { op: "createOrder" } }),
+    raw("payments.api", "kafka.orderEvents", "Publishes authorizations"),
+    raw("web", "orders", "Calls createOrder", { metadata: { op: "cancelOrder" } }),
+    raw("web", "orders", null),
+    raw("web", "orders", ""),
+    raw("orders", "payments", "Charges", { tags: ["critical"] }),
+  ];
+  function permutations(items: readonly RawRel[]): RawRel[][] {
+    if (items.length <= 1) return [[...items]];
+    return items.flatMap((item, i) =>
+      permutations([...items.slice(0, i), ...items.slice(i + 1)]).map((rest) => [item, ...rest]),
+    );
+  }
+  const flattenIn = (order: RawRel[]) =>
+    flattenModel({ elements: () => [], relationships: () => order }).relationships;
+
+  it("hands back one order for every one of the 720 orders LikeC4 could have produced", () => {
+    const all = permutations(EDGES);
+    expect(all).toHaveLength(720);
+    const first = JSON.stringify(flattenIn(all[0]!));
+    for (const order of all) expect(JSON.stringify(flattenIn(order))).toBe(first);
+  });
+
+  it("orders by source, target, title, op, publishes, consumes, tags — an absent title ahead of an empty one", () => {
+    const spelled = flattenIn([...EDGES].reverse()).map(
+      (r) => `${r.source}->${r.target}|${r.title === undefined ? "<none>" : r.title}|${r.op ?? ""}`,
+    );
+    expect(spelled).toEqual([
+      "orders->payments|Charges|",
+      "payments.api->kafka.orderEvents|Publishes authorizations|",
+      "web->orders|<none>|",
+      "web->orders||",
+      "web->orders|Calls createOrder|cancelOrder",
+      "web->orders|Calls createOrder|createOrder",
+    ]);
+  });
 });

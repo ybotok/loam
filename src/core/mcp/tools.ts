@@ -312,9 +312,9 @@ export const MCP_TOOLS: readonly McpTool[] = [
     description:
       "Print a workflow, support protocol or reference page, version-matched to this binary; reads no config and no docs repo, so it answers " +
       "before the repository is wired. Ask for loam-check DELIBERATELY: it is by far the largest protocol " +
-      "(its per-code fix tables are ~83 KB of the ~84 KB it prints), and noFixTables true returns the narrowed page " +
+      "(almost all of what it prints is its per-code fix tables), and noFixTables true returns the narrowed page " +
       "— every paragraph that introduces a table, none of the rows — after which loam_explain answers any one code " +
-      "a run reports in under 500 bytes. " +
+      "a run reports, on its own. " +
       "CLI equivalent: loam instructions [workflow] [args...] [--no-fix-tables] --json",
     positionals: [
       {

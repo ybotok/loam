@@ -5,7 +5,7 @@ import { readDynamicViews, type ParsedView } from "./parsed/dynamic-views.js";
 import { readGlobalStyleIds, readViewIds, type ViewIdClaim } from "./parsed/view-ids.js";
 import { readSpecification, type DocSpecification } from "./parsed/specification.js";
 import { readDeployment, type DeploymentModel } from "./parsed/deployment.js";
-import { descText, metaKey } from "./parsed/values.js";
+import { compareRels, descText, metaKey } from "./parsed/values.js";
 
 /** A parse/validation issue reported by LikeC4. */
 export interface LikeC4Error {
@@ -288,16 +288,19 @@ export function flattenModel(model: ReadableModel): { elements: Elem[]; relation
       tags: [...(e.tags ?? [])],
     };
   });
-  const relationships: Rel[] = [...model.relationships()].map((r) => ({
-    source: r.source.id,
-    target: r.target.id,
-    // LikeC4 reports an untitled edge as title: null — normalize to the declared `title?: string`.
-    title: r.title ?? undefined,
-    op: metaKey(r.metadata, "op"),
-    publishes: metaKey(r.metadata, "publishes"),
-    consumes: metaKey(r.metadata, "consumes"),
-    tags: [...(r.tags ?? [])],
-  }));
+  const relationships: Rel[] = [...model.relationships()]
+    .map((r) => ({
+      source: r.source.id,
+      target: r.target.id,
+      // LikeC4 reports an untitled edge as title: null — normalize to the declared `title?: string`.
+      title: r.title ?? undefined,
+      op: metaKey(r.metadata, "op"),
+      publishes: metaKey(r.metadata, "publishes"),
+      consumes: metaKey(r.metadata, "consumes"),
+      tags: [...(r.tags ?? [])],
+    }))
+    // One order for every run and machine: `compareRels` (./parsed/values.ts) says why LikeC4 gives none.
+    .sort(compareRels);
   return { elements, relationships };
 }
 

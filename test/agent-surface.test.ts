@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { diagnose } from "../src/core/doctor/doctor.js";
 import { scaffoldDocs } from "../src/core/docs.js";
 import { agentsStampLine } from "../src/core/agent/agents-stamp.js";
+import { plannedCommandFiles } from "../src/core/agent/scaffold.js";
 import { LOAM_VERSION } from "../src/core/envelope/version.js";
 import { makeTmpDir, runLoam, treeHashes } from "./helpers/harness.js";
 
@@ -356,6 +357,81 @@ describe("doctor reports the agent surface", () => {
       stamp: { present: true, version: LOAM_VERSION, stale: false },
     });
     expect(typeof report.agents.plannedFiles).toBe("number");
+  });
+});
+
+describe("doctor.agent-files-stale grades the body, not just the stamp", () => {
+  /** Every generated command and skill file `init` wrote into `svc`, absolute. */
+  function generatedFiles(svc: string): string[] {
+    const planned = plannedCommandFiles(svc, ["claude"]).map((f) => f.path);
+    expect(planned.length).toBeGreaterThan(0);
+    expect(planned.every((p) => existsSync(p))).toBe(true);
+    return planned;
+  }
+
+  /** Rewrite one file's stamp to name an older release, then apply `transform` to the result. */
+  async function backdate(path: string, transform: (text: string) => string = (t) => t): Promise<void> {
+    const text = await readFile(path, "utf8");
+    expect(text).toContain(agentsStampLine(LOAM_VERSION));
+    const older = text.replace(agentsStampLine(LOAM_VERSION), agentsStampLine("0.0.1"));
+    await writeFile(path, transform(older), "utf8");
+  }
+
+  const repoRelative = (svc: string, path: string): string =>
+    path.slice(svc.length + 1).split(/[\\/]/).join("/");
+
+  it("an older stamp over the body this loam writes is current — an upgrade that changed no pointer is silent", async () => {
+    // What every release used to do to every repo of a fleet: the stamp is in
+    // the bytes, so a release that did not change a word of a pointer still
+    // turned every pointer stale, and the warning was on everywhere, always.
+    const { svc } = await initialized();
+    for (const path of generatedFiles(svc)) await backdate(path);
+
+    const report = await diagnose(svc);
+
+    expect(report.agents.staleFiles).toEqual([]);
+    expect(codes(report.findings)).not.toContain("doctor.agent-files-stale");
+  });
+
+  it("the same, checked out with CRLF line endings", async () => {
+    // A Windows checkout with core.autocrlf hands back CRLF for a body nobody
+    // touched; that is not a body change either.
+    const { svc } = await initialized();
+    for (const path of generatedFiles(svc)) await backdate(path, (t) => t.replace(/\n/g, "\r\n"));
+
+    expect((await diagnose(svc)).agents.staleFiles).toEqual([]);
+  });
+
+  it("an older stamp over a body that is no longer this loam's is stale, and only that file", async () => {
+    const { svc } = await initialized();
+    const [first, ...rest] = generatedFiles(svc);
+    for (const path of rest) await backdate(path);
+    await backdate(first!, (t) => `${t}\nRun \`loam validate --all\` twice before anything else.\n`);
+
+    const report = await diagnose(svc);
+
+    expect(report.agents.staleFiles).toEqual([repoRelative(svc, first!)]);
+    const finding = report.findings.find((f) => f.code === "doctor.agent-files-stale");
+    expect(finding?.severity).toBe("warning");
+    expect(finding?.message).toContain(repoRelative(svc, first!));
+    expect(finding?.message).toContain("differ from the body");
+  });
+
+  it("a file with no stamp at all — the pre-stamp era — is stale", async () => {
+    const { svc } = await initialized();
+    const [first] = generatedFiles(svc);
+    const text = await readFile(first!, "utf8");
+    await writeFile(first!, text.replace(`${agentsStampLine(LOAM_VERSION)}\n`, ""), "utf8");
+
+    expect((await diagnose(svc)).agents.staleFiles).toEqual([repoRelative(svc, first!)]);
+  });
+
+  it("a customized body under a CURRENT stamp stays quiet: the stamp records that somebody reviewed it", async () => {
+    const { svc } = await initialized();
+    const [first] = generatedFiles(svc);
+    await writeFile(first!, `${await readFile(first!, "utf8")}\nOur team runs the gate twice.\n`, "utf8");
+
+    expect((await diagnose(svc)).agents.staleFiles).toEqual([]);
   });
 });
 

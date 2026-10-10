@@ -278,11 +278,14 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   \`doctor.likec4-config-missing\`, and the two about this repo's own generated
   command and skill files: \`doctor.agent-files-missing\` and
   \`doctor.agent-files-stale\`.
-  EXPECT the second one on the first \`loam doctor\` after an upgrade. It is not
-  evidence that anything was edited or broken: staleness reads the version
-  stamp only. Re-running \`loam init\` refreshes an unchanged pointer only when
-  its current bytes still match the digest recorded in \`loam.json\`; an
-  unrecorded or customized file stays in place for a human to review.
+  The second one fires only for a file whose body differs from the one this
+  loam writes AND whose stamp is missing or older — so after an upgrade, expect
+  it when the release changed the pointer text, never for a stamp-only
+  difference, and never for an edited body under a current stamp (that stamp is
+  the record that somebody reviewed it). Re-running \`loam init\` refreshes an
+  unchanged pointer only when its current bytes still match the digest
+  recorded in \`loam.json\`; an unrecorded or customized file stays in place
+  for a human to review.
 - \`loam rebase <FEAT>\` writes the baseline pins: \`Based-On:\` under every
   MODIFIED/REMOVED requirement in the feature's spec deltas, and
   \`x-loam-based-on\` on every operation in its openapi.yaml, from the living text
