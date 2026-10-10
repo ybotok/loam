@@ -28,6 +28,7 @@ import { featureCapabilityDeltas } from "./capabilities/delta/tree.js";
 import type { CapabilityTree } from "./capabilities/tree.js";
 import { conflictMarkerLines } from "./conflict-markers.js";
 import { decodeDocument } from "./kernel/document-bytes.js";
+import { memo } from "./kernel/concurrency.js";
 import { loadFile, type LoadedDoc } from "./c4/likec4.js";
 import { loadBatch } from "./c4/workspace.js";
 import { ServiceModels } from "./c4/prefetch/fleet.js";
@@ -135,6 +136,25 @@ export class FleetContext {
   }
 
   /**
+   * `memo`, counting the miss under `counter` — every read below is this one
+   * call. The count is taken when the load STARTS, inside the miss, so a
+   * second asker of an in-flight read is a hit and is never counted: the
+   * counters mean "work this invocation paid for", which is what the stats
+   * tests pin per axis.
+   */
+  private counted<T>(
+    store: Map<string, Promise<T>>,
+    k: string,
+    counter: keyof FleetContextStats,
+    make: () => Promise<T>,
+  ): Promise<T> {
+    return memo(store, k, () => {
+      this.counts[counter] += 1;
+      return make();
+    });
+  }
+
+  /**
    * The classified `services/` tree — the ONE enumeration this invocation
    * performs. `listServices` below derives its entries from this memo, so a
    * command that asks for both the fleet and the tree's findings (`validate
@@ -143,32 +163,17 @@ export class FleetContext {
    * where the walk now happens.
    */
   fleetTree(docsDir: DocsDir): Promise<FleetTree> {
-    const k = key(docsDir);
-    let pending = this.trees.get(k);
-    if (pending === undefined) {
-      this.counts.serviceEnumerations += 1;
-      pending = listFleetTree(docsDir);
-      this.trees.set(k, pending);
-    }
-    return pending;
+    return this.counted(this.trees, key(docsDir), "serviceEnumerations", () => listFleetTree(docsDir));
   }
 
   listServices(docsDir: DocsDir): Promise<ServiceEntry[]> {
-    const k = key(docsDir);
-    let pending = this.services.get(k);
-    if (pending === undefined) {
-      pending = this.fleetTree(docsDir).then(serviceEntries);
-      this.services.set(k, pending);
-    }
-    return pending;
+    return memo(this.services, key(docsDir), () => this.fleetTree(docsDir).then(serviceEntries));
   }
 
   listFeatures(docsDir: DocsDir, opts: { includeArchived?: boolean } = {}): Promise<FeatureEntry[]> {
     const k = `${key(docsDir)}\0${opts.includeArchived === true ? "all" : "active"}`;
-    let pending = this.features.get(k);
-    if (pending === undefined) {
-      this.counts.featureEnumerations += 1;
-      pending = listFeatures(docsDir, opts).then((entries) => {
+    return this.counted(this.features, k, "featureEnumerations", () =>
+      listFeatures(docsDir, opts).then((entries) => {
         // listFeatures has already enumerated every feature's specs/ directory;
         // seed the narrower lookup so validation/coherence do not read it again.
         for (const entry of entries) {
@@ -178,21 +183,14 @@ export class FleetContext {
           }
         }
         return entries;
-      });
-      this.features.set(k, pending);
-    }
-    return pending;
+      }),
+    );
   }
 
   featureSpecServices(featureDir: FeatureDir): Promise<RawServiceId[]> {
-    const k = key(featureDir);
-    let pending = this.featureServices.get(k);
-    if (pending === undefined) {
-      this.counts.featureServiceEnumerations += 1;
-      pending = featureSpecServices(featureDir);
-      this.featureServices.set(k, pending);
-    }
-    return pending;
+    return this.counted(this.featureServices, key(featureDir), "featureServiceEnumerations", () =>
+      featureSpecServices(featureDir),
+    );
   }
 
   /**
@@ -200,14 +198,9 @@ export class FleetContext {
    * than degraded when they are not UTF-8 — see NotUtf8DocumentError.
    */
   readText(path: string): Promise<string> {
-    const k = key(path);
-    let pending = this.texts.get(k);
-    if (pending === undefined) {
-      this.counts.textReads += 1;
-      pending = readFile(path).then((bytes) => decodeDocument(bytes, path));
-      this.texts.set(k, pending);
-    }
-    return pending;
+    return this.counted(this.texts, key(path), "textReads", () =>
+      readFile(path).then((bytes) => decodeDocument(bytes, path)),
+    );
   }
 
   /**
@@ -221,36 +214,17 @@ export class FleetContext {
   }
 
   readRequirements(path: string): Promise<Requirement[]> {
-    const k = key(path);
-    let pending = this.requirements.get(k);
-    if (pending === undefined) {
-      this.counts.requirementParses += 1;
-      pending = this.readText(path).then(parseRequirements);
-      this.requirements.set(k, pending);
-    }
-    return pending;
+    return this.counted(this.requirements, key(path), "requirementParses", () =>
+      this.readText(path).then(parseRequirements),
+    );
   }
 
   readOpenapi(path: string): Promise<OpenapiDoc> {
-    const k = key(path);
-    let pending = this.openapis.get(k);
-    if (pending === undefined) {
-      this.counts.openapiParses += 1;
-      pending = readOpenapi(path);
-      this.openapis.set(k, pending);
-    }
-    return pending;
+    return this.counted(this.openapis, key(path), "openapiParses", () => readOpenapi(path));
   }
 
   readAsyncapi(path: string): Promise<AsyncapiDoc> {
-    const k = key(path);
-    let pending = this.asyncapis.get(k);
-    if (pending === undefined) {
-      this.counts.asyncapiParses += 1;
-      pending = readAsyncapi(path);
-      this.asyncapis.set(k, pending);
-    }
-    return pending;
+    return this.counted(this.asyncapis, key(path), "asyncapiParses", () => readAsyncapi(path));
   }
 
   /**
@@ -261,14 +235,9 @@ export class FleetContext {
    * why the functions there take plain data or a `read` function, never a FleetContext.
    */
   capabilities(docsDir: DocsDir): Promise<CapabilityVocabulary> {
-    const k = key(docsDir);
-    let pending = this.capabilityVocabularies.get(k);
-    if (pending === undefined) {
-      this.counts.capabilityParses += 1;
-      pending = readCapabilityVocabulary(docsDir);
-      this.capabilityVocabularies.set(k, pending);
-    }
-    return pending;
+    return this.counted(this.capabilityVocabularies, key(docsDir), "capabilityParses", () =>
+      readCapabilityVocabulary(docsDir),
+    );
   }
 
   /**
@@ -283,14 +252,9 @@ export class FleetContext {
    * FleetContext, so `src/core/capabilities/` never imports this module back.
    */
   featureCapabilityDeltas(featureDir: FeatureDir): Promise<CapabilityTree> {
-    const k = key(featureDir);
-    let pending = this.featureCapabilities.get(k);
-    if (pending === undefined) {
-      this.counts.featureCapabilityWalks += 1;
-      pending = featureCapabilityDeltas(featureDir);
-      this.featureCapabilities.set(k, pending);
-    }
-    return pending;
+    return this.counted(this.featureCapabilities, key(featureDir), "featureCapabilityWalks", () =>
+      featureCapabilityDeltas(featureDir),
+    );
   }
 
   async operations(path: string): Promise<Operation[]> {
@@ -314,14 +278,7 @@ export class FleetContext {
    */
 
   loadLikeC4(path: string): Promise<LoadedDoc> {
-    const k = key(path);
-    let pending = this.likec4.get(k);
-    if (pending === undefined) {
-      this.counts.likec4Loads += 1;
-      pending = loadFile(path);
-      this.likec4.set(k, pending);
-    }
-    return pending;
+    return this.counted(this.likec4, key(path), "likec4Loads", () => loadFile(path));
   }
 
   /**
