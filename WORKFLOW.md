@@ -277,6 +277,17 @@ That is the question asked honestly (a deploy joins documents nobody has re-read
 another team's queue: a pipeline that must not wait on it runs `gate` without `--strict` and
 branches on the `content.stale` findings in `checks[]` itself.
 
+Which features it grades is the one thing a pipeline has to say. Without `--since`, the gate reads
+**in-flight features only**: a feature leaves the check the moment it is archived, so a slice that
+deploys after its feature shipped is gated without it — and under `--strict`, archiving would be
+the cheapest way past an unverified-feature warning. `loam gate --since <ref>` closes that: pass
+the docs-repo commit your last deploy recorded, and every feature archived after it (its
+`features/archive/<FEAT>/` directory absent at the ref) that touches the service is graded too,
+under the same `gate.feature-unverified`, its `features[]` row carrying `archived: true`. The ref is
+read from the docs repo's own git exactly as `loam diff --base` reads its base, with the same
+refusals when git cannot answer. loam stores nothing for it — the pipeline already knows which docs
+commit it deployed from.
+
 **`loam diff` does not add one either — it is the review lens.** On a docs-repo PR,
 `loam diff --base origin/main` says what the branch *changes* in fleet-meaningful terms: services,
 requirements (by identity and content digest, so a rebase pin is not a change), operations,

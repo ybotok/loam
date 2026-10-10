@@ -286,6 +286,7 @@ model {
   loam.commands.explore -> loam.core.repo
 
   loam.commands.gate -> loam.commands.policy
+  loam.commands.gate -> loam.core.diff
   loam.commands.gate -> loam.core.envelope
   loam.commands.gate -> loam.core.fleet_context
   loam.commands.gate -> loam.core.gate
@@ -372,6 +373,7 @@ model {
   loam.commands.open -> loam.core.repo
   loam.commands.open -> loam.core.workspace
 
+  loam.commands.policy -> loam.core.diff
   loam.commands.policy -> loam.core.envelope
   loam.commands.policy -> loam.core.explain
   loam.commands.policy -> loam.core.repo

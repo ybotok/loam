@@ -18,10 +18,9 @@ import type { Command } from "commander";
 import { loadConfig } from "../../core/envelope/config.js";
 import { emitJson, fail, reportNoConfig } from "../../core/envelope/json.js";
 import { findingJson } from "../../core/vocabulary/report.js";
-import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "../policy/gate.js";
+import { baseOrRefuse, docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "../policy/gate.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { FleetContext } from "../../core/fleet-context.js";
-import { resolveBase } from "../../core/diff/base-git.js";
 import { readBaseFleet } from "../../core/diff/base-state.js";
 import { readCurrentFleet } from "../../core/diff/current-state.js";
 import { victimIndex } from "../../core/diff/victims.js";
@@ -51,35 +50,21 @@ export function registerDiff(program: Command): void {
       // fleet, and a docsDir with no services/ has no fleet to diff.
       if (!docsRepoReady(json, docsDir, "services")) return;
 
-      const base = await resolveBase(docsDir, opts.base);
       // Unlike provenance's "git will not say", diff REFUSES when git cannot
       // answer: without the base there is no honest diff, and a silently
-      // empty base would report the whole fleet as added.
-      if (base.kind === "no-git") {
-        fail(
-          json,
-          "repository-unavailable",
-          `The docs repo at ${docsDir} is not somewhere git can answer from (${base.detail}) — ` +
-            `loam diff reads the base state with read-only git questions (rev-parse/ls-tree/show), so it needs the docs repo ` +
-            `to be a git checkout with the base ref present. Clone the docs repo with its history, then re-run.`,
-        );
-        return;
-      }
-      if (base.kind === "no-ref") {
-        fail(
-          json,
-          "unknown-target",
-          `--base ${opts.base} does not resolve to a commit in the docs repo at ${docsDir}` +
-            `${base.detail === "" ? "" : ` (${base.detail})`}. ` +
-            `Pass a ref that exists there — main, origin/main, a tag or a commit sha — fetching first if it lives on the remote.`,
-        );
-        return;
-      }
+      // empty base would report the whole fleet as added. The two refusals
+      // are `loam gate --since`'s too, so they live in commands/policy/gate.ts.
+      const base = await baseOrRefuse(json, docsDir, {
+        flag: "--base",
+        ref: opts.base,
+        reads: "loam diff reads the base state",
+      });
+      if (base === null) return;
 
       const context = new FleetContext();
       let diff: FleetDiff;
       try {
-        const baseFleet = await readBaseFleet({ docsDir, commit: base.commit, prefix: base.prefix });
+        const baseFleet = await readBaseFleet(base);
         if (baseFleet.kind === "failed") {
           fail(
             json,

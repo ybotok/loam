@@ -6,6 +6,17 @@
  * limit; this is the one check with a per-feature phase of its own, so it is
  * the seam.
  *
+ * Without `--since` it reads IN-FLIGHT features only, so a feature leaves the
+ * check the moment it is archived — and archive reads no verification record,
+ * deliberately (verify never gates the merge). Under `--strict` that made
+ * archiving the cheapest way past this check's warning, on a draft service
+ * and on a vouched one alike when the feature changed only a contract
+ * (`content_digest` covers the spec bodies, not openapi.yaml/asyncapi.yaml, so
+ * freshness cannot catch it either). `--since <ref>` closes it without new
+ * state: every feature archived after the docs commit the pipeline last
+ * deployed from is graded too, by the same frozen `verificationState`, under
+ * the same code, its row marked `archived: true`.
+ *
  * Report, never fail: every finding here is a warning, by the item's own
  * design — a deploy gate that hard-failed on unverified work would teach
  * everyone that the cheapest way past it is an empty record.
@@ -21,7 +32,7 @@ import type { VerifyNotice } from "../verify/record.js";
 import type { FleetContext } from "../fleet-context.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 import type { RawServiceId } from "../kernel/ids/service.js";
-import { unreadableSubject, type GateFeature } from "./report.js";
+import { unreadableSubject, type GateFeature, type GateSince } from "./report.js";
 
 type VerificationRow =
   | { kind: "read"; feature: FeatureEntry; state: VerificationState; notice: VerifyNotice | null }
@@ -31,19 +42,26 @@ export interface VerificationCheckRequest {
   docsDir: DocsDir;
   service: RawServiceId;
   fleet: FleetContext;
+  since?: GateSince;
 }
 
 export async function verificationCheck(
   req: VerificationCheckRequest,
 ): Promise<{ features: GateFeature[]; findings: Finding[] }> {
-  const active = await listFeatures(req.docsDir, {}, req.fleet);
+  const { since } = req;
+  const all = await listFeatures(req.docsDir, { includeArchived: since !== undefined }, req.fleet);
   // "Touching" = carries a specs/<svc>/ delta — the same definition
   // `status --service` answers with. A feature whose C4 delta merely draws an
   // edge into the service is deliberately out: counting it needs a delta parse
-  // per active feature, and it can be added additively if a fleet asks.
-  const touching = active
+  // per active feature, and it can be added additively if a fleet asks. An
+  // archived feature keeps its specs/ under features/archive/, so the one
+  // definition answers for both sides. "Archived after the ref" is "its
+  // archive directory was not there at the ref"; a feature whose directory
+  // WAS there shipped in an earlier deploy and is not this one's to answer for.
+  const touching = all
     .filter((f) => f.services.includes(req.service))
-    .sort((a, b) => compareIds(a.id, b.id));
+    .filter((f) => !f.archived || (since !== undefined && !since.archivedAtRef.has(f.dirName)))
+    .sort((a, b) => compareIds(a.id, b.id) || compareIds(a.dirName, b.dirName));
   // COST ACCEPTED: each touching feature with a record derives its checklist,
   // which parses its delta. That is the per-feature cost
   // core/status/fleet/fleet.ts refuses for the WHOLE fleet; a deploy-time
@@ -53,8 +71,10 @@ export async function verificationCheck(
   // run, not one per feature) and the batch prefetch below genuinely seeds
   // the delta parses. The prefetch is an accelerator only: a host that cannot
   // batch degrades to per-feature parses with identical findings.
+  // An archived feature never derives a checklist (its record is frozen, see
+  // `verificationState`), so prefetching its delta would parse for nobody.
   await req.fleet.prefetchLikeC4(
-    touching.filter((f) => f.has.delta).map((f) => featurePaths(f.dir).delta),
+    touching.filter((f) => !f.archived && f.has.delta).map((f) => featurePaths(f.dir).delta),
   );
   // inOrder caps the workspaces in flight and keeps the rows in feature order.
   const rows = await inOrder(touching, async (f): Promise<VerificationRow> => {
@@ -72,8 +92,8 @@ export async function verificationCheck(
       findings.push(row.finding);
       continue;
     }
-    features.push({ id: row.feature.id, ...row.state });
-    findings.push(...featureFindings(row, req.service));
+    features.push({ id: row.feature.id, ...row.state, ...(row.feature.archived ? { archived: true } : {}) });
+    findings.push(...featureFindings(row, req.service, since?.ref));
   }
   return { features, findings };
 }
@@ -81,6 +101,7 @@ export async function verificationCheck(
 function featureFindings(
   row: { feature: FeatureEntry; state: VerificationState; notice: VerifyNotice | null },
   service: string,
+  since: string | undefined,
 ): Finding[] {
   const { feature, state, notice } = row;
   if (state.verdict === "verified") return [];
@@ -103,7 +124,23 @@ function featureFindings(
   }
   const verify = `\`loam verify ${feature.id} --json\``;
   const open = state.unconfirmed + state.unanswered;
+  const claimsOpen = `${open} of ${state.claims} claim(s) on ${feature.id} are open (${state.unconfirmed} unconfirmed, ${state.unanswered} unanswered)`;
   const message = (): string => {
+    // A row `--since` added. Its record is frozen history: `loam verify` reads
+    // it back and refuses to re-record it (commands/verify/verify.ts), so the
+    // in-flight remedies below — derive, answer, re-derive — would send a
+    // deploy pipeline to a command that cannot run. What it CAN be told is
+    // that this deploy carries the feature unchecked, and the one way to
+    // reopen it. `verificationState` never marks an archived record stale.
+    if (feature.archived) {
+      const shipped = `${feature.id} touches '${service}' and was archived after ${since ?? "the --since ref"}`;
+      const reopen = `Its record is frozen history: ${verify} reads it back, and \`loam unarchive ${feature.id}\` re-opens the feature if its claims must be answered before this deploy.`;
+      if (state.state === "absent") return `${shipped} with no verification record — nothing was checked before it shipped. ${reopen}`;
+      if (state.state === "unreadable") return `${shipped} with a verification.yaml that does not read as a record. ${reopen}`;
+      return state.claims === 0
+        ? `${shipped} with a record that answers no claims at all. ${reopen}`
+        : `${shipped}, and ${claimsOpen}. ${reopen}`;
+    }
     switch (state.state) {
       case "absent":
         return `${feature.id} touches '${service}' and has no verification record — nothing has been checked. Derive the checklist and answer it: ${verify}.`;
@@ -114,7 +151,7 @@ function featureFindings(
       case "recorded":
         return state.claims === 0
           ? `${feature.id}'s record answers no claims at all — nothing was asked, so nothing was checked. ${verify} re-derives the checklist.`
-          : `${open} of ${state.claims} claim(s) on ${feature.id} are open (${state.unconfirmed} unconfirmed, ${state.unanswered} unanswered) — close them with evidence: ${verify}.`;
+          : `${claimsOpen} — close them with evidence: ${verify}.`;
       default: {
         // A fifth record state must land here as a build failure, not fall
         // through into some rung nobody decided (verificationStatus holds the
