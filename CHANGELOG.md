@@ -10,6 +10,30 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Fixed — `validate --all --base` grades the landscape by what the branch changed in it
+
+No code, flag, path or payload key was added, changed or retired; the unscoped `validate --all` is
+unchanged.
+
+- **A call edge the branch adds or edits in `architecture/` is graded against its provider's
+  contract**, even when the provider is not in scope. README's own example — `authorisePayment` on
+  an edge into a contract spelling it `authorizePayment` — used to pass both PR gates on the example
+  fleet and, even under `--strict`, on a freshly seeded spine-first fleet. It now fails as
+  `spine.op-undefined` (and `spine.op-deprecated`, `spine.op-link-missing` and `spine.resolved` read
+  the same way), filed on the `landscape` target. Only those edges are graded: the provider is not
+  pulled into scope, so its own documents — on a seeded fleet, its `service.no-model` — stay out of
+  the PR's verdict. An edge is new when its (source, target, op) is; a reformat grades nothing.
+- **The landscape re-grades a fleet-wide vocabulary only when the file that carries it changed.**
+  `permissions.*` rides a scoped run only when `architecture/permissions.yaml` changed,
+  `capability.*` only when `architecture/capabilities.yaml` or `capabilities/` did,
+  `obligation.invalid` and `obligation.unapplied` only when `architecture/obligations.yaml` did,
+  `glossary.*` only when `glossary/` did, and `agents.stale` / `docs.binary-behind` only when
+  `AGENTS.md` did. A one-line map edit on the example fleet is no longer red under `--strict` on four
+  warnings that were all there at the base.
+- README's spine-first section now says that under the `--base` gate a PR adding a service's
+  `openapi.yaml` stays red until that service has a `model.likec4` — `service.no-model` is the
+  ratchet working as designed.
+
 ## [0.2.0-alpha.8] - 2026-09-21
 
 The work packet: the verify checklist read forwards. Still a prerelease on the `alpha` line:

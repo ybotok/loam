@@ -220,7 +220,11 @@ a contract spelling it `authorizePayment` fails here and nowhere else a team nor
 **Expect a red run, and read it correctly.** Five seeded services with no C4 centre report
 `service.no-model` (error) five times, and `service.no-spec` (warn) five times. Those are not
 misconfiguration: they are a truthful reading of a fleet where adoption has not started, and they
-stay until you write those documents. The finding you came for is the spine one.
+stay until you write those documents. The finding you came for is the spine one. Under the `--base`
+PR gate [below](#guard-the-fleets-edges-on-every-pr), a PR that adds a service's `openapi.yaml`
+stays red until that service has a `model.likec4` — the gate grades the service the PR touched, and
+`service.no-model` is that ratchet working as designed — while a PR that only names operations on
+the map is graded on those edges alone.
 [`test/spine-first.test.ts`](https://github.com/ybotok/loam/blob/main/test/spine-first.test.ts)
 pins this whole sequence against the shipped `examples/fleet.yaml`, so the recipe cannot drift from
 the binary.
@@ -268,7 +272,10 @@ the first minute of adoption until the last one is done.
 operation `payment-service` owns, and `checkout-web` — whose living requirement still names it —
 is not in scope, so nothing in that gate reports the broken join. That is `loam diff --base`'s
 question, it stays `loam diff --base`'s, and a green scoped validate is not a statement about the
-consumers of what changed. [WORKFLOW.md](WORKFLOW.md#what-actually-gates) has what each does and
+consumers of what changed. A join the branch itself *wrote* is the other case: a call edge it adds
+or edits in `architecture/` is graded against its provider's contract even with the provider out of
+scope, so the one-letter `authorisePayment` above fails on the PR that introduces it.
+[WORKFLOW.md](WORKFLOW.md#what-actually-gates) has what each does and
 does not grade — including the oasdiff invocation for the byte-level OpenAPI breaking-change
 catalogue, which loam deliberately does not reimplement.
 

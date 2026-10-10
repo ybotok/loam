@@ -606,7 +606,11 @@ landscape the branch changed since a base git ref of the docs repo — which is 
 both passing on the first day of adoption and tightening after it, and which for that reason
 grades nothing outside the branch: the consumer whose living requirement still names an operation
 this branch removed is not in scope, so that finding is `loam diff`'s and never this run's, and a
-scope holding no target says it graded nothing rather than reporting the word valid.
+scope holding no target says it graded nothing rather than reporting the word valid. The landscape
+is graded by what in it the branch changed: a call edge the branch added or edited is checked
+against its provider's contract even when the provider is out of scope, and the fleet-wide
+vocabulary warnings (a permission, capability, obligation or glossary term nothing cites) and the
+AGENTS.md stamp ride the run only when the file that carries them changed.
 
 **`loam gherkin`** — a feature's changed requirements, or (without a feature) the full living suite.
 Deterministic, digest-stamped, regeneration-owned; run in the service's own repo.
