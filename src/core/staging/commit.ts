@@ -175,11 +175,6 @@ function contains(parent: string, candidate: string): boolean {
   return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
 }
 
-/**
- * Undo the directories a write had to create, from `start` up to and including
- * `boundary`. Remove only directories that are still EMPTY: anything else in
- * there arrived after we made it, and belongs to whoever put it there.
- */
 /** Remove `dir` if it is empty. Best effort — a directory left standing is noise, not corruption. */
 export async function quietRmdir(dir: string): Promise<void> {
   try {
@@ -189,6 +184,12 @@ export async function quietRmdir(dir: string): Promise<void> {
   }
 }
 
+/**
+ * Undo the directories a write had to create, from `start` up to and including
+ * `boundary` — or, for unarchive, the ones a restore's deletes left empty.
+ * Remove only directories that are still EMPTY: anything else in there arrived
+ * after we made it, and belongs to whoever put it there.
+ */
 export async function quietPruneEmptyParents(start: string, boundary: string): Promise<void> {
   let cursor = resolve(start);
   const root = resolve(boundary);

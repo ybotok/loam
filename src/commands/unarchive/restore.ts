@@ -8,14 +8,15 @@
  * the digest of what it will RESTORE, and a mismatch on either refuses.
  */
 import { existsSync } from "node:fs";
-import { readdir, readFile, rename, rmdir } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
+import { readFile, rename } from "node:fs/promises";
+import { dirname, join, relative, sep } from "node:path";
 import { emitJson, fail, repoPath } from "../../core/envelope/json.js";
 import { archiveDir as archiveRoot, featuresDir as featuresRoot } from "../../core/repo/paths.js";
 import { listServices, resolveFeature } from "../../core/repo/repo.js";
 import { docsRepoState } from "../../core/repo/state.js";
 import { sayRecovery } from "../archive/plan/refusal.js";
 import {
+  quietPruneEmptyParents,
   quietRm,
   rollbackError,
   rollbackStaged,
@@ -189,8 +190,8 @@ export async function unarchiveLocked(
   // The snapshot describes an archive that no longer exists; the empty directories
   // are what the merge left behind. Both are tidying — neither can fail the undo.
   await quietRm(join(dest, SNAPSHOT_DIR));
-  for (const w of writes) if (w.content === null) await pruneEmptyDirs(dirname(w.path), docsDir);
-  await pruneEmptyDirs(archiveDir, docsDir);
+  for (const w of writes) if (w.content === null) await pruneBelowRoot(docsDir, dirname(w.path));
+  await pruneBelowRoot(docsDir, archiveDir);
 
   const restored = writes.filter((w) => w.content !== null).map((w) => repoPath(docsDir, w.path));
   const removed = writes.filter((w) => w.content === null).map((w) => repoPath(docsDir, w.path));
@@ -215,22 +216,12 @@ export async function unarchiveLocked(
 }
 
 /**
- * The snapshot manifest, or null when there is nothing this command can honour —
- * absent, unreadable, or a layout version it would have to guess at. All three are
- * the same answer to the caller: this feature cannot be unarchived automatically.
+ * Remove the empty directories from `dir` upward, stopping BELOW the docs root:
+ * never the root itself, nor anything outside it. The walk is staging's own,
+ * bounded at the top-level directory `dir` sits in.
  */
-
-async function pruneEmptyDirs(dir: string, stopAt: string): Promise<void> {
-  let cur = dir;
-  for (;;) {
-    const rel = relative(stopAt, cur);
-    if (rel === "" || rel.startsWith("..")) return;
-    try {
-      if ((await readdir(cur)).length > 0) return;
-      await rmdir(cur);
-    } catch {
-      return;
-    }
-    cur = dirname(cur);
-  }
+async function pruneBelowRoot(docsDir: string, dir: string): Promise<void> {
+  const top = relative(docsDir, dir).split(sep)[0] ?? "";
+  if (top === "" || top.startsWith("..")) return;
+  await quietPruneEmptyParents(dir, join(docsDir, top));
 }
