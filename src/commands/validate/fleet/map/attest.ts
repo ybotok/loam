@@ -5,13 +5,10 @@
  * element (`../../checks/fleet-shape.ts`).
  *
  * One reader rather than two, because the two checks were answering the same
- * question from different evidence and disagreeing about the fleet. The
- * consumer census walked the MAP's relationships alone, so a store whose
- * consuming edges are all drawn in `services/<…>/model.likec4` had zero
- * consumers and earned nothing at all — and a store reached by three models plus
- * one map edge was graded against the single service the MAP happened to draw
- * (R1). A model is evidence about the fleet exactly as the map is, so it is read
- * here and handed to both.
+ * question from different evidence and disagreeing about the fleet — the
+ * map-only consumer census `./consumers.ts` tells the story of (R1). A model is
+ * evidence about the fleet exactly as the map is, so it is read here and handed
+ * to both.
  *
  * EXTENDING MODELS ONLY, for the consumer join. An extending model's ids ARE the
  * map's fully-qualified ids — one project, one id space — so `counterpartId`

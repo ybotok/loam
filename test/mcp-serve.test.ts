@@ -263,7 +263,8 @@ describe("every advertised tool is a command the dispatcher can actually run", (
   it("no tool in MCP_TOOLS answers `unknown command` — the two rosters are one roster", async () => {
     // The hole this closes shipped once. `MCP_TOOLS` is what `tools/list`
     // advertises; `readProgram` in dispatch.ts is what `tools/call` runs, and
-    // the two are separate lists because core/ may not import commands/. When
+    // its `REGISTRARS` lookup is a separate list because core/ may not import
+    // commands/ (it registers from the table now, and refuses a miss). When
     // `loam_instructions` and `loam_steps` were added to the first and not the
     // second, `tools/list` promised fourteen tools and two of them answered
     // `{ ok: false, error: { code: "invalid-option", message: "unknown
@@ -286,10 +287,21 @@ describe("every advertised tool is a command the dispatcher can actually run", (
 
   it("the opt-in author roster reaches registered commands too", async () => {
     for (const tool of MCP_AUTHOR_TOOLS) {
-      const res = await runToolArgv([tool.command, "--json"], true);
+      const res = await runToolArgv([tool.command, "--json"], [...MCP_TOOLS, ...MCP_AUTHOR_TOOLS]);
       expect(res.stdout, `${tool.name} produced no envelope`).not.toBe("");
       const envelope = JSON.parse(res.stdout) as { error?: { message?: string } };
       expect(envelope.error?.message ?? "", `${tool.name} -> ${tool.command}`).not.toContain("unknown command");
+    }
+  });
+
+  it("without the author roster, no authoring writer is registered at all", async () => {
+    // The read-only table is the gate: the program a call runs holds only the
+    // commands its active table names, so an argv naming a writer cannot reach
+    // one even if something upstream were to build it.
+    for (const tool of MCP_AUTHOR_TOOLS) {
+      const res = await runToolArgv([tool.command, "--json"]);
+      const envelope = JSON.parse(res.stdout) as { error?: { message?: string } };
+      expect(envelope.error?.message ?? "", tool.command).toContain(`unknown command '${tool.command}'`);
     }
   });
 });

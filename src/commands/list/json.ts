@@ -152,12 +152,6 @@ export function featureJson(
   };
 }
 
-/* ------------------------------------------------------------------ */
-/* Verification                                                        */
-/* ------------------------------------------------------------------ */
-
-/** What the features table says about verification without N `loam verify` runs. */
-
 /**
  * One `glossary[]` row — additive payload, explicit `loam list glossary` only.
  *

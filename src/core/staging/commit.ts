@@ -15,7 +15,8 @@
  */
 import { existsSync } from "node:fs";
 import { link, mkdir, readFile, rename, rm, rmdir, unlink, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { isPathInside } from "../kernel/path-safety.js";
 import { sameBytes, toBytes, type PlannedWrite, type StagedWrite } from "./writes.js";
 
 /**
@@ -165,14 +166,9 @@ async function discardStaged(staged: StagedWrite[]): Promise<void> {
   for (const s of staged) if (s.tmp !== null) await quietRm(s.tmp);
   const roots = staged.filter((s) => s.createdDir !== null).map((s) => resolve(s.createdDir!));
   for (const s of [...staged].reverse()) {
-    const root = roots.find((candidate) => contains(candidate, s.write.path));
+    const root = roots.find((candidate) => isPathInside(candidate, s.write.path));
     if (root !== undefined) await quietPruneEmptyParents(dirname(s.write.path), root);
   }
-}
-
-function contains(parent: string, candidate: string): boolean {
-  const rel = relative(parent, resolve(candidate));
-  return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
 }
 
 /** Remove `dir` if it is empty. Best effort — a directory left standing is noise, not corruption. */
@@ -193,7 +189,7 @@ export async function quietRmdir(dir: string): Promise<void> {
 export async function quietPruneEmptyParents(start: string, boundary: string): Promise<void> {
   let cursor = resolve(start);
   const root = resolve(boundary);
-  while (contains(root, cursor)) {
+  while (isPathInside(root, cursor)) {
     try {
       await rmdir(cursor);
     } catch {

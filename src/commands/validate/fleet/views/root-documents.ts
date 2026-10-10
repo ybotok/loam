@@ -42,11 +42,11 @@
  * read as the map declared twice) and a package tree, never authored documents —
  * the same thing the scaffold's own `node_modules` glob says.
  */
-import { readdir } from "node:fs/promises";
-import { join, relative, resolve, sep } from "node:path";
+import { relative, resolve, sep } from "node:path";
 import { excludingPath, readRootExclude } from "../../../../core/c4/root-project/exclude.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
 import { generatedArchitectureDocuments } from "../../../../core/c4/project/architecture.js";
+import { likec4DocumentsUnder } from "../../../../core/c4/project/documents.js";
 
 /** The directory name loam never walks, beside every dot-directory. */
 const PACKAGES = "node_modules";
@@ -63,7 +63,6 @@ export async function rootProjectDocuments(docsDir: DocsDir, standalone: readonl
   const generated = new Set(generatedArchitectureDocuments(docsDir).map((path) => resolve(path)));
   const excluded = standalone.map((dir) => `${resolve(dir)}${sep}`);
   const root = resolve(docsDir);
-  const found: string[] = [];
   const keeps = (path: string): boolean => {
     if (generated.has(resolve(path))) return false;
     if (excluded.some((dir) => resolve(path).startsWith(dir))) return false;
@@ -71,26 +70,10 @@ export async function rootProjectDocuments(docsDir: DocsDir, standalone: readonl
     if (rel[0] === FEATURES) return false;
     return exclude === null || excludingPath(exclude, rel.join("/")) === null;
   };
-  const walk = async (at: string): Promise<void> => {
-    let entries;
-    try {
-      entries = await readdir(at, { withFileTypes: true });
-    } catch {
-      // A directory that cannot be read contributes nothing: this grade runs
-      // inside `validate --all` over a whole fleet, and the one behaviour it may
-      // never have is failing the run it was added to.
-      return;
-    }
-    for (const entry of entries) {
-      const path = join(at, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name.startsWith(".") || entry.name === PACKAGES) continue;
-        await walk(path);
-      } else if (entry.name.endsWith(".likec4") && keeps(path)) {
-        found.push(path);
-      }
-    }
-  };
-  await walk(root);
-  return found.sort();
+  // An unreadable directory contributes nothing — `likec4DocumentsUnder`
+  // records why a grade inside `validate --all` may never fail the run.
+  return likec4DocumentsUnder(root, {
+    enters: (name) => !name.startsWith(".") && name !== PACKAGES,
+    keeps,
+  });
 }

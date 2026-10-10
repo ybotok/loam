@@ -182,16 +182,13 @@ export function registerVouch(program: Command): void {
         );
       }
 
-      // Whether a person is actually here. `vouch` is the only command in loam
-      // whose output is a claim about a HUMAN act — every other check is
-      // internal consistency, which fluent prose satisfies — and it used to run
-      // unattended, unattributed, twice in a row, stamping `verified` both
-      // times. Meanwhile the generated skill files pre-approved `Bash(loam:*)`,
-      // so the same agent that wrote the draft was permitted to promote it.
-      // That inverts loam's own argument about test evidence: an agent must not
-      // be able to SAY a scenario is tested, and it must not be able to say a
-      // spec matches the code either. The allowlist no longer covers this
-      // command (core/agent/tools/dialects.ts), and nothing but a terminal or an explicit
+      // Whether a person is actually here — the gate the banner's "records a
+      // person" paragraph tells the history of. `vouch` is the only command in
+      // loam whose output is a claim about a HUMAN act — every other check is
+      // internal consistency, which fluent prose satisfies — and why an agent
+      // must not be able to make that claim for itself is recorded on the
+      // allowlist that no longer covers this command
+      // (core/agent/tools/dialects.ts). Nothing but a terminal or an explicit
       // `--yes` gets past here.
       const attended = opts.yes === true;
       if (!attended) {

@@ -7,13 +7,14 @@
  * whole comparison is by digest rather than by name, so a reworded scenario
  * reads as stale rather than as missing plus new.
  */
-import { existsSync, statSync, type Dirent } from "node:fs";
-import { readdir, readFile, realpath } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { readdir, readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import type { PathableService } from "../kernel/ids/service.js";
 import { SPEC_AXES } from "../repo/paths.js";
 import { locateServicePaths } from "../repo/service-target.js";
 import { listFeatures } from "../repo/repo.js";
+import { entryIs, markDescended } from "../repo/tree/fs.js";
 import type { FleetContext } from "../fleet-context.js";
 import type { Finding } from "../vocabulary/report.js";
 import { UnsafePathError } from "../kernel/path-safety.js";
@@ -183,9 +184,10 @@ export async function gherkinFindings(ctx: {
  * enumeration is part of the output contract, so the order cannot depend on
  * the filesystem's. Dot-entries are skipped, like every other walk in loam.
  *
- * Symlinks are FOLLOWED — repo.ts's `entryIs` and brief/brief.ts's `hasMarkdown` are
- * the same rule for the same reason. A `Dirent` from `readdir(withFileTypes)`
- * never follows one, so `isFile()` and `isDirectory()` are both false for a
+ * Symlinks are FOLLOWED, through `repo/tree/fs.ts`'s `entryIs` — the rule
+ * every enumeration shares (brief/brief.ts's `hasEntry` too), for the same
+ * reason. A `Dirent` from `readdir(withFileTypes)` never follows one, so
+ * `isFile()` and `isDirectory()` are both false for a
  * symlinked `.feature`: it was invisible to the orphan scan (`loam gherkin`
  * left it behind forever) and invisible to the staleness scan (it graded as no
  * coverage at all). Composing a suite out of links is legitimate, so they are
@@ -195,24 +197,16 @@ export async function gherkinFindings(ctx: {
 export async function featureFilesUnder(root: string): Promise<string[]> {
   const out: string[] = [];
   // Following links means a cycle is now possible; every directory is entered
-  // once by its resolved path, so a loop terminates instead of hanging.
+  // once by its resolved path (`markDescended`), so a loop terminates instead
+  // of hanging.
   const entered = new Set<string>();
   const walk = async (dir: string): Promise<void> => {
-    if (!existsSync(dir)) return;
-    let resolved: string;
-    try {
-      resolved = await realpath(dir);
-    } catch {
-      return;
-    }
-    if (entered.has(resolved)) return;
-    entered.add(resolved);
+    if (!markDescended(dir, entered)) return;
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       if (entry.name.startsWith(".")) continue;
       const abs = join(dir, entry.name);
-      const what = entryKind(abs, entry);
-      if (what === "dir") await walk(abs);
-      else if (what === "file" && entry.name.endsWith(".feature")) out.push(abs);
+      if (entryIs(dir, entry, "dir")) await walk(abs);
+      else if (entry.name.endsWith(".feature") && entryIs(dir, entry, "file")) out.push(abs);
     }
   };
   await walk(root);
@@ -221,15 +215,4 @@ export async function featureFilesUnder(root: string): Promise<string[]> {
     const rb = b.split(sep).join("/");
     return ra < rb ? -1 : ra > rb ? 1 : 0;
   });
-}
-
-/** What an entry IS, resolving a symlink to find out. Nothing when it dangles. */
-function entryKind(abs: string, e: Dirent): "dir" | "file" | null {
-  if (!e.isSymbolicLink()) return e.isDirectory() ? "dir" : e.isFile() ? "file" : null;
-  try {
-    const s = statSync(abs);
-    return s.isDirectory() ? "dir" : s.isFile() ? "file" : null;
-  } catch {
-    return null;
-  }
 }

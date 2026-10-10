@@ -28,9 +28,8 @@
  * the difference between a habit and a thing people skip.
  */
 import { existsSync } from "node:fs";
-import { relative } from "node:path";
 import { FleetContext } from "../fleet-context.js";
-import { type Rel } from "../c4/likec4.js";
+import { brokenDocumentPaths, type Rel } from "../c4/likec4.js";
 import { serviceResolver } from "../c4/resolve/service.js";
 import { type Maturity } from "../vocabulary/maturity.js";
 import { capabilityRollup, unresolvedCapabilities } from "../capabilities/rollup.js";
@@ -131,7 +130,8 @@ export interface Exploration {
    * PROJECT, so the broken document is very often a SIBLING beside a landscape
    * that reads perfectly, and naming the landscape file was a claim about bytes
    * loam read fine (verification 2026-09-04). Spelled as `landscape.invalid`
-   * spells it, so the two surfaces name one file one way.
+   * spells it (both through `c4/likec4.ts`'s `brokenDocumentPaths`), so the
+   * two surfaces name one file one way.
    */
   landscape: { present: boolean; parses: boolean; broken: string[] };
   /**
@@ -331,12 +331,7 @@ export async function explore(req: ExploreRequest): Promise<Exploration> {
     landscape: {
       present,
       parses,
-      broken:
-        land === null
-          ? []
-          : [...new Set(land.errors.map((e) => e.sourceFsPath).filter((p): p is string => p !== undefined))]
-              .map((abs) => relative(docsDir, abs).split(/[\\/]/).join("/"))
-              .sort(),
+      broken: land === null ? [] : brokenDocumentPaths(docsDir, land.errors),
     },
     scaffold: newCommand(featureId, seeds, known),
   };

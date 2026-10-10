@@ -12,6 +12,7 @@ import {
   unknownDeltaServices,
 } from "../../coherence/living.js";
 import { analyzeDependencies } from "../../dependencies/dependencies.js";
+import { missingScenariosFinding } from "../../document/scenarios.js";
 import { repoPath } from "../../envelope/json.js";
 import { FleetContext } from "../../fleet-context.js";
 import { featureProvenance } from "../../provenance/findings.js";
@@ -186,14 +187,7 @@ async function featureFindings(
     ...(await livingMergeConflicts(docsDir, await featureSpecServices(feature.dir, context), capabilityDeltas.docs.map((d) => d.id), context)),
   );
   for (const scan of scans) {
-    if (scan.bare.length === 0) continue;
-    out.push({
-      severity: "error",
-      code: "requirements.missing-scenarios",
-      subject: scan.service,
-      message: `${scan.label}: ${scan.bare.length} requirement(s) without a scenario`,
-      details: scan.bare.map((r) => r.name),
-    });
+    if (scan.bare.length > 0) out.push(missingScenariosFinding(scan.label, scan.bare, scan.service));
   }
   return out;
 }

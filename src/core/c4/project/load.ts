@@ -16,11 +16,11 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { LikeC4 } from "likec4";
 import { inOrder } from "../../kernel/concurrency.js";
-import { distinctErrors, flattenModel, type Elem, type LikeC4Error, type LoadedDoc, type ReadableModel, type Rel } from "../likec4.js";
-import { readDynamicViews, type ParsedView } from "../parsed/dynamic-views.js";
-import { readSpecification, type DocSpecification } from "../parsed/specification.js";
-import { readGlobalStyleIds, readViewIds, type ViewIdClaim } from "../parsed/view-ids.js";
-import { readDeployment, NO_DEPLOYMENT, type DeploymentModel } from "../parsed/deployment.js";
+import { distinctErrors, readParsedModel, type Elem, type LikeC4Error, type LoadedDoc, type ReadableModel, type Rel } from "../likec4.js";
+import type { ParsedView } from "../parsed/dynamic-views.js";
+import type { DocSpecification } from "../parsed/specification.js";
+import type { ViewIdClaim } from "../parsed/view-ids.js";
+import { NO_DEPLOYMENT, type DeploymentModel } from "../parsed/deployment.js";
 
 /**
  * A diagnostic exactly as a WORKSPACE hands it back, where `sourceFsPath` is
@@ -189,16 +189,7 @@ export function emptyProject(errors: Map<string, LikeC4Error[]>, clean: boolean)
  * test/likec4-batch-parity.test.ts was written to catch.
  */
 export function cleanProjectDoc(model: ReadableModel): ProjectDoc {
-  return {
-    errors: new Map(),
-    clean: true,
-    specification: readSpecification(model.specification),
-    views: readDynamicViews(model),
-    viewIds: readViewIds(model),
-    globalStyles: readGlobalStyleIds(model),
-    deployment: readDeployment(model),
-    ...flattenModel(model),
-  };
+  return { errors: new Map(), clean: true, ...readParsedModel(model) };
 }
 
 /**

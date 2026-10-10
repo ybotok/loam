@@ -23,7 +23,7 @@ import { servicePathsAt } from "../repo/paths.js";
 import { inOrder } from "../kernel/concurrency.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 import type { FleetContext } from "../fleet-context.js";
-import { bytesDigest, type AxisState, type ServiceState } from "./base-state.js";
+import { bytesDigest, collisions, type AxisState, type ServiceState } from "./base-state.js";
 
 export interface CurrentFleet {
   /** By service id, in the enumeration's (sorted-walk) order. Ids the `ambiguous` map claims are excluded. */
@@ -117,16 +117,9 @@ export async function readCurrentFleet(docsDir: DocsDir, context: FleetContext):
       asyncapi: await asyncapiAxis(context, paths.asyncapi, repoPath(docsDir, paths.asyncapi)),
     };
   });
-  const ambiguous = currentCollisions(states);
+  const ambiguous = collisions(states);
   return {
     services: new Map(states.filter((s) => !ambiguous.has(s.id)).map((s) => [s.id, s])),
     ambiguous,
   };
-}
-
-/** Ids claimed by more than one enumerated directory, with every claimant named. */
-function currentCollisions(states: readonly ServiceState[]): Map<string, string[]> {
-  const byId = new Map<string, string[]>();
-  for (const s of states) byId.set(s.id, [...(byId.get(s.id) ?? []), s.dir]);
-  return new Map([...byId].filter(([, dirs]) => dirs.length > 1));
 }

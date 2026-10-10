@@ -98,4 +98,28 @@ export function matchBrace(code: string, open: number): number {
   return -1;
 }
 
+/**
+ * Every TOP-LEVEL block in MASKED code whose opening `re` matches — `re` is
+ * global and its match ends at the block's `{` — with the block's body, read
+ * to end of file when the brace never closes. Only depth zero counts: a block
+ * nested inside another is not a declaration LikeC4 would honour. Depth is a
+ * plain count, because the mask has already blanked every brace inside a
+ * string or a comment — the one thing that would make counting lie — and it
+ * is tracked in one forward pass rather than recounted per match.
+ */
+export function* topLevelBlocks(code: string, re: RegExp): Generator<{ match: RegExpExecArray; body: string }> {
+  let depth = 0;
+  let cursor = 0;
+  for (const match of code.matchAll(re)) {
+    for (; cursor < match.index; cursor += 1) {
+      if (code[cursor] === "{") depth += 1;
+      else if (code[cursor] === "}") depth -= 1;
+    }
+    if (depth !== 0) continue;
+    const open = match.index + match[0].length - 1;
+    const close = matchBrace(code, open);
+    yield { match, body: code.slice(open + 1, close === -1 ? code.length : close) };
+  }
+}
+
 /** An element declaration located in source, under the id the computed model gives it. */

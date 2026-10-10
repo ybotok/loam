@@ -21,11 +21,6 @@ import { enumeratedServiceIds } from "../../core/repo/service-target.js";
 import { docsRepoState } from "../../core/repo/state.js";
 import { featureSpecServices, listServices } from "../../core/repo/repo.js";
 import { type Finding, type TargetReport } from "../../core/vocabulary/report.js";
-import {
-  assertionlessFindings,
-  examplesFindings,
-  steplessFindings,
-} from "../../core/document/scenarios.js";
 import { type Requirement } from "../../core/document/spec.js";
 import { featureCoherence } from "../../core/coherence/coherence.js";
 import {
@@ -38,7 +33,7 @@ import { documentConflictFinding } from "../../core/conflict-markers.js";
 import { docMissingFindings } from "../../core/capabilities/findings.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { errorText } from "../../core/c4/likec4.js";
-import { coverageFinding, repeatedListLineFindings } from "./checks/requirements.js";
+import { coverageFinding, repeatedListLineFindings, scenarioShapeFindings } from "./checks/requirements.js";
 import { deltaArchCoverage } from "./arch-coverage.js";
 import { featureLinkFindings } from "./links/corpus.js";
 import { featureRecordFindings } from "./service/evidence-pins.js";
@@ -161,9 +156,7 @@ export async function validateFeature(
       const conflict = documentConflictFinding(`${svc}: spec.md`, svc, raw);
       if (conflict !== null) findings.push(conflict);
       findings.push({ ...coverageFinding(`${svc}: requirements`, reqs), subject: svc });
-      findings.push(...steplessFindings(`${svc}: requirements`, svc, reqs));
-      findings.push(...assertionlessFindings(`${svc}: requirements`, svc, reqs));
-      findings.push(...examplesFindings(`${svc}: requirements`, svc, reqs));
+      findings.push(...scenarioShapeFindings(`${svc}: requirements`, svc, reqs));
       // The keep-last quirk loses lines in a delta exactly as in a living spec
       // — and a delta's lost Operations: line then merges into the living one.
       findings.push(...repeatedListLineFindings(reqs, `${svc}: spec.md`, svc));
@@ -176,9 +169,7 @@ export async function validateFeature(
       const conflict = documentConflictFinding(`${svc}: arch.spec.md`, svc, raw);
       if (conflict !== null) findings.push(conflict);
       findings.push({ ...coverageFinding(`${svc}: arch requirements`, reqs), subject: svc });
-      findings.push(...steplessFindings(`${svc}: arch requirements`, svc, reqs));
-      findings.push(...assertionlessFindings(`${svc}: arch requirements`, svc, reqs));
-      findings.push(...examplesFindings(`${svc}: arch requirements`, svc, reqs));
+      findings.push(...scenarioShapeFindings(`${svc}: arch requirements`, svc, reqs));
       findings.push(...repeatedListLineFindings(reqs, `${svc}: arch.spec.md`, svc));
     }
   }

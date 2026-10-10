@@ -16,6 +16,24 @@ export function requirementsMissingScenarios(reqs: Requirement[]): Requirement[]
   return reqs.filter((r) => r.kind !== "REMOVED" && r.scenarios.length === 0);
 }
 
+/**
+ * `requirements.missing-scenarios` over the requirements the rule above
+ * returned — one spelling for `loam validate` (its `coverageFinding`) and
+ * `loam status` (`core/status/feature/feature.ts`), because status's rule is
+ * "never greener than the gates" and a second spelling of the same finding is
+ * how the two would come to disagree. `subject` names the service when the
+ * caller has one.
+ */
+export function missingScenariosFinding(label: string, bare: readonly Requirement[], subject?: string): Finding {
+  return {
+    severity: "error",
+    code: "requirements.missing-scenarios",
+    ...(subject === undefined ? {} : { subject }),
+    message: `${label}: ${bare.length} requirement(s) without a scenario`,
+    details: bare.map((r) => r.name),
+  };
+}
+
 /** A `#### Scenario:` heading whose body holds nothing a runner would execute. */
 export interface SteplessScenario {
   requirement: string;

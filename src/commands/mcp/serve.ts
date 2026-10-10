@@ -32,8 +32,7 @@ import {
   routeLine,
   toolReply,
 } from "../../core/mcp/protocol.js";
-import type { RouteOutcome } from "../../core/mcp/protocol.js";
-import type { DispatchResult } from "./dispatch.js";
+import type { RouteOutcome, ToolRunOutcome } from "../../core/mcp/protocol.js";
 import { MCP_TOOLS, type McpTool } from "../../core/mcp/tools.js";
 
 export interface ServeIo {
@@ -43,7 +42,7 @@ export interface ServeIo {
 }
 
 /** The dispatcher, as a parameter: serve() stays testable with a stub and owns no registration. */
-export type ToolRunner = (argv: readonly string[]) => Promise<DispatchResult>;
+export type ToolRunner = (argv: readonly string[]) => Promise<ToolRunOutcome>;
 
 export async function serve(
   io: ServeIo,

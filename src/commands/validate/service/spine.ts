@@ -19,7 +19,7 @@ import { type LoadedDoc } from "../../../core/c4/likec4.js";
 import { type DocsDir } from "../../../core/kernel/ids/dirs.js";
 import { type PathableService } from "../../../core/kernel/ids/service.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
-import { errorText } from "../../../core/c4/likec4.js";
+import { brokenDocumentPaths, errorText } from "../../../core/c4/likec4.js";
 import { type ServiceContract } from "./api.js";
 
 /** What the service target hands the spine check. */
@@ -81,11 +81,7 @@ export function spineFindings(spine: Spine): Finding[] {
       // and the filename used to be hardcoded here — an agent told to "fix the
       // file the message names" opened a document that parses (verification
       // 2026-09-04, W2).
-      const broken = [
-        ...new Set(land.errors.map((e) => e.sourceFsPath).filter((p): p is string => p !== undefined)),
-      ]
-        .map((abs) => relative(spine.docsDir, abs).split(/[\\/]/).join("/"))
-        .sort();
+      const broken = brokenDocumentPaths(spine.docsDir, land.errors);
       const named = broken.length === 0 ? "architecture/landscape.likec4" : broken.join(", ");
       // The verb agrees with the LIST, not with the count after it: `named` is a
       // comma-joined series once two documents broke, and "a, b, c has 6

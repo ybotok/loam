@@ -26,7 +26,7 @@ import { obligationFindings, obligationVocabularyFindings } from "./obligations.
 import { readObligations } from "../../../core/obligations/obligations.js";
 import { obligationsPath } from "../../../core/repo/paths.js";
 import { EXTERNAL_TAG } from "../../../core/vocabulary/maturity.js";
-import { errorText } from "../../../core/c4/likec4.js";
+import { brokenDocumentPaths, errorText } from "../../../core/c4/likec4.js";
 import { serviceTreePath, type DocsDir } from "../../../core/kernel/ids/dirs.js";
 import { drawnSystems, serviceLevelElements, standsForService } from "./census.js";
 import { unreadableLandscape } from "./load.js";
@@ -214,9 +214,9 @@ export async function validateLandscape(
     // landscape by default — a use case with a typo'd element used to be
     // reported as the landscape having errors, which sent the author to the
     // wrong file with a line number that pointed at somebody else's text.
-    const broken = [...new Set(land.errors.map((e) => e.sourceFsPath).filter((p): p is string => p !== undefined))];
+    const broken = brokenDocumentPaths(docsDir, land.errors);
     const spell = (abs: string): string => relative(docsDir, abs).split(/[\\/]/).join("/");
-    const named = broken.length === 0 ? "architecture/landscape.likec4" : broken.map(spell).sort().join(", ");
+    const named = broken.length === 0 ? "architecture/landscape.likec4" : broken.join(", ");
     // The verb agrees with the LIST, not with the count after it: `named` is a
     // comma-joined series once two documents broke, and "a, b has 6 error(s)"
     // is a sentence a reader trips over. The service arm (`service/spine.ts`)

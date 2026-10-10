@@ -133,16 +133,6 @@ export interface LandscapeContext {
 }
 
 /**
- * The service ids the resolver may fall back on when an element carries no
- * `metadata { service }` binding — the same positive evidence `validate` and
- * `list` hand it. A docs repo with no `services/` yet (`adopt` runs there)
- * leaves the resolver with bindings alone, which is what it had before.
- */
-async function knownServices(docsDir: DocsDir): Promise<ReadonlySet<string>> {
-  return new Set(await enumeratedServiceIds(docsDir));
-}
-
-/**
  * The tags loam reads on an ELEMENT. `GRADED_TAGS` is the vocabulary's own
  * list of the tags that change what loam concludes — spelled once there, so
  * the day a third tag is graded this set follows and the instruction below
@@ -151,7 +141,6 @@ async function knownServices(docsDir: DocsDir): Promise<ReadonlySet<string>> {
  * never sit on one, so they are not in this list.
  */
 const LOAM_TAGS: ReadonlySet<string> = new Set(GRADED_TAGS);
-const LOAM_TAG_PREFIXES: readonly string[] = [OBLIGATION_TAG_PREFIX];
 
 /**
  * The element's tags loam does NOT read — named in the instruction and never
@@ -160,7 +149,7 @@ const LOAM_TAG_PREFIXES: readonly string[] = [OBLIGATION_TAG_PREFIX];
  * element.tag = #<that>` keeps an adopted service hidden until it is cleared.
  */
 function foreignTagsOf(elements: LandscapeElement[]): string[] {
-  const unread = (t: string): boolean => !LOAM_TAGS.has(t) && !LOAM_TAG_PREFIXES.some((p) => t.startsWith(p));
+  const unread = (t: string): boolean => !LOAM_TAGS.has(t) && !t.startsWith(OBLIGATION_TAG_PREFIX);
   return [...new Set(elements.flatMap((e) => e.tags))].filter(unread);
 }
 
@@ -254,7 +243,13 @@ export async function landscapeContext(
   // this set: reading the landscape alone made `adopt` report `touched: false`,
   // the attested calls and an edit target for a service the fleet run on the
   // same tree called matched, with nothing to tell an agent which was right.
-  const known = await knownServices(docsDir);
+  //
+  // `known`: the service ids the resolver may fall back on when an element
+  // carries no `metadata { service }` binding — the same positive evidence
+  // `validate` and `list` hand it. A docs repo with no `services/` yet (`adopt`
+  // runs there) leaves the resolver with bindings alone, which is what it had
+  // before.
+  const known: ReadonlySet<string> = new Set(await enumeratedServiceIds(docsDir));
   const land = await loadArchitecture(docsDir);
   if (land.errors.length > 0) {
     // Since W4 this arm answers for the whole `architecture/` PROJECT, so the

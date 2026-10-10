@@ -1,11 +1,12 @@
 /**
  * Subprocess questions to git: what the repository tracks, what it ignores,
- * and who is working in it. Four spawns, one timeout, one doctrine — every way
- * git can decline to answer (not a repository, not installed, a non-zero exit,
- * a timeout) reads as "git will not say", never as an error a caller must
- * handle. No denominator, no finding. The subsystem surface's own questions
- * (dirty paths, rename hops, the one blessed `git add`) live in `./gitq/`,
- * sharing the timeout and the capped reader exported here.
+ * and who is working in it. Four questions, one spawn (`gitText`), one
+ * timeout, one doctrine — every way git can decline to answer (not a
+ * repository, not installed, a non-zero exit, a timeout) reads as "git will
+ * not say", never as an error a caller must handle. No denominator, no
+ * finding. The subsystem surface's own questions (dirty paths, rename hops,
+ * the one blessed `git add`) live in `./gitq/`, asked through the same
+ * `gitText` and so under the same timeout and output cap.
  *
  * Beside this module's own four questions live the neutral ANSWER-SHAPE
  * helpers — `gitText`, `GitAnswer`, `gitSaid`, `declineDetail`,
@@ -35,9 +36,10 @@ const MAX_GIT_OUTPUT_BYTES = 64 * 1024 * 1024;
 /**
  * Accumulate a child's stdout up to the cap; past it, kill the child and
  * remember why. One helper because the three readers below had three copies
- * of the same `out += chunk` line, which is where an unbounded buffer hides.
+ * of the same `out += chunk` line, which is where an unbounded buffer hides;
+ * every text question now reaches it through `gitText`, so it is private.
  */
-export function collectStdout(child: import("node:child_process").ChildProcess): { text: () => string; overflowed: () => boolean } {
+function collectStdout(child: import("node:child_process").ChildProcess): { text: () => string; overflowed: () => boolean } {
   let out = "";
   let overflowed = false;
   child.stdout?.setEncoding("utf8");
@@ -82,13 +84,15 @@ export function collectStderr(child: import("node:child_process").ChildProcess):
 
 /**
  * One git question, stdout as text, stderr held for quoting. No verdict here
- * — see the banner: what a decline MEANS belongs to the caller.
+ * — see the banner: what a decline MEANS belongs to the caller. `input`, when
+ * given, is written to git's stdin and closed (`check-ignore --stdin`); every
+ * other question leaves stdin unopened.
  */
-export async function gitText(cwd: string, args: string[]): Promise<GitAnswer> {
+export async function gitText(cwd: string, args: string[], input?: string): Promise<GitAnswer> {
   return new Promise<GitAnswer>((done) => {
     const child = spawn("git", args, {
       cwd,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
       timeout: GIT_TIMEOUT_MS,
     });
     const out = collectStdout(child);
@@ -99,6 +103,11 @@ export async function gitText(cwd: string, args: string[]): Promise<GitAnswer> {
     child.on("close", (code) =>
       done({ code, out: out.text(), err: err(), overflowed: out.overflowed() }),
     );
+    if (input === undefined) return;
+    // A git that died before reading its input hands us EPIPE; the close
+    // handler above is what decides the outcome either way.
+    child.stdin?.on("error", () => undefined);
+    child.stdin?.end(input);
   });
 }
 
@@ -128,18 +137,8 @@ export function declineDetail(answer: GitAnswer): string {
  * list.
  */
 export async function gitTrackedFiles(repoDir: string): Promise<string[] | null> {
-  return new Promise<string[] | null>((done) => {
-    const child = spawn("git", ["ls-files", "-z", "--cached", "--exclude-standard"], {
-      cwd: repoDir,
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: GIT_TIMEOUT_MS,
-    });
-    const out = collectStdout(child);
-    child.on("error", () => done(null));
-    child.on("close", (code) => {
-      done(code === 0 && !out.overflowed() ? out.text().split("\0").filter((p) => p !== "") : null);
-    });
-  });
+  const a = await gitText(repoDir, ["ls-files", "-z", "--cached", "--exclude-standard"]);
+  return a.code === 0 && !a.overflowed ? a.out.split("\0").filter((p) => p !== "") : null;
 }
 
 /**
@@ -157,29 +156,13 @@ export async function gitTrackedFiles(repoDir: string): Promise<string[] | null>
  */
 export async function gitIgnoredPaths(repoDir: string, rels: string[]): Promise<Set<string>> {
   if (rels.length === 0) return new Set();
-  return new Promise<Set<string>>((done) => {
-    const child = spawn("git", ["check-ignore", "--stdin", "-z"], {
-      cwd: repoDir,
-      stdio: ["pipe", "pipe", "ignore"],
-      timeout: GIT_TIMEOUT_MS,
-    });
-    const out = collectStdout(child);
-    child.on("error", () => done(new Set()));
-    child.on("close", (code) => {
-      // 0: some paths are ignored and are on stdout. 1: none are — an empty
-      // answer, not a failure. Anything else, the overflow included: we
-      // learned nothing, and nothing is ignored.
-      done(
-        (code === 0 || code === 1) && !out.overflowed()
-          ? new Set(out.text().split("\0").filter((s) => s.length > 0))
-          : new Set(),
-      );
-    });
-    // A git that died before reading its input hands us EPIPE; the close
-    // handler above is what decides the outcome either way.
-    child.stdin.on("error", () => undefined);
-    child.stdin.end(rels.join("\0") + "\0");
-  });
+  const a = await gitText(repoDir, ["check-ignore", "--stdin", "-z"], rels.join("\0") + "\0");
+  // 0: some paths are ignored and are on stdout. 1: none are — an empty
+  // answer, not a failure. Anything else, the overflow and a spawn failure
+  // included: we learned nothing, and nothing is ignored.
+  return (a.code === 0 || a.code === 1) && !a.overflowed
+    ? new Set(a.out.split("\0").filter((s) => s.length > 0))
+    : new Set();
 }
 
 /**
@@ -234,17 +217,7 @@ function identity(name: string | undefined, email: string | undefined): string |
  * us who this is", and the fix is the same sentence in each case.
  */
 async function gitConfig(repoDir: string, key: string): Promise<string | null> {
-  return new Promise<string | null>((done) => {
-    const child = spawn("git", ["config", "--get", key], {
-      cwd: repoDir,
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: GIT_TIMEOUT_MS,
-    });
-    const out = collectStdout(child);
-    child.on("error", () => done(null));
-    child.on("close", (code) => {
-      const value = out.text().trim();
-      done(code === 0 && !out.overflowed() && value !== "" ? value : null);
-    });
-  });
+  const a = await gitText(repoDir, ["config", "--get", key]);
+  const value = a.out.trim();
+  return a.code === 0 && !a.overflowed && value !== "" ? value : null;
 }
