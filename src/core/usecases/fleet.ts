@@ -187,45 +187,82 @@ export async function mentionsTagPrefix(paths: readonly string[]): Promise<boole
  * `#` is tried, wherever it stands — in a view body, a comment, a string —
  * because the scan may over-approximate the parser and never under-approximate
  * it.
+ *
+ * A text with no `#`, or with no reserved prefix anywhere in it, cannot answer
+ * yes, so it is answered before the table below is built: that is nearly every
+ * document, and it costs those two native searches and no allocation.
+ *
+ * Exported for its own test (test/usecase-byte-gate.test.ts), which holds it to
+ * the walk the first version made from each `#` over crafted inputs, and holds
+ * its cost to one pass over inputs that walk took minutes on.
  */
-function referencesReservedTag(text: string): boolean {
-  for (let hash = text.indexOf("#"); hash !== -1; hash = text.indexOf("#", hash + 1)) {
-    const name = pastHiddenTokens(text, hash + 1);
+export function referencesReservedTag(text: string): boolean {
+  const first = text.indexOf("#");
+  if (first === -1 || !USE_CASE_TAG_PREFIXES.some((prefix) => text.includes(prefix))) return false;
+  const nameAt = hiddenRunEnds(text);
+  for (let hash = first; hash !== -1; hash = text.indexOf("#", hash + 1)) {
+    const name = nameAt[hash + 1]!;
     if (USE_CASE_TAG_PREFIXES.some((prefix) => text.startsWith(prefix, name))) return true;
   }
   return false;
 }
 
 /**
- * Where the next token LikeC4 would read starts, from `at`: past whitespace,
- * line breaks, `//` line comments and block comments — the four terminals the
- * 1.59.2 grammar marks hidden (`WS`, `NL`, `LINE_COMMENT`, `BLOCK_COMMENT`),
- * which its lexer drops between the `#` of a tag reference and the name.
+ * For every position in `text`, where the next token LikeC4 would read starts
+ * from there: past whitespace, line breaks, `//` line comments and block
+ * comments — the four terminals the 1.59.2 grammar marks hidden (`WS`, `NL`,
+ * `LINE_COMMENT`, `BLOCK_COMMENT`), which its lexer drops between the `#` of a
+ * tag reference and the name. Index `text.length` is the end itself.
+ *
+ * ONE PASS, FROM THE END, so every answer is built from answers already known
+ * and the whole table costs one visit per character, however the `#`s and the
+ * comments interleave. The first version walked forward from each `#` instead,
+ * and a run of hidden tokens with `#`s inside it was re-walked once per `#`:
+ * `#/*` repeated took 17.6 s on 100 KB (each unclosed opener searched the rest
+ * of the file for a closer), and `#//` repeated on one line, or the same `#/*`
+ * run closed once at its end, were quadratic the same way. Remembering only
+ * where the closer search last failed would have fixed the first of those
+ * three and left the other two; nothing short of reusing every answer fixes
+ * the shape, and this scan runs over every document on every reader's path.
  *
  * A hand loop rather than one regular expression: a repeated group of
  * alternatives that can each consume a comment backtracks exponentially on a
- * long run of slashes, and this runs over every `#` in every document. An
- * UNTERMINATED block comment is not one LikeC4 can lex as a comment, so only
- * the `/*` itself is stepped over and a name written after it still counts:
- * that can open the gate more often, never less, and the document cannot parse
- * anyway — the load the gate opens is what reports it.
+ * long run of slashes. An UNTERMINATED block comment is not one LikeC4 can lex
+ * as a comment, so only the `/*` itself is stepped over and a name written
+ * after it still counts: that can open the gate more often, never less, and
+ * the document cannot parse anyway — the load the gate opens is what reports
+ * it. The closer is searched from two past the opener, so the `*` of an opener
+ * never doubles as the `*` of its closer, exactly as the lexer reads it.
  */
-function pastHiddenTokens(text: string, at: number): number {
-  let next = at;
-  for (;;) {
-    const char = text[next];
+function hiddenRunEnds(text: string): Int32Array {
+  const end = new Int32Array(text.length + 1);
+  end[text.length] = text.length;
+  // The nearest line break at or after the position being read, and the
+  // nearest `*/` at or after the NEXT position and the one after that — an
+  // opener at `at` searches from `at + 2`, and the pass meets that position
+  // before it meets `at`. -1 is "none".
+  let lineBreak = text.length;
+  let closeFromNext = -1;
+  let closeFromAfterNext = -1;
+  for (let at = text.length - 1; at >= 0; at -= 1) {
+    const char = text[at];
+    const closeFromHere = char === "*" && text[at + 1] === "/" ? at : closeFromNext;
+    if (char === "\r" || char === "\n") lineBreak = at;
     if (char === " " || char === "\t" || char === "\r" || char === "\n") {
-      next += 1;
-    } else if (text.startsWith("//", next)) {
-      next += 2;
-      while (next < text.length && text[next] !== "\n" && text[next] !== "\r") next += 1;
-    } else if (text.startsWith("/*", next)) {
-      const close = text.indexOf("*/", next + 2);
-      next = close === -1 ? next + 2 : close + 2;
+      end[at] = end[at + 1]!;
+    } else if (char === "/" && text[at + 1] === "/") {
+      // The comment runs to the line break and leaves it unread; the break is
+      // whitespace, so the run goes on from there. No break: the text ends.
+      end[at] = end[lineBreak]!;
+    } else if (char === "/" && text[at + 1] === "*") {
+      end[at] = closeFromAfterNext === -1 ? end[at + 2]! : end[closeFromAfterNext + 2]!;
     } else {
-      return next;
+      end[at] = at;
     }
+    closeFromAfterNext = closeFromNext;
+    closeFromNext = closeFromHere;
   }
+  return end;
 }
 
 /**
