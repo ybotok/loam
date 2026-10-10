@@ -152,9 +152,10 @@ export const MCP_TOOLS: readonly McpTool[] = [
     command: "list",
     description:
       "List the services and features in the docs repo. " +
-      "CLI equivalent: loam list [section] [--archived] [--needs-work] [--review-order] [--subsystem <name>] [--owners <path>] --json",
+      "CLI equivalent: loam list [section] [name] [--archived] [--needs-work] [--review-order] [--subsystem <name>] [--owners <path>] --json",
     positionals: [
-      { property: "section", required: false, variadic: false, description: "services | features | capabilities (default: services + features)" },
+      { property: "section", required: false, variadic: false, description: "services | features | capabilities | glossary | suites (default: services + features)" },
+      { property: "name", required: false, variadic: false, description: "suites only: the one suite to show" },
     ],
     flags: [
       { property: "archived", flag: "--archived", kind: "boolean", description: "include archived features" },

@@ -24,9 +24,10 @@ import {
 import { fanInByService, reviewLandscape, reviewOrder } from "./review.js";
 import { resolveSubsystemSlice } from "./campaign/campaign.js";
 import { ownersJoin, type OwnersJoin } from "./campaign/owners.js";
+import { suitesSection } from "./suites/suites.js";
 
-type Section = "services" | "features" | "capabilities" | "glossary";
-const SECTIONS: Section[] = ["services", "features", "capabilities", "glossary"];
+type Section = "services" | "features" | "capabilities" | "glossary" | "suites";
+const SECTIONS: Section[] = ["services", "features", "capabilities", "glossary", "suites"];
 /**
  * What a bare `loam list` shows. `capabilities` is explicit-only, NEVER part
  * of this default: the no-argument output and its `--json` payload are a
@@ -46,7 +47,8 @@ interface ListOptions {
 export function registerList(program: Command): void {
   program
     .command("list")
-    .argument("[section]", "services | features | capabilities | glossary (default: services + features)")
+    .argument("[section]", "services | features | capabilities | glossary | suites (default: services + features)")
+    .argument("[name]", "suites only: the one suite to show")
     .description("List the services and features in the docs repo")
     .option("--json", "emit the machine contract instead of the human view")
     .option("--archived", "include archived features")
@@ -66,7 +68,7 @@ export function registerList(program: Command): void {
       "--owners <path>",
       "services only: group the listing by owning team from this CODEOWNERS file, resolved from the current directory (directory-pattern rules only; unsupported rules are listed as skipped, never guessed)",
     )
-    .action(async (section: string | undefined, opts: ListOptions) => {
+    .action(async (section: string | undefined, name: string | undefined, opts: ListOptions) => {
       const json = opts.json === true;
       // The campaign flags grade services, so — exactly like --needs-work —
       // they narrow a bare `loam list` to the services section instead of
@@ -83,8 +85,13 @@ export function registerList(program: Command): void {
         fail(json, "invalid-option", `Unknown section '${section}'. Expected: ${SECTIONS.join(" | ")}.`);
         return;
       }
-      if (opts.needsWork && section === "features") {
-        fail(json, "invalid-option", "--needs-work is the service adoption worklist; drop the 'features' section.");
+      // Anywhere but suites a name would be silently ignored: refused, as commander's excess-argument error was.
+      if (name !== undefined && section !== "suites") {
+        fail(json, "invalid-option", `Only the suites section takes a name; drop '${name}'.`);
+        return;
+      }
+      if (opts.needsWork && (section === "features" || section === "suites")) {
+        fail(json, "invalid-option", `--needs-work is the service adoption worklist; drop the '${section}' section.`);
         return;
       }
       if (campaign && section !== undefined && section !== "services") {
@@ -105,9 +112,9 @@ export function registerList(program: Command): void {
       // A docsDir that is not a docs repo is refused, never rendered as an empty
       // fleet — the whole point of the gate (see docs-repo-gate.ts).
       // `list features` alone does not need services/, so it asks for less;
-      // the capability rollup walks every service's spec files, so it asks for them.
-      const needsServices =
-        wanted.includes("services") || wanted.includes("capabilities") || wanted.includes("glossary");
+      // the capability rollup walks every service's spec files, so it asks for
+      // them, and a suite resolves its participants against them.
+      const needsServices = wanted.some((s) => s !== "features");
       if (!docsRepoReady(json, docsDir, needsServices ? "services" : "docs")) return;
 
       try {
@@ -224,6 +231,9 @@ export function registerList(program: Command): void {
           term,
           linkedBy: citations === undefined ? [] : citations.linkersOf(term.path),
         }));
+        // Use cases by `#suite-` tag and what each suite needs up; `null` = already refused.
+        const suites = wanted.includes("suites") ? await suitesSection({ docsDir, name, json, fleet }) : undefined;
+        if (suites === null) return;
 
         // Every row that still owes something — `missing` is non-empty below
         // `vouched` by construction, and at `vouched` exactly when a stamped
@@ -307,6 +317,7 @@ export function registerList(program: Command): void {
             // document and none cites the term; this key is how a reader tells
             // that from "one of them would not decode".
             ...(citations ? { links: { unreadable: citations.unreadable } } : {}),
+            ...suites?.payload,
             // The use-case corpus's own health, beside the rows it decorates —
             // `status --json` and `delta --json` already spell this key this
             // way. It is what makes an absent `keptBy` legible: `unreadable:
@@ -372,6 +383,7 @@ export function registerList(program: Command): void {
             console.log("no glossary/ — the fleet defines no domain terms");
           }
         }
+        suites?.print();
       } catch (err) {
         if (err instanceof DocsRepoUnavailableError) {
           reportDocsRepoError(json, err);
