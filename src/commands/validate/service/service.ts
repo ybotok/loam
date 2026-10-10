@@ -18,8 +18,8 @@ import { type PathableService } from "../../../core/kernel/ids/service.js";
 import { landscapePath as landscapeFile, permissionsPath } from "../../../core/repo/paths.js";
 import { locateServicePaths } from "../../../core/repo/service-target.js";
 import { readVocabulary } from "../../../core/permissions/permissions.js";
-import { capabilityRequirementIndex, capabilityUnknownFindings } from "../../../core/capabilities/findings.js";
-import { realizesStaleFindings, realizesUnknownFindings } from "../../../core/capabilities/realizes/findings.js";
+import { capabilityRequirementIndex, capabilityUnknownIssues } from "../../../core/capabilities/findings.js";
+import { realizesStaleFindings, realizesUnknownIssues } from "../../../core/capabilities/realizes/findings.js";
 import { requiresUnknownFindings } from "../checks/requirements.js";
 import { listServices } from "../../../core/repo/repo.js";
 import { type Finding, type TargetReport } from "../../../core/vocabulary/report.js";
@@ -328,7 +328,7 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   const vocabulary = await readVocabulary(permissionsPath(docsDir));
   const capabilities = await fleet.capabilities(docsDir);
   // The requirement-level index behind `Realizes:`. Built once for both axes,
-  // and behind the same ladder `capabilityUnknownFindings` applies — an absent
+  // and behind the same ladder `capabilityUnknownIssues` applies — an absent
   // or unreadable vocabulary means no reads and no grades at all, so a fleet
   // that has not adopted the axis pays nothing for a line it never wrote.
   const capabilityReqs = await capabilityRequirementIndex(capabilities, (p) => fleet.readRequirements(p));
@@ -338,8 +338,8 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   ] as const) {
     const target = { where: `${service}: ${label}`, subject: service };
     findings.push(...requiresUnknownFindings(docReqs, target, vocabulary));
-    findings.push(...capabilityUnknownFindings(docReqs, target, capabilities));
-    findings.push(...realizesUnknownFindings(docReqs, target, capabilityReqs));
+    findings.push(...capabilityUnknownIssues(docReqs, target, capabilities));
+    findings.push(...realizesUnknownIssues(docReqs, target, capabilityReqs));
     findings.push(...realizesStaleFindings(docReqs, target, capabilityReqs));
     // The grammar guard, last in the loop: it grades the KEYS the three checks
     // above resolve values from, so a line none of them saw is reported here

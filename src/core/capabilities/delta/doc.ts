@@ -2,11 +2,13 @@
  * The capability document's own three grades, applied to a FEATURE'S DELTA.
  *
  * `../findings.ts` grades the living `capabilities/<id>/spec.md` and files
- * Findings for `loam validate`. This is the same three rules shaped as archive
- * Issues — the twin `capabilityUnknownFindings`/`capabilityUnknownIssues`
- * already are one directory over, and for the identical reason: severity says
+ * Findings for `loam validate`. This is the same three rules filed as archive
+ * Issues — the split `capabilityUnknownIssues` one directory over makes
+ * between its two commands, and for the identical reason: severity says
  * whether the DOCUMENT is valid, gating says whether the MERGE is safe, and the
- * two questions are asked by two different commands about the same text.
+ * two questions are asked by two different commands about the same text. A grade
+ * is already an Issue in shape (its return type pins severity and code), so
+ * the rules' own objects are returned, not copied field by field.
  *
  * WITHOUT THIS THE DELTA PATH IS A HOLE THROUGH THE RULE. A capability
  * requirement carrying `Operations:` is a service requirement filed at the
@@ -43,10 +45,5 @@ import type { Issue } from "../../vocabulary/issue.js";
  */
 export function capabilityDocIssues(reqs: Requirement[], target: CapabilityTarget): Issue[] {
   const merging = reqs.filter((r) => r.kind === "ADDED" || r.kind === "MODIFIED");
-  return capabilityDocFindings(merging, target.subject, target.where).map((f) => ({
-    severity: f.severity,
-    code: f.code,
-    subject: f.subject,
-    message: f.message,
-  }));
+  return capabilityDocFindings(merging, target.subject, target.where);
 }
