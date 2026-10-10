@@ -121,8 +121,18 @@ export async function deltaEventLines(
   return { removed, links };
 }
 
-/** Read a document's text, answering undefined for bytes that do not decode — ../declared.ts's guard. */
-async function readOr(p: string, context?: FleetContext): Promise<string | undefined> {
+/**
+ * Read a document's text, answering undefined for bytes that do not decode.
+ *
+ * `context.readText` DECODES and THROWS on non-UTF-8 bytes, where the
+ * no-context `readFile` substitutes U+FFFD and lets the contract reader flag
+ * the document unreadable. Uncaught, one service's UTF-16 living contract took
+ * down the whole feature target under validate's context while archive's
+ * no-context path sailed past. Either text failing to decode gets the answer
+ * the baseline gates give an unreadable parse: that side's checks are skipped.
+ * Exported for ../declared.ts, the OpenAPI axis's gate, which reads the same way.
+ */
+export async function readOr(p: string, context?: FleetContext): Promise<string | undefined> {
   try {
     return context === undefined ? await readFile(p, "utf8") : await context.readText(p);
   } catch (err) {
