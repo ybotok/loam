@@ -29,7 +29,7 @@ import { HELP_EPILOG, buildProgram } from "../src/cli.js";
 import { AGENTS_MD } from "../src/core/agent/agents-md.js";
 import { PROTOCOLS } from "../src/core/agent/protocol.js";
 import { SLASH_COMMANDS } from "../src/core/agent/scaffold.js";
-import { firstHour } from "../src/commands/init/first-hour.js";
+import { docsRepoFirstHour, firstHour } from "../src/commands/init/first-hour.js";
 
 const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 
@@ -252,6 +252,10 @@ async function corpus(): Promise<Invocation[]> {
     [
       "the init first-hour epilogue (src/commands/init/first-hour.ts)",
       firstHour("PLACEHOLDER").map(([command]) => command),
+    ],
+    [
+      "the init docs-repo first-hour epilogue (src/commands/init/first-hour.ts)",
+      docsRepoFirstHour().map(([command]) => command),
     ],
     // The `--help` epilog, by IMPORT for the same reason. Its two lines are the
     // only instruction a reader who has run nothing yet receives, and one of

@@ -20,6 +20,16 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   `loam_instructions` and could not run its first step, `loam adopt --service <id> --json`. No
   code, flag or payload key was added to the CLI; `tools/list` returns one more tool.
 
+### Changed — `loam init --create` with no service prints the docs repo's first hour
+
+- **A run that creates a docs repo and binds no service now ends with `next — the docs repo's first
+  hour:`**: `loam seed --from fleet.yaml` (or draw the map by hand), `loam init --docs <docs-repo>
+  --service <id>` in each service's own repo, `loam adopt --service <id> --json` there, and `loam
+  status`. It used to print nothing after the scaffold list. These are WORKFLOW.md's Day zero steps
+  and the rungs `loam status` already names on an empty fleet. A run that binds a service still
+  prints the single-repo trial's hour, and a join still prints neither. Human output only: no code,
+  flag or payload key was added, and the `--json` envelope is unchanged for both variants.
+
 ### Fixed — a writer waiting on the lock no longer deletes the next writer's live lock
 
 No code, flag, path or payload key was added, changed or retired. What changes is that concurrent
