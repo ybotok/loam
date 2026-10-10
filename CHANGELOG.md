@@ -114,6 +114,19 @@ No code, flag, path or payload key was added, changed or retired; only documenta
   the committed copy: <id>` and `committed, no longer served: <id>` — and its message counts both
   sides, or says every operationId matches when the difference is inside an operation or outside
   `paths`. The digest still decides whether it fires; same code, same severity.
+- **`diff.op-modified` (warn)**: an operationId present at the base ref and now, whose operation
+  changed — its own definition, its method or path, or anything its internal `$ref`s reach, so a
+  field renamed in a shared `components` schema counts. **`diff.message-modified` (warn)** is the
+  same for an AsyncAPI message: its declaration or anything its payload `$ref`s reach. Both name
+  the authored consumers in `details[]` (the same scan `diff.op-deprecated` runs) and point at
+  oasdiff or `asyncapi diff`; neither grades whether the change is breaking, so neither sets
+  `breaking` or changes the exit code. A PR that renamed a required field used to print "no
+  fleet-meaningful changes" and exit 0 with nothing else.
+- **The `modified` count in `loam diff --json`'s `summary` now counts both new codes** beside
+  `diff.requirement-modified`. The key is unchanged; a diff over a changed contract reports a
+  higher number than before.
+- A newly deprecated operation is still reported once, as `diff.op-deprecated`, not also as
+  `diff.op-modified`.
 
 ### Changed
 
@@ -146,6 +159,20 @@ No code, flag, path or payload key was added, changed or retired; only documenta
   `#` run on a `### Requirement:` or `#### Scenario:` heading is dropped at ingest, so
   `### Requirement: Invoice totals ###` stages as `Invoice totals` and a MODIFIED delta naming it
   no longer fails `loam validate` as `delta.modified-unknown`. loam's own parser is unchanged.
+- **An inbound landscape edge into the provider with no `metadata { op }`** (and no
+  `publishes`/`consumes`) is now listed in the `details[]` of `diff.op-removed`,
+  `diff.op-removed-consumed`, `diff.op-deprecated` and `diff.op-modified` as a consumer whose
+  operation is unknown. A removal with such a caller and no named one now says "could NOT be fully
+  answered" instead of "no current landscape edge or living requirement names it". It stays a
+  warning, exit 0: a map `loam seed` drew, every edge without an op, does not fail every removal.
+- **Without `--json`, a commander usage error** (a missing `--base` on `loam diff`, an unknown flag
+  or command, a missing argument) now prints a fix line naming `loam <command> --help` and the code
+  line `invalid-option  ·  loam explain invalid-option` under commander's own message, like every
+  other refusal. stdout stays empty, exit 1; the `--json` envelope is unchanged.
+- README's `.github/workflows/fleet-edges.yml` **pins loam to an exact version** (`LOAM`) and says
+  how to move the pin, **adds an oasdiff step** per changed `services/*openapi.yaml`, and no longer
+  labels the `diff` step "did you break a consumer?". `test/docs-drift.test.ts` keeps the pin equal
+  to the version README names.
 
 ### Contributors — release preflight and test harness
 

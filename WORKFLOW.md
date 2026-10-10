@@ -273,11 +273,12 @@ archive still reads no verification record.
 **`loam diff` does not add one either — it is the review lens.** On a docs-repo PR,
 `loam diff --base origin/main` says what the branch *changes* in fleet-meaningful terms: services,
 requirements (by identity and content digest, so a rebase pin is not a change), operations,
-messages, and the cross-service joins between them — with the current consumers of every removal
-named, which is what a reviewer actually needs to know. `validate --all` remains the fleet gate;
-diff exits 1 on a removal the fleet still consumes (`diff.op-removed-consumed`,
-`diff.message-removed-consumed`) — and also whenever a document on either side could not be read,
-because a suspended axis is reported, never graded as "nothing changed" — so a PR job gets those
+messages, and the cross-service joins between them — with the authored consumers of every removal,
+deprecation and contract modification named, which is what a reviewer actually needs to know.
+`validate --all` remains the fleet gate; diff exits 1 on a removal the fleet still consumes
+(`diff.op-removed-consumed`, `diff.message-removed-consumed`) — and also whenever a document on
+either side could not be read, because a suspended axis is reported, never graded as "nothing
+changed" — so a PR job gets those
 checks for free, but a green diff is not a valid fleet: run both. For the byte-level OpenAPI
 breaking-change catalogue, use oasdiff on the two states of one contract; [the `loam diff` command
 note](#command-notes) below has the exact invocation, and loam deliberately does not reimplement
@@ -595,7 +596,11 @@ there. What it reports is the *joined*, fleet-meaningful delta — a removed ope
 against the landscape edges and living requirements that still name it (`diff.op-removed-consumed`,
 exit 1), a removed message against its `Consumes:` lines and consumes-edges — and an artifact
 unreadable on either side suspends that subject's axis and exits 1, because "nobody could look" must
-never read as "nothing changed". `validate --all` remains the fleet gate; diff is the review lens.
+never read as "nothing changed". A landscape edge into the provider drawn with no `metadata { op }`
+is the same doubt at warning strength: it is listed as a consumer nobody could check, never dropped.
+An operation or message whose own node or `$ref` closure moved is `diff.op-modified` /
+`diff.message-modified` — a warning that names the same consumers and does not say whether the
+change breaks them. `validate --all` remains the fleet gate; diff is the review lens.
 For the byte-level OpenAPI breaking-change catalogue, run oasdiff on the two states of one contract:
 `git -C <docs> show <ref>:./services/<id>/openapi.yaml > base.yaml && oasdiff breaking base.yaml <docs>/services/<id>/openapi.yaml`
 (the `./` resolves the path relative to the docs directory rather than the git root, so this holds

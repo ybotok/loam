@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { parse } from "yaml";
 import { danglingRefs, deref, payloadUndeclared } from "./depth.js";
 import { isSlotRemoval, removalMarkerPaths } from "./digest.js";
+import { closureDigester } from "../openapi/digest.js";
 import type { AsyncapiDoc, EventMessage } from "./model.js";
 import type { FleetContext } from "../fleet-context.js";
 
@@ -43,7 +44,9 @@ import type { FleetContext } from "../fleet-context.js";
  * slot digests (./digest.ts) are COMPATIBLE with it, not an exception: they
  * hash payload bytes as content equality — a changed payload moves the slot's
  * identity — and content equality is not a join; nothing a digest reads ever
- * contributes a name to the spine.
+ * contributes a name to the spine. The per-message `closureDigest` `loam diff`
+ * compares is the same kind of read followed through `$ref`s: it hashes what
+ * the payload points at, transitively, and still never names a field.
  */
 
 /*
@@ -153,6 +156,7 @@ export function asyncapiDocOf(doc: unknown): AsyncapiDoc {
   }
   const messages: EventMessage[] = [];
   const seen = new Map<string, string[]>();
+  const closureDigest = closureDigester(root);
   const declare = (name: string, slot: string, node: unknown): void => {
     // A declaration carrying the removal marker asserts a slot rather than
     // declaring a message: it is listed (with `remove`) so the gate can see
@@ -161,7 +165,7 @@ export function asyncapiDocOf(doc: unknown): AsyncapiDoc {
       messages.push({ name, slot, remove: true as const });
       return;
     }
-    messages.push({ name, slot, ...(payloadUndeclared(root, node) ? { payloadEmpty: true as const } : {}) });
+    messages.push({ name, slot, closureDigest: closureDigest(node), ...(payloadUndeclared(root, node) ? { payloadEmpty: true as const } : {}) });
     seen.set(name, [...(seen.get(name) ?? []), slot]);
   };
 

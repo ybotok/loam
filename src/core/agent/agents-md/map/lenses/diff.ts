@@ -21,25 +21,33 @@ export const DIFF_COMMAND = `- \`loam diff --base <ref>\` reports the fleet-mean
   commit sha) — the review lens for a docs-repo PR. Read-only: the base state
   is read with read-only git questions (\`rev-parse\`/\`ls-tree\`/\`show\`), no
   checkout, nothing written. \`validate --all\` stays the fleet gate; diff says
-  what a branch CHANGES, and names who currently depends on every removal.
+  what a branch CHANGES, and names the authored consumers of every removal,
+  deprecation and modification.
   Codes, per service and grouped by the artifact they are computed over:
   \`diff.service-added\` and \`diff.service-removed\` over the \`services/<id>/\`
   directory; \`diff.requirement-added\`, \`diff.requirement-removed\` and
   \`diff.requirement-modified\` over spec.md's living requirements;
-  \`diff.op-added\`, \`diff.op-removed\`, \`diff.op-removed-consumed\` and
-  \`diff.op-deprecated\` over the OpenAPI contract; \`diff.message-added\`,
-  \`diff.message-removed\` and \`diff.message-removed-consumed\` over the AsyncAPI
-  contract; and \`diff.consumer-added\` / \`diff.consumer-removed\` over the
-  cross-service joins — another service's requirement naming this service's
-  operation or message. The two \`-consumed\` codes are the errors: they are the
-  removals something in the fleet still names, with the victims in
-  \`details[]\`. Exit 0 = diff computed, nothing breaking, everything readable;
-  exit 1 = a refusal, any error finding (\`breaking: true\` in \`--json\`), or a
-  subject whose artifact could not be read on either side — those axes are
-  SUSPENDED and reported (\`unreadable\` in the payload and the summary), never
-  graded as "nothing changed" or "everything added". Refusals reuse existing
-  codes: \`repository-unavailable\` when the docs repo has no git history to ask,
-  and \`unknown-target\` when \`--base\` resolves to no commit there. For the
-  byte-level OpenAPI breaking-change catalogue, run oasdiff on the two states
-  of one contract instead — loam deliberately does not reimplement it.
+  \`diff.op-added\`, \`diff.op-removed\`, \`diff.op-removed-consumed\`,
+  \`diff.op-deprecated\` and \`diff.op-modified\` over the OpenAPI contract;
+  \`diff.message-added\`, \`diff.message-removed\`,
+  \`diff.message-removed-consumed\` and \`diff.message-modified\` over the
+  AsyncAPI contract; and \`diff.consumer-added\` / \`diff.consumer-removed\`
+  over the cross-service joins — another service's requirement naming this
+  service's operation or message. The two \`-consumed\` codes are the errors:
+  they are the removals something in the fleet still names, with the victims
+  in \`details[]\`. The two contract \`-modified\` codes are warnings whoever
+  is joined: the operation or message changed — its own node or anything its
+  \`$ref\`s reach — and \`details[]\` names who to check it against, but loam
+  does not grade whether the change breaks them. A landscape edge into the
+  provider drawn with no \`metadata { op }\` is listed as a consumer nobody
+  could check, never dropped. Exit 0 = diff computed, nothing breaking,
+  everything readable; exit 1 = a refusal, any error finding
+  (\`breaking: true\` in \`--json\`), or a subject whose artifact could not be
+  read on either side — those axes are SUSPENDED and reported (\`unreadable\`
+  in the payload and the summary), never graded as "nothing changed" or
+  "everything added". Refusals reuse existing codes: \`repository-unavailable\`
+  when the docs repo has no git history to ask, and \`unknown-target\` when
+  \`--base\` resolves to no commit there. For the byte-level breaking-change
+  catalogue, run oasdiff (OpenAPI) or \`asyncapi diff\` (AsyncAPI) on the two
+  states of one contract instead — loam deliberately does not reimplement it.
 `;

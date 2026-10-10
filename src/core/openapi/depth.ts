@@ -10,10 +10,14 @@
  * says, only whether one was declared at all, so the reader's structure-only
  * stance holds.
  *
- * A local pointer walk rather than an import from `merge/components.ts`: the merge
- * package already imports this package (`HTTP_METHODS` from doc.ts), so the
- * reverse import would be a package cycle — the same reason read-side
- * `resolvePointer` copies exist on the asyncapi axis.
+ * This module used to keep a private pointer walk rather than import the
+ * merge's: the merge package already imports this package (`HTTP_METHODS` from
+ * doc.ts), so the reverse import would have been a package cycle — the same
+ * reason read-side `resolvePointer` copies exist on the asyncapi axis. The two
+ * plain `$ref` questions now live HERE, at the axis root (`collectRefs` and
+ * `resolvePointer`, at the bottom), so the private copy went: the dangling-ref
+ * probe below, the merge's component closure and the reader's closure digest
+ * (`closureDigester`, ./digest.ts) all ask the same two questions.
  */
 
 /** Status codes whose response legitimately carries no body. */
@@ -74,39 +78,52 @@ export function failureCodesOf(op: unknown): string[] {
  * scope and never graded, matching the merge's documented stance.
  */
 export function danglingRefs(root: unknown): string[] {
-  const out = new Set<string>();
-  const walk = (node: unknown): void => {
-    if (Array.isArray(node)) {
-      for (const value of node) walk(value);
-      return;
-    }
-    if (node === null || typeof node !== "object") return;
-    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
-      if (key === "$ref" && typeof value === "string") {
-        if (value.startsWith("#/") && !resolves(root, value)) out.add(value);
-        continue;
-      }
-      walk(value);
-    }
-  };
-  walk(root);
-  return [...out];
+  // A Set keeps first-insertion order, so dedup and document order both hold.
+  return [...new Set(collectRefs(root).filter((ref) => ref.startsWith("#/") && !resolvePointer(root, ref).found))];
 }
 
-/** Does a local JSON pointer (`#/a/b~1c`) reach a node in this tree? */
-function resolves(root: unknown, ref: string): boolean {
+/*
+ * `$ref` as a pair of plain questions — which ones does this tree contain, and
+ * what does one point at. Both lived in `./merge/components.ts`, beside the
+ * component closure that was their only caller, until the reader needed the same
+ * walk; the header says why the root and not there.
+ */
+
+/** Every `$ref` string in a tree, in document order — duplicates kept, external refs included. */
+export function collectRefs(node: unknown): string[] {
+  const out: string[] = [];
+  const walk = (current: unknown): void => {
+    if (Array.isArray(current)) {
+      for (const value of current) walk(value);
+      return;
+    }
+    if (current !== null && typeof current === "object") {
+      for (const [key, value] of Object.entries(current)) {
+        if (key === "$ref" && typeof value === "string") out.push(value);
+        else walk(value);
+      }
+    }
+  };
+  walk(node);
+  return out;
+}
+
+/** Resolve a local JSON pointer (`#/a/b~1c`) against a plain JS tree. */
+export function resolvePointer(root: unknown, ref: string): { found: boolean; value: unknown } {
   let current: unknown = root;
   for (const raw of ref.slice(2).split("/")) {
     const segment = raw.replace(/~1/g, "/").replace(/~0/g, "~");
     if (Array.isArray(current)) {
       const index = Number(segment);
-      if (!Number.isInteger(index) || index < 0 || index >= current.length) return false;
+      if (!Number.isInteger(index) || index < 0 || index >= current.length) {
+        return { found: false, value: undefined };
+      }
       current = current[index];
     } else if (current !== null && typeof current === "object" && segment in (current as Record<string, unknown>)) {
       current = (current as Record<string, unknown>)[segment];
     } else {
-      return false;
+      return { found: false, value: undefined };
     }
   }
-  return true;
+  return { found: true, value: current };
 }
