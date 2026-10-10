@@ -195,6 +195,24 @@ export async function makeProject(
 }
 
 /**
+ * Make each `file:line` citation real under `dir`: the file exists and has at
+ * least that many lines. `loam verify --record` resolves every agent citation
+ * in the repository it records from — the all-at-once form too, since it
+ * stopped accepting a line that does not exist — so a fixture whose answers
+ * cite evidence has to have it. Existing files are left alone.
+ */
+export async function citeable(dir: string, ...citations: string[]): Promise<void> {
+  for (const citation of citations) {
+    const match = /^(.+):(\d+)$/.exec(citation);
+    if (match === null) throw new Error(`citeable: '${citation}' is not file:line`);
+    const path = join(dir, match[1]!);
+    if (existsSync(path)) continue;
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, Array.from({ length: Number(match[2]) }, (_, i) => `// evidence line ${i + 1}`).join("\n") + "\n", "utf8");
+  }
+}
+
+/**
  * A content fingerprint of a whole tree: sha256 per file, keyed by its path
  * relative to `root` with forward slashes. Directories are keyed with a trailing
  * slash and a marker value, so a directory left behind empty is as visible as a

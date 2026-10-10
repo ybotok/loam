@@ -16,6 +16,7 @@ import { createHash } from "node:crypto";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import {
+  citeable,
   coherentFixture,
   makeProject,
   runLoam,
@@ -31,6 +32,9 @@ afterEach(async () => {
 async function project(files: Record<string, string> = coherentFixture()): Promise<Project> {
   const p = await makeProject(files);
   cleanups.push(() => p.destroy());
+  // The all-at-once form resolves every agent citation in the repository it
+  // records from, so the evidence this file's answer sets cite is made real.
+  await citeable(p.workDir, "src/x.ts:12");
   return p;
 }
 

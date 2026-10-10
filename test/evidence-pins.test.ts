@@ -21,6 +21,7 @@ import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
 import {
+  citeable,
   coherentFixture,
   makeProject,
   runLoam,
@@ -79,6 +80,9 @@ async function project(): Promise<Project> {
     "services/payment-split-service/model.likec4": SPLIT_MODEL,
   });
   cleanups.push(() => p.destroy());
+  // The all-at-once form resolves every agent citation in the repository it
+  // records from, so the evidence this file's answer sets cite is made real.
+  await citeable(p.workDir, "proof.ts:2");
   return p;
 }
 
@@ -119,7 +123,8 @@ function greenReport(): unknown {
           name: "Split across two payees",
           type: "scenario",
           tags: [{ name: `@loam-digest-${digest}` }],
-          steps: [{ result: { status: "passed" } }],
+          // One result per Given/When/Then: a cucumber run is held to the stamped scenario's step count.
+          steps: [{ result: { status: "passed" } }, { result: { status: "passed" } }, { result: { status: "passed" } }],
         },
       ],
     },

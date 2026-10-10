@@ -147,9 +147,16 @@ repository, which needs its own committed ./loam.json — if there is none,
    A step's argument arrives as an argument: a \`"""\` docstring is the payload, an
    indented table is a DataTable. Assert against them; do not re-parse the step text.
    Then implement until the suite passes — run it with a JSON report
-   (\`cucumber-js --format json:report.json\`):
+   (\`cucumber-js --format json:report.json\`; cucumber-jvm, behave, Reqnroll,
+   pytest-bdd \`--cucumberjson\` and godog write the same cucumber JSON):
    \`loam verify $1 --service $2 --results report.json\` consumes that report as the
-   done-check's answer sheet. Record from THIS repo, with \`--service\` — the
+   done-check's answer sheet. A runner with no cucumber formatter answers through
+   loam's runner-neutral shape instead, keyed by each scenario's \`@loam-digest\`
+   tag — adapting the runner's report into it is a build step you own:
+   \`{"loamScenarioReport": 1, "results": [{"digest": "<16 hex>", "status": "passed"}]}\`.
+   A cucumber run must have run every step of the stamped scenario: a report
+   entry whose step count differs is not that scenario's run and stays
+   unconfirmed. Record from THIS repo, with \`--service\` — the
    \`--service\`-less \`--record\` form writes the whole record from one place and is
    refused (\`record-federated\`) once another service has attested. Recording is what
    closes the unit, so step 3 is the command AFTER it, not the end of the run.

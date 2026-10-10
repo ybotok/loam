@@ -639,13 +639,20 @@ complete document, so without the pin the merge upserts operations you only rest
 whatever landed on them. Restamping is the last step of resolving a collision, not the resolution —
 the output says which pins moved.
 
-**`loam verify`** — `--results <report.json>` answers the scenario claims from a cucumber JSON run,
+**`loam verify`** — `--results <report.json>` answers the scenario claims from a test run,
 digest-matched, so only a green run confirms one, and the record writes down which file it read
-(path, sha256, mtime). It answers *only* those claims, so on a feature with open `service.exists` /
-`api.exposes` claims it is passed alongside `--record` or refused (`answers-mismatch`).
-`--record <answers.json>` takes the agent's answers, refusing anything unevidenced — under
-`--service`, refusing a `file:line` that does not resolve in that repo at the attested commit — and
-a scenario claim answered that way makes the record `attested` rather than `verified`. A
+(path, sha256, mtime). It reads two shapes: a cucumber JSON report (cucumber-js, cucumber-jvm,
+behave, SpecFlow/Reqnroll, pytest-bdd `--cucumberjson` and godog's cucumber formatter all write
+one), in which a matched scenario must also have run exactly the stamped scenario's number of
+steps — a hand-tagged stub is not that scenario's run — or loam's runner-neutral
+`{"loamScenarioReport": 1, "results": [{"digest": "…", "status": "passed"}]}`, which a JUnit,
+pytest, Vitest or house runner's report is adapted into. Anything else, JUnit XML included, is
+refused naming both (`answers-unreadable`). It answers *only* those claims, so on a feature with
+open `service.exists` / `api.exposes` claims it is passed alongside `--record` or refused
+(`answers-mismatch`). `--record <answers.json>` takes the agent's answers, refusing anything
+unevidenced — a `file:line` that does not resolve to a real line in this repository, and under
+`--service` one that does not resolve at the attested commit — and a scenario claim answered that
+way makes the record `attested` rather than `verified`. A
 cross-service feature is recorded **once per service repo** with `--service <id>`, each run writing
 its own commit-bound attestation to a file of its own, `features/<FEAT>/verification/<id>.yaml` —
 the directory is the record, so two teams' attestations on two docs-repo branches merge cleanly. The

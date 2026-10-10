@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  citeable,
   coherentFixture,
   FEATURE_SPEC,
   LIVING_SPEC,
@@ -42,7 +43,8 @@ async function writeReport(p: Project): Promise<void> {
         {
           name: "Split across two payees",
           tags: [{ name: `@loam-digest-${digest}` }],
-          steps: [{ result: { status: "passed" } }],
+          // One result per Given/When/Then: a cucumber run is held to the stamped scenario's step count.
+          steps: [{ result: { status: "passed" } }, { result: { status: "passed" } }, { result: { status: "passed" } }],
         },
       ],
     },
@@ -70,6 +72,9 @@ async function withProject(
   fn: (p: Project) => Promise<void>,
 ): Promise<void> {
   const p = await makeProject(files);
+  // The all-at-once form resolves every agent citation in the repository it
+  // records from, so the evidence this file's answer sets cite is made real.
+  await citeable(p.workDir, "src/split/Service.ts:12");
   try {
     await fn(p);
   } finally {

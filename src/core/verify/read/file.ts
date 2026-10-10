@@ -29,7 +29,8 @@ import { lstat, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { conflictMarkerLines } from "../../conflict-markers.js";
-import { verificationDir, verificationPath, type Verification } from "../record.js";
+import { verificationDir, verificationPath } from "../location.js";
+import { type Verification } from "../record.js";
 import { asVerification, summaryDisagreement } from "./shape.js";
 import { assembleRecord } from "./union.js";
 

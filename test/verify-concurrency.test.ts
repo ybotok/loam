@@ -28,7 +28,7 @@ import { existsSync } from "node:fs";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { coherentFixture, makeProject, runLoam, type Project } from "./helpers/harness.js";
+import { citeable, coherentFixture, makeProject, runLoam, type Project } from "./helpers/harness.js";
 import {
   allClaims,
   answersFile,
@@ -247,6 +247,7 @@ describe("commitVerification", () => {
     // unseen.
     const p = await project();
     const all = await allClaims(p);
+    await citeable(p.workDir, "proof.ts:2");
     expect((await runLoam(p.workDir, "verify", FEAT, "--record", await answersFile(p.workDir, all, "proof.ts:2", "all.json"))).code).toBe(0);
     const state = await readVerificationState(join(p.docsDir, DIR));
     if (state.state !== "ok") throw new Error("fixture record unreadable");

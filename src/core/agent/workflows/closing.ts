@@ -41,10 +41,14 @@ reads the service, so a verdict is worth exactly what its evidence is worth.
    must change.
 2. The \`scenario.tested\` claims are the runner's to answer, not yours. In the
    service's repo, run the generated suite with a JSON report —
-   \`npx cucumber-js --format json:report.json\` (cucumber-jvm, behave and
-   SpecFlow emit the same format). The generated scenarios carry
-   \`@loam-digest-…\` tags that ride into the report; that digest is the match,
-   so never retitle or hand-edit a generated scenario to make one pass.
+   \`npx cucumber-js --format json:report.json\` (cucumber-jvm, behave,
+   SpecFlow/Reqnroll, pytest-bdd \`--cucumberjson\` and godog emit the same
+   format). The generated scenarios carry \`@loam-digest-…\` tags that ride into
+   the report; that digest is the match, and the run must have executed every
+   step of the stamped scenario, so never retitle or hand-edit a generated
+   scenario to make one pass. A runner with no cucumber formatter answers
+   through loam's runner-neutral shape instead, keyed by the same digests:
+   \`{"loamScenarioReport": 1, "results": [{"digest": "…", "status": "passed"}]}\`.
    If there is no runnable suite yet you MAY answer them yourself, and the record
    will say so: \`answered_by: agent\` makes the feature **attested**, not verified
    (\`verified: false\`, \`verdict: "attested"\`, the \`verify.scenario-attested\`

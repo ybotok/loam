@@ -17,7 +17,12 @@ export async function readContractResults(
   spelled: string,
   repoDir: string | undefined,
 ): Promise<ContractResultsRead> {
-  const artifact = await readReportArtifact(spelled, repoDir, "contract-test report");
+  const artifact = await readReportArtifact(
+    spelled,
+    repoDir,
+    "contract-test report",
+    'It reads loam\'s generic contract-results JSON — {"loamContractReport": 1, "results": [{"operationId": "…", "status": "passed"}]} — which any contract suite can be adapted into.',
+  );
   if (!artifact.ok) return artifact;
   const parsed = readContractReport(artifact.doc, spelled);
   if (!parsed.ok) return { ok: false, code: "answers-unreadable", message: parsed.message };

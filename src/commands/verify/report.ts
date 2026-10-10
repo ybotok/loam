@@ -18,10 +18,9 @@ import {
   tallyAnswers,
   type RecordedClaim,
   type Verification,
-  recordLocation,
-  verificationDir,
   verificationVerdict,
 } from "../../core/verify/record.js";
+import { recordLocation, verificationDir } from "../../core/verify/location.js";
 import { EXPLAIN_FOOTER, plural } from "../policy/format.js";
 import { answeredMark, contestedNotices, contractReportLine, forkedChecklistNotices, MARK, noticesFor, reportLine } from "./frozen.js";
 

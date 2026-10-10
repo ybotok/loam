@@ -34,6 +34,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import {
+  citeable,
   coherentFixture,
   makeProject,
   runLoam,
@@ -69,6 +70,9 @@ afterEach(async () => {
 async function project(files: Record<string, string> = coherentFixture()): Promise<Project> {
   const p = await makeProject(files);
   cleanups.push(() => p.destroy());
+  // The all-at-once form resolves every agent citation in the repository it
+  // records from, so the evidence this file's answer sets cite is made real.
+  await citeable(p.workDir, "proof.ts:2");
   return p;
 }
 
@@ -87,7 +91,8 @@ function greenReport(): unknown {
           name: "Split across two payees",
           type: "scenario",
           tags: [{ name: `@loam-digest-${digest}` }],
-          steps: [{ result: { status: "passed" } }],
+          // One result per Given/When/Then: a cucumber run is held to the stamped scenario's step count.
+          steps: [{ result: { status: "passed" } }, { result: { status: "passed" } }, { result: { status: "passed" } }],
         },
       ],
     },
