@@ -4,9 +4,9 @@
 // there is not another one — loam is a single binary, and ROADMAP.md's
 // "Self-hosting: loam on loam" is the standing statement of what that costs.
 //
-// THE COLLAPSE RULE, and it is the whole design of this file. `src/` holds 484
-// modules in 148 package directories (`npm run arch:graph` prints both). Drawing
-// 148 boxes would model the tree's INDENTATION; drawing three would model
+// THE COLLAPSE RULE, and it is the whole design of this file. `src/` holds 486
+// modules in 149 package directories (`npm run arch:graph` prints both). Drawing
+// 149 boxes would model the tree's INDENTATION; drawing three would model
 // nothing. The unit here is the TOP-LEVEL SUBJECT — exactly what
 // `docs/DESIGN.md`'s package-layout table has one row for:
 //
@@ -17,7 +17,7 @@
 //     src/commands/<name>.ts   -> loam.commands.<name>     (the 5 loose modules)
 //
 // 73 containers, and one edge for every VALUE import that crosses two of them:
-// 455 of them — 178 out of core (its packages and its loose modules alike), 208
+// 456 of them — 179 out of core (its packages and its loose modules alike), 208
 // from a command into core, 39 command to command, 30 out of cli.ts. These are
 // the counts `npm run meta:check` prints (units / import edges) and
 // `node scripts/self-model.mjs --print` lists; they were last moved on
@@ -698,6 +698,7 @@ model {
   loam.core.usecases -> loam.core.capabilities
   loam.core.usecases -> loam.core.kernel
   loam.core.usecases -> loam.core.repo
+  loam.core.usecases -> loam.core.vocabulary
 
   loam.core.verify -> loam.core.asyncapi
   loam.core.verify -> loam.core.c4

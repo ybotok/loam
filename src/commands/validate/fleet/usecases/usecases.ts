@@ -6,10 +6,12 @@
  * this ship into a fleet that already has diagrams. An untagged `dynamic view`
  * is somebody's hand-drawn sequence — drawn to explain something to a person,
  * not to be joined to a model — and grading it would turn every existing docs
- * repo red on upgrade over documents nobody promised anything about. A `#cap-`
- * or `#req-` tag is the author saying "this is a use case; hold it to the
- * model", and nothing else says it: a view with no tags and a view whose tags
- * are all somebody's own vocabulary are the same thing here.
+ * repo red on upgrade over documents nobody promised anything about. A `#cap-`,
+ * `#req-` or `#suite-` tag is the author saying "this is a use case; hold it to
+ * the model", and nothing else says it: a view with no tags and a view whose
+ * tags are all somebody's own vocabulary are the same thing here. A
+ * `#suite-`-only view resolves nothing below — it carries no claim — and its
+ * hops are graded like any other's.
  *
  * THE TAG OPTS A VIEW IN WHETHER OR NOT IT RESOLVES. A `#cap-` slug that names
  * no declared capability is a broken claim about the vocabulary, not a withdrawn

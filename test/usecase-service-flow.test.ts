@@ -321,6 +321,27 @@ describe("a #req- flow beside model.likec4 is graded by the service target", () 
       await p.destroy();
     }
   }, 60_000);
+
+  it("grades a flow whose only reserved tag is a suite — one predicate and one byte gate serve both scopes", async () => {
+    // The sibling carries `#suite-smoke` and nothing else: no `req-`, no `cap-`
+    // in the file the service's byte gate scans. Before the gate and the
+    // predicate took the suite prefix, this flow was skipped before LikeC4 was
+    // started and the unbacked hop was graded by nothing — the fleet scope's
+    // rule (`test/usecase-checks.test.ts`) arriving at service altitude, because
+    // both read `isUseCase` and `mentionsTagPrefix` from one module.
+    const model = MODEL.replace("  tag cap-checkout\n", "  tag cap-checkout\n  tag suite-smoke\n");
+    const p = await project(
+      { [`${DIR}/views.likec4`]: flow("uc_authorize", ["suite-smoke"], UNBACKED) },
+      { [`${DIR}/model.likec4`]: model },
+    );
+    try {
+      const res = await runLoam(p.workDir, "validate", "--service", SVC, "--json");
+      expect(codeFor(res.stdout, "usecase.step-unbacked").map((f) => f.subject)).toEqual(["uc_authorize"]);
+      expect(useCaseFindings(res.stdout)).toHaveLength(1);
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
 });
 
 describe("the #req- tag resolves against THIS service's own Requirement-IDs", () => {

@@ -61,6 +61,7 @@ const LANDSCAPE = `specification {
   tag cap-checkot
   tag cap-payments-refunds
   tag cap-nothing
+  tag suite-smoke
 }
 
 model {
@@ -159,7 +160,7 @@ function usecase(id: string, tag: string | null, steps: string): string {
   return `views {\n  dynamic view ${id} {\n${tag === null ? "" : `    #${tag}\n`}${steps}  }\n}\n`;
 }
 
-describe("the capability tag is the opt-in, and nothing else is", () => {
+describe("a reserved tag (#cap-, #req- or #suite-) is the opt-in, and nothing else is", () => {
   it("never grades an untagged dynamic view, and grades the same view once it is tagged", async () => {
     // `payments -> web` is declared nowhere — the hop this whole axis exists to
     // convict. Untagged it must stay invisible: an untagged dynamic view is
@@ -176,6 +177,29 @@ describe("the capability tag is the opt-in, and nothing else is", () => {
       await p.write("architecture/usecases/hand.likec4", usecase("uc_hand", "cap-checkout", steps));
       const tagged = await runLoam(p.workDir, "validate", "--all", "--json");
       expect(codeFor(tagged.stdout, "usecase.step-unbacked")).toHaveLength(1);
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
+  it("grades a view whose only reserved tag is a suite — putting a journey in a suite is the opt-in", async () => {
+    // The owner's call: a `#suite-` tag says "run this journey with that
+    // suite", and a journey a test stand is provisioned from must be held to
+    // the model it is drawn over. Without it, a suite could list a hop nothing
+    // declares and the environment derived from it would be built on a call the
+    // map says does not exist. No capability vocabulary is written, so nothing
+    // but the suite tag can be what opts the view in.
+    const steps = "    payments -> web 'a hop nothing declares'\n";
+    const p = await makeProject(fleet({ "architecture/usecases/smoke.likec4": usecase("uc_smoke", "suite-smoke", steps) }));
+    try {
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      const [unbacked, ...rest] = codeFor(res.stdout, "usecase.step-unbacked");
+      expect(rest).toEqual([]);
+      expect(unbacked?.subject).toBe("uc_smoke");
+      expect(unbacked?.message).toContain("architecture/usecases/smoke.likec4");
+      // The suite tag claims no capability and no requirement, so it earns
+      // nothing from the capability axis — only the hop is convicted.
+      expect(useCaseFindings(res.stdout).map((f) => f.code)).toEqual(["usecase.step-unbacked"]);
     } finally {
       await p.destroy();
     }
