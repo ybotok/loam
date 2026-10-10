@@ -355,35 +355,11 @@ export function toolByName(
   return tools.find((tool) => tool.name === name);
 }
 
-/** The MCP inputSchema for one tool: a closed object, so a typo'd argument refuses instead of vanishing. */
-export function toInputSchema(tool: McpTool): Record<string, unknown> {
-  const properties: Record<string, unknown> = {};
-  for (const positional of tool.positionals) {
-    properties[positional.property] = positional.variadic
-      ? { type: "array", items: { type: "string" }, description: positional.description }
-      : { type: "string", description: positional.description };
-  }
-  for (const flag of tool.flags) {
-    properties[flag.property] =
-      flag.kind === "boolean"
-        ? { type: "boolean", description: flag.description }
-        : flag.kind === "strings"
-          ? { type: "array", items: { type: "string" }, description: flag.description }
-          : { type: "string", description: flag.description };
-  }
-  const required = [
-    ...tool.positionals.filter((p) => p.required).map((p) => p.property),
-    ...tool.flags.filter((f) => f.required === true).map((f) => f.property),
-  ];
-  return {
-    type: "object",
-    properties,
-    ...(required.length > 0 ? { required } : {}),
-    additionalProperties: false,
-  };
-}
-
 // How a tool call's JSON arguments become an argv — including the refusal of
 // any string a shell-less argv would still read as a flag — lives in
 // `./argv.ts`: the table above says WHAT the tools are, that module says how
-// a call crosses into the CLI's own parsing.
+// a call crosses into the CLI's own parsing. The inputSchema each tool is
+// advertised with (`toInputSchema`) lives there too: it DECLARES the argument
+// contract `toArgv` ENFORCES — the closed object, the required set — and the
+// two halves change together or a client validates against one rule and is
+// refused by another.

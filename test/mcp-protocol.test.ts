@@ -20,8 +20,8 @@ import {
   toolReply,
   type JsonRpcResponse,
 } from "../src/core/mcp/protocol.js";
-import { toArgv } from "../src/core/mcp/argv.js";
-import { MCP_TOOLS, toInputSchema, toolByName } from "../src/core/mcp/tools.js";
+import { toArgv, toInputSchema } from "../src/core/mcp/argv.js";
+import { MCP_TOOLS, toolByName } from "../src/core/mcp/tools.js";
 import { MCP_AUTHOR_TOOLS } from "../src/core/mcp/author-tools.js";
 import { MCP_COMMAND } from "../src/core/agent/agents-md/map/mcp.js";
 import { LOAM_VERSION } from "../src/core/envelope/version.js";

@@ -2,9 +2,39 @@
  * How one MCP tool call's JSON arguments become an argv the CLI already
  * trusts — the boundary where an argument value could otherwise smuggle a
  * flag. The tool TABLE (what the tools are) lives in `./tools.ts`; this
- * module owns the crossing.
+ * module owns the crossing, and the inputSchema that declares it: the schema
+ * a client validates against and the argv builder that refuses what it
+ * forbids are one contract written twice, so they sit in one module.
  */
 import type { McpTool } from "./tools.js";
+
+/** The MCP inputSchema for one tool: a closed object, so a typo'd argument refuses instead of vanishing. */
+export function toInputSchema(tool: McpTool): Record<string, unknown> {
+  const properties: Record<string, unknown> = {};
+  for (const positional of tool.positionals) {
+    properties[positional.property] = positional.variadic
+      ? { type: "array", items: { type: "string" }, description: positional.description }
+      : { type: "string", description: positional.description };
+  }
+  for (const flag of tool.flags) {
+    properties[flag.property] =
+      flag.kind === "boolean"
+        ? { type: "boolean", description: flag.description }
+        : flag.kind === "strings"
+          ? { type: "array", items: { type: "string" }, description: flag.description }
+          : { type: "string", description: flag.description };
+  }
+  const required = [
+    ...tool.positionals.filter((p) => p.required).map((p) => p.property),
+    ...tool.flags.filter((f) => f.required === true).map((f) => f.property),
+  ];
+  return {
+    type: "object",
+    properties,
+    ...(required.length > 0 ? { required } : {}),
+    additionalProperties: false,
+  };
+}
 
 /** One checked step of argv construction: the tokens it yields, or the invalid-params problem. */
 type Checked =
