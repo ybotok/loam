@@ -8,7 +8,11 @@
  */
 import type { McpTool } from "./tools.js";
 
-/** The MCP inputSchema for one tool: a closed object, so a typo'd argument refuses instead of vanishing. */
+/**
+ * The MCP inputSchema for one tool: a closed object, so a typo'd argument
+ * refuses instead of vanishing, with the required set and the positional order
+ * `toArgv` enforces declared beside it.
+ */
 export function toInputSchema(tool: McpTool): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
   for (const positional of tool.positionals) {
@@ -32,7 +36,52 @@ export function toInputSchema(tool: McpTool): Record<string, unknown> {
     type: "object",
     properties,
     ...(required.length > 0 ? { required } : {}),
+    ...orderRule(tool),
     additionalProperties: false,
+  };
+}
+
+/**
+ * The rule `positionalTokens` enforces, declared: a positional after an
+ * optional one needs it, because positionals reach argv by position and the
+ * later value would otherwise be read in the earlier one's slot. Without it a
+ * client that validated `{name: "smoke"}` for `loam_list` against the schema
+ * it was given passed, and was then refused `-32602` by the server.
+ *
+ * Read off the declaration order rather than spelled per tool, so a tool that
+ * gains a positional after an optional one is declared the day it is refused.
+ * Each later positional needs every earlier OPTIONAL one; an earlier required
+ * one is in `required` already.
+ *
+ * Two keywords, because presence means two things. A scalar that is present
+ * always yields a token, so presence is the whole condition and
+ * `dependentRequired` says exactly that. A variadic yields tokens only when it
+ * has members: an empty one moves nothing into anybody's slot, and
+ * `positionalTokens` serves it — `{args: []}` with no `workflow` is the
+ * workflow list. `dependentRequired` there would forbid a call the server
+ * answers, the same disagreement turned the other way, so the variadic's rule
+ * sits under `dependentSchemas`: once it is present, either the earlier ones
+ * are too or it is empty. `anyOf` rather than `if`/`then`, which says the same
+ * but puts a `then` key on an object, and a thenable literal is one `await`
+ * away from being called.
+ */
+function orderRule(tool: McpTool): Record<string, unknown> {
+  const dependentRequired: Record<string, string[]> = {};
+  const dependentSchemas: Record<string, unknown> = {};
+  const earlier: string[] = [];
+  for (const positional of tool.positionals) {
+    if (earlier.length > 0 && positional.variadic) {
+      dependentSchemas[positional.property] = {
+        anyOf: [{ required: [...earlier] }, { properties: { [positional.property]: { maxItems: 0 } } }],
+      };
+    } else if (earlier.length > 0) {
+      dependentRequired[positional.property] = [...earlier];
+    }
+    if (!positional.required) earlier.push(positional.property);
+  }
+  return {
+    ...(Object.keys(dependentRequired).length > 0 ? { dependentRequired } : {}),
+    ...(Object.keys(dependentSchemas).length > 0 ? { dependentSchemas } : {}),
   };
 }
 
@@ -89,7 +138,8 @@ function checkedStrings(property: string, value: unknown): Checked {
  * Refused here instead, as the invalid-params problem a missing REQUIRED
  * positional already is, naming the slot the caller left empty. A later
  * positional that yields no token — an empty variadic — moves nothing up, so
- * it passes.
+ * it passes. `orderRule` above declares the same rule in the advertised
+ * schema; the two change together.
  */
 function positionalTokens(tool: McpTool, args: Record<string, unknown>): Checked {
   const tokens: string[] = [];
