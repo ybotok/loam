@@ -15,7 +15,7 @@
  * are both at their limits and the walk already holds the parsed documents.
  */
 import { existsSync } from "node:fs";
-import { NotUtf8DocumentError } from "../kernel/document-bytes.js";
+import { readOr } from "./events/declared.js";
 import { readFile } from "node:fs/promises";
 import { type PathableService } from "../kernel/ids/service.js";
 import type { Issue } from "../vocabulary/issue.js";
@@ -229,24 +229,14 @@ export async function declaredByService(
       // the gate itself never touches the filesystem.
       if (existsSync(paths.openapi)) {
         const livingOpenapiPath = (await locateServicePaths(docsDir, svc, context)).openapi;
-        // `context.readText` DECODES and THROWS on non-UTF-8 bytes, where the
-        // no-context `readFile` substitutes U+FFFD and lets `readOpenapi`
-        // flag the document unreadable. Uncaught, one service's UTF-16 living
-        // contract took down the whole feature target under validate's
-        // context while archive's no-context path sailed past — the exact
+        // `readOr` (./events/declared.ts, which says why): `context.readText`
+        // throws on non-UTF-8 bytes where the no-context `readFile` lets
+        // `readOpenapi` flag the document unreadable — the exact
         // context/no-context divergence doc.ts documents as paid for once.
         // Either text failing to decode gets the same answer the gate gives
         // an unreadable parse: that side's surface checks are skipped.
-        const readOr = async (p: string): Promise<string | undefined> => {
-          try {
-            return context === undefined ? await readFile(p, "utf8") : await context.readText(p);
-          } catch (err) {
-            if (err instanceof NotUtf8DocumentError) return undefined;
-            throw err;
-          }
-        };
-        const featureText = await readOr(paths.openapi);
-        const livingText = !existsSync(livingOpenapiPath) ? undefined : await readOr(livingOpenapiPath);
+        const featureText = await readOr(paths.openapi, context);
+        const livingText = !existsSync(livingOpenapiPath) ? undefined : await readOr(livingOpenapiPath, context);
         if (featureText !== undefined) {
           issues.push(
             ...openapiBaselineIssues({ featDoc, livingDoc, featureText, livingText, service: svc, featureId }),
