@@ -8,7 +8,7 @@
  * leaves the living docs exactly as they were.
  */
 import { existsSync } from "node:fs";
-import { repoPath } from "../../../../core/envelope/json.js";
+import { CodedFailure, repoPath } from "../../../../core/envelope/json.js";
 import { planWrite, readUtf8 } from "../../../../core/staging/writes.js";
 import { featureSpecPaths } from "../../../../core/repo/paths.js";
 import { locateServicePaths } from "../../../../core/repo/service-target.js";
@@ -16,7 +16,6 @@ import { readOpenapi } from "../../../../core/openapi/doc.js";
 import { OpenapiMergeError } from "../../../../core/openapi/merge/error.js";
 import { stripOpenapiRemovalMarkers } from "../../../../core/openapi/merge/markers.js";
 import { mergeOpenapiPaths, type OpenapiMergeResult } from "../../../../core/openapi/merge/merge.js";
-import { ArchiveFailure } from "../refusal.js";
 import { type Gated, type Plan } from "../state.js";
 import { consumerClause, type ContractConsumers } from "./consumers.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
@@ -48,7 +47,7 @@ export async function planOpenapiContracts(
     // A document loam cannot read is one it cannot merge, and that is the same
     // answer as any other merge it could not compute: nothing is written.
     if (featDoc.unreadable) {
-      throw new ArchiveFailure(
+      throw new CodedFailure(
         "merge-failed",
         `feature openapi ${repoPath(config.docsDir, featOpenapi)} for ${svc} does not read as an OpenAPI document (${featDoc.error ?? "not a YAML mapping"}) — the API axis cannot be merged; fix the file, or delete it if this feature has no contract delta`,
       );
@@ -83,7 +82,7 @@ export async function planOpenapiContracts(
       try {
         merge = mergeOpenapiPaths(await readUtf8(livingOpenapi), featText, svc);
       } catch (err) {
-        if (err instanceof OpenapiMergeError) throw new ArchiveFailure("merge-failed", err.message);
+        if (err instanceof OpenapiMergeError) throw new CodedFailure("merge-failed", err.message);
         throw err;
       }
       const {

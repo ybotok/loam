@@ -10,7 +10,7 @@
 import { existsSync } from "node:fs";
 import { readFile, rename } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
-import { emitJson, fail, repoPath } from "../../core/envelope/json.js";
+import { CodedFailure, emitJson, fail, repoPath } from "../../core/envelope/json.js";
 import { archiveDir as archiveRoot, featuresDir as featuresRoot } from "../../core/repo/paths.js";
 import { listServices, resolveFeature } from "../../core/repo/repo.js";
 import { docsRepoState } from "../../core/repo/state.js";
@@ -27,7 +27,7 @@ import { clearCommitIntent, writeCommitIntent } from "../../core/staging/recover
 import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
 import { SNAPSHOT_DIR } from "../../core/staging/snapshot/manifest.js";
 import { planWrite, sha256, type PlannedWrite } from "../../core/staging/writes.js";
-import { readManifest, RestoreFailure } from "./manifest.js";
+import { readManifest } from "./manifest.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 export async function unarchiveLocked(
@@ -184,7 +184,7 @@ export async function unarchiveLocked(
     const failures = await rollbackStaged(staged);
     await clearCommitIntent(docsDir);
     const wrapped = rollbackError(err, failures);
-    throw new RestoreFailure(failures.length > 0 ? "rollback-incomplete" : "restore-failed", wrapped.message);
+    throw new CodedFailure(failures.length > 0 ? "rollback-incomplete" : "restore-failed", wrapped.message);
   }
 
   // The snapshot describes an archive that no longer exists; the empty directories

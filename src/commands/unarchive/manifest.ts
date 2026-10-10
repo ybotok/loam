@@ -11,7 +11,6 @@
 import { existsSync, lstatSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type ErrorCode } from "../../core/envelope/json.js";
 import { resolveInside, resolvePortableFileInside } from "../../core/kernel/path-safety.js";
 import { isRecord } from "../../core/kernel/records.js";
 import {
@@ -21,15 +20,6 @@ import {
   SNAPSHOT_VERSION,
   type SnapshotManifest,
 } from "../../core/staging/snapshot/manifest.js";
-
-export class RestoreFailure extends Error {
-  constructor(
-    readonly code: ErrorCode,
-    msg: string,
-  ) {
-    super(msg);
-  }
-}
 
 export interface ValidatedSnapshotEntry {
   path: string;

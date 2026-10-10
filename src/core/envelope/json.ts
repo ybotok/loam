@@ -287,6 +287,24 @@ export function fail(json: boolean, code: ErrorCode, message: string): void {
   process.exitCode = 1;
 }
 
+/**
+ * A refusal or failure with its stable `--json` code attached, for the commands
+ * whose refusals are THROWN — from a plan phase or a rollback path several
+ * calls below the one handler that prints — rather than returned. The handler
+ * `fail`s with `code`, so a merge that could not be computed reports as a merge
+ * failure rather than as `internal`. What anything ELSE that escapes means is
+ * each handler's to say. One class, because archive, unarchive and
+ * migrate-openspec had each written this same one.
+ */
+export class CodedFailure extends Error {
+  constructor(
+    readonly code: ErrorCode,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 /** The message every command prints when there is no loam.json. */
 const NO_CONFIG_MESSAGE = "No loam.json found. Run `loam init --docs <dir>` first.";
 
