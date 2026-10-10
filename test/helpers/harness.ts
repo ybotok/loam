@@ -90,7 +90,7 @@ export function pinFor(livingMarkdown: string, name: string): string {
  */
 export function pinOpenapi(featureYaml: string, livingYaml: string): string {
   const ops = pinOpenapiOperations(featureYaml, livingYaml, "fixture").text ?? featureYaml;
-  return planOpenapiBaselines(ops, livingYaml, "fixture").text ?? ops;
+  return planOpenapiBaselines(ops, livingYaml).text ?? ops;
 }
 
 /**
