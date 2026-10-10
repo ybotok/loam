@@ -15,24 +15,46 @@
  * THE CHEAP GATE IS A BYTE SCAN, and it is sound rather than heuristic. A view
  * is a use case only if it carries a reserved tag — `#cap-<slug>`,
  * `#req-<slug>` or `#suite-<name>`, `isUseCase` below is the whole test — and
- * LikeC4 refuses an undeclared tag, so a fleet with a use case has the literal
- * text `cap-`, `req-` or `suite-` in the file that declares the view AND in the
- * file that declares the tag. A document set in which no file contains any of
- * those substrings therefore declares no use case, and `{ views: [] }` is the
- * correct answer, not an evasion. The scan reads bytes rather than decoded text
- * on purpose: it is looking for an ASCII substring, and `readFile(path,
- * "utf8")` on a document that is not UTF-8 would substitute U+FFFD and could
- * hide it.
+ * a view carries a tag only through a REFERENCE written in the document that
+ * declares the view. LikeC4's grammar spells every tag reference `HashId`: the
+ * `#` terminal, then the name. Measured at the 1.59.2 pin, the `#` is
+ * mandatory — a bare `suite-smoke` in a view body fails to resolve, and
+ * `tags #suite-smoke` fails to parse — but LikeC4's four hidden tokens may sit
+ * between the `#` and the name: `# suite-smoke`, a `#` ending one line with
+ * the name on the next, and a block comment in between all parse to the tag
+ * `suite-smoke`. So the scan finds each `#`, skips exactly those tokens
+ * (`referencesReservedTag`), and asks whether a reserved prefix starts there.
+ * A document set in which no file does declares no use case, however badly it
+ * parses, and `{ views: [] }` is the correct answer, not an evasion. A
+ * `tag cap-…` line in a `specification` block is a declaration, not a
+ * reference, and does not open the gate: a tag no view carries opts nothing
+ * in.
+ *
+ * THE `#` IS WHAT KEEPS PROSE OUT. The scan used to look for the bare
+ * substrings, so a view titled 'What the e2e-suite-a job exercises', or a
+ * comment naming `req-` in passing, opened it. At fleet scope that cost one
+ * project load, because a map that does not parse is `landscape.invalid`
+ * whether or not the gate opens; at service scope (`./service/flows.ts`) it
+ * turned an untagged hand-drawn sibling that did not parse into
+ * `usecase.flow-invalid` — an error, exit 1 — over a diagram that opted
+ * nothing in. A `#` followed by a reserved prefix still opens it wherever it
+ * is written, a comment or a description included: that over-scan is
+ * accepted, because it is spelled as the tag syntax, and the scan must never
+ * be narrower than the parser.
+ *
+ * The scan reads bytes rather than decoded text on purpose: it looks for
+ * ASCII, and `readFile(path, "utf8")` on a document that is not UTF-8 would
+ * substitute U+FFFD and could hide it. Decoded as latin1 instead, every byte is
+ * one character, and the bytes of a multi-byte sequence never read as ASCII.
  *
  * EVERY PREFIX, because the gate and the predicate answer one question and a
  * gate narrower than the predicate is silence rather than a smaller answer. A
- * fleet whose only flow is tagged `#req-` alone declares `tag req-…` and no
- * `cap-` anywhere, so a `cap-`-only scan returned `false` and none of the five
- * readers ever loaded the project — the widening below would have fixed nothing
- * without this one. The suite prefix joined for the same reason the day a
- * `#suite-`-only view became a use case: both now read one list,
- * `USE_CASE_TAG_PREFIXES`, so a fourth prefix cannot be added to one and not
- * the other.
+ * fleet whose only flow is tagged `#req-` alone writes `cap-` nowhere, so a
+ * `cap-`-only scan returned `false` and none of the five readers ever loaded
+ * the project — the widening below would have fixed nothing without this one.
+ * The suite prefix joined for the same reason the day a `#suite-`-only view
+ * became a use case: both now read one list, `USE_CASE_TAG_PREFIXES`, so a
+ * fourth prefix cannot be added to one and not the other.
  *
  * The gate FAILS CLOSED. A document this module cannot open is treated as one
  * that might mention the prefix, so the project load happens and reports the
@@ -122,21 +144,25 @@ export interface UseCaseRequest {
 }
 
 /**
- * Does any document in the set even mention a reserved tag prefix?
+ * Does any document in the set reference a reserved tag — a `#`, then only
+ * LikeC4's hidden tokens, then `cap-`, `req-` or `suite-`?
  *
  * Sequential and short-circuiting ON PURPOSE — the usual "no await in a loop"
  * rule is about independent work that all has to finish, and this loop exists
  * precisely so that a fleet whose first file declares a use case stops reading
  * the other ninety-nine.
  *
- * `req-` and `suite-` are the looser substrings and that is accepted knowingly:
- * a document mentioning either in prose ("a test-suite-wide flag") costs one
- * project load loam would otherwise have skipped, which is a slower right
- * answer. Dropping one costs a wrong one.
+ * What the scan lets through costs differently at its two callers, and the
+ * header above names both. A `#req-…` written in a comment opens it: at fleet
+ * scope that is one project load loam could have skipped, a slower right
+ * answer; at service scope it loads a sibling set that may not parse, and a
+ * broken one is then `usecase.flow-invalid` — an error, but over a document
+ * that spelled the tag syntax. Prose without the `#` opens neither. Missing a
+ * reference would cost a wrong answer at both: a use case nobody graded.
  *
  * Exported for the service-scope reader (`./service/flows.ts`), which asks the
  * same question of the `.likec4` files beside one `model.likec4`: a sibling set
- * that mentions no prefix declares no use case, so a hand-drawn
+ * that references no reserved tag declares no use case, so a hand-drawn
  * `views.likec4` costs that service no LikeC4 workspace. One gate, two callers,
  * because a second byte scan spelled in the service package would be free to
  * disagree with this one about which prefixes opt a view in.
@@ -145,7 +171,7 @@ export async function mentionsTagPrefix(paths: readonly string[]): Promise<boole
   for (const path of paths) {
     try {
       const bytes = await readFile(path);
-      if (USE_CASE_TAG_PREFIXES.some((prefix) => bytes.includes(prefix))) return true;
+      if (referencesReservedTag(bytes.toString("latin1"))) return true;
     } catch {
       // Unreadable is not "no tag": the project load below owns that failure and
       // will report it as a hole naming the document. Answering `false` here
@@ -154,6 +180,52 @@ export async function mentionsTagPrefix(paths: readonly string[]): Promise<boole
     }
   }
   return false;
+}
+
+/**
+ * Is a reserved prefix written as a tag reference anywhere in this text? Every
+ * `#` is tried, wherever it stands — in a view body, a comment, a string —
+ * because the scan may over-approximate the parser and never under-approximate
+ * it.
+ */
+function referencesReservedTag(text: string): boolean {
+  for (let hash = text.indexOf("#"); hash !== -1; hash = text.indexOf("#", hash + 1)) {
+    const name = pastHiddenTokens(text, hash + 1);
+    if (USE_CASE_TAG_PREFIXES.some((prefix) => text.startsWith(prefix, name))) return true;
+  }
+  return false;
+}
+
+/**
+ * Where the next token LikeC4 would read starts, from `at`: past whitespace,
+ * line breaks, `//` line comments and block comments — the four terminals the
+ * 1.59.2 grammar marks hidden (`WS`, `NL`, `LINE_COMMENT`, `BLOCK_COMMENT`),
+ * which its lexer drops between the `#` of a tag reference and the name.
+ *
+ * A hand loop rather than one regular expression: a repeated group of
+ * alternatives that can each consume a comment backtracks exponentially on a
+ * long run of slashes, and this runs over every `#` in every document. An
+ * UNTERMINATED block comment is not one LikeC4 can lex as a comment, so only
+ * the `/*` itself is stepped over and a name written after it still counts:
+ * that can open the gate more often, never less, and the document cannot parse
+ * anyway — the load the gate opens is what reports it.
+ */
+function pastHiddenTokens(text: string, at: number): number {
+  let next = at;
+  for (;;) {
+    const char = text[next];
+    if (char === " " || char === "\t" || char === "\r" || char === "\n") {
+      next += 1;
+    } else if (text.startsWith("//", next)) {
+      next += 2;
+      while (next < text.length && text[next] !== "\n" && text[next] !== "\r") next += 1;
+    } else if (text.startsWith("/*", next)) {
+      const close = text.indexOf("*/", next + 2);
+      next = close === -1 ? next + 2 : close + 2;
+    } else {
+      return next;
+    }
+  }
 }
 
 /**

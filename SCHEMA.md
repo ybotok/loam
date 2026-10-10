@@ -2007,7 +2007,11 @@ is **one predicate**, and every reader takes it: `loam validate`, `loam diff`, `
 decide "is this a use case" the same way, so a flow one of them can see is a flow all of them can
 see. The byte scan that lets a fleet with no use cases skip the LikeC4 load looks for every prefix
 — `cap-`, `req-` and `suite-` — for the same reason: a gate narrower than the predicate is silence,
-not a smaller answer.
+not a smaller answer. It looks for each written as a tag REFERENCE: a `#`, then only what LikeC4
+skips between the `#` and a tag's name (whitespace, line breaks, comments), then the prefix — the
+only way a view carries a tag. A prefix in prose, a title or a `tag cap-…` declaration does not open
+it, so a hand-drawn `.likec4` beside a service's model that names `suite-` in its title, carries no
+tagged view and does not parse is not loaded and earns no `usecase.flow-invalid`.
 
 Being SEEN is not the same as claiming something, and the difference is worth stating because it
 looks like a gap and is not. A view with no resolved `#cap-` tag claims no capability, so it seeds

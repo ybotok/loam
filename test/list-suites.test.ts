@@ -8,9 +8,9 @@
  * every per-suite line, the one absence a per-suite output cannot show; a typo
  * in a suite name that answered with an empty environment would read as a suite
  * that needs nothing. And a view tagged ONLY `#suite-` is a use case — the
- * owner's call — so the byte gate in front of every reader has to open on
- * `suite-` as well, or the listing would answer "no suites" about a fleet
- * nobody read.
+ * owner's call — so the byte gate in front of every reader has to open on a
+ * `#suite-` reference as well, or the listing would answer "no suites" about a
+ * fleet nobody read.
  *
  * Through the real CLI over a real LikeC4 project, as the rest of the use-case
  * axis is, because what is unpinned without this file is the path from a parsed
@@ -48,8 +48,10 @@ interface SuitesPayload {
  * own tags.
  *
  * Deliberately free of the bytes `cap-` and `req-`: the first case below
- * measures that `suite-` alone opens the gate, and either substring anywhere in
- * `architecture/` would open it for the wrong reason.
+ * measures that a `#suite-` reference alone opens the gate, and a `#cap-` or
+ * `#req-` one anywhere in `architecture/` would open it for the wrong reason.
+ * (The gate reads `#` references, so the bare substrings would no longer open
+ * it; the fixture predates that and stays free of them anyway.)
  */
 const LANDSCAPE = `specification {
   element service

@@ -52,6 +52,30 @@ No code was added. One reserved tag prefix, one list section and one positional 
   `loam list suites` there answers checkout-web, notification-service and order-service, with
   `customer` and the `#external` topic `kafka.orderEvents` named as unresolved.
 
+### Changed — the use-case byte scan opens on a `#` tag reference, not on a bare prefix
+
+No code, flag or payload key was added, changed or retired.
+
+- **loam starts LikeC4 for use cases only when a document references a reserved tag.** The scan in
+  front of every reader of the fleet's use cases, and of a service's own flows, used to open on the
+  bare text `cap-`, `req-` or `suite-` anywhere in a file. It now opens on `#cap-`, `#req-` or
+  `#suite-`, with only whitespace, line breaks or comments between the `#` and the name, as LikeC4
+  allows. That is the only way a view carries a tag, so no use case is missed.
+- **A broken `.likec4` beside a service's model that names a prefix only in prose no longer fails
+  the service.** In `0.2.0-alpha.8`, a file with no tagged view that mentioned `cap-` or `req-`
+  anywhere — a title, a comment — was loaded, and if it did not parse, `validate --service` (and
+  `--all`, per service) reported `usecase.flow-invalid`, an error, exit 1. This release's `suite-`
+  prefix would have added a third such substring (an id like `test-suite-runner`). Now the file is
+  skipped, like any untagged diagram.
+- **The same holds at fleet scope.** Suppose `architecture/` does not parse, carries no tagged view,
+  and only declares `tag cap-…` / `tag req-…` or names a prefix in prose. It now reads as declaring
+  no use case. `useCases.unreadable` is then `false` where it used to be `true` in
+  `loam status --json`, `loam delta --json` and `loam list capabilities --json`, and so is
+  `useCaseScan.unreadable` in `loam context --json`. `validate --all` still reports that map as
+  `landscape.invalid`.
+- A `#` followed by a reserved prefix still opens the scan wherever it is written, a comment
+  included.
+
 ### Changed — `loam-feature` asks whether a feature is owed, and analyzes before it pins
 
 No code, flag or payload key was added, changed or retired. What changes is the protocol text an
