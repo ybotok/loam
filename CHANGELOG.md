@@ -127,6 +127,47 @@ No code, flag, path or payload key was added, changed or retired; only documenta
   canonical blank line under `### Requirement:`, so a spec copied from them is not reflowed by its
   first archive.
 
+### Fixed — fleet readouts tell the truth about trust
+
+A vouched spec edited after the vouch (`content.stale`, computable from the docs repo) was reported
+by `loam validate` and by no fleet readout; `sources.unwalked` fired in every service repo straight
+after a fresh vouch; and the human `status`/`list` views printed a verification count without
+saying who answered it. Additive throughout — no code, flag or key changed or was removed, and the
+maturity rung of every service is unchanged.
+
+- **New stable code `next.revouch`** in `loam status`'s fleet `next[]` (and under `--service`): one
+  step per vouched service whose `spec.md` or `arch.spec.md` changed since the vouch, naming the
+  documents. Its `command` is `loam vouch --service <id>` and its `execution` is
+  `kind: "human-review"`, `runnable: false`, `cwd: "service-repo"` — a re-vouch is a person's act.
+  While one stands, `status` no longer reports `next.fleet-clean`.
+- **New payload key `services.contentStale`** on `loam status --json` (fleet form): of `vouched`, the
+  services with a document moved under its stamp — a subset, like `sampledVouched`. The human line
+  reads `N vouched (M stale)`.
+- **New payload key `scorecard.provenance.contentStale`** on `loam validate --all --json`: services
+  with a `content.stale` finding in that run. The text row reads `N vouched — M stale content ·
+  K stale digest(s) · …` (it used to say `0 stale digest(s)` beside the warning).
+- **New payload key `answered` inside `verification`** on `loam status --json` (the feature form, and each
+  `features[].verification` of the fleet form) and on each `features[]` row of `loam gate --json`,
+  which spreads the same record: the confirmed claims per `answered_by`
+  (`runner`, `external-runner`, `agent`), the split `list --json` already carried. The human views
+  print it beside the verdict — `status <FEAT>` as `verified 19/19 confirmed (13 runner · 6 agent)`,
+  `list`'s verification column as `7/7 (5 runner · 2 agent)`. The verdict and its definition are
+  unchanged.
+- **`loam list`** shows such a service as `vouched (stale)` (or `vouched (sampled, stale)`) and counts
+  it in the maturity line; its `missing` — in text and in `--json`, and likewise in `explore` and the
+  context pack, which share it — now reads `re-vouch (<file> changed since the vouch)`, so
+  `list --needs-work` (with `--review-order` and `--owners`) lists it instead of answering
+  "nothing to do". The `maturity` value stays `vouched`.
+- **`sources.unwalked`** no longer counts loam's own files — `loam.json` and the agent files recorded
+  in its `agentFiles` — or any `.gitignore` toward its denominator. `.gitignore` is the file that
+  defines what git tracks, so it is the measuring instrument, never a part of the service a spec
+  owes; `package.json`, READMEs and the like stay in. A freshly vouched service repo is no longer
+  red under `validate --service --strict` for files it cannot honestly list in `sources`.
+- **`loam list` legend** names the `e` (events / AsyncAPI) column: `[e]vents`.
+- **SCHEMA.md**: the per-service CI summary shape gains `contentStale` (the count of `content.stale`
+  findings), and its jq derivation counts it. **WORKFLOW.md** states that `loam gate --strict` also
+  fails on a join partner's `content.stale`.
+
 ### Added
 
 - **New warning `frontmatter.owner-mismatch`** from `loam validate` (`--service` and `--all`) when

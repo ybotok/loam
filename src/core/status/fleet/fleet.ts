@@ -109,6 +109,10 @@ export async function fleetStatus(
       // headline, and "118 vouched" over a fleet where 90 of them were read
       // from a sample is the misreading the scope exists to prevent.
       sampledVouched: services.filter((s) => vouched(s) && s.vouchScope === "sampled").length,
+      // The other subset, for the same reason: "118 vouched" over a fleet where
+      // twenty documents were edited after the person read them is the
+      // trust headline lying by omission.
+      contentStale: services.filter((s) => vouched(s) && s.contentStale.length > 0).length,
     },
     features,
     order: graph.order.filter((id) => features.some((f) => f.id === id)),

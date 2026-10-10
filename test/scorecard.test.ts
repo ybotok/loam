@@ -231,7 +231,8 @@ describe("validate --all --json: the scorecard payload key", () => {
         // fixture is vouched at all, let alone sampled, and the key is present
         // rather than omitted so a dashboard can tell a fleet with no sampled
         // vouches from a loam that never counted them.
-        provenance: { vouched: 0, staleDigests: 0, unverifiableFromHere: 0, sampledVouched: 0 },
+        // `contentStale` likewise: present at 0, never omitted.
+        provenance: { vouched: 0, staleDigests: 0, unverifiableFromHere: 0, sampledVouched: 0, contentStale: 0 },
         verification: {
           recorded: 0,
           verdicts: { verified: 0, attested: 0, unverified: 0 },
@@ -363,6 +364,18 @@ describe("validate --all --json: the scorecard payload key", () => {
       });
       // One green run over every scenario claim is what `verified` means.
       expect(card.verification.verdicts).toEqual({ verified: 1, attested: 0, unverified: 0 });
+
+      // The per-feature human views print the same split beside that verdict.
+      // They printed `verified 4/4 confirmed` and `4/4` — read as four runs
+      // over a record where three answers were an agent's word — because the
+      // verdict turns on the scenario claims alone. The verdict is unchanged;
+      // the reading beside it is what moved.
+      const status = await runLoam(p.workDir, "status", "FEAT-1");
+      expect(status.out).toContain("recorded · verified  4/4 confirmed (1 runner · 3 agent)");
+      const statusJson = JSON.parse((await runLoam(p.workDir, "status", "FEAT-1", "--json")).stdout);
+      expect(statusJson.verification.answered).toEqual({ runner: 1, "external-runner": 0, agent: 3 });
+      const list = await runLoam(p.workDir, "list", "features");
+      expect(list.out).toContain("4/4 (1 runner · 3 agent)");
     });
   });
 

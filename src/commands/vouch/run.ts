@@ -22,9 +22,9 @@
  * docblock stranded at the foot of `vouch.ts` when the stamp moved down here.)
  */
 import { existsSync } from "node:fs";
-import { withFrontmatterFields } from "../../core/document/frontmatter.js";
+import { contentDigest, withFrontmatterFields } from "../../core/document/frontmatter.js";
 import { encodeVouchScope } from "../../core/provenance/sample/scope.js";
-import { contentDigest, encodeSourceIndex } from "../../core/provenance/stamp.js";
+import { encodeSourceIndex } from "../../core/provenance/stamp.js";
 import { SPEC_AXES } from "../../core/repo/paths.js";
 import { locateServicePaths } from "../../core/repo/service-target.js";
 import { rollbackStaged, stageWrites } from "../../core/staging/commit.js";

@@ -1,12 +1,13 @@
 /**
  * The stamp vocabulary: what `loam vouch` computes for a frontmatter stamp and
  * what a later check reads back out of one — `sources_digest` and the per-file
- * `sources_files` index beside it, the document's own `content_digest`, and
- * the local calendar day `last_verified` carries.
+ * `sources_files` index beside it, and the local calendar day `last_verified`
+ * carries. The document's own `content_digest` lived here too; it moved to
+ * core/document/frontmatter.ts, beside the body cut it hashes, when the fleet
+ * enumeration needed it (`contentDigest`'s docblock says why).
  */
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { rawBody, stringField, type Frontmatter } from "../document/frontmatter.js";
 import { collectSources, type SkippedSource } from "./walk.js";
 
 /**
@@ -22,7 +23,7 @@ export function today(now: Date): string {
 }
 
 /* ------------------------------------------------------------------ */
-/* The content digest                                                  */
+/* The sources digest                                                  */
 /* ------------------------------------------------------------------ */
 
 /** How much of the sha256 is written into the document. */
@@ -144,41 +145,6 @@ export async function expandSourceFiles(
  */
 export function emptySourcesMessage(label: string, sources: string[]): string {
   return `${label}: the sources listed match no files — ${sources.join(", ")}. A digest over nothing would read as current forever.`;
-}
-
-/**
- * The stamp `loam vouch` writes into `content_digest`: sha256 of the
- * document's own BODY — every byte after the frontmatter block (below the
- * closing `---` line and its newline; `rawBody` is the one definition of that
- * cut) — first 16 hex characters, the sources recipe's length.
- *
- * Byte-exact, no normalization. Body-only is load-bearing: vouch itself
- * rewrites the frontmatter as it stamps, and a later frontmatter-only edit
- * (another vouch, a corrected owner) must not read as the document moving.
- */
-export function contentDigest(source: string): string {
-  return createHash("sha256").update(rawBody(source), "utf8").digest("hex").slice(0, DIGEST_LENGTH);
-}
-
-/**
- * The one condition `content.stale` fires on: a `verified` document whose body
- * no longer hashes to the `content_digest` its vouch stamped.
- *
- * Here, beside the digest it reads back, because a second command must give
- * the same answer before the bytes exist: `loam archive` asks it of the
- * document it is ABOUT to write, so it can name every vouched spec its merge
- * moves under the stamp — and whose owner then owes a re-vouch. Two spellings
- * of the condition would let the archive's list and the next validate disagree
- * about which documents went stale.
- */
-export function movedUnderVouch(fm: Frontmatter, raw: string): boolean {
-  if (stringField(fm, "status") !== "verified") return false;
-  const stamped = stringField(fm, "content_digest");
-  // A verified doc with no stamp predates the field. Quiet on purpose: the fix
-  // is re-vouching, and grading years of pre-feature vouches as suspect would
-  // drown the fleet in warnings nobody chose.
-  if (stamped === undefined) return false;
-  return contentDigest(raw) !== stamped;
 }
 
 /* ------------------------------------------------------------------ */

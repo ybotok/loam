@@ -15,7 +15,7 @@ import { agentsStaleFinding, binaryBehindFinding } from "../../core/agent/agents
 import { inOrder } from "../../core/kernel/concurrency.js";
 import type { RawServiceId } from "../../core/kernel/ids/service.js";
 import { resolveServiceTarget } from "../../core/repo/service-target.js";
-import { loadConfig } from "../../core/envelope/config.js";
+import { loadConfig, loamOwnedFiles } from "../../core/envelope/config.js";
 import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../../core/envelope/json.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { agentsPath as agentsFile, landscapePath as landscapeFile } from "../../core/repo/paths.js";
@@ -116,11 +116,13 @@ export function registerValidate(program: Command): void {
       // what loam.json's `service` records.
       const repoOf = (service: string): string | undefined =>
         config.service === service ? process.cwd() : undefined;
+      // What loam itself wrote into that repository, which no `sources` list owes a reading of.
+      const loamOwned = loamOwnedFiles(config);
 
       /** One service target, from a name the enumeration or the grammar approved. */
       const serviceTarget = (id: RawServiceId): Promise<TargetReport> =>
         guarded({ kind: "service", id }, () =>
-          validateService({ docsDir, service: id, repoDir: repoOf(id), gherkinDir: config.gherkinDir, contracts: config.contracts, fleet }),
+          validateService({ docsDir, service: id, repoDir: repoOf(id), loamOwned, gherkinDir: config.gherkinDir, contracts: config.contracts, fleet }),
         );
 
       const targets: TargetReport[] = [];
@@ -196,6 +198,7 @@ export function registerValidate(program: Command): void {
                   docsDir,
                   service: svc.id,
                   repoDir: repoOf(svc.id),
+                  loamOwned,
                   preloaded: land,
                   gherkinDir: config.gherkinDir,
                   contracts: config.contracts,

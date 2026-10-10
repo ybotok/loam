@@ -9,7 +9,14 @@ import type { FeatureEntry } from "../repo/entries.js";
 import type { FleetContext } from "../fleet-context.js";
 import { featureChecklist } from "../verify/checklist.js";
 import { readVerificationState } from "../verify/file.js";
-import { attestedNotice, tallyRecord, type VerificationVerdict, type VerifyNotice, verificationVerdict } from "../verify/record.js";
+import {
+  attestedNotice,
+  confirmedProvenance,
+  tallyRecord,
+  type VerificationVerdict,
+  type VerifyNotice,
+  verificationVerdict,
+} from "../verify/record.js";
 import type { ArtifactState, ArtifactStatus, NextStep, VerificationState } from "./report.js";
 import type { DeltaScan } from "./scan.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
@@ -73,6 +80,7 @@ export async function verificationState(
     unconfirmed: 0,
     unanswered: 0,
     attested: 0,
+    answered: { runner: 0, "external-runner": 0, agent: 0 },
   };
   const read = await readVerificationState(feature.dir);
   if (read.state === "absent") return { state: { state: "absent", ...empty }, notice: null };
@@ -99,6 +107,7 @@ export async function verificationState(
       unconfirmed: tally.unconfirmed,
       unanswered: tally.unanswered,
       attested: tally.attested,
+      answered: confirmedProvenance(v.claims),
     },
     notice: attestedNotice(v.claims, feature.id),
   };

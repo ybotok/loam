@@ -6,6 +6,7 @@
  * are the only deterministic tie to reality: everything else loam checks is
  * internal consistency, which a fluent enough fiction satisfies perfectly.
  */
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { isMap, parse, parseDocument } from "yaml";
@@ -228,6 +229,63 @@ export function rawBody(source: string): string {
   const md = stripBom(source);
   const at = bounds(md);
   return at === null ? md : md.slice(at.bodyStart);
+}
+
+/**
+ * The stamp `loam vouch` writes into `content_digest`: sha256 of the
+ * document's own BODY — every byte after the frontmatter block (below the
+ * closing `---` line and its newline; `rawBody` is the one definition of that
+ * cut) — first 16 hex characters, the sources recipe's length.
+ *
+ * Byte-exact, no normalization. Body-only is load-bearing: vouch itself
+ * rewrites the frontmatter as it stamps, and a later frontmatter-only edit
+ * (another vouch, a corrected owner) must not read as the document moving.
+ *
+ * It lived in core/provenance/stamp.ts beside the sources recipe until the
+ * fleet ENUMERATION needed it: `loam list` and `loam status` read a document
+ * edited under its vouch off `ServiceEntry` (core/repo/repo.ts), and core/repo
+ * cannot import core/provenance — that package resolves service paths through
+ * core/repo. Here, beside the cut it hashes, both can reach it.
+ */
+export function contentDigest(source: string): string {
+  return createHash("sha256").update(rawBody(source), "utf8").digest("hex").slice(0, 16);
+}
+
+/**
+ * The `content_digest` a document's body is held to, or undefined when there
+ * is nothing to hold it to — `content.stale`'s precondition, spelled ONCE so
+ * the validate finding (core/provenance/findings.ts) and the fleet enumeration
+ * cannot disagree about which documents are stamped.
+ *
+ * Only a `verified` document: a draft's words are nobody's vouch yet. And a
+ * verified document with no stamp predates the field — quiet on purpose: the
+ * fix is re-vouching, and grading years of pre-feature vouches as suspect would
+ * drown the fleet in warnings nobody chose.
+ *
+ * Split from `movedUnderVouch` below so a reader that has only the header in
+ * hand — the fleet enumeration — can learn there is nothing to compare before
+ * it pays for reading the body.
+ */
+export function contentStamp(fm: Frontmatter): string | undefined {
+  return stringField(fm, "status") === "verified" ? stringField(fm, "content_digest") : undefined;
+}
+
+/**
+ * The one condition `content.stale` fires on: a `verified` document whose body
+ * no longer hashes to the `content_digest` its vouch stamped.
+ *
+ * One spelling for three readers that must give the same answer. `loam
+ * validate` grades it (core/provenance/findings.ts); the fleet enumeration
+ * reads it off every service (core/repo/repo.ts) so `loam list` and `loam
+ * status` cannot call fresh a document validate calls stale; and `loam archive`
+ * asks it of the document it is ABOUT to write, before the bytes exist, so it
+ * can name every vouched spec its merge moves under the stamp — and whose owner
+ * then owes a re-vouch. Two spellings would let the archive's list, the listing
+ * and the next validate disagree about which documents went stale.
+ */
+export function movedUnderVouch(fm: Frontmatter, raw: string): boolean {
+  const stamped = contentStamp(fm);
+  return stamped !== undefined && contentDigest(raw) !== stamped;
 }
 
 /**

@@ -28,8 +28,7 @@ import {
 } from "../../../core/document/parse.js";
 import { applyRequirementDelta } from "../../../core/document/apply.js";
 import { serializeRequirements, type Requirement } from "../../../core/document/spec.js";
-import { parseFrontmatter, stringField } from "../../../core/document/frontmatter.js";
-import { movedUnderVouch } from "../../../core/provenance/stamp.js";
+import { movedUnderVouch, parseFrontmatter, stringField } from "../../../core/document/frontmatter.js";
 import { ArchiveFailure } from "./refusal.js";
 import { type Gated, type Plan } from "./state.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";

@@ -15,6 +15,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import {
+  movedUnderVouch,
   parseFrontmatter,
   readFrontmatter,
   stringField,
@@ -29,7 +30,6 @@ import type { FleetContext } from "../fleet-context.js";
 import { locateServicePaths } from "../repo/service-target.js";
 import { readVouchScope } from "./sample/scope.js";
 import { sourceFindings } from "./sources.js";
-import { movedUnderVouch } from "./stamp.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
 /** Fields every artifact is expected to carry, beyond its identity and status. */
@@ -42,6 +42,12 @@ export interface ProvenanceOptions {
    * which case the paths are not ours to resolve and are left alone.
    */
   repoDir?: string;
+  /**
+   * Repo-relative files loam itself owns in `repoDir` — loam.json and the agent
+   * files it records (`loamOwnedFiles`). Only the walk check reads them, to
+   * leave them out of `sources.unwalked`'s denominator; absent means none.
+   */
+  loamOwned?: readonly string[];
   /** The invocation's read index, when the caller holds one — resolves the service's directory without a second walk. */
   fleet?: FleetContext;
 }
@@ -52,6 +58,7 @@ export async function serviceProvenance(
   opts: ProvenanceOptions = {},
 ): Promise<Finding[]> {
   const paths = await locateServicePaths(docsDir, service, opts.fleet);
+  const repo = opts.repoDir === undefined ? undefined : { dir: opts.repoDir, loamOwned: opts.loamOwned ?? [] };
   const findings: Finding[] = [];
   const owners: { file: string; owner: string }[] = [];
   // Both requirement-carrying specs get the same pass: arch.spec.md follows
@@ -77,7 +84,7 @@ export async function serviceProvenance(
     // `sources.absent` against a header nobody can read is the same false
     // advice as the field cascade, so frontmatter.malformed stands alone.
     if (fm.present && !fm.malformed) {
-      findings.push(...(await sourceFindings(fm, service, label, opts.repoDir)));
+      findings.push(...(await sourceFindings(fm, service, label, repo)));
       findings.push(...contentFindings(fm, raw, service, label));
       findings.push(...scopeFindings(fm, service, label));
       // Trimmed and non-empty, so `owner: ""` stays the absence it means
@@ -221,6 +228,11 @@ function identityFindings(fm: Frontmatter, spec: IdentitySpec): Finding[] {
  * the exact agent-written-prose threat model this layer exists for.
  */
 function contentFindings(fm: Frontmatter, raw: string, service: string, label: string): Finding[] {
+  // `movedUnderVouch` is the one spelling of the condition, read by the fleet
+  // enumeration (core/repo/repo.ts) and `loam archive` too, so `loam list`
+  // cannot call a document fresh that this check calls stale. A verified doc
+  // with no stamp predates the field and is quiet on purpose; `contentStamp`'s
+  // docblock says why.
   if (!movedUnderVouch(fm, raw)) return [];
   const since = stringField(fm, "last_verified") ?? "it was vouched";
   return [

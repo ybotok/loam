@@ -140,7 +140,8 @@ no fleet manifest, deliberately — the wiring is one file per repo, and it is r
    stamping the source and content digests that make later staleness detectable. `loam list --json`
    in the docs repo then grades the whole fleet on the presence ladder
    `empty → partial → documented → sourced → vouched`, and `loam list --needs-work` is the remaining
-   worklist.
+   worklist — including any vouched service whose spec moved after the vouch (`vouched (stale)`,
+   missing a re-vouch), which `loam status` names as `next.revouch`.
 
 Steps 3–6 repeat per service and are independent — no ordering, no lock, no shared state between two
 services' runs — so ten services can be onboarded by ten people in parallel. The one file they all
@@ -268,7 +269,13 @@ runs already recorded (the join partners' documentation state, staleness, the ve
 of the features touching the service, an interrupted docs commit). Its verdict is advice to a
 pipeline loam does not own — advisory by default, `--strict` the per-invocation CI lever — and it
 deliberately changes nothing about what gates the archive: verify still never gates the merge, and
-archive still reads no verification record.
+archive still reads no verification record. Know what `--strict` buys before wiring it: its
+freshness check reads `content.stale` over the gated service **and every documented join partner**,
+so one partner whose spec moved under its vouch — every archive into a vouched spec does that —
+turns this service's `gate --strict` red until that partner's owner re-vouches from their own repo.
+That is the question asked honestly (a deploy joins documents nobody has re-read), but it is
+another team's queue: a pipeline that must not wait on it runs `gate` without `--strict` and
+branches on the `content.stale` findings in `checks[]` itself.
 
 **`loam diff` does not add one either — it is the review lens.** On a docs-repo PR,
 `loam diff --base origin/main` says what the branch *changes* in fleet-meaningful terms: services,

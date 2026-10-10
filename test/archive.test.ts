@@ -31,7 +31,7 @@ import { rm } from "node:fs/promises";
 import { parse } from "yaml";
 import { loadFile, type LoadedDoc } from "../src/core/c4/likec4.js";
 import { parseRequirements } from "../src/core/document/parse.js";
-import { contentDigest } from "../src/core/provenance/stamp.js";
+import { contentDigest } from "../src/core/document/frontmatter.js";
 import {
   coherentFixture,
   makeProject,

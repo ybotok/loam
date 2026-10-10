@@ -78,6 +78,9 @@ describe("text output", () => {
       // the async contract follows the API for the same reason, in the same case
       expect(full).toContain("M S - A - R H");
       expect(bare).toContain("- S - - - - -");
+      // One legend key per column, in the columns' order. The `e` column
+      // shipped without one, so the legend explained six of seven.
+      expect(res.out).toContain("[M]odel [S]pec [a]rch-spec [A]pi [e]vents [R]unbook [H]ealth");
     });
   });
 
