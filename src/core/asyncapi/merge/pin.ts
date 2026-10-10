@@ -14,9 +14,10 @@
  * spelling); an inline channel message is channel-slot interior and is never
  * pinned on its own — SCHEMA.md's recorded decision.
  */
-import { isMap, parseDocument } from "yaml";
-import { AsyncapiMergeError, errorMessage } from "./error.js";
-import { refuseAmbiguousSlotKeys, slotPair } from "./markers.js";
+import { isMap } from "yaml";
+import { writeTree } from "../../openapi/merge/error.js";
+import { asyncapiRefusal } from "./error.js";
+import { readEventTree, slotPair } from "./markers.js";
 import {
   ASYNCAPI_BASELINE_KEY,
   asyncapiSlots,
@@ -62,25 +63,8 @@ export interface AsyncapiPinPlan {
  * operation or message the contract does not carry yet.
  */
 export function pinAsyncapiSlots(featureText: string, livingText: string, service: string): AsyncapiPinPlan {
-  const doc = parseDocument(featureText);
-  if (doc.errors.length > 0) throw new AsyncapiMergeError("feature", service, doc.errors[0]!.message);
-  refuseAmbiguousSlotKeys(doc, "feature", service);
-  let featPlain: unknown;
-  let livingPlain: unknown;
-  try {
-    featPlain = doc.toJS() ?? {};
-  } catch (error) {
-    throw new AsyncapiMergeError("feature", service, errorMessage(error));
-  }
-  try {
-    const parsed = parseDocument(livingText);
-    if (parsed.errors.length > 0) throw new AsyncapiMergeError("living", service, parsed.errors[0]!.message);
-    refuseAmbiguousSlotKeys(parsed, "living", service);
-    livingPlain = parsed.toJS() ?? {};
-  } catch (error) {
-    if (error instanceof AsyncapiMergeError) throw error;
-    throw new AsyncapiMergeError("living", service, errorMessage(error));
-  }
+  const { doc, plain: featPlain } = readEventTree(featureText, "feature", service);
+  const { plain: livingPlain } = readEventTree(livingText, "living", service);
 
   const livingBySlot = new Map(asyncapiSlots(livingPlain).map((slot) => [`${slot.section}\0${slot.key}`, slot]));
   const pins: AsyncapiSlotPin[] = [];
@@ -124,9 +108,5 @@ export function pinAsyncapiSlots(featureText: string, livingText: string, servic
   }
 
   if (!edited) return { text: null, pins };
-  try {
-    return { text: doc.toString(), pins };
-  } catch (error) {
-    throw new AsyncapiMergeError("feature", service, errorMessage(error));
-  }
+  return { text: writeTree(doc, asyncapiRefusal("feature", service)), pins };
 }

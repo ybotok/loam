@@ -9,12 +9,12 @@
  * survives a refactor.
  */
 import { isDeepStrictEqual } from "node:util";
-import { isMap, isScalar, parseDocument } from "yaml";
+import { isMap, isScalar } from "yaml";
 // Every `isRecord` below asks one question of a resolved plain tree: is this a
 // node that can hold OpenAPI keys — an object, not an array?
 import { isRecord } from "../../kernel/records.js";
 import { HTTP_METHODS } from "../doc.js";
-import { errorMessage, OpenapiMergeError } from "./error.js";
+import { OpenapiMergeError, openapiRefusal, readTree, writeTree } from "./error.js";
 import { classifyOperationBaseline } from "./pin.js";
 import { classifyBaselineDigests, isRemoval, valueDigest } from "../digest.js";
 import { entryFor, readBaselineRecord, restatedSurfaces } from "../baseline/record.js";
@@ -115,19 +115,8 @@ export function mergeOpenapiPaths(
   featureText: string,
   service: string,
 ): OpenapiMergeResult {
-  const feature = parseDocument(featureText);
-  if (feature.errors.length > 0) {
-    throw new OpenapiMergeError("feature", service, feature.errors[0]!.message);
-  }
-  let featPlain: unknown;
-  try {
-    // Resolve aliases once with the document's own anchor context. Calling an
-    // individual AST node's toJSON() loses that context and can silently turn
-    // an aliased operation or component into the wrong value.
-    featPlain = feature.toJS() ?? {};
-  } catch (error) {
-    throw new OpenapiMergeError("feature", service, errorMessage(error));
-  }
+  // Aliases resolved once, with the document's own anchor context (readTree).
+  const { plain: featPlain } = readTree(featureText, openapiRefusal("feature", service));
   const featPathsPlain = plainChild(featPlain, "paths");
   // The SHAPE refusal is unchanged and stays first: a `paths` that is a
   // sequence or a scalar is a document loam cannot merge. Absent and null
@@ -151,16 +140,7 @@ export function mergeOpenapiPaths(
     return noop();
   }
 
-  const living = parseDocument(livingText);
-  if (living.errors.length > 0) {
-    throw new OpenapiMergeError("living", service, living.errors[0]!.message);
-  }
-  let livingPlain: unknown;
-  try {
-    livingPlain = living.toJS() ?? {};
-  } catch (error) {
-    throw new OpenapiMergeError("living", service, errorMessage(error));
-  }
+  const { doc: living, plain: livingPlain } = readTree(livingText, openapiRefusal("living", service));
   const livingPathsPlain = plainChild(livingPlain, "paths");
   if (livingPathsPlain !== undefined && livingPathsPlain !== null && !isRecord(livingPathsPlain)) {
     throw new OpenapiMergeError("living", service, "`paths` is not a mapping");
@@ -315,12 +295,7 @@ export function mergeOpenapiPaths(
   const closure = mergeComponentClosure({ living, featPlain, livingPlain, record, written, componentsAreTheDelta });
   const { componentsModified, componentsAdded, componentsQuoted, componentsStale, unresolved } = closure;
 
-  let text: string;
-  try {
-    text = living.toString();
-  } catch (error) {
-    throw new OpenapiMergeError("living", service, errorMessage(error));
-  }
+  const text = writeTree(living, openapiRefusal("living", service));
   return {
     text, modified, modifiedOperationIds, pathItemModified, removed, quoted, baselineStale,
     pathItemQuoted, pathItemStale, componentsModified, componentsAdded, componentsQuoted, componentsStale, unresolved,

@@ -18,18 +18,19 @@
  * writing through one would rewrite every other node that aliases it.
  */
 import { isDeepStrictEqual } from "node:util";
-import { isMap, parseDocument } from "yaml";
+import { isMap } from "yaml";
 import { classifyBaselineDigests } from "../../openapi/digest.js";
 import { asyncapiSlots, slotDigest, type AsyncapiSection } from "../digest.js";
 import { danglingRefs } from "../depth.js";
 import { messageName } from "../read.js";
 import { readBaselineRecord } from "../../openapi/baseline/record.js";
 import { asyncapiSurfaces } from "../baseline/surfaces.js";
-import { errorMessage, AsyncapiMergeError } from "./error.js";
+import { resolveTree, writeTree } from "../../openapi/merge/error.js";
+import { asyncapiRefusal } from "./error.js";
 import { mergeAsyncapiComponents } from "./components.js";
 import {
   deleteSlot,
-  refuseAmbiguousSlotKeys,
+  readEventTree,
   sectionAstPath,
   setSlotValue,
   slotLabel,
@@ -117,23 +118,9 @@ export function mergeAsyncapiSlots(
   featureText: string,
   service: string,
 ): AsyncapiMergeResult {
-  const feature = parseDocument(featureText);
-  if (feature.errors.length > 0) {
-    throw new AsyncapiMergeError("feature", service, feature.errors[0]!.message);
-  }
-  // Two pairs whose keys stringify identically (404 and "404") would make
-  // the resolved walk and the string-matched writers disagree about which
-  // node a slot names — refused on either side, before any verdict is taken.
-  refuseAmbiguousSlotKeys(feature, "feature", service);
-  let featPlain: unknown;
-  try {
-    // Resolve aliases once with the document's own anchor context. Calling an
-    // individual AST node's toJSON() loses that context and can silently turn
-    // an aliased slot into the wrong value.
-    featPlain = feature.toJS() ?? {};
-  } catch (error) {
-    throw new AsyncapiMergeError("feature", service, errorMessage(error));
-  }
+  // Ambiguous slot keys refused on either side, before any verdict is taken,
+  // and aliases resolved once with the document's own anchor context.
+  const { plain: featPlain } = readEventTree(featureText, "feature", service);
   const featSlots = asyncapiSlots(featPlain);
   // "Is there anything to merge?" is a question about the WHOLE delta, and it
   // was asked of the three slot sections alone — an absence test standing in
@@ -147,17 +134,7 @@ export function mergeAsyncapiSlots(
   // there was no writer outside the slot loop to fall through to.
   if (featSlots.length === 0 && asyncapiSurfaces(featPlain).length === 0) return noop();
 
-  const living = parseDocument(livingText);
-  if (living.errors.length > 0) {
-    throw new AsyncapiMergeError("living", service, living.errors[0]!.message);
-  }
-  refuseAmbiguousSlotKeys(living, "living", service);
-  let livingPlain: unknown;
-  try {
-    livingPlain = living.toJS() ?? {};
-  } catch (error) {
-    throw new AsyncapiMergeError("living", service, errorMessage(error));
-  }
+  const { doc: living, plain: livingPlain } = readEventTree(livingText, "living", service);
   const livingBySlot = new Map(asyncapiSlots(livingPlain).map((slot) => [`${slot.section}\0${slot.key}`, slot]));
   // Read ONCE here, not per surface: `problems` are deliberately ignored — a
   // malformed record is the gate's diagnosis (`asyncapi.baseline-invalid`) and
@@ -258,14 +235,9 @@ export function mergeAsyncapiSlots(
     };
   }
 
-  let mergedPlain: unknown;
-  let text: string;
-  try {
-    mergedPlain = living.toJS() ?? {};
-    text = living.toString();
-  } catch (error) {
-    throw new AsyncapiMergeError("living", service, errorMessage(error));
-  }
+  const fail = asyncapiRefusal("living", service);
+  const mergedPlain = resolveTree(living, fail);
+  const text = writeTree(living, fail);
   // The ref sweep grades what the MERGE would leave dangling: a merged slot
   // pointing at something neither document defines, or a removal that took a
   // target the living document still references. Refs already dangling in the
