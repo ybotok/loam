@@ -289,7 +289,90 @@ describe("tools/list", () => {
     // the schema must say so instead of an invalid-option envelope after the call.
     expect(toInputSchema(toolByName("loam_diff")!)["required"]).toEqual(["base"]);
   });
+
+  it("declares that an optional positional needs the one before it — name needs section, a non-empty args needs workflow", () => {
+    // The server refuses `{name: "smoke"}` for loam_list and `{args: ["x"]}`
+    // for loam_instructions, because a positional reaches argv by position
+    // and would be read in the slot left empty. A schema that did not say so
+    // let a client validate those calls and then be refused -32602.
+    const list = toInputSchema(toolByName("loam_list")!);
+    expect(list["dependentRequired"]).toEqual({ name: ["section"] });
+    expect(list["dependentSchemas"]).toBeUndefined();
+    // A variadic's rule waits for a first member: an empty `args` moves
+    // nothing into the workflow's slot, and the server serves it.
+    const instructions = toInputSchema(toolByName("loam_instructions")!);
+    expect(instructions["dependentSchemas"]).toEqual({
+      args: { anyOf: [{ required: ["workflow"] }, { properties: { args: { maxItems: 0 } } }] },
+    });
+    expect(instructions["dependentRequired"]).toBeUndefined();
+    // One positional, or none, has no order to declare.
+    for (const name of ["loam_status", "loam_doctor", "loam_explore"]) {
+      expect(toInputSchema(toolByName(name)!), name).not.toHaveProperty("dependentRequired");
+      expect(toInputSchema(toolByName(name)!), name).not.toHaveProperty("dependentSchemas");
+    }
+  });
+
+  it("the advertised schema accepts exactly the positional combinations toArgv accepts, for every tool", () => {
+    // "One contract written twice", held over every tool of both tables and
+    // every way a caller can supply its positionals — absent, or present, and
+    // for a variadic present empty — so a positional added to any tool is
+    // compared the day it lands. Required flags are filled: their absence is
+    // the `required` set's business, pinned above.
+    for (const tool of [...MCP_TOOLS, ...MCP_AUTHOR_TOOLS]) {
+      const schema = toInputSchema(tool);
+      const filled: Record<string, unknown> = Object.fromEntries(
+        tool.flags.filter((flag) => flag.required === true).map((flag) => [flag.property, "x"]),
+      );
+      let combinations: Array<Record<string, unknown>> = [filled];
+      for (const positional of tool.positionals) {
+        const values: unknown[] = positional.variadic ? [undefined, [], ["x"]] : [undefined, "x"];
+        combinations = combinations.flatMap((args) =>
+          values.map((value) => (value === undefined ? args : { ...args, [positional.property]: value })),
+        );
+      }
+      for (const args of combinations) {
+        expect(declaredAccepts(schema, args), `${tool.name} ${JSON.stringify(args)}`).toBe(toArgv(tool, args).ok);
+      }
+    }
+  });
 });
+
+/** One `anyOf` branch of the kinds loam emits: a required set, or a cap on one array's length. */
+interface Branch {
+  required?: string[];
+  properties?: Record<string, { maxItems?: number }>;
+}
+
+/**
+ * What the schema `toInputSchema` emits says of one argument object, read the
+ * way a JSON Schema validator reads its `required`, `dependentRequired` and
+ * `dependentSchemas` — for the sub-schema shapes loam emits under the last,
+ * and refusing any other rather than guessing at it.
+ */
+function declaredAccepts(schema: Record<string, unknown>, args: Record<string, unknown>): boolean {
+  const present = (property: string): boolean => args[property] !== undefined;
+  if (!((schema["required"] as string[] | undefined) ?? []).every(present)) return false;
+  const dependentRequired = (schema["dependentRequired"] as Record<string, string[]> | undefined) ?? {};
+  for (const [property, needs] of Object.entries(dependentRequired)) {
+    if (present(property) && !needs.every(present)) return false;
+  }
+  const dependentSchemas = (schema["dependentSchemas"] as Record<string, { anyOf?: Branch[] }> | undefined) ?? {};
+  for (const [property, sub] of Object.entries(dependentSchemas)) {
+    if (!present(property)) continue;
+    const holds = (branch: Branch): boolean => {
+      const keys = Object.keys(branch).join();
+      const maxItems = branch.properties?.[property]?.maxItems;
+      if (keys === "required") return branch.required!.every(present);
+      if (keys === "properties" && maxItems !== undefined) return (args[property] as unknown[]).length <= maxItems;
+      throw new Error(`unexpected dependentSchemas branch for '${property}': ${JSON.stringify(branch)}`);
+    };
+    if (Object.keys(sub).join() !== "anyOf") {
+      throw new Error(`unexpected dependentSchemas shape for '${property}': ${JSON.stringify(sub)}`);
+    }
+    if (!sub.anyOf!.some(holds)) return false;
+  }
+  return true;
+}
 
 describe("the argv boundary", () => {
   it("maps arguments positionally and per-flag, always appending --json", () => {

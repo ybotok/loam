@@ -380,6 +380,6 @@ export function toolByName(
 // `./argv.ts`: the table above says WHAT the tools are, that module says how
 // a call crosses into the CLI's own parsing. The inputSchema each tool is
 // advertised with (`toInputSchema`) lives there too: it DECLARES the argument
-// contract `toArgv` ENFORCES — the closed object, the required set — and the
-// two halves change together or a client validates against one rule and is
-// refused by another.
+// contract `toArgv` ENFORCES — the closed object, the required set, the order
+// the positionals are read in — and the two halves change together or a
+// client validates against one rule and is refused by another.

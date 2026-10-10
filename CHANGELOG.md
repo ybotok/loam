@@ -314,13 +314,20 @@ No code or flag was added. Existing warnings now fill a payload key that was alw
 
 ### Fixed — an MCP tool argument is never read in another argument's slot
 
-No code, flag or payload key was added, changed or retired.
+No code, flag or payload key was added, changed or retired. Two MCP input schemas each gained one
+JSON Schema keyword, named below.
 
 - **A `tools/call` that supplies an optional positional argument while leaving out an earlier one is
   refused as invalid params (`-32602`)**, naming the argument left out, as a missing required
   argument already is. Positionals reach the command by position, so the later value used to be read
   as the earlier one: `loam_instructions` with `args` and no `workflow` took the first arg as the
   workflow name. An empty `args` still passes. The defect is present in `0.2.0-alpha.8`.
+- **The MCP tools' advertised input schemas now say that `name` needs `section` and a non-empty
+  `args` needs `workflow`**, the rule a tool call already enforces, so a client that validates a
+  call against `tools/list` is no longer refused `-32602` for a call the schema allowed.
+  `loam_list`'s schema gains `dependentRequired` (`name` → `section`); `loam_instructions`' gains
+  `dependentSchemas`, requiring `workflow` once `args` has a member, because an empty `args` still
+  passes. Both are standard JSON Schema keywords; no tool, argument or other schema key changed.
 
 ### Fixed — `loam validate` reports an unreadable verification record from the docs repo
 
