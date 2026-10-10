@@ -8,7 +8,7 @@
  * their literal spelling, so the sibling modules must never spell one).
  */
 import type { Command } from "commander";
-import { runToolArgv } from "./dispatch.js";
+import { toolRunner } from "./dispatch.js";
 import { serve } from "./serve.js";
 import { MCP_TOOLS } from "../../core/mcp/tools.js";
 import { MCP_AUTHOR_TOOLS } from "../../core/mcp/author-tools.js";
@@ -40,9 +40,18 @@ export function registerMcp(program: Command): void {
       // repository it was started in (each call resolves loam.json through
       // process.cwd()) and never changes directory.
       // One table decides both what `tools/list` advertises and which commands
-      // a `tools/call` can reach (`./dispatch.ts`'s `readProgram`).
+      // a `tools/call` can reach (`./dispatch.ts`'s `toolRunner`).
+      //
+      // `toolRunner` is the ONE launch-time refusal, and it is not the gate the
+      // paragraph above declines: it throws only when the table itself names a
+      // command with no registrar — a defect in the shipped binary that no
+      // repository state causes and no client can repair. Refusing here, before
+      // the first frame, costs the handshake; answering it per call instead
+      // turned every `tools/call` into an `internal` envelope, the correctly
+      // wired tools included. Without `--json` (how a client launches it) the
+      // message goes to stderr through cli.ts's catch, and stdout stays empty.
       const tools = opts.author ? [...MCP_TOOLS, ...MCP_AUTHOR_TOOLS] : MCP_TOOLS;
-      const run = (argv: readonly string[]) => runToolArgv(argv, tools);
+      const run = toolRunner(tools);
       await serve({ input: process.stdin, output: process.stdout, log: process.stderr }, run, tools);
     });
 }
