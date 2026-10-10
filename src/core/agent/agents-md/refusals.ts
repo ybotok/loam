@@ -109,8 +109,11 @@ export const REFUSALS = `- \`loam audit-openspec <root>\` is the read-only OpenS
   \`evidence.token-missing\` and \`evidence.record-unreadable\` the warnings.
   Demote-only, by doctrine: a warn here is a reading priority for a reviewer,
   never a verdict change — no pin state moves \`attested\` or \`verified\` in
-  either direction. From the docs repo the family is silent;
-  \`sources.unverifiable-from-here\` already names that blind spot.
+  either direction. From the docs repo the service target's family is silent;
+  \`sources.unverifiable-from-here\` already names that blind spot. The record
+  itself lives in the docs repo, so the FEATURE target (\`--feature\`, and every
+  active feature under \`--all\`) raises \`evidence.record-unreadable\` from
+  anywhere — the same warn, about readability only.
 - \`loam archive\` alone reports the breaches only the merge computation can see:
   \`living.requirement-outside-requirements\`, \`openapi.op-modified\`,
   \`openapi.path-item-modified\`, \`openapi.component-modified\`,

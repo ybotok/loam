@@ -164,6 +164,22 @@ new paths are `docs/SERVICE-TEAMS.md` and `scripts/payload-sizes.ts`.
   `test/docs-drift.test.ts` now also requires every exact `@ybotok/loam@<version>` in README to be
   this checkout's version.
 
+### Fixed — `loam validate` reports an unreadable verification record from the docs repo
+
+No code, flag or payload key was added. An existing code fires in one more place.
+
+- **`evidence.record-unreadable` (warn) now fires on the feature target too**, under
+  `validate --feature <FEAT>`, `validate <FEAT>` and every active feature under `validate --all`, run
+  from anywhere. A `features/<FEAT>/verification.yaml` or `verification/<svc>.yaml` with git
+  conflict markers, broken YAML, a shape that is not a record, or a summary that contradicts its
+  claims used to pass `validate --all` in the docs repo with no finding. `verify` refused the file,
+  and `status`, `gate` and `tasks` reported it. Until now only the service target raised this code,
+  and only from the service's own repository. The finding names the file and gives the same repair
+  as the service-target finding. Its `locations` hold that file as `primary`. It is a warning, as
+  it is on the service target. `valid`, the exit code and `loam archive` are unchanged, and
+  `--strict` fails on it. In a service repository's `validate --all` the same file is reported
+  twice: once by the service target and once by the feature target.
+
 ### Fixed — `loam diff` reads a spec saved as UTF-16 without a byte-order mark the same way on both sides
 
 No code, flag, path or payload key was added, changed or retired.
