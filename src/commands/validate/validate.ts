@@ -119,17 +119,25 @@ export function registerValidate(program: Command): void {
 
       /**
        * One service target, from a name the enumeration or the grammar approved.
-       * `land` is --all's landscape, read once for the whole run: when it is
-       * passed the service is handed it and told the landscape target carries
-       * its parse errors. Null is PASSED — it means "there is no landscape
-       * file" — so the test is `=== undefined`, never truthiness: a repo with
-       * no landscape would otherwise re-load per service and double-report.
+       * `land` is --all's landscape, read once for the whole run and handed to
+       * the service. Null is PASSED — it means "there is no landscape file" —
+       * so the test is `=== undefined`, never truthiness: a repo with no
+       * landscape would otherwise re-load per service and double-report.
+       *
+       * `landscapeReported` says whether this run ALSO emits a landscape target
+       * to carry the map's parse errors, and it is the caller's to state: a
+       * preloaded map does not imply one. It used to be read off `land`, and
+       * under `--base` the landscape is a target only when the branch changed
+       * `architecture/` — so a broken committed map and a branch touching only
+       * a service told that service "reported once, on the landscape target"
+       * with no details, and the parser output was reported nowhere.
        */
-      const serviceTarget = (id: RawServiceId, land?: LoadedDoc | null): Promise<TargetReport> =>
+      const serviceTarget = (id: RawServiceId, land?: LoadedDoc | null, landscapeReported = false): Promise<TargetReport> =>
         guarded({ kind: "service", id }, () =>
           validateService({
             docsDir, service: id, repoDir: repoOf(id), loamOwned, gherkinDir: config.gherkinDir, contracts: config.contracts, fleet,
-            ...(land === undefined ? {} : { preloaded: land, landscapeReported: true }),
+            ...(land === undefined ? {} : { preloaded: land }),
+            landscapeReported,
           }),
         );
       /** One feature target; `land` as above, and left undefined it means "load it if you need it". */
@@ -178,7 +186,8 @@ export function registerValidate(program: Command): void {
           // landscape owns no service directory, so that is its whole footprint —
           // and even then not whole: `scope.ts` drops what grades a file the
           // branch left alone and adds the call edges it wrote.
-          if (scope === null || scope.landscape) {
+          const landscapeIsTarget = scope === null || scope.landscape;
+          if (landscapeIsTarget) {
             const landscape = await validateLandscape(docsDir, land, fleet);
             targets.push(landscape);
             // The agent contract check, --all only: AGENTS.md is written once and
@@ -202,7 +211,7 @@ export function registerValidate(program: Command): void {
               });
             }
           }
-          targets.push(...(await inOrder(services, (svc) => serviceTarget(svc.id, land))));
+          targets.push(...(await inOrder(services, (svc) => serviceTarget(svc.id, land, landscapeIsTarget))));
           targets.push(...(await inOrder(features, (feat) => featureTarget(feat, land))));
         } else if (opts.feature) {
           const feature = await resolveFeature(docsDir, opts.feature, "exclude", fleet);

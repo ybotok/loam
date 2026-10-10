@@ -326,6 +326,40 @@ describe("loam validate --all --base — a call edge the branch edited is graded
   });
 });
 
+describe("loam validate --all --base — a committed map that does not parse is reported somewhere", () => {
+  it("a branch touching only a service carries the parser output on that service, since no landscape target does", async () => {
+    // The defect, the reviewer's repro on the examples fleet: the committed map
+    // is broken and the branch edits one service's spec. `architecture/` did
+    // not change, so the run emits no landscape target — yet the service was
+    // told one existed, because "a landscape was preloaded" stood in for "a
+    // landscape target was emitted". It printed `spine.landscape-invalid …
+    // the parser output is reported once, on the landscape target` with no
+    // details, and the parser output was reported nowhere. Present before the
+    // service-target helper existed; the helper made it its contract.
+    const p = await exampleFleet();
+    try {
+      const map = "architecture/landscape.likec4";
+      await p.write(map, `${await p.read(map)}\nmodel {\n  broken = bogusKind 'Broken'\n}\n`);
+      commitBase(p.docsDir);
+      const spec = "services/payment-service/spec.md";
+      await p.write(spec, `${await p.read(spec)}\n`);
+      const { code, payload } = await validateJson(p, "--all", "--base", "main");
+      expect(code).toBe(1);
+      expect(payload.scope?.landscape).toBe(false);
+      expect((payload.targets ?? []).map((t) => t.kind)).not.toContain("landscape");
+      const target = (payload.targets ?? []).find((t) => t.id === "payment-service");
+      const invalid = (target?.findings ?? []).find((f) => f.code === "spine.landscape-invalid") as
+        | { message: string; details?: string[] }
+        | undefined;
+      expect(invalid, "payment-service must still say the spine could not run").toBeDefined();
+      expect(invalid!.message).not.toContain("reported once, on the landscape target");
+      expect(invalid!.details?.length ?? 0).toBeGreaterThan(0);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
 describe("loam validate --all --base — a fleet-wide vocabulary is re-graded only when its file changed", () => {
   // The defect: the landscape target is one coarse subject, so ANY
   // architecture/ branch re-graded every fleet-wide vocabulary warning, and
