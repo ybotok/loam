@@ -46,9 +46,8 @@ import { fail, repoPath, type ErrorCode } from "../../../core/envelope/json.js";
 import { listFleetTree } from "../../../core/repo/repo.js";
 import type { FleetTree } from "../../../core/repo/tree/walk.js";
 import { stageWrites } from "../../../core/staging/commit.js";
-import { type CommitRecovery, InterruptedCommitError } from "../../../core/staging/interrupted.js";
-import { acquireDocsLock, DocsBusyError } from "../../../core/staging/lock.js";
-import { recoverInterruptedCommit } from "../../../core/staging/recovery/recover.js";
+import { type CommitRecovery } from "../../../core/staging/interrupted.js";
+import { openCommitWindow } from "../../../core/staging/recovery/recover.js";
 import { commitStaged } from "../../../core/staging/txn/transaction.js";
 import { type PlannedWrite } from "../../../core/staging/writes.js";
 import { authoredGeneratedPaths, authoredRefusal } from "../../../core/repo/tree/render/service/header.js";
@@ -119,23 +118,15 @@ export async function commitWindow(
   json: boolean,
   plan: (tree: FleetTree) => Promise<SubsystemTxn | null>,
 ): Promise<void> {
-  let releaseLock: () => Promise<void>;
-  try {
-    releaseLock = await acquireDocsLock(docsDir);
-  } catch (err) {
-    if (!(err instanceof DocsBusyError)) throw err;
-    fail(json, "docs-busy", err.message);
+  // Refuse-fast (0), as archive takes the lock: two concurrent verbs answer
+  // `docs-busy` rather than queue behind each other.
+  const opened = await openCommitWindow(docsDir, 0);
+  if (!opened.ok) {
+    fail(json, opened.code, opened.message);
     return;
   }
+  const { recovered } = opened;
   try {
-    let recovered: CommitRecovery | null;
-    try {
-      recovered = await recoverInterruptedCommit(docsDir);
-    } catch (err) {
-      if (!(err instanceof InterruptedCommitError)) throw err;
-      fail(json, "commit-interrupted", err.message);
-      return;
-    }
     const txn = await plan(await listFleetTree(docsDir));
     if (txn === null) return;
 
@@ -235,7 +226,7 @@ export async function commitWindow(
     // instead, and the same note names the run that puts the includes back.
     if (!json && !expected.known) console.log(LANDSCAPE_UNREADABLE_NOTE);
   } finally {
-    await releaseLock();
+    await opened.release();
   }
 }
 

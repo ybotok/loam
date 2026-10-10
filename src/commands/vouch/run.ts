@@ -21,15 +21,13 @@
  * `loam validate` can see either side move. (This paragraph came from a
  * docblock stranded at the foot of `vouch.ts` when the stamp moved down here.)
  */
-import { existsSync } from "node:fs";
 import { contentDigest, withFrontmatterFields } from "../../core/document/frontmatter.js";
 import { encodeVouchScope } from "../../core/provenance/sample/scope.js";
 import { encodeSourceIndex } from "../../core/provenance/stamp.js";
 import { rollbackStaged, stageWrites } from "../../core/staging/commit.js";
-import { join } from "node:path";
-import { COMMIT_INTENT, type CommitRecovery, InterruptedCommitError } from "../../core/staging/interrupted.js";
-import { acquireDocsLockWaiting, DocsBusyError, LOCK_WAIT_MS } from "../../core/staging/lock.js";
-import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
+import { type CommitRecovery } from "../../core/staging/interrupted.js";
+import { LOCK_WAIT_MS } from "../../core/staging/lock.js";
+import { openCommitWindow, recoverIfJournaled } from "../../core/staging/recovery/recover.js";
 import { commitStaged } from "../../core/staging/txn/transaction.js";
 import { type PlannedWrite } from "../../core/staging/writes.js";
 import { type StampedSpec, type VouchOutcome, type VouchRequest } from "./contract.js";
@@ -43,24 +41,8 @@ export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
   // run's own raced check then refused a sound stamp and the fix doctor
   // prints took two runs instead of one. Cheap when there is nothing to do:
   // one existsSync.
-  let recoveredEarly: CommitRecovery | null = null;
-  if (existsSync(join(req.docsDir, COMMIT_INTENT))) {
-    let release: () => Promise<void>;
-    try {
-      release = await acquireDocsLockWaiting(req.docsDir, LOCK_WAIT_MS);
-    } catch (err) {
-      if (err instanceof DocsBusyError) return { ok: false, code: "docs-busy", message: err.message };
-      throw err;
-    }
-    try {
-      recoveredEarly = await recoverInterruptedCommit(req.docsDir);
-    } catch (err) {
-      if (err instanceof InterruptedCommitError) return { ok: false, code: "commit-interrupted", message: err.message };
-      throw err;
-    } finally {
-      await release();
-    }
-  }
+  const early = await recoverIfJournaled(req.docsDir);
+  if (!early.ok) return early;
   // Verify first, stamp after: spec.md is required (a missing one is
   // `unknown-target`), arch.spec.md rides when it exists, and one file that
   // cannot be verified refuses the run before anything is written. The walk is
@@ -93,26 +75,15 @@ export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
   // could stage against bytes an archive was mid-swap over, and the byte
   // compare below would refuse a perfectly sound stamp — or worse, an
   // interrupted commit's journal would be silently written over.
-  let releaseLock: () => Promise<void>;
+  //
+  // A journal under the lock means the last writer never finished; the window
+  // recovers or refuses before reading the pre-images this commit will compare.
+  const opened = await openCommitWindow(req.docsDir, LOCK_WAIT_MS);
+  if (!opened.ok) return opened;
   try {
-    releaseLock = await acquireDocsLockWaiting(req.docsDir, LOCK_WAIT_MS);
-  } catch (err) {
-    if (err instanceof DocsBusyError) return { ok: false, code: "docs-busy", message: err.message };
-    throw err;
-  }
-  try {
-    // A journal under the lock means the last writer never finished; recover
-    // or refuse before reading the pre-images this commit will compare.
-    let recovered: CommitRecovery | null;
-    try {
-      recovered = await recoverInterruptedCommit(req.docsDir);
-    } catch (err) {
-      if (err instanceof InterruptedCommitError) return { ok: false, code: "commit-interrupted", message: err.message };
-      throw err;
-    }
-    return await commitStamp(req, { writes, specPlan, archPlan, verified }, recovered ?? recoveredEarly);
+    return await commitStamp(req, { writes, specPlan, archPlan, verified }, opened.recovered ?? early.recovered);
   } finally {
-    await releaseLock();
+    await opened.release();
   }
 }
 

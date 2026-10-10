@@ -1,9 +1,9 @@
 import type { Command } from "commander";
 import { configOrRefuse, fail, repoPath } from "../../core/envelope/json.js";
 import { missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
-import { type CommitRecovery, InterruptedCommitError } from "../../core/staging/interrupted.js";
-import { acquireDocsLockWaiting, DocsBusyError, LOCK_WAIT_MS } from "../../core/staging/lock.js";
-import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
+import { type CommitRecovery } from "../../core/staging/interrupted.js";
+import { LOCK_WAIT_MS } from "../../core/staging/lock.js";
+import { openCommitWindow } from "../../core/staging/recovery/recover.js";
 import { docsRepoReady } from "../policy/gate.js";
 import { featureChecklist } from "../../core/verify/checklist.js";
 import { readVerificationState } from "../../core/verify/read/file.js";
@@ -126,31 +126,22 @@ export function registerVerify(program: Command): void {
       // recorders for different services of one feature are both supposed to
       // land: the second waits out the first's sub-second window and merges
       // over what it left. Reading stays lock-free — it writes nothing.
+      //
+      // A journal under the lock means the last writer never finished. The
+      // record's own authoritative read is about to happen; reading it over
+      // a half-commit would merge against bytes no run ever produced — the
+      // last docs-repo writer that could still silently treat a half-commit
+      // as healthy. That refusal must release the lock like every other path
+      // out, and once did not; `openCommitWindow` releases it before it answers.
       let releaseLock: (() => Promise<void>) | null = null;
       let recovered: CommitRecovery | null = null;
       if (recording) {
-        try {
-          releaseLock = await acquireDocsLockWaiting(docsDir, LOCK_WAIT_MS);
-        } catch (err) {
-          if (err instanceof DocsBusyError) return fail(json, "docs-busy", err.message);
-          throw err;
-        }
+        const opened = await openCommitWindow(docsDir, LOCK_WAIT_MS);
+        if (!opened.ok) return fail(json, opened.code, opened.message);
+        releaseLock = opened.release;
+        recovered = opened.recovered;
       }
       try {
-        // A journal under the lock means the last writer never finished. The
-        // record's own authoritative read is about to happen; reading it over
-        // a half-commit would merge against bytes no run ever produced — the
-        // last docs-repo writer that could still silently treat a half-commit
-        // as healthy. INSIDE the try: this refusal must release the lock like
-        // every other path out, and once did not.
-        if (recording) {
-          try {
-            recovered = await recoverInterruptedCommit(docsDir);
-          } catch (err) {
-            if (!(err instanceof InterruptedCommitError)) throw err;
-            return fail(json, "commit-interrupted", err.message);
-          }
-        }
         // Archived features resolve too: a shipped feature's verification is worth
         // reading back, and it travelled into the archive with everything else.
         const feature = await resolveFeature(docsDir, featureId, "include");

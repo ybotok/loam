@@ -43,7 +43,8 @@ import { axisLabel, planEmission } from "../../core/gherkin/emit.js";
 import { gherkinRoot } from "../../core/gherkin/stamp.js";
 import { LOAM_VERSION } from "../../core/envelope/version.js";
 import { UnsafePathError } from "../../core/kernel/path-safety.js";
-import { commitEmission, recoverEmissionRoot } from "./commit.js";
+import { recoverIfJournaled } from "../../core/staging/recovery/recover.js";
+import { commitEmission } from "./commit.js";
 import { reconcile, type Scope } from "./reconcile.js";
 import { render } from "./render.js";
 import { sayRecovered } from "../policy/format.js";
@@ -134,8 +135,10 @@ export function registerGherkin(program: Command): void {
       // name a feature that has since ARCHIVED, whose recovery must still
       // work. `new` fixed the same ordering and documented it; refusing
       // unknown-target over a wedged root left doctor printing a repair that
-      // could never run.
-      const early = await recoverEmissionRoot(root);
+      // could never run. The lock is the emission root's own, given straight
+      // back: the slow half below runs unlocked, and `commitEmission` retakes
+      // it for the commit window.
+      const early = await recoverIfJournaled(root);
       if (!early.ok) return fail(json, early.code, early.message);
       let recovered = early.recovered;
 
