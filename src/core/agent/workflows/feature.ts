@@ -106,11 +106,12 @@ export const LOAM_FEATURE: CommandContent = {
      leave out stays exactly as the living contract has it, and a local \`$ref\`
      (\`#/components/schemas/Order\`) resolves into the living document, so there
      is nothing to restate. Every operation you quote costs a pin, and once a
-     parallel feature retires it, a pinned quote is \`openapi.baseline-invalid\`
-     and an unpinned one is \`openapi.op-revived\` (\`asyncapi.slot-revived\` on
-     the event axis) — archive refuses either. Delete the quote; only a
-     feature that MEANS to bring the operation back keeps it, and archives
-     past the finding with a human's \`--approve\`
+     parallel feature retires it — or moves it, and you quoted the old
+     address — a pinned quote is \`openapi.baseline-invalid\` and
+     \`openapi.op-revived\` both, an unpinned one \`openapi.op-revived\` alone
+     (\`asyncapi.slot-revived\` on the event axis) — archive refuses either.
+     Delete the quote; only a feature that MEANS to bring a retired operation
+     back keeps it, and archives past the finding with a human's \`--approve\`
    - \`specs/<svc>/asyncapi.yaml\` — the event axis, only when the feature changes
      what a service puts on or takes off the bus: an AsyncAPI 3.0 document
      holding only the channel, operation and message slots you add, change or

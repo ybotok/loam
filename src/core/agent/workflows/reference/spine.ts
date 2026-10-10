@@ -239,12 +239,15 @@ each other, and the second to archive pushes its authoring-time copy back over
 whatever landed in between. Quote nothing you do not change. Each quote costs a
 pin, and a parallel feature that REMOVES the quoted operation makes it worse
 either way: pinned, the quote is \`openapi.baseline-invalid\`, an error that
-blocks your archive; unpinned, it is \`openapi.op-revived\` — a warning that
-gates, because the merge would read the dead operation as a new one and put
-it back (\`asyncapi.slot-revived\` is the same finding on a channel, operation
-or message slot). The fix for both is to delete the quote. Keep it only when
-the feature brings the operation back ON PURPOSE: then drop any pin, and a
-human archives with \`--approve\`. \`loam rebase\` pins neither shape and prints
+blocks your archive, and \`openapi.op-revived\` beside it; unpinned, it is
+\`openapi.op-revived\` alone — a warning that gates, because the merge would
+read the dead operation as a new one and put it back (\`asyncapi.slot-revived\`
+is the same finding on a channel, operation or message slot). A parallel
+feature that MOVES the operation to another address does the same to a quote
+of the old one, which archived would answer the operationId at both. The fix
+for both is to delete the quote. Keep it only when the feature brings a
+retired operation back ON PURPOSE: then drop any pin, and a human archives
+with \`--approve\`. \`loam rebase\` pins neither shape and prints
 the same finding, so the decision stays with you. The check reads the removal
 markers of the features under \`features/archive/\` — a removal made by
 hand-editing a living contract is invisible to it.

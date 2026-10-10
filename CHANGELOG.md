@@ -42,8 +42,11 @@ Two codes, both added to the `IssueCode` union, and one additive `--json` key we
 - **Exit code: `loam archive` now exits 1 (`not-coherent`) on this shape** without `--approve`;
   with `--approve` it merges as before, and the operation lands in `overridden[]` and the text
   output's "archiving despite" list, naming what came back and whose retirement it reverses.
-  `loam validate --feature` reports both codes as warnings (exit unchanged), and `loam status`
-  counts them as gating like every warning that gates.
+  `loam validate --feature` and `--all` report both codes as warnings: exit unchanged, except
+  under `--strict`, which fails on any warning and so now exits 1 on this shape. `loam status`
+  counts them as gating like every warning that gates, and `loam show <FEAT> --json` reports
+  `review.readyToArchive: false` for such a feature until the quote is deleted (or the feature is
+  archived past it with `--approve`).
 - **`loam rebase` no longer calls a retired operation one "this feature is adding".** It pins
   nothing for it either way, and now prints the same finding after its pin lines; the additive
   `--json` key `revived[]` carries the findings (`severity`, `code`, `gates`, `subject`,

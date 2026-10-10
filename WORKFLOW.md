@@ -679,9 +679,9 @@ adds, changes or removes, the merge leaves every operation it does not spell exa
 contract has it, and a local `$ref` resolves into the living document — so an add-only contract
 delta has nothing to pin and needs no rebase. Each quote costs a pin, and a pinned quote whose living
 operation a parallel feature removes becomes `openapi.baseline-invalid`, an error that blocks the
-archive until the quote is deleted — while an unpinned one is `openapi.op-revived`
-(`asyncapi.slot-revived` on the event axis), which gates the archive too, because the merge would
-read the retired operation as an addition and put it back. Rebase pins neither as new: it prints
+archive until the quote is deleted, with `openapi.op-revived` beside it — while an unpinned one is
+`openapi.op-revived` alone (`asyncapi.slot-revived` on the event axis), which gates the archive too,
+because the merge would read the retired operation as an addition and put it back. Rebase pins neither as new: it prints
 the same finding (`revived[]` in `--json`), and whether the quote goes or the feature re-adds the
 operation on purpose is the author's call. Restamping is the last step of resolving a collision,
 not the resolution — the output says which pins moved.

@@ -146,7 +146,8 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   \`delta.living-duplicate-requirement\`, and the API-removal group:
   \`openapi.remove-marker-anonymous\`, \`openapi.remove-op-consumed\`, and
   \`openapi.op-revived\` (warn, gates archive: the delta spells an operation an
-  archived feature retired, so the merge would put it back).
+  archived feature retired, or at an address one moved it away from, so the
+  merge would put it back).
   The event axis is graded in feature scope too — the \`asyncapi.*\`
   baseline/removal/conflict codes, \`asyncapi.slot-revived\` (the same revival
   on a channel, operation or message), plus \`c4-event.*\` and \`spec-event.*\`.
