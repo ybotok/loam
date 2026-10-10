@@ -266,10 +266,11 @@ export const MCP_TOOLS: readonly McpTool[] = [
     command: "gate",
     description:
       "Can this service deploy? A read-only query over recorded evidence — advisory by default. " +
-      "CLI equivalent: loam gate [--service <id>] [--strict] --json",
+      "CLI equivalent: loam gate [--service <id>] [--since <ref>] [--strict] --json",
     positionals: [],
     flags: [
       { ...SERVICE_FLAG, description: "the service being deployed (defaults to the configured service)" },
+      { property: "since", flag: "--since", kind: "string", description: "also grade features archived after this docs-repo git ref; without it only in-flight features are read" },
       { property: "strict", flag: "--strict", kind: "boolean", description: "exit 1 on any warning too; the payload does not change" },
     ],
   },
@@ -312,9 +313,9 @@ export const MCP_TOOLS: readonly McpTool[] = [
     description:
       "Print a workflow, support protocol or reference page, version-matched to this binary; reads no config and no docs repo, so it answers " +
       "before the repository is wired. Ask for loam-check DELIBERATELY: it is by far the largest protocol " +
-      "(its per-code fix tables are ~83 KB of the ~84 KB it prints), and noFixTables true returns the narrowed page " +
+      "(almost all of what it prints is its per-code fix tables), and noFixTables true returns the narrowed page " +
       "— every paragraph that introduces a table, none of the rows — after which loam_explain answers any one code " +
-      "a run reports in under 500 bytes. " +
+      "a run reports, on its own. " +
       "CLI equivalent: loam instructions [workflow] [args...] [--no-fix-tables] --json",
     positionals: [
       {

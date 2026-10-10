@@ -46,9 +46,12 @@ so a JUnit or pytest fleet is not held at \`attested\` by a file format —
 \`loam verify <FEAT> --results report.json\`. A claim is confirmed only when a
 report scenario carrying its \`@loam-digest-<16hex>\` tag ran at least one step
 and every step passed — every occurrence, when the report holds a re-run, and
-every before/after hook with it. A failed, undefined, pending or skipped step,
-a failed hook, or no matching scenario at all, is \`unconfirmed\` with the
-reason. The digest is the only identity: a reworded spec scenario matches
+every before/after hook with it — and, in a cucumber report, ran exactly as
+many steps as the stamped scenario has: a hand-tagged stub is not that
+scenario's run. A failed, undefined, pending or skipped step, a failed hook, a
+step count that differs, or no matching scenario at all, is \`unconfirmed\` with
+the reason. A report that is not JSON (a JUnit XML file) is refused
+\`answers-unreadable\`, naming both shapes. The digest is the only identity: a reworded spec scenario matches
 nothing until the suite is regenerated and re-run. When a report exists,
 ALWAYS pass \`--results\` — under it the runner owns every scenario claim, and
 an answers-file entry for one is refused.
@@ -108,9 +111,12 @@ re-checks the pins and reports drift under the \`evidence.*\` findings; nothing
 there moves a verdict either.
 
 Two more codes belong to the record itself. \`verify.record-miscounted\` (error):
-a \`verification.yaml\` whose \`summary\` block contradicts its own \`claims[]\` — the
-record is refused as unreadable rather than believed in either half, and
-re-recording is the repair, never editing the counts. \`verify.digest-contested\`
+a record file whose \`summary\` block contradicts its own \`claims[]\` — the
+record is refused as unreadable rather than believed in either half, and the
+repair is never editing the counts: a service's own \`verification/<id>.yaml\`
+is deleted and recorded again by that service, and the one-file
+\`verification.yaml\` is restored from version control and then recorded over.
+\`verify.digest-contested\`
 (warn): two or more services word a scenario identically, so they share one
 \`@loam-digest-…\` tag and no single cucumber report can say whose suite ran it —
 those scenario claims are left unconfirmed, and each service records its own
@@ -129,7 +135,10 @@ services that all answered a since-rewritten delta agree with each other and are
 every one of them stale. Differing \`docsCommit\` values are NOT a finding:
 recording a week apart is normal for a feature in flight.
 Normal mid-rollout and it gates nothing; re-record the services on the older
-version from their own repositories, or accept the split knowingly.
+version from their own repositories. In a record kept as per-service files the
+answers of the services it names do not count until they do: the record
+answers the newest version its files answered, and an answer filed against an
+older one could otherwise fill the slot of the question that replaced it.
 Attestations written before the field existed carry no \`checklist\` and are not
 counted as a third version — silence is not disagreement.
 
@@ -142,8 +151,9 @@ commit. It does not prove the file came from executing that commit; no digest
 can.
 
 Everything else you answer from the code, and \`--record answers.json\` takes
-those back, writing \`features/<FEAT>/verification.yaml\` — it travels into the
-archive with the feature and reads without loam. Alongside the mechanical
+those back — into \`features/<FEAT>/verification/<svc>.yaml\` with \`--service\`,
+into the one file \`features/<FEAT>/verification.yaml\` without — and either
+travels into the archive with the feature and reads without loam. Alongside the mechanical
 flags, the answers file must answer exactly the claims no report owns: an
 entry for a report-owned claim is refused (\`answers-mismatch\`), and a
 mechanical flag alone is refused while claims outside its kind are
@@ -163,9 +173,16 @@ loam verify FEAT-101 --service payment-service --results report.json --contract-
 \`\`\`
 
 \`--service <id>\` narrows the checklist to that service's claims and binds the
-answers to this repository's commit, producing one **attestation** per service
-inside a single \`schema: 2\` \`verification.yaml\`. Re-running it in the next
-repo adds that repo's attestation and leaves the others standing. Omitting
+answers to this repository's commit, producing that service's **attestation**
+as a file of its own, \`features/<FEAT>/verification/<id>.yaml\`. The directory
+is the record: loam adds the files up when it reads, and the verdict and
+counts are computed from them, never stored. Re-running it in the next repo
+writes that repo's file and touches no other — which is why two teams'
+attestations on two docs-repo branches merge cleanly, where one shared file
+conflicted every time. A one-file federated \`verification.yaml\` written
+before the directory is still read; a service that records again supersedes
+its share of it, and the file goes once every service it names has its own.
+Omitting
 \`--service\` in a repo whose \`loam.json\` declares one substitutes it, so the
 short form is safe there; a \`--service\` naming a service this repo does not
 declare is refused (\`service-mismatch\`), and \`--service\` from a repo that
@@ -177,9 +194,14 @@ no \`--service\` writes the whole record from one place.** Over a record that
 already carries other services' attestations it is refused outright
 (\`record-federated\`, naming the attestors) rather than merged or migrated — the
 alternative was one repo silently erasing nine others' evidence. Use it only for
-a single-service feature that has never been recorded federated. A
-\`verification.yaml\` that exists but cannot be read is \`record-unreadable\`: it is
-never overwritten and never reported as "no record".
+a single-service feature that has never been recorded federated. A record file
+that exists but cannot be read — broken YAML, git conflict markers, a miscount
+— is \`record-unreadable\`: it is never overwritten and never reported as "no
+record", and the message names the file and the repair that is safe for it. A
+service's own \`verification/<id>.yaml\` holds only that service's word, so that
+service may delete it and record again; the one-file \`verification.yaml\` may
+hold other services' attestations, so it is restored from version control
+(after a merge, the copy on the branch you merged into) and never deleted.
 
 Reading is not writing: \`loam verify <FEAT> --service <id>\` **without**
 \`--record\` is a pure lens on the checklist. A read-only verify checklist needs no

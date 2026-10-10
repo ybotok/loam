@@ -201,6 +201,28 @@ describe("the stamp: regenerate while provably untouched, refuse the moment it i
     }
   });
 
+  it("after the first op is drawn, the refusal points at adopt and the C4 delta — not at fleet.yaml", async () => {
+    // The documented next step after seeding is writing `metadata { op }` on an
+    // edge, which fleet.yaml has no spelling for. The refusal used to advise
+    // "fold the edits into fleet.yaml and delete the file, then re-run" —
+    // followed literally, that deletes the operation links the spine grades.
+    const p = await makeProject({ ...EMPTY_REPO, "architecture/landscape.likec4": scaffoldLandscape() });
+    try {
+      await writeFleet(p, FLEET);
+      expect((await runLoam(p.workDir, "seed", "--json")).code).toBe(0);
+      const seeded = await p.read("architecture/landscape.likec4");
+      const withOp = seeded.replace(/(-> svc_\w+)\n/, "$1 'Calls' {\n    metadata { op 'authorizePayment' }\n  }\n");
+      expect(withOp).not.toBe(seeded);
+      await p.write("architecture/landscape.likec4", withOp);
+      const { message } = await refusedSeed(p, "seed-landscape-edited");
+      expect(message).toContain("loam adopt --service <id>");
+      expect(message).toContain("C4 delta");
+      expect(message).not.toContain("Either fold the edits into fleet.yaml");
+    } finally {
+      await p.destroy();
+    }
+  });
+
   it("refuses a hand edit PREPENDED to the untouched stub, and writes nothing", async () => {
     // "Seed never overwrites human work" is this refusal's own sentence, and it
     // was false above the stub: `isLandscapeStub` matched with `endsWith`, so a

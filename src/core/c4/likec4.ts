@@ -5,7 +5,7 @@ import { readDynamicViews, type ParsedView } from "./parsed/dynamic-views.js";
 import { readGlobalStyleIds, readViewIds, type ViewIdClaim } from "./parsed/view-ids.js";
 import { readSpecification, type DocSpecification } from "./parsed/specification.js";
 import { readDeployment, type DeploymentModel } from "./parsed/deployment.js";
-import { descText, metaKey } from "./parsed/values.js";
+import { compareRels, descText, metaKey } from "./parsed/values.js";
 
 /** A parse/validation issue reported by LikeC4. */
 export interface LikeC4Error {
@@ -32,9 +32,101 @@ export interface LikeC4Error {
  *
  * Four modules used to hand-roll this ternary; they all read this one now, so
  * the base cannot drift between them again.
+ *
+ * The message itself is BOUNDED here too, and for the same reason it lives in
+ * one place: every surface that prints a LikeC4 diagnostic — validate, context,
+ * show, tasks, doctor, gate, archive — prints it through this function, so this
+ * is the one spelling that can keep all of them small. See `boundedMessage`.
  */
 export function errorText(e: LikeC4Error): string {
-  return typeof e.line === "number" ? `L${e.line + 1}: ${e.message}` : e.message;
+  const message = boundedMessage(e.message);
+  return typeof e.line === "number" ? `L${e.line + 1}: ${message}` : message;
+}
+
+/**
+ * How many alternatives of a parser's "one of these possible Token sequences"
+ * list a printed diagnostic keeps — the number `likec4 validate` itself prints
+ * before its `...`.
+ */
+const TOKEN_ALTERNATIVES = 4;
+
+/** The heading line of Chevrotain's no-viable-alternative message, whose numbered list follows it. */
+const TOKEN_SEQUENCES = /possible Token sequences:$/;
+
+/** One numbered alternative in that list: `  12. [IdTerminal, Dot]`. */
+const ALTERNATIVE = /^\s+\d+\. /;
+
+/**
+ * A LikeC4 message, with Chevrotain's list of expected token sequences cut to
+ * its first few alternatives and a count of the rest.
+ *
+ * When the parser meets a token no rule can take, Chevrotain lists EVERY token
+ * sequence any rule could have accepted there — and inside a LikeC4 `model { }`
+ * block that is the whole grammar. Measured at the 1.59.2 pin: deleting the
+ * closing quote of one `technology '…'` makes three such messages of about
+ * 6,160 lines each, and `loam validate --service` printed 18,503 lines
+ * (434 KB; 458 KB as `--json`) for one keystroke. `capDetails` bounds how MANY
+ * details a finding prints, never how big one is, and `loam context` has no cap
+ * at all — so a broken feature delta turned a 24 KB briefing into 626 KB for
+ * every agent working on any service the feature touches. An agent in the
+ * check-fix loop gets nothing from alternative 4,000: what it acts on is the
+ * line number and the `but found: '…'` line, which is kept.
+ *
+ * Upstream `likec4 validate` keeps the first five lines of any message and
+ * prints `...`; this cuts the LIST only, so the `but found:` line after it
+ * survives, and says how many alternatives were dropped so nothing reads as
+ * complete when it is not (the convention `capDetails` uses). Any other
+ * message is returned exactly as LikeC4 wrote it.
+ */
+function boundedMessage(message: string): string {
+  const lines = message.split("\n");
+  if (!TOKEN_SEQUENCES.test(lines[0] ?? "")) return message;
+  const alternatives = lines.filter((line) => ALTERNATIVE.test(line)).length;
+  if (alternatives <= TOKEN_ALTERNATIVES) return message;
+  const kept: string[] = [];
+  let seen = 0;
+  for (const line of lines) {
+    if (!ALTERNATIVE.test(line)) kept.push(line);
+    else if (++seen <= TOKEN_ALTERNATIVES) kept.push(line);
+    else if (seen === TOKEN_ALTERNATIVES + 1) kept.push(`  … (+${alternatives - TOKEN_ALTERNATIVES} more)`);
+  }
+  return kept.join("\n");
+}
+
+/**
+ * Diagnostics as loam keeps them: each one ONCE, in line order.
+ *
+ * LikeC4 can report one fault more than once: measured at the 1.59.2 pin, one
+ * dropped quote in a service model came back as two byte-identical messages at
+ * the same line — each of them the full token list `boundedMessage` cuts — and
+ * every `details` list printed both. The same message at the same line of the
+ * same file is one fault; the identity includes the file because LikeC4 blames
+ * a duplicate declaration on BOTH documents of a project, and those are two
+ * lines an author has to look at.
+ *
+ * In line order because LikeC4 hands its lexer's errors over before its
+ * parser's: the first location printed for that dropped quote was an
+ * "unexpected character" twelve lines BELOW it, where the runaway string ended,
+ * while the parser's errors two lines below it came after. The sort is stable,
+ * so diagnostics on one line keep LikeC4's order, and a list mixing documents
+ * stays in line order within each of them — every loader groups by document
+ * after this, which is why sorting by line alone is enough. A diagnostic with
+ * no line is about the document as a whole and leads.
+ *
+ * Applied where `getErrors()` is read (`loadSource`, `./workspace.ts`,
+ * `./project/load.ts`), so every loader hands every reader the same list and
+ * test/likec4-batch-parity.test.ts can keep asserting the two modes equal.
+ */
+export function distinctErrors<E extends LikeC4Error>(errors: readonly E[]): E[] {
+  const seen = new Set<string>();
+  return errors
+    .filter((e) => {
+      const key = `${e.sourceFsPath ?? ""}\0${e.line ?? ""}\0${e.message}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => (a.line ?? -1) - (b.line ?? -1));
 }
 
 /** loam-neutral element view (flattened from the LikeC4 parsed model). */
@@ -196,16 +288,19 @@ export function flattenModel(model: ReadableModel): { elements: Elem[]; relation
       tags: [...(e.tags ?? [])],
     };
   });
-  const relationships: Rel[] = [...model.relationships()].map((r) => ({
-    source: r.source.id,
-    target: r.target.id,
-    // LikeC4 reports an untitled edge as title: null — normalize to the declared `title?: string`.
-    title: r.title ?? undefined,
-    op: metaKey(r.metadata, "op"),
-    publishes: metaKey(r.metadata, "publishes"),
-    consumes: metaKey(r.metadata, "consumes"),
-    tags: [...(r.tags ?? [])],
-  }));
+  const relationships: Rel[] = [...model.relationships()]
+    .map((r) => ({
+      source: r.source.id,
+      target: r.target.id,
+      // LikeC4 reports an untitled edge as title: null — normalize to the declared `title?: string`.
+      title: r.title ?? undefined,
+      op: metaKey(r.metadata, "op"),
+      publishes: metaKey(r.metadata, "publishes"),
+      consumes: metaKey(r.metadata, "consumes"),
+      tags: [...(r.tags ?? [])],
+    }))
+    // One order for every run and machine: `compareRels` (./parsed/values.ts) says why LikeC4 gives none.
+    .sort(compareRels);
   return { elements, relationships };
 }
 
@@ -234,8 +329,9 @@ export async function loadSource(src: string): Promise<LoadedDoc> {
     // whose element type is structurally wider than ours, so the compiler can
     // check the shape here. The cast was the only thing standing between a
     // dependency renaming `message` and a build that still succeeded — and the
-    // `?? []` it carried could never fire.
-    const errors: LikeC4Error[] = likec4.getErrors();
+    // `?? []` it carried could never fire. Through `distinctErrors`, as every
+    // loader's diagnostics are, so this one agrees with the batch loader.
+    const errors: LikeC4Error[] = distinctErrors(likec4.getErrors());
     if (errors.length > 0) {
       return { errors, elements: [], relationships: [] };
     }
@@ -250,17 +346,29 @@ export async function loadSource(src: string): Promise<LoadedDoc> {
     // a second into minutes. The elements and relationships below are identical
     // either way. The `await` is load-bearing for anything reading `$data`: it is
     // undefined on the unresolved promise.
-    const model = (await likec4.parsedModel()) as ReadableModel;
-    return {
-      errors,
-      specification: readSpecification(model.specification),
-      views: readDynamicViews(model),
-      viewIds: readViewIds(model),
-      globalStyles: readGlobalStyleIds(model),
-      deployment: readDeployment(model),
-      ...flattenModel(model),
-    };
+    return cleanDoc((await likec4.parsedModel()) as ReadableModel);
   } finally {
     await likec4.dispose();
   }
+}
+
+/**
+ * Everything loam reads out of one document that parsed clean, from LikeC4's
+ * parsed stage. Shared with `./workspace.ts`'s batch loader, which used to
+ * spell the same six reads out again: an adapter wired into one loader and not
+ * the other reads as an absence rather than an error, the failure
+ * test/likec4-batch-parity.test.ts exists to catch. `./project/load.ts` keeps
+ * its own `cleanProjectDoc` because a project's record requires the fields this
+ * one leaves optional.
+ */
+export function cleanDoc(model: ReadableModel): LoadedDoc {
+  return {
+    errors: [],
+    specification: readSpecification(model.specification),
+    views: readDynamicViews(model),
+    viewIds: readViewIds(model),
+    globalStyles: readGlobalStyleIds(model),
+    deployment: readDeployment(model),
+    ...flattenModel(model),
+  };
 }

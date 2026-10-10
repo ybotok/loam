@@ -5,6 +5,7 @@
  * one of them is a contract. This side may be reworded freely; the payload
  * beside it may not.
  */
+import { answeredSplit } from "../../core/verify/record.js";
 import { SEVERITY_MARK } from "../../core/vocabulary/report.js";
 import type {
   ArtifactState,
@@ -47,12 +48,17 @@ function artifactLabel(a: ArtifactState): string {
  * because they answer different questions and only together are they honest:
  * `recorded  4/4 confirmed` used to be the whole line for a feature `verify`
  * calls `attested` — complete, and resting on somebody's word about a test.
+ * Who answered the confirmed ones rides right after the count for the same
+ * reason one step further: `verified` turns on the scenario claims alone, and
+ * `verified 19/19 confirmed` read as nineteen runs over a record where six
+ * answers were an agent's word about a permission or an edge.
  */
 function verificationLine(v: VerificationState): string {
   if (v.state === "absent") return "none";
   if (v.state === "unreadable") return "unreadable";
   return (
     `${v.state} · ${v.verdict}  ${v.confirmed}/${v.claims} confirmed` +
+    (v.confirmed > 0 ? ` (${answeredSplit(v.answered)})` : "") +
     (v.unanswered > 0 ? ` · ${v.unanswered} unanswered` : "") +
     (v.attested > 0 ? ` · ${v.attested} scenario(s) on an agent's word, not a test run` : "") +
     `  (recorded ${v.recorded ?? "?"})`
@@ -153,11 +159,15 @@ export function printFleet(r: FleetStatusReport): void {
   if (r.interrupted !== null) printInterrupted(r.interrupted);
   const s = r.services;
   console.log(`loam status — ${s.total} service(s) · ${r.features.length} feature(s) in flight`);
+  // The sampled and stale counts inside the vouched one, the scorecard's own
+  // layout: a reader who stops at the first number must not have been told the
+  // stronger of the two.
+  const notes = [
+    ...(s.sampledVouched > 0 ? [`${s.sampledVouched} sampled`] : []),
+    ...(s.contentStale > 0 ? [`${s.contentStale} stale`] : []),
+  ];
   console.log(
-    // The sampled count inside the vouched one, the scorecard's own layout: a
-    // reader who stops at the first number must not have been told the
-    // stronger of the two.
-    `  services      ${s.undocumented} undocumented · ${s.draft} draft · ${s.vouched} vouched${s.sampledVouched > 0 ? ` (${s.sampledVouched} sampled)` : ""}`,
+    `  services      ${s.undocumented} undocumented · ${s.draft} draft · ${s.vouched} vouched${notes.length > 0 ? ` (${notes.join(", ")})` : ""}`,
   );
   if (r.service !== null) console.log(`  narrowed to   ${r.service}`);
   if (r.order.length > 1) console.log(`  order         ${r.order.join(" → ")}`);

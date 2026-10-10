@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { LikeC4 } from "likec4";
 import { inOrder } from "../../kernel/concurrency.js";
-import { flattenModel, type Elem, type LikeC4Error, type LoadedDoc, type ReadableModel, type Rel } from "../likec4.js";
+import { distinctErrors, flattenModel, type Elem, type LikeC4Error, type LoadedDoc, type ReadableModel, type Rel } from "../likec4.js";
 import { readDynamicViews, type ParsedView } from "../parsed/dynamic-views.js";
 import { readSpecification, type DocSpecification } from "../parsed/specification.js";
 import { readGlobalStyleIds, readViewIds, type ViewIdClaim } from "../parsed/view-ids.js";
@@ -215,7 +215,8 @@ export function cleanProjectDoc(model: ReadableModel): ProjectDoc {
  * It takes the diagnostics rather than the workspace so `./batch.ts` can hand
  * it ONE project's share of a multi-project `getErrors()` — the two questions
  * compose (which project, then which document) exactly because neither is
- * baked in here.
+ * baked in here. Both callers' diagnostics pass through `distinctErrors` here,
+ * once, as every loader's do (`../likec4.ts` says why).
  */
 export function groupErrorsByRel(
   errors: readonly WorkspaceError[],
@@ -223,7 +224,7 @@ export function groupErrorsByRel(
 ): Map<string, LikeC4Error[]> {
   const rels = [...byRel.keys()].sort((a, b) => b.length - a.length);
   const grouped = new Map<string, LikeC4Error[]>();
-  for (const err of errors) {
+  for (const err of distinctErrors(errors)) {
     const spelled = err.sourceFsPath.split(/[\\/]/).join("/");
     const rel = rels.find((candidate) => spelled.endsWith(`/${candidate}`) || spelled === candidate);
     if (rel === undefined) {

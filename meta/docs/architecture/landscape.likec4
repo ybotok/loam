@@ -240,6 +240,7 @@ model {
   loam.commands.archive -> loam.core.repo
   loam.commands.archive -> loam.core.staging
   loam.commands.archive -> loam.core.usecases
+  loam.commands.archive -> loam.core.verify
   loam.commands.archive -> loam.core.vocabulary
 
   loam.commands.context -> loam.commands.policy
@@ -286,6 +287,7 @@ model {
   loam.commands.explore -> loam.core.repo
 
   loam.commands.gate -> loam.commands.policy
+  loam.commands.gate -> loam.core.diff
   loam.commands.gate -> loam.core.envelope
   loam.commands.gate -> loam.core.fleet_context
   loam.commands.gate -> loam.core.gate
@@ -358,6 +360,7 @@ model {
   loam.commands.migrate_openspec -> loam.core.staging
 
   loam.commands.new -> loam.commands.policy
+  loam.commands.new -> loam.core.c4
   loam.commands.new -> loam.core.capabilities
   loam.commands.new -> loam.core.coherence
   loam.commands.new -> loam.core.document
@@ -371,6 +374,7 @@ model {
   loam.commands.open -> loam.core.repo
   loam.commands.open -> loam.core.workspace
 
+  loam.commands.policy -> loam.core.diff
   loam.commands.policy -> loam.core.envelope
   loam.commands.policy -> loam.core.explain
   loam.commands.policy -> loam.core.repo
@@ -412,6 +416,7 @@ model {
   loam.commands.status -> loam.core.fleet_context
   loam.commands.status -> loam.core.repo
   loam.commands.status -> loam.core.status
+  loam.commands.status -> loam.core.verify
   loam.commands.status -> loam.core.vocabulary
 
   loam.commands.steps -> loam.core.document
@@ -691,6 +696,7 @@ model {
 
   loam.core.verify -> loam.core.asyncapi
   loam.core.verify -> loam.core.c4
+  loam.core.verify -> loam.core.conflict_markers
   loam.core.verify -> loam.core.document
   loam.core.verify -> loam.core.envelope
   loam.core.verify -> loam.core.fleet_context

@@ -34,6 +34,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import {
+  citeable,
   coherentFixture,
   makeProject,
   runLoam,
@@ -50,7 +51,9 @@ import {
   type Claim,
   FEAT,
   PAYMENT,
+  anyRecord,
   RECORD,
+  serviceRecord,
   serviceRepo,
   SPLIT,
 } from "./helpers/federated.js";
@@ -67,6 +70,9 @@ afterEach(async () => {
 async function project(files: Record<string, string> = coherentFixture()): Promise<Project> {
   const p = await makeProject(files);
   cleanups.push(() => p.destroy());
+  // The all-at-once form resolves every agent citation in the repository it
+  // records from, so the evidence this file's answer sets cite is made real.
+  await citeable(p.workDir, "proof.ts:2");
   return p;
 }
 
@@ -85,7 +91,8 @@ function greenReport(): unknown {
           name: "Split across two payees",
           type: "scenario",
           tags: [{ name: `@loam-digest-${digest}` }],
-          steps: [{ result: { status: "passed" } }],
+          // One result per Given/When/Then: a cucumber run is held to the stamped scenario's step count.
+          steps: [{ result: { status: "passed" } }, { result: { status: "passed" } }, { result: { status: "passed" } }],
         },
       ],
     },
@@ -111,7 +118,7 @@ describe("legacy --record over a federated record", () => {
     const attested = await attest(p, splitRepo, SPLIT);
     expect(attested.result.code, attested.result.out).toBe(0);
 
-    const before = await p.read(RECORD);
+    const before = await p.read(serviceRecord(SPLIT));
     // A complete, well-formed all-at-once answer set — the refusal is about
     // WHAT it would replace, not about the answers being wrong.
     const all = await allClaims(p);
@@ -124,12 +131,14 @@ describe("legacy --record over a federated record", () => {
     // it names who would be erased, and the form that would not erase them
     expect(err.message).toContain(SPLIT);
     expect(err.message).toContain("--service");
-    expect(await p.read(RECORD)).toBe(before);
+    expect(await p.read(serviceRecord(SPLIT))).toBe(before);
+    expect(p.exists(RECORD)).toBe(false);
 
     // the prose mode refuses identically — no half-written record either way
     const prose = await runLoam(p.workDir, "verify", FEAT, "--record", file);
     expect(prose.code).toBe(1);
-    expect(await p.read(RECORD)).toBe(before);
+    expect(await p.read(serviceRecord(SPLIT))).toBe(before);
+    expect(p.exists(RECORD)).toBe(false);
   });
 
   it("still writes the legacy record when nothing has been attested", async () => {
@@ -160,6 +169,11 @@ describe("legacy --record over a federated record", () => {
       expect.objectContaining({ id: foreign.id, reason: "unattested" }),
     ]);
     expect(attested.json.summary.unanswered).toBe(1);
+    // The all-at-once file goes in the same commit: nothing in it can count
+    // once a service has a file of its own, and leaving it would be a record
+    // on disk that loam silently ignores.
+    expect(p.exists(RECORD)).toBe(false);
+    expect(attested.json.path).toBe(serviceRecord(SPLIT));
   });
 
   it("says the same out loud in the human view", async () => {
@@ -192,7 +206,7 @@ describe("--service requires the repository to declare itself", () => {
     const err = JSON.parse(res.stdout).error;
     expect(err.code).toBe("repository-unavailable");
     expect(err.message).toContain("loam.json");
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 
   it("attests from the service's own repo, bound to THAT repo's HEAD", async () => {
@@ -213,7 +227,7 @@ describe("--service requires the repository to declare itself", () => {
     const res = await runLoam(web, "verify", FEAT, "--service", PAYMENT, "--record", file, "--json");
     expect(res.code).toBe(1);
     expect(JSON.parse(res.stdout).error.code).toBe("service-mismatch");
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 
   it("omitting --service in a bound repo federates rather than answering for the fleet", async () => {
@@ -223,7 +237,7 @@ describe("--service requires the repository to declare itself", () => {
     const file = await answersFile(splitRepo, local);
     const res = await runLoam(splitRepo, "verify", FEAT, "--record", file, "--json");
     expect(res.code, res.out).toBe(0);
-    const doc = parse(await p.read(RECORD)) as Record<string, any>;
+    const doc = parse(await p.read(serviceRecord(SPLIT))) as Record<string, any>;
     expect(doc.schema).toBe(2);
     expect(doc.attestations.map((a: Record<string, unknown>) => a.service)).toEqual([SPLIT]);
     expect(doc.summary.unanswered).toBe(1);
@@ -282,7 +296,7 @@ describe("recording from a subdirectory of the service repo", () => {
     // checklist belongs to payment-service and no repo has answered it yet.)
     expect(json.attested).toBe(0);
 
-    const doc = parse(await p.read(RECORD)) as Record<string, any>;
+    const doc = parse(await p.read(serviceRecord(SPLIT))) as Record<string, any>;
     expect(
       doc.claims.find((c: Record<string, unknown>) => c.kind === "scenario.tested").answered_by,
     ).toBe("runner");
@@ -317,7 +331,7 @@ describe("recording from a subdirectory of the service repo", () => {
     const res = await runLoam(deep, "verify", FEAT, "--service", SPLIT, "--record", "answers.json", "--json");
     expect(res.code).toBe(1);
     expect(JSON.parse(res.stdout).error.code).toBe("answers-unevidenced");
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 });
 

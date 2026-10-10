@@ -191,7 +191,45 @@ describe("a `--touches` scaffold validates clean on the first run", () => {
       const delta = await p.read("features/FEAT-1/delta.likec4");
       const line = delta.split("\n").find((l) => l.includes("'payment-service'"))!;
       expect(line.trimStart().startsWith("//")).toBe(true);
-      expect(line).toContain("paymentService = softwareSystem");
+      // No map draws it, so the suggestion is seed's convention — the same id
+      // `loam seed` and the adopt brief would give the box, not a camelCase guess.
+      expect(line).toContain("svc_payment_service = softwareSystem");
+    });
+  });
+
+  it("a touched service the map already draws keeps the map's own id — flat or nested", async () => {
+    // The delta's comment says "reuse the identifiers from the landscape so the
+    // merge lines up", and the scaffold used to hand over a camelCase guess
+    // instead, which on a seeded map (`svc_<id>`) never matched once.
+    const landscape = `specification {
+  element group
+  element softwareSystem
+}
+
+model {
+  pay = softwareSystem 'Payments' {
+    metadata { service 'payment-service' }
+  }
+  shop = group 'Shop' {
+    web = softwareSystem 'checkout-web' {
+      metadata { service 'checkout-web' }
+    }
+  }
+}
+`;
+    await withProject({ "architecture/landscape.likec4": landscape }, async (p) => {
+      await runLoam(p.workDir, "new", "FEAT-1", "--touches", "payment-service", "--touches", "checkout-web",
+        "--new-service", "split-service");
+      const lines = (await p.read("features/FEAT-1/delta.likec4")).split("\n");
+      const line = (name: string): string => lines.find((l) => l.includes(`'${name}'`))!;
+      expect(line("payment-service")).toContain("// pay = softwareSystem 'payment-service'");
+      // A dotted id is no top-level declaration: the line names the last
+      // segment and the parent it nests in, and edges keep the full id.
+      expect(line("checkout-web")).toContain("// web = softwareSystem 'checkout-web'");
+      expect(line("checkout-web")).toContain("inside shop { }");
+      expect(lines.some((l) => l.includes("pay -> svc_split_service 'Calls createSplit'"))).toBe(true);
+      // A service the feature introduces is undrawn by definition: seed's convention.
+      expect(line("split-service")).toContain("svc_split_service = softwareSystem 'split-service'");
     });
   });
 

@@ -47,9 +47,11 @@ export function withoutFeatureMarkers(node: unknown): unknown {
 }
 
 /**
- * The AST path of a section's own mapping — `slotPath` (../digest.ts) minus
- * the slot key, spelled beside the writers so the strip and the merge cannot
- * disagree about which node a section name addresses.
+ * The AST path of a section's own mapping — two levels deep for
+ * `components.messages`, one for the other two — spelled beside the writers so
+ * the strip and the merge cannot disagree about which node a section name
+ * addresses. A slot's own path is this plus its key; the `slotPath` helper that
+ * once spelled that in ../digest.ts had no caller and was deleted.
  */
 export function sectionAstPath(section: AsyncapiSection): string[] {
   return section === "components.messages" ? ["components", "messages"] : [section];

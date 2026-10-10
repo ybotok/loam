@@ -36,12 +36,16 @@ import { parse, stringify } from "yaml";
 import { coherentFixture, makeProject, runLoam, treeHashes, type Project } from "./helpers/harness.js";
 import {
   answersFile,
+  anyRecord,
   DIR,
   FEAT,
+  filedServices,
   PAYMENT,
   RECORD,
+  RECORD_DIR,
   recordOnFile,
   serviceClaims,
+  serviceRecord,
   serviceRepo,
   SPLIT,
   spawnRecord,
@@ -49,7 +53,7 @@ import {
 } from "./helpers/federated.js";
 import { DOCS_LOCK } from "../src/core/staging/lock.js";
 import { rollbackMessage, rollbackStaged, stageWrites, swapStaged } from "../src/core/staging/commit.js";
-import { readVerificationState } from "../src/core/verify/file.js";
+import { readVerificationState } from "../src/core/verify/read/file.js";
 import { commitVerification } from "../src/core/verify/store/commit.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -73,11 +77,7 @@ function commitAll(repo: string, message: string): void {
   );
 }
 
-function attestedServices(record: Record<string, unknown>): string[] {
-  return (record["attestations"] as Array<{ service: string }>).map((x) => x.service).sort();
-}
-
-/** One recorded run through the real CLI, so verification.yaml exists to be damaged. */
+/** One recorded run through the real CLI, so the service's record file exists to be damaged. */
 async function recordOnce(p: Project, service: string, evidence: string): Promise<string> {
   const repo = await serviceRepo(p, service);
   const answers = await answersFile(repo, await serviceClaims(p, service), evidence);
@@ -100,8 +100,9 @@ describe("a feature directory the commit cannot write", () => {
     // operator needs is the sentence that says their record is intact.
     const p = await project();
     const repo = await recordOnce(p, SPLIT, "proof.ts:2");
-    const before = await readFile(join(p.docsDir, RECORD));
-    const dir = join(p.docsDir, DIR);
+    const before = await readFile(join(p.docsDir, serviceRecord(SPLIT)));
+    // The directory the service's file lives in — where the temp is staged.
+    const dir = join(p.docsDir, RECORD_DIR);
 
     await chmod(dir, 0o555);
     try {
@@ -110,7 +111,7 @@ describe("a feature directory the commit cannot write", () => {
       const payload = JSON.parse(res.stdout);
       expect(payload.error.code).toBe("merge-failed");
       expect(payload.error.message).toContain("nothing was recorded");
-      expect((await readFile(join(p.docsDir, RECORD))).equals(before)).toBe(true);
+      expect((await readFile(join(p.docsDir, serviceRecord(SPLIT)))).equals(before)).toBe(true);
       // The refusal happened under the docs lock, and released it on the way out.
       expect(existsSync(join(p.docsDir, DOCS_LOCK))).toBe(false);
     } finally {
@@ -128,18 +129,20 @@ describe("a feature directory the commit cannot write", () => {
     const state = await readVerificationState(featureDir);
     if (state.state !== "ok") throw new Error(`fixture record unreadable: ${JSON.stringify(state)}`);
 
-    await chmod(featureDir, 0o555);
+    const file = state.files.services.get(SPLIT)!;
+    const recordDir = join(p.docsDir, RECORD_DIR);
+    await chmod(recordDir, 0o555);
     try {
-      const outcome = await commitVerification(featureDir, state.verification, state.raw, p.docsDir);
+      const outcome = await commitVerification([{ path: file.path, record: file.verification, preImage: file.raw }], p.docsDir);
       expect(outcome.ok).toBe(false);
       if (!outcome.ok) {
         expect(outcome.code).toBe("merge-failed");
         expect(outcome.message).toContain("nothing was recorded");
       }
     } finally {
-      await chmod(featureDir, 0o755);
+      await chmod(recordDir, 0o755);
     }
-    expect((await readdir(featureDir)).filter((n) => n.includes(".tmp"))).toEqual([]);
+    expect((await readdir(recordDir)).filter((n) => n.includes(".tmp"))).toEqual([]);
   });
 });
 
@@ -188,7 +191,7 @@ describe("a temp file abandoned beside the record", () => {
     // turn one killed process into a feature nobody can ever verify again.
     const p = await project();
     await recordOnce(p, SPLIT, "proof.ts:2");
-    const recordPath = join(p.docsDir, RECORD);
+    const recordPath = join(p.docsDir, serviceRecord(SPLIT));
     const before = await readFile(recordPath);
 
     const staged = await stageWrites([{ path: recordPath, content: "half-written staging bytes" }]);
@@ -209,7 +212,10 @@ describe("a temp file abandoned beside the record", () => {
     const answers = await answersFile(paymentRepo, await serviceClaims(p, PAYMENT), "proof.ts:2");
     const res = await spawnRecord(paymentRepo, PAYMENT, answers);
     expect(res.code, res.out).toBe(0);
-    expect(attestedServices(await recordOnFile(p))).toEqual([PAYMENT, SPLIT].sort());
+    // The temp sits in the same directory as the attestation files, and the
+    // reader skips it: a dotfile is never a service's record.
+    expect(await filedServices(p)).toEqual([PAYMENT, SPLIT].sort());
+    expect((await readVerificationState(join(p.docsDir, DIR))).state).toBe("ok");
   }, 60_000);
 });
 
@@ -244,9 +250,13 @@ describe("an edit that lands between the locked read and the swap", () => {
     // FIFO for `--record` is the one place a test can stop a REAL run inside the
     // window the compare-and-set exists for. Before the CAS, the merge computed
     // from bytes that no longer existed was written straight over the editor.
+    // The file in the window is the RECORDING service's own: since each
+    // service writes only its own file, that is the one file a second writer
+    // can race this run on — another service's file is not this run's to
+    // touch, and an edit to it is no race at all.
     const p = await project();
     await recordOnce(p, SPLIT, "proof.ts:2");
-    const paymentRepo = await serviceRepo(p, PAYMENT);
+    const paymentRepo = await recordOnce(p, PAYMENT, "proof.ts:2");
     const claims = await serviceClaims(p, PAYMENT);
     const fifo = join(paymentRepo, "answers.fifo");
     execFileSync("mkfifo", [fifo]);
@@ -255,7 +265,7 @@ describe("an edit that lands between the locked read and the swap", () => {
     try {
       const writer = await openFifoOnceRead(fifo, 45_000);
       // The CLI is now past its authoritative read and blocked on the answers.
-      const recordPath = join(p.docsDir, RECORD);
+      const recordPath = join(p.docsDir, serviceRecord(PAYMENT));
       const edited = (await readFile(recordPath, "utf8")) + "# edited-by-test\n";
       await writeFile(recordPath, edited, "utf8");
 
@@ -273,14 +283,14 @@ describe("an edit that lands between the locked read and the swap", () => {
       // meaningless — and it must be the record's path, not the docs root's.
       // Taken out of the message rather than compared to a constant, so an
       // absolute path smuggled in by `repoPath` would fail here.
-      const named = /(\S*verification\.yaml)/.exec(payload.error.message as string)?.[1];
-      expect(named).toBe(RECORD);
+      const named = /(\S*verification\/\S*\.yaml)/.exec(payload.error.message as string)?.[1];
+      expect(named).toBe(serviceRecord(PAYMENT));
       expect(named!.startsWith("/")).toBe(false);
       expect(payload.error.message).not.toContain(p.docsDir);
 
       // The third party's bytes are exactly as they left them, and the lock is free.
       expect(await readFile(recordPath, "utf8")).toBe(edited);
-      expect((await readdir(join(p.docsDir, DIR))).filter((n) => n.includes(".tmp"))).toEqual([]);
+      expect((await readdir(join(p.docsDir, RECORD_DIR))).filter((n) => n.includes(".tmp"))).toEqual([]);
       expect(existsSync(join(p.docsDir, DOCS_LOCK))).toBe(false);
     } finally {
       pending.child.kill("SIGKILL");
@@ -322,7 +332,8 @@ describe("a verification.yaml that is a symlink", () => {
     // that lands afterwards is a regular file inside the feature directory.
     const p = await project();
     await recordOnce(p, SPLIT, "proof.ts:2");
-    const link = join(p.docsDir, RECORD);
+    const paymentRepo = await recordOnce(p, PAYMENT, "proof.ts:2");
+    const link = join(p.docsDir, serviceRecord(PAYMENT));
     const outside = join(dirname(p.workDir), "outside-docs");
     await mkdir(outside, { recursive: true });
     const target = join(outside, "target.yaml");
@@ -331,14 +342,13 @@ describe("a verification.yaml that is a symlink", () => {
     await rm(link);
     await symlink(target, link);
 
-    const paymentRepo = await serviceRepo(p, PAYMENT);
-    const answers = await answersFile(paymentRepo, await serviceClaims(p, PAYMENT), "proof.ts:2");
+    const answers = await answersFile(paymentRepo, await serviceClaims(p, PAYMENT), "proof.ts:1", "again.json");
     const res = await runLoam(paymentRepo, "verify", FEAT, "--service", PAYMENT, "--record", answers, "--json");
 
     expect(res.code, res.out).toBe(0);
     expect((await readFile(target)).equals(bytes)).toBe(true);
     expect((await lstat(link)).isSymbolicLink()).toBe(false);
-    expect(attestedServices(await recordOnFile(p))).toEqual([PAYMENT, SPLIT].sort());
+    expect(await filedServices(p)).toEqual([PAYMENT, SPLIT].sort());
   }, 60_000);
 });
 
@@ -361,7 +371,7 @@ describe("a .loam-lock that names no holder", () => {
 
     expect(res.code).toBe(1);
     expect(JSON.parse(res.stdout).error.code).toBe("docs-busy");
-    expect(existsSync(join(p.docsDir, RECORD))).toBe(false);
+    expect(anyRecord(p)).toBe(false);
     // Including the lock itself: a refusal must not eat the file it waited on.
     expect(await treeHashes(p.docsDir)).toEqual(before);
   }, 30_000);
@@ -437,7 +447,7 @@ describe("recording one service twice in a row", () => {
     const b = await spawnRecord(repo, SPLIT, second);
     expect(b.code, b.out).toBe(0);
 
-    const record = await recordOnFile(p);
+    const record = await recordOnFile(p, SPLIT);
     const evidence = (record["claims"] as Array<{ subject: string; evidence: string[] }>)
       .filter((c) => c.subject === SPLIT)
       .map((c) => c.evidence[0]);
@@ -460,7 +470,7 @@ describe("a record whose summary balances its books with a negative count", () =
     // three claims are unconfirmed. Nothing loam writes is ever negative.
     const p = await project();
     await recordOnce(p, SPLIT, "proof.ts:2");
-    const recordPath = join(p.docsDir, RECORD);
+    const recordPath = join(p.docsDir, serviceRecord(SPLIT));
     const record = parse(await readFile(recordPath, "utf8")) as {
       claims: Array<{ verdict: string }>;
       summary: Record<string, number>;
@@ -521,7 +531,7 @@ describe("evidence in a file bigger than a megabyte", () => {
     const res = await runLoam(repo, "verify", FEAT, "--service", SPLIT, "--record", "answers.json", "--json");
 
     expect(res.code, res.out).toBe(0);
-    const recorded = (await recordOnFile(p))["claims"] as Array<{ evidence: string[] }>;
+    const recorded = (await recordOnFile(p, SPLIT))["claims"] as Array<{ evidence: string[] }>;
     expect(recorded.flatMap((c) => c.evidence)).toContain("generated-client.ts:10");
   }, 60_000);
 });

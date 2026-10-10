@@ -8,8 +8,15 @@
 import type { FeatureEntry } from "../repo/entries.js";
 import type { FleetContext } from "../fleet-context.js";
 import { featureChecklist } from "../verify/checklist.js";
-import { readVerificationState } from "../verify/file.js";
-import { attestedNotice, tallyRecord, type VerificationVerdict, type VerifyNotice, verificationVerdict } from "../verify/record.js";
+import { answering, readVerificationState } from "../verify/read/file.js";
+import {
+  attestedNotice,
+  confirmedProvenance,
+  tallyRecord,
+  type VerificationVerdict,
+  type VerifyNotice,
+  verificationVerdict,
+} from "../verify/record.js";
 import type { ArtifactState, ArtifactStatus, NextStep, VerificationState } from "./report.js";
 import type { DeltaScan } from "./scan.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
@@ -47,6 +54,30 @@ export function verificationStatus(v: VerificationState): ArtifactStatus {
 }
 
 /**
+ * How a caller wants the record graded, beyond reading it.
+ */
+export interface StateGrading {
+  /**
+   * The invocation's read index, when the caller holds one. It reaches the
+   * checklist derivation, whose enumerations and delta parse are memo hits
+   * through it — the difference between one fleet walk per invocation and one
+   * per feature for a caller grading several (`loam gate`'s check 3).
+   */
+  fleet?: FleetContext;
+  /**
+   * For an ARCHIVED feature only: the checklist digest `loam archive` captured
+   * just before its merge (`readSnapshotChecklist`) — the question the feature
+   * asked as it shipped, which a frozen record can still be graded against
+   * without re-deriving anything. Only `loam gate --since` passes it, because
+   * only the deploy question asks whether a record answered the feature that
+   * SHIPPED; every other reader leaves it out and reads the record as frozen
+   * history, as before. Null — an archive that captured none, by an older loam
+   * or over a feature with no record then — is the frozen reading too.
+   */
+  shipped?: string | null;
+}
+
+/**
  * Read the record and, only when there is one, ask whether it still answers
  * this feature. The checklist is derived on demand and never speculatively: it
  * loads the delta into a LikeC4 workspace, and paying that in order to print
@@ -55,15 +86,16 @@ export function verificationStatus(v: VerificationState): ArtifactStatus {
  * An archived feature's record is frozen history — archive merged its
  * operations into the living contract, so a re-derived checklist can only
  * mismatch, and calling it stale would slander every feature that shipped.
+ * What it CAN be held to is the checklist archive captured as it merged, and
+ * that is `grading.shipped`'s: a record answering an older checklist than the
+ * one the feature shipped with is stale, archived or not — the gap `gate
+ * --since` used to let through, since archiving a feature whose record had
+ * gone stale made it read `verified` again.
  */
 export async function verificationState(
   docsDir: DocsDir,
   feature: FeatureEntry,
-  // The invocation's read index, when the caller holds one. It reaches the
-  // checklist derivation, whose enumerations and delta parse are memo hits
-  // through it — the difference between one fleet walk per invocation and one
-  // per feature for a caller grading several (`loam gate`'s check 3).
-  fleet?: FleetContext,
+  grading: StateGrading = {},
 ): Promise<{ state: VerificationState; notice: VerifyNotice | null }> {
   const empty = {
     recorded: null,
@@ -73,6 +105,7 @@ export async function verificationState(
     unconfirmed: 0,
     unanswered: 0,
     attested: 0,
+    answered: { runner: 0, "external-runner": 0, agent: 0 },
   };
   const read = await readVerificationState(feature.dir);
   if (read.state === "absent") return { state: { state: "absent", ...empty }, notice: null };
@@ -84,10 +117,16 @@ export async function verificationState(
   // unverified read here as "11 of 11 confirmed".
   if (read.state === "unreadable") return { state: { state: "unreadable", ...empty }, notice: null };
 
-  const v = read.verification;
-  const stale = feature.archived
-    ? false
-    : (await featureChecklist(docsDir, feature.dir, feature.id, fleet)).digest !== v.checklist;
+  // The checklist the record is held to: the one asked now for an in-flight
+  // feature, the one captured at the merge for an archived one when the caller
+  // asks for that, none at all otherwise (frozen history). The files are then
+  // added up AGAINST it — the per-service files that answered it are the ones
+  // that count (`core/verify/read/union.ts`) — without reading them twice.
+  const against = feature.archived
+    ? (grading.shipped ?? null)
+    : (await featureChecklist(docsDir, feature.dir, feature.id, grading.fleet)).digest;
+  const v = against === null ? read.verification : (answering(read.files, against) ?? read.verification);
+  const stale = against !== null && against !== v.checklist;
   const tally = tallyRecord(v);
   return {
     state: {
@@ -99,6 +138,7 @@ export async function verificationState(
       unconfirmed: tally.unconfirmed,
       unanswered: tally.unanswered,
       attested: tally.attested,
+      answered: confirmedProvenance(v.claims),
     },
     notice: attestedNotice(v.claims, feature.id),
   };
@@ -148,7 +188,10 @@ export function verifyStep(id: string, verification: VerificationState, view: St
   if (verification.state === "unreadable") {
     return step({
       code: "next.verify",
-      statement: `${record.path} exists but does not read as a record — repair or delete it; nothing will overwrite it while it is unreadable.`,
+      // Never "or delete it": the record may be the one-file verification.yaml
+      // holding other services' attestations, and the command names the file
+      // that actually failed together with the repair that is safe for it.
+      statement: `${id}'s record at ${record.path} does not read as a record — the command names the file that failed and its safe repair; never delete a file other services' attestations may be in. Nothing will overwrite it while it is unreadable.`,
     });
   }
   if (verification.state === "stale") {
@@ -192,8 +235,12 @@ export function verifyStep(id: string, verification: VerificationState, view: St
         code: "next.verify-attested",
         statement:
           `${verification.attested} of ${id}'s scenario claim(s) are confirmed on an agent's word, not on a test run ` +
-          `(verify.scenario-attested) — answer them from a cucumber report, and the record stops resting on an assertion.`,
-        command: `loam verify ${id} --results <cucumber-report.json>`,
+          `(verify.scenario-attested) — answer them from a test report (a cucumber JSON report, or loam's runner-neutral ` +
+          `loamScenarioReport shape for any other runner), and the record stops resting on an assertion.`,
+        // The runner-neutral placeholder `verify.scenario-attested` itself
+        // suggests: a step that said "cucumber" alone told a fleet whose
+        // runner has no cucumber formatter that it had no route to `verified`.
+        command: `loam verify ${id} --results <report.json>`,
         artifact: "verification",
         path: record.path,
       },

@@ -6,8 +6,10 @@
  * re-graded on the way in, because anything may have edited it since), so the
  * two were cohabiting rather than forming a codec, while the RENDER and the
  * COMMIT genuinely are one concern — this module produces exactly the bytes
- * whose atomic swap that one performs. `../file.ts` keeps the reading and the
- * grading, and its header says where the render went.
+ * whose atomic swap that one performs. The reading went on to a package of its
+ * own, `../read/` (`file.ts` finds and grades the files, `shape.ts` says what a
+ * file must hold, `union.ts` adds the files up), and `../read/file.ts`'s header
+ * says where the render went.
  */
 import { stringify } from "yaml";
 import { type Verification } from "../record.js";
@@ -43,8 +45,10 @@ export function renderVerification(v: Verification): string {
       ? [
           "#",
           "# Schema 2 is federated: each service entry under `attestations` binds its claim ids",
-          "# and file:line evidence to that repository's git commit. Missing claims are honestly",
-          "# unanswered; another service run may add them without rewriting existing attestations.",
+          "# and file:line evidence to that repository's git commit. Each attesting service has a",
+          "# file of its own, verification/<svc>.yaml, and the record is the directory: claims",
+          "# another service owns are honestly unanswered in this file and answered in that",
+          "# service's own, and loam adds the files up when it reads them.",
           "# `evidence_pins` records each cited file's sha256 (CRLF-normalized) and line text at",
           "# the attested commit, so `loam validate` in that repo can convict drift later; a pin",
           "# identifies what was cited — it does not prove the claim true.",

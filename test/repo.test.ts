@@ -24,7 +24,7 @@ import { featureIdFromDirName } from "../src/core/repo/entries.js";
 import { featurePaths, featureSpecPaths, unfiledServicePaths } from "../src/core/repo/paths.js";
 import { docsDirOf } from "../src/core/kernel/ids/dirs.js";
 import { DocsRepoUnavailableError, docsRepoState } from "../src/core/repo/state.js";
-import { ambiguousFeatureMessage, featureCandidates, featureSpecServices, listFeatures, listServices, resolveFeature } from "../src/core/repo/repo.js";
+import { featureCandidates, featureSpecServices, listFeatures, listServices, resolveFeature } from "../src/core/repo/repo.js";
 
 /** Build a throwaway docs repo from relPath → content and hand it to fn. */
 async function withDocs(
@@ -403,9 +403,6 @@ describe("resolveFeature", () => {
       async (docsDir) => {
         const candidates = await featureCandidates(docsDir, "FEAT-6", "exclude");
         expect(candidates.map((c) => c.dirName)).toEqual(["FEAT-6-aaa", "FEAT-6-zzz"]);
-        const message = ambiguousFeatureMessage("FEAT-6", candidates);
-        expect(message).toContain("FEAT-6-aaa");
-        expect(message).toContain("FEAT-6-zzz");
       },
     );
   });

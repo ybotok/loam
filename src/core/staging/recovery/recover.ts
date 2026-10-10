@@ -17,7 +17,7 @@ import { dirname, join } from "node:path";
 import { repoPath } from "../../envelope/json.js";
 import { sha256 } from "../writes.js";
 import { atomicWrite, quietRmdir } from "../commit.js";
-import { SNAPSHOT_DIR } from "../snapshot.js";
+import { SNAPSHOT_DIR } from "../snapshot/manifest.js";
 import {
   COMMIT_INTENT,
   type CommitRecovery,

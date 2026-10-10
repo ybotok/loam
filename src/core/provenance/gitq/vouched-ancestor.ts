@@ -27,7 +27,7 @@
  * timeout.
  */
 import { declineDetail, gitText, type GitAnswer } from "../git.js";
-import { contentDigest } from "../stamp.js";
+import { contentDigest } from "../../document/frontmatter.js";
 
 /**
  * How many commits touching the file the ancestor search will read before
@@ -58,7 +58,7 @@ async function gitPlain(docsDir: string, args: string[]): Promise<GitAnswer> {
 
 /**
  * The bytes this commit's blob would carry on a CRLF checkout. The stamped
- * `content_digest` is byte-exact over the WORKING-TREE file (stamp.ts), while
+ * `content_digest` is byte-exact over the WORKING-TREE file (document/frontmatter.ts), while
  * `git show` hands back the BLOB — and on a Windows checkout with
  * `core.autocrlf=true` the blob is LF where every working-tree byte is CRLF,
  * so the exact digest of the blob would never equal a stamp taken over the

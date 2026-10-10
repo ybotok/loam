@@ -33,16 +33,13 @@ import { writeCommitIntent } from "../src/core/staging/recovery/intent.js";
 import { COMMIT_INTENT } from "../src/core/staging/interrupted.js";
 import { recoverInterruptedCommit } from "../src/core/staging/recovery/recover.js";
 import { scanWritePathResidue } from "../src/core/staging/recovery/residue.js";
+import { SNAPSHOT_DIR, SNAPSHOT_MANIFEST, SNAPSHOT_VERSION, snapshotDir } from "../src/core/staging/snapshot/manifest.js";
 import {
-  SNAPSHOT_DIR,
-  SNAPSHOT_MANIFEST,
-  SNAPSHOT_VERSION,
   SnapshotClobberError,
-  snapshotDir,
   writeSnapshot,
   type ServiceKey,
   type SnapshotRequest,
-} from "../src/core/staging/snapshot.js";
+} from "../src/core/staging/snapshot/snapshot.js";
 import { NotUtf8Error, planWrite, readUtf8, sha256, type StagedWrite } from "../src/core/staging/writes.js";
 import {
   coherentFixture,

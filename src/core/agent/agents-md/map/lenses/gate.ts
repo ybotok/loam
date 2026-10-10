@@ -11,11 +11,12 @@
  * the meaning, the conditional severity and the fix. See ../../command-map.ts's
  * header for why the gloss left.
  *
- * Same assembly contract as every section: ../../../agents-md.ts concatenates
- * with NO join separator, so this string starts at the first character of its
- * opening line and ends with the newline that closes its last one.
+ * Same assembly contract as every part of the `loam-codes` page:
+ * ../../../workflows/reference/codes.ts concatenates with NO join separator,
+ * so this string starts at the first character of its opening line and ends
+ * with the newline that closes its last one.
  */
-export const GATE_COMMAND = `- \`loam gate [--service <id>]\` is the DEPLOY-pipeline question — can this
+export const GATE_COMMAND = `- \`loam gate [--service <id>] [--since <ref>]\` is the DEPLOY-pipeline question — can this
   service deploy, as far as recorded evidence can say — asked as a pure query:
   it executes nothing, writes nothing, takes no lock, and deliberately changes
   nothing about what gates \`loam archive\` (verify still never gates the
@@ -40,6 +41,12 @@ export const GATE_COMMAND = `- \`loam gate [--service <id>]\` is the DEPLOY-pipe
   \`verification\` covers every ACTIVE feature carrying a specs/ delta for the
   service, through the verification record's own verdicts:
   \`gate.feature-unverified\` and the reused \`verify.scenario-attested\`.
+  Without \`--since\` that is in-flight features only — a feature leaves the
+  check the moment it is archived. \`--since <ref>\` (a docs-repo git ref: the
+  docs commit the last deploy recorded) also grades every feature archived
+  after it, under the same codes, its \`features[]\` row carrying
+  \`archived: true\`; it reads git as \`loam diff --base <ref>\` does and refuses
+  the same way when git cannot answer.
   \`interrupted\` reuses \`docs.commit-interrupted\`: a \`.loam-commit\` journal
   means the docs may be half-written, so nothing graded from them describes one
   state. One unreadable sibling artifact degrades that ONE subject as
@@ -47,7 +54,8 @@ export const GATE_COMMAND = `- \`loam gate [--service <id>]\` is the DEPLOY-pipe
   Exit semantics are validate's: any error fails (exit 1, \`verdict: "fail"\`),
   warnings are advisory (exit 0, \`verdict: "pass"\`), and \`--strict\` is the CI
   lever that fails warnings too — the report and the \`--json\` payload do not
-  change under it. The payload carries \`landscape\`
+  change under it. The payload carries \`since\` (\`{ ref, commit }\` or
+  null), \`landscape\`
   (\`read\`/\`absent\`/\`invalid\`), \`partners[]\` (each with its maturity
   rung, role and joins), \`features[]\` (the per-record tallies) and
   \`checks[]\` (the findings, by check), so a pipeline that wants a stricter

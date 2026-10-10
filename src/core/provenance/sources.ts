@@ -13,11 +13,25 @@ import { decodeSourceIndex, movedSources, sourcesDigest } from "./stamp.js";
 import type { SkippedSource } from "./walk.js";
 import { gitTrackedFiles } from "./git.js";
 
+/**
+ * The service repository `sources` resolve against, as the walk check needs
+ * it: where it is, and which files in it are loam's own.
+ */
+export interface SourcesRepo {
+  dir: string;
+  /**
+   * Repo-relative paths loam wrote and owns there — its `loam.json` and the
+   * agent files `loam init` recorded in it. No `sources` list owes a reading of
+   * them, so `walkFindings` leaves them out of its denominator.
+   */
+  loamOwned: readonly string[];
+}
+
 export async function sourceFindings(
   fm: Frontmatter,
   service: string,
   label: string,
-  repoDir: string | undefined,
+  repo: SourcesRepo | undefined,
 ): Promise<Finding[]> {
   const sources = listField(fm, "sources");
   if (sources.length === 0) {
@@ -30,7 +44,8 @@ export async function sourceFindings(
     ];
   }
   // Someone else's repository: the paths describe a tree loam is not standing in.
-  if (repoDir === undefined) return [];
+  if (repo === undefined) return [];
+  const repoDir = repo.dir;
 
   // Before existence: a pattern entry would "not exist" as a literal path, and
   // grading it missing would send the author fixing the wrong thing.
@@ -87,7 +102,7 @@ export async function sourceFindings(
   const findings: Finding[] = [
     resolved,
     ...skippedFindings(skipped, label),
-    ...(await walkFindings(repoDir, files, label)),
+    ...(await walkFindings(repo, files, label)),
   ];
 
   // The paths are there; the question staleness answers is whether what is AT
@@ -170,10 +185,28 @@ function topLevel(path: string): string {
  * owes, and the hand-back says so in one sentence, or the walk stopped early.
  * The ratio still rides along in the message as a dial, where it informs
  * without grading.
+ *
+ * Two kinds of tracked file are NOT the service, and the denominator leaves
+ * them out — both by a rule that needs no list of what source looks like:
+ *
+ *   - loam's OWN files: `loam.json` and the agent files `loam init` recorded in
+ *     it (`SourcesRepo.loamOwned`). loam wrote them and knows they hold nothing
+ *     a spec owes; counting them made the warning fire in every service repo
+ *     straight after a fresh vouch, with no honest way to clear it — listing
+ *     loam.json in `sources` would stale the digest on every `loam init`.
+ *   - `.gitignore`, at any depth: it is the file that DEFINES this check's
+ *     denominator — what git considers the repository's own — so it is the
+ *     measuring instrument, not a part of the service anybody could owe a
+ *     reading of. The line is deliberately that narrow: `package.json`, a
+ *     README or `.github/` are the author's call (they can hold what a spec
+ *     owes), so they stay in and are answered in the hand-back as before.
  */
-async function walkFindings(repoDir: string, covered: string[], label: string): Promise<Finding[]> {
-  const tracked = await gitTrackedFiles(repoDir);
-  if (tracked === null || tracked.length === 0) return [];
+async function walkFindings(repo: SourcesRepo, covered: string[], label: string): Promise<Finding[]> {
+  const owned = new Set(repo.loamOwned);
+  const tracked = (await gitTrackedFiles(repo.dir))?.filter(
+    (p) => !owned.has(p) && p !== ".gitignore" && !p.endsWith("/.gitignore"),
+  );
+  if (tracked === undefined || tracked.length === 0) return [];
 
   // The honest intersection, not "every file under a directory somebody
   // touched": reading one file in src/ does not make the other four hundred

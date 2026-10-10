@@ -1,27 +1,21 @@
 /**
- * What `verification.yaml` says about this checklist, for the one question a
- * packet asks of it: which units have stopped being work.
+ * What the verification record says about this checklist, for the one
+ * question a packet asks of it: which units have stopped being work.
  *
  * Nothing here decides what "confirmed" or "attested" MEAN — those verdicts are
  * `core/verify/record.ts`'s and nowhere else's, and they are imported rather
- * than re-derived. What this module owns is the RESOLUTION: which recorded row
- * counts as the answer to which claim, and the rule that a record which answers
- * a different question set answers nothing at all.
- *
- * The resolution is a deliberate mirror of `statuses()` in
- * `src/commands/verify/report.ts`, not a second opinion: core may never import
- * commands (AGENTS.md's dependency direction), and that helper lives in a
- * command module beside the printing it feeds. The two must move together —
- * a change to the attestation-scoping rule there is a change here. The rule
- * itself is one sentence: in a federated (schema 2) record, an answer only
- * counts when the attestation that carried it belongs to the service the
- * checklist files the claim under, so one repository cannot answer another's
- * claims by writing their ids into its own attestation.
+ * than re-derived. Nor, now, which recorded row counts as the answer to which
+ * claim: that attestation-scoping rule was carried here as "a deliberate
+ * mirror" of `statuses()` in `src/commands/verify/report.ts`, because core may
+ * never import commands, and it moved down into `countedAnswers` in
+ * `core/verify/record.ts` so both read one copy. What this module still owns
+ * is the rule that a record which answers a different question set answers
+ * nothing at all.
  */
 import type { FeatureDir } from "../kernel/ids/dirs.js";
 import type { Checklist } from "../verify/checklist.js";
-import { readVerificationState } from "../verify/file.js";
-import { attestedClaims, type RecordedClaim, type Verification } from "../verify/record.js";
+import { readVerificationState } from "../verify/read/file.js";
+import { attestedClaims, countedAnswers, type RecordedClaim } from "../verify/record.js";
 
 /** The four states a packet reports, and the four a reader has to tell apart. */
 export type RecordState = "absent" | "recorded" | "stale" | "unreadable";
@@ -44,37 +38,14 @@ export interface RecordView {
  * "nothing left to do" over answers to questions nobody is asking any more.
  */
 export async function readRecordView(featureDir: FeatureDir, checklist: Checklist): Promise<RecordView> {
-  const read = await readVerificationState(featureDir);
+  // The digest rides into the read: a record kept as per-service files counts
+  // the files that answered THIS checklist (`core/verify/read/union.ts`), so
+  // a same-day file answering an older one cannot make the packet look stale.
+  const read = await readVerificationState(featureDir, checklist.digest);
   if (read.state === "absent") return { state: "absent", answers: new Map() };
   if (read.state === "unreadable") return { state: "unreadable", answers: new Map() };
   if (read.verification.checklist !== checklist.digest) return { state: "stale", answers: new Map() };
-  return { state: "recorded", answers: scopedAnswers(checklist, read.verification) };
-}
-
-/**
- * The recorded rows that may answer this checklist, keyed by claim id.
- *
- * A legacy record (no `schema`) is all-at-once: every row it holds is an answer
- * to the whole checklist. A schema-2 record is federated, so a row only counts
- * where an attestation from the claim's OWN subject listed that claim id — see
- * this module's header for why. Rows for ids the checklist no longer asks are
- * simply never looked up.
- */
-function scopedAnswers(checklist: Checklist, recorded: Verification): Map<string, RecordedClaim> {
-  const subjects = new Map(checklist.claims.map((claim) => [claim.id, claim.subject]));
-  const attested =
-    recorded.schema !== 2
-      ? null
-      : new Set(
-          (recorded.attestations ?? []).flatMap((attestation) =>
-            attestation.claims.filter((id) => subjects.get(id) === attestation.service),
-          ),
-        );
-  return new Map(
-    recorded.claims
-      .filter((claim) => attested === null || attested.has(claim.id))
-      .map((claim) => [claim.id, claim]),
-  );
+  return { state: "recorded", answers: countedAnswers(checklist.claims, read.verification) };
 }
 
 /**

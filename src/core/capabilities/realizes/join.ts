@@ -206,24 +206,3 @@ export function resolveRealizes(
     };
   });
 }
-
-/**
- * The capabilities an entry list CLAIMS, whether or not each entry resolves.
- *
- * Used to widen the set `capability.unrealized` is taken against, and the
- * widening is a correctness fix rather than a convenience: realizing a
- * capability's requirement IS realizing part of that capability, so an author
- * who wrote only `Realizes:` lines would otherwise be warned that a capability
- * demonstrably realized by their fleet is realized by nobody.
- *
- * Claims from UNRESOLVED entries count too, and that is deliberate. The entry
- * already earns `capability.realizes-unknown`; letting it also produce a
- * spurious `capability.unrealized` would be two findings for one mistake, and
- * the second would point at the analyst's document rather than at the typo.
- */
-export function capabilitiesClaimedByRealizes(entries: readonly string[]): string[] {
-  return entries.flatMap((entry) => {
-    const target = splitRealizesEntry(entry);
-    return target === null ? [] : [target.capability];
-  });
-}

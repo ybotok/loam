@@ -9,6 +9,7 @@ import { compareIds, type ServiceEntry } from "../../repo/entries.js";
 import { recoverStep } from "../interrupted.js";
 import {
   undocumented,
+  vouched,
   type ArtifactStatus,
   type FleetFeatureState,
   type InterruptedCommit,
@@ -195,6 +196,26 @@ export function fleetNext(fleet: Fleet, binding: Binding | null): NextStep[] {
       code: "next.complete-service",
       statement: `${serviceTreePath(s)}/ has a spec.md but no model.likec4 — the fleet gate reports the service incomplete until something models it.`,
       command: `loam validate --service ${s.id} --json`,
+      service: s.id,
+    });
+  }
+
+  // A vouch the document has moved out from under. `content.stale` needs
+  // nothing but the document, so unlike `sources.stale` this form CAN see it —
+  // and before it looked, a fleet whose specs were edited after the person read
+  // them got `next.fleet-clean`: "nothing is owed" over words nobody had
+  // re-read, while `loam validate` warned about each one. The re-vouch is a
+  // person's act from that service's own repository (`loam vouch` restamps the
+  // code side too), so the step names the documents and that repository, and
+  // its execution contract is a human review rather than a command to run.
+  for (const s of services.filter((x) => vouched(x) && x.contentStale.length > 0)) {
+    const files = s.contentStale.map((file) => `${serviceTreePath(s)}/${file}`);
+    perService.push({
+      code: "next.revouch",
+      statement:
+        `${files.join(" and ")} changed since ${s.id} was vouched — \`status: verified\` stands over words nobody has re-read (content.stale). ` +
+        `A person re-reads what moved (\`loam vouch --pack --service ${s.id}\` lists it) and re-vouches from ${s.id}'s own repository.`,
+      command: `loam vouch --service ${s.id}`,
       service: s.id,
     });
   }

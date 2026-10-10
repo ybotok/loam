@@ -18,11 +18,14 @@ import type { LandscapeContext } from "../landscape.js";
 /** The literals `targets.ts` leaves in the model target for this module to fill in. */
 export const FQN = "<fqn>";
 /**
- * The service being adopted, in the model example's header. It is a placeholder
- * for the same reason `<fqn>` is: the example is handed to an agent that copies
- * it, and a header naming payment-service travelled verbatim into every other
- * service's model — the more convincingly for sitting one line above an
- * `extend` the brief HAD substituted.
+ * The service being adopted, in the model example's header and in the spec
+ * examples' frontmatter and title. It is a placeholder for the same reason
+ * `<fqn>` is: the example is handed to an agent that copies it, and a header
+ * naming payment-service travelled verbatim into every other service's model —
+ * the more convincingly for sitting one line above an `extend` the brief HAD
+ * substituted. In spec.md and arch.spec.md the literal was worse than
+ * misleading: `service:` must name the directory the file sits in, so a
+ * verbatim paste failed `frontmatter.field-mismatch` everywhere but one service.
  */
 export const SVC = "<svc>";
 

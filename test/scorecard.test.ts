@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  citeable,
   coherentFixture,
   FEATURE_SPEC,
   LIVING_SPEC,
@@ -42,7 +43,8 @@ async function writeReport(p: Project): Promise<void> {
         {
           name: "Split across two payees",
           tags: [{ name: `@loam-digest-${digest}` }],
-          steps: [{ result: { status: "passed" } }],
+          // One result per Given/When/Then: a cucumber run is held to the stamped scenario's step count.
+          steps: [{ result: { status: "passed" } }, { result: { status: "passed" } }, { result: { status: "passed" } }],
         },
       ],
     },
@@ -70,6 +72,9 @@ async function withProject(
   fn: (p: Project) => Promise<void>,
 ): Promise<void> {
   const p = await makeProject(files);
+  // The all-at-once form resolves every agent citation in the repository it
+  // records from, so the evidence this file's answer sets cite is made real.
+  await citeable(p.workDir, "src/split/Service.ts:12");
   try {
     await fn(p);
   } finally {
@@ -231,7 +236,8 @@ describe("validate --all --json: the scorecard payload key", () => {
         // fixture is vouched at all, let alone sampled, and the key is present
         // rather than omitted so a dashboard can tell a fleet with no sampled
         // vouches from a loam that never counted them.
-        provenance: { vouched: 0, staleDigests: 0, unverifiableFromHere: 0, sampledVouched: 0 },
+        // `contentStale` likewise: present at 0, never omitted.
+        provenance: { vouched: 0, staleDigests: 0, unverifiableFromHere: 0, sampledVouched: 0, contentStale: 0 },
         verification: {
           recorded: 0,
           verdicts: { verified: 0, attested: 0, unverified: 0 },
@@ -363,6 +369,18 @@ describe("validate --all --json: the scorecard payload key", () => {
       });
       // One green run over every scenario claim is what `verified` means.
       expect(card.verification.verdicts).toEqual({ verified: 1, attested: 0, unverified: 0 });
+
+      // The per-feature human views print the same split beside that verdict.
+      // They printed `verified 4/4 confirmed` and `4/4` — read as four runs
+      // over a record where three answers were an agent's word — because the
+      // verdict turns on the scenario claims alone. The verdict is unchanged;
+      // the reading beside it is what moved.
+      const status = await runLoam(p.workDir, "status", "FEAT-1");
+      expect(status.out).toContain("recorded · verified  4/4 confirmed (1 runner · 3 agent)");
+      const statusJson = JSON.parse((await runLoam(p.workDir, "status", "FEAT-1", "--json")).stdout);
+      expect(statusJson.verification.answered).toEqual({ runner: 1, "external-runner": 0, agent: 3 });
+      const list = await runLoam(p.workDir, "list", "features");
+      expect(list.out).toContain("4/4 (1 runner · 3 agent)");
     });
   });
 

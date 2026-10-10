@@ -14,14 +14,16 @@
  * written — every byte comes from ../../agents-md/, which is where the sections
  * already lived and where they stayed. The parts still carry their own trailing
  * newlines and are joined with no separator, so the printed page is the old
- * section byte for byte.
+ * section byte for byte. That is the assembly contract every part's header
+ * points back at: each starts at the first character of its opening line and
+ * ends with the newline that closes its last one, or two parts glue onto one
+ * line on the printed page.
  *
  * WHAT IS AND IS NOT DUPLICATED. `## Reading loam's output` still exists in
- * AGENTS.md (../../agents-md/command-map.ts's READING_OUTPUT), and it is a
- * different three facts, not a summary of these: that every command speaks
- * JSON, that the envelope survives a bad invocation, and that codes are the
- * contract, plus the two places the detail went. The per-invocation inventory
- * below appears in exactly one place.
+ * AGENTS.md (../../agents-md.ts's ORIENTATION), and it is orientation, not a
+ * summary of this page: the envelope's keys, branching on codes rather than
+ * prose, severity versus gating, and a pointer here. The per-invocation
+ * inventory below appears in exactly one place.
  */
 import { CODE_MAP } from "../../agents-md/command-map.js";
 import { CONTEXT_COMMAND } from "../../agents-md/map/lenses/context.js";

@@ -95,9 +95,10 @@ docs/
     glossary/<term>.md               a word this feature brings with it; create-only  [authored]
     usecases/<name>.likec4           a FLOW this feature brings; views-only, create-only  [authored]
     adrs/NNNN-*.md                   feature-level decisions             [authored]
-    verification.yaml                the done-check: claims + verdicts + evidence, one attestation per service  [loam verify --service <id> --record]
+    verification/<svc>.yaml          the done-check, one file per attesting service: claims + verdicts + evidence  [loam verify --service <id> --record]
+    verification.yaml                the same answered all at once, and every record from before the directory — read forever  [loam verify --record]
   features/archive/<FEAT>/           a shipped change — the same files, plus:
-    .loam-before/                    the bytes the merge overwrote        [written by loam]
+    .loam-before/                    the bytes the merge overwrote, and the checklist it shipped with  [written by loam]
   .loam-lock                         transient: one writer at a time      [archive/unarchive only]
   .loam-commit                       transient: the commit intent journal [archive/unarchive only]
 ```
@@ -708,7 +709,10 @@ so running loam from a subdirectory works; `loam init` writes the file where it 
   this repo, digests that document and compares it with the committed
   `services/<id>/openapi.yaml`: `openapi.generated-stale` (warn) when they differ,
   `contracts.source-missing` (error) when nothing is there, `contracts.source-invalid` (error) when
-  the path escapes the repository or the file does not parse.
+  the path escapes the repository or the file does not parse. The stale warning's `details` name
+  the operationIds that differ (served but not in the committed copy, committed but no longer
+  served), and its message says when the two sets agree, so a reworded description no longer reads
+  the same as twenty vanished endpoints.
 
   **loam reads it and never writes it.** The copy into the docs repo stays a human `cp` reviewed in
   a pull request — that is what keeps the committed contract a document somebody agreed to rather
@@ -922,7 +926,12 @@ two checked files:
   `--all` alike, from the docs repo included. A `verified` spec whose current body hash mismatches
   gets `content.stale` (**warning**, the `sources.stale` grading: the doc changed since it was
   vouched, and only a person can say whether verified still holds). A verified doc with no
-  `content_digest` predates the stamp and stays quiet — the fix is re-vouching.
+  `content_digest` predates the stamp and stays quiet — the fix is re-vouching. Every fleet readout
+  carries the same fact, because it is computable from the docs repo: `loam list` shows
+  `vouched (stale)` and owes the row `re-vouch` in `missing` (so `--needs-work` lists it), `loam
+  status` counts it under `services.contentStale` and emits `next.revouch` instead of
+  `next.fleet-clean`, and `validate --all`'s scorecard counts it under `provenance.contentStale`.
+  The rung stays `vouched` — a person did stamp the document — exactly as for `vouch_scope` below.
 - `vouch_scope` — written by `loam vouch --sample <n>`, never by hand, and present only when the
   person who vouched read a recorded SAMPLE of the document rather than all of it. One flat string,
   `sampled <k>/<n> seed=<16 hex>`: k sections read of n, and the seed that chose them. `status`
@@ -1211,9 +1220,11 @@ A `paymentService -> kafka 'Publishes PaymentAuthorized'` edge used to read as f
 while naming no contract anybody could check. The event axis is the API axis's mirror, in **AsyncAPI
 3.0** — only 3.0, because its operations are named top-level objects carrying
 `action: send|receive`, the exact analog of an `operationId`, where 2.x spells the same thing as
-`publish`/`subscribe` under a channel and leaves whose perspective they take ambiguous. A 2.x
-document declares no `operations` and reads as a contract with no messages rather than as a
-mis-parsed one. Like OpenAPI it is read with a shallow structural walk over the `yaml` parse, never
+`publish`/`subscribe` under a channel and leaves whose perspective they take ambiguous. A document
+whose `asyncapi:` field says 1.x or 2.x is refused as one `asyncapi.invalid` naming the version, and
+nothing on the event axis is graded against it: reading it as a 3.0 contract with no messages used
+to turn every edge and requirement into a misleading `spine.message-undefined`. The AsyncAPI CLI's
+`asyncapi convert --target-version=3.0.0` upgrades it. Like OpenAPI it is read with a shallow structural walk over the `yaml` parse, never
 a real AsyncAPI parser: the slice loam joins on is small enough that the parser's model would be
 dead weight, and adding it would be a fourth runtime dependency.
 
@@ -1533,7 +1544,10 @@ scenarios exercise. Comma-separated, same keep-last-line quirk (and the same rep
 
 An entry that resolves to nothing is `covers.unknown` (**warning**, with close ids offered where
 they exist): the typo guard, because a mistyped entry silently costs exactly the coverage it was
-written for.
+written for. It is suspended — every form at once — for a service whose `model.likec4` could not be
+read, whether the model itself does not parse (`c4.invalid`) or it extends a map that does not
+(`spine.landscape-invalid`): an entry naming a container of an unread model is not a typo, and the
+one repair brings the whole grade back on the next run.
 
 **Coverage obligations** — both warnings, deliberately: they never gate `archive`, and `--strict` is
 the CI escalation.
@@ -2204,6 +2218,19 @@ which carry them across loam upgrades. Correspondingly, `archive` refuses to rep
 version-3 claim graded at its service's current directory: the previous archive's writes are still
 in the docs and those files are the only way back.
 
+The manifest also carries one key that is not about bytes, added without a version bump because
+nothing that restores reads it: **`checklist`**, the digest of the checklist a fresh `loam verify`
+derived for the feature just before the merge — written when the feature carried a readable
+verification record then, absent otherwise and in every manifest an older loam wrote. It is the
+question the feature asked as it shipped. Once archived, a record is frozen history and the checklist
+cannot be re-derived (the merge moved the feature's operations into the living contract, so a
+derivation after it can only mismatch), so this is the one thing an archived record can still be
+held to: `loam gate --since` grades the record against it, and a record that answered an older
+checklist reads `stale`. `unarchive` takes the snapshot away with the rest of it, so a feature
+archived again gets a fresh capture. `list`, `status` and `verify` keep reading an archived record as
+frozen history; a manifest with no `checklist` leaves the gate reading it that way too, and saying
+so.
+
 Some checks run at plan time rather than in the gate, because only the computed merge can see them.
 A **living** requirement sitting outside `## Requirements` refuses the whole archive
 (`living.requirement-outside-requirements`, error): the merge rewrites only that section, so the
@@ -2355,7 +2382,9 @@ design. The heading must be reachable, too — a leading UTF-8 BOM used to hide
 
 ## The verification record
 
-`features/<FEAT>/verification.yaml` is the done-check written down. `loam verify <FEAT>` derives a
+The done-check is written down inside the feature: one `features/<FEAT>/verification/<svc>.yaml` per
+attesting service, or — for the all-at-once form, and every record written before the directory —
+the one file `features/<FEAT>/verification.yaml`. `loam verify <FEAT>` derives a
 **checklist** from the feature's own artifacts — the same files `validate` reads, never the code:
 
 | kind | one claim per | reads |
@@ -2379,18 +2408,26 @@ nobody wrote must not carry over as if it still applied.
 anything that does not answer the *current* checklist, each under its own `--json` `error.code`:
 `answers-unreadable` (not JSON, or a verdict outside `confirmed` / `unconfirmed`),
 `answers-mismatch` (an id nobody asked about, a claim with no answer, or one answered twice),
-`answers-unevidenced` (a `confirmed` with no `file:line` behind it). An unchecked claim must never
-be able to masquerade as checked.
+`answers-unevidenced` (a `confirmed` with no `file:line` behind it, or one citing a file or a line
+that does not exist in the repository the record is written from — the all-at-once form included,
+which binds to no commit but no longer takes a citation on trust). The all-at-once form checks what
+is shaped like a citation and only that: an evidence entry that is one token ending in `:<digits>`
+and is not a URL must name a regular file inside the repository with that line, while prose ("manual
+QA by Alice"), a URL or a path with no line is recorded as it always was. The federated form keeps
+its stricter contract — every agent entry a `file:line` bound to the attested commit. An unchecked
+claim must never be able to masquerade as checked.
 
 **`--results <report.json>` answers the `scenario.tested` claims mechanically, from a cucumber JSON
-test report** — the format `cucumber-js --format json` emits, and cucumber-jvm, behave and SpecFlow
-speak too. The contract is exactly this and nothing more: a top-level array of features, each
+test report** — the format `cucumber-js --format json` emits, and cucumber-jvm, behave,
+SpecFlow/Reqnroll, pytest-bdd (`--cucumberjson`) and godog's cucumber formatter speak too. The contract is exactly this and nothing more: a top-level array of features, each
 `elements[]` (scenarios) with `name`, `tags[] {name}` and `steps[] {result {status}}` — plus the two
 places those dialects put a failure the steps never see: cucumber-jvm's per-element
 `before[]`/`after[]` hook results and behave's element-level `status`. Every other field is ignored,
 tagless elements (backgrounds, hand-written scenarios) are invisible, and a file that is not that
 array at all refuses under `answers-unreadable` rather than quietly answering every claim "not
-found".
+found". A file that is not JSON at all — a JUnit XML report is the usual one — refuses the same way,
+and the refusal names both shapes `--results` reads, because the second one exists for exactly that
+runner.
 
 Matching is by digest and nothing else: a claim is answered by the report scenarios carrying its
 `@loam-digest-<16hex>` tag — the tag `loam gherkin` stamped, the same 16 hex of the same body hash
@@ -2399,12 +2436,21 @@ name), so a business run can never answer an arch claim however identically the 
 worded. Names never match anything: a reworded spec scenario matches nothing until the suite is
 regenerated and re-run — an agent must not be able to SAY a scenario is tested; only a green run
 may. The verdicts: every matching occurrence (a digest the report holds twice is a re-run, and all
-occurrences count) ran at least one step, every step `passed`, every before/after hook `passed`, and
-the element-level status (when the dialect carries one) is `passed` → `confirmed`, with evidence
+occurrences count) ran at least one step, every step `passed`, every before/after hook `passed`, the
+element-level status (when the dialect carries one) is `passed`, and **it ran exactly as many steps
+as the stamped scenario has** — the count `loam gherkin` emits for it, `And`/`But` included →
+`confirmed`, with evidence
 `<report-path>: <feature uri or name> › <scenario name>` per occurrence; a failed / undefined /
 pending / ambiguous step (`failed at step N`), a failing hook (`failed in a before/after hook`), a
 failed element status, a skipped-only run (`skipped`), or no match at all (`not found in report`) →
-`unconfirmed` with the reason as the note.
+`unconfirmed` with the reason as the note — and a run whose step count differs from the stamped
+scenario's is `unconfirmed` too (`ran N step(s) where the stamped scenario has M`). The digest is
+only a tag, and a tag is text: a one-step stub carrying the right digest used to confirm five-step
+scenarios, because nothing compared what ran with what was stamped. The count is what every dialect
+can be held to; the step TEXT is not compared, because an outline's steps reach the report with
+their placeholders filled in and dialects disagree about keyword spacing and localisation. The hook
+entries cucumber-js lists among `steps[]` (marked `hidden`, keyword `Before`/`After`) are read as
+hooks, never counted as steps — and a failing one still sinks the run.
 
 `--results` OWNS every `scenario.tested` claim **in the same run**: an answers-file entry for one is
 refused (`answers-mismatch` — the runner owns it), `--record` alongside must answer exactly the
@@ -2436,6 +2482,8 @@ own runner-neutral shape, chosen by its marker key:
 ```
 
 `digest` is the 16 lowercase hex of the `@loam-digest-…` tag `loam gherkin` stamped on the scenario.
+An entry carries no steps, so it is held to its `status` alone — the step-count check above is a
+property of the cucumber shape.
 `status` is `passed` or `failed` — nothing else. `test` is optional free text: the runner's own name
 for the run, used as the evidence string a reader follows. `loamScenarioReport: 1` is the format
 version this loam reads; any other value refuses rather than being partly understood.
@@ -2566,7 +2614,7 @@ service's as a pure lens — no repository binding, usable from the docs repo, r
 `unknown-service` when the checklist has no claims owned by that id — and both agents must have
 answered the same scope. Combining the flag with `--record`, `--results` or `--contract-results`
 refuses `invalid-option`, as does any arity other than exactly two files and an archived feature
-(frozen history has no current checklist to answer). A `verification.yaml` too damaged to read does
+(frozen history has no current checklist to answer). A verification record too damaged to read does
 **not** block the diff — the lens never reads the record, and the moment a cross-examination is most
 needed is before re-recording over a broken one.
 
@@ -2586,7 +2634,7 @@ block pins each file's path and the sha256 of the exact bytes read.
 confirmed/unconfirmed/unanswered. The payload also deliberately carries **no `verified`, `verdict`
 or `attested` key at all**: two answer sets agreeing — usually two contexts of the same model, so
 correlated — ranks where a reviewer reads first; it is not verification, it upgrades nothing, and it
-leaves `verification.yaml` byte-identical (no docs lock is taken, and the diff runs while a writer
+leaves the verification record byte-identical (no docs lock is taken, and the diff runs while a writer
 holds one).
 
 ### Attested is not verified
@@ -2621,28 +2669,79 @@ the decision:
 So "a green run is the only thing that confirms a scenario" is a claim about the **record**, not
 about the CLI's flags: the short path still works, and it is legible afterwards as the short path.
 
-### The record is federated: one file, one attestation per service
+### The record is federated: one attestation per service, one file each
 
 A cross-service feature's claims belong to several services, and each service's code lives in its
 own repository — so no single place can honestly answer all of them.
 `loam verify <FEAT> --service <id> --record answers.json`, run **in that service's own repo**,
 narrows the checklist to that service's claims and binds the answers to this repository's commit.
-The result is one `schema: 2` `verification.yaml` holding a list of **`attestations`**, one per
-service: the service id, the commit the answers were bound to, and that service's answered claims.
+The result is that service's **attestation**, written to a file of its own:
+`features/<FEAT>/verification/<id>.yaml` — a `schema: 2` record holding exactly that service's
+attestation (the service id, the commit the answers were bound to, the checklist digest it answered,
+and its answered claims) and nothing of anybody else's. **The directory is the record**, the rule
+`glossary/` and `capabilities/` already follow: loam reads every file in it and adds them up, and
+the verdict and the counts are computed from the union at read time — exactly as they always were,
+since nothing ever trusted a stored `summary`. Each file's own `summary` counts the whole checklist,
+with the claims other services own honestly `unanswered` in it.
 
-The merge semantics are additive and non-destructive. Recording for service B keeps service A's
-attestation exactly as it stood — the new record is the old attestations minus B's previous one,
-plus B's new one. Answers the new record does *not* carry are reported in `discarded`, tagged
-`unattested` (a schema-1 answer, or one whose attestation is gone) or `off-checklist` (a claim the
-current checklist no longer asks). Nothing is dropped silently.
+**Why one file per service.** The record used to be ONE `verification.yaml` for every service, and
+every attestation rewrote its `summary`, its `recorded` date and its checklist-ordered `claims`. Two
+teams recording two different services on two docs-repo branches therefore always conflicted when
+the PRs merged — add/add from an empty start, content conflicts on the summary, the claims and the
+attestations once one had landed — and sorting the attestations did not help, because two
+insertions at one anchor are a conflict whatever the order. The advisory lock below serializes
+writers on one checkout only; a fleet records from many. With a file per service, two teams' records
+touch two different paths and merge cleanly. Recording a service again replaces that service's file
+and nothing else; another service's file is never rewritten, and its pins never touched.
 
-The write behind that merge holds the same advisory lock archive does, and holds it from before the
-feature is resolved to after the record lands — two `--record` runs for different services serialize
-(the later one waits briefly, then merges over what the first left, so **both** attestations
-survive), and a record can no longer be written into a path an `archive` is renaming out from under
-it. The commit itself is staged beside the target and swapped in by one rename over the exact bytes
-the merge was computed from, so a kill mid-record leaves the previous record whole — never truncated
-YAML — and an edit that landed in between refuses instead of being buried:
+The record answers **one version of the checklist**: the one the feature asks now — `loam verify`
+(read and record alike), `tasks`, and `status`, `list` and `gate` for an in-flight feature all
+derive it, and the files that answered it are the ones that count. Only where no reader knows the
+current version (the frozen view of an archived feature) or no file answered it does the newest
+file decide (by `recorded`, a later service id breaking a same-day tie). Newest-by-date used to
+decide always, and `recorded` is a date: a service that recorded the current checklist lost a
+same-day tie to a service with a later id that had recorded an older one, so the current answers
+were dropped and every reader called the record stale. A file that answered a different version
+keeps its attestation in the list — `verify.checklist-forked` names it, on the recording run's
+output as well as the read view — but its answers do not count until that service records again.
+The one shared file used to settle this by rewriting: the last writer pruned everybody's answers to
+its own checklist. Per-service files are never rewritten by anyone else, so nothing can prune them,
+and counting an answer filed against another question set would let an id the feature no longer
+asks fill the slot of the question that replaced it.
+
+**`features/<FEAT>/verification/` is loam's.** Every non-dot `*.yaml` in it is read as one
+service's attestation file — the file name is the claim about whose word it holds — so a file there
+that is not one (a hand-made `k6.yaml`, say) makes the record `record-unreadable`, exactly like a
+damaged attestation. Keep anything else beside the feature, not inside that directory.
+
+**The one-file record is read forever.** A `verification.yaml` written before the directory existed
+— a federated record with several attestations in it, active or archived — reads exactly as it
+always did while no service has a file of its own. Once services do, it is read beside them: a
+service that records again supersedes its share of the one-file record (that attestation and its
+answers drop out of the union; the file itself is not rewritten), and the write that leaves nothing
+in it counting removes it. An all-at-once record (no `schema`, no attestations) never counts once a
+service has a file — its answers carry no commit attestation — so the first `--service` write
+removes it in the same commit and lists its answers in `discarded`. Answers a write takes off the
+disk that its new file does not carry are reported in `discarded`, tagged `unattested` (an
+all-at-once answer) or `off-checklist` (a claim the current checklist no longer asks). Nothing is
+dropped silently.
+
+**The all-at-once form keeps the one file, by decision.** `--record` without `--service` answers the
+whole checklist from one place on one word, with no commit and no service — so there is no second
+writer for it to collide with and no service to name a file after, and every record it ever wrote
+(the example fleet's included) stays byte-for-byte what it is. There is one reader either way:
+`loam verify`, `status`, `list`, `tasks`, `gate` and `validate` all read the record through the same
+union, whichever files it is made of.
+
+The write holds the same advisory lock archive does, and holds it from before the feature is
+resolved to after the record lands — two `--record` runs for different services serialize (the
+later one waits briefly, then writes its own file, so **both** attestations survive), and a record
+can no longer be written into a path an `archive` is renaming out from under it. The commit itself
+is staged beside the target and swapped in by one rename over the exact bytes the read found, so a
+kill mid-record leaves the previous record whole — never truncated YAML — and an edit that landed in
+between refuses instead of being buried. A write that also removes a superseded one-file record
+holds that removal to the same compare, and lands the service's own file first, so a kill between
+the two leaves a record that still reads whole:
 
 - `docs-busy` — another writer held the lock longer than the record was willing to wait (5 s).
   Nothing was read or written; re-run once it finishes. The contention runs both ways: `archive`,
@@ -2663,9 +2762,10 @@ Recording refuses rather than guesses, each under its own `--json` `error.code`:
 - `repository-unavailable` — `--service` from a repo that declares none, or one whose commit cannot
   be read. An attestation with nothing to bind to is not an attestation.
 - **`record-federated`** — the legacy all-at-once form (`--record` with **no** `--service`) over a
-  record that already carries attestations. That form writes the whole file from one place, so it
-  would erase every other repository's evidence; loam refuses outright and names the attestors, and
-  never silently migrates or merges. Re-run with `--service`.
+  record that already carries attestations, in per-service files or in a one-file record. That form
+  writes the whole record from one place, so it would put one unattested answer set over every
+  other repository's evidence; loam refuses outright and names the attestors, and never silently
+  migrates or merges. Re-run with `--service`.
 - `record-unreadable` — see below.
 
 Reading is unrestricted: `loam verify <FEAT> --service <id>` **without** `--record` is a pure lens
@@ -2674,12 +2774,26 @@ in `services`, which is how you find out which repositories still owe an attesta
 
 The record is YAML, like the other data artifacts, and holds the claim text next to each verdict so
 it reads without loam. Because it has to survive without loam, human edits are expected — and read
-back defensively. A file that exists but does not read as a record (broken YAML, or a shape missing
+back defensively. A record file that exists but does not read as a record (git conflict markers a
+merge left in it — named before the YAML parser sees them, since the parser either fails on a line
+that is not the problem or reads both sides as one plausible document; broken YAML; a shape missing
 what the readers use — `summary` with its counts, `recorded`, `checklist`, claims each with an `id`
-and a known `verdict`) is **`record-unreadable`**: reported with the YAML line, and **never
+and a known `verdict`; or a `verification/<svc>.yaml` holding anything but that one service's
+attestation and answers) is **`record-unreadable`**: reported with the file and the line, and **never
 overwritten**. It used to count as *no record at all*, which was the wrong direction on the one
 artifact loam cannot reconstruct — "no record" invites writing a fresh one over evidence somebody's
-edit merely broke. Only a genuinely absent file is "no verification record". Extra keys a human adds
+edit merely broke. Only a genuinely absent file is "no verification record".
+
+The refusal names the ONE file that failed and the repair that is safe for it, because the two kinds
+of file call for opposite advice. A service's own `verification/<svc>.yaml` holds that service's
+word and nobody else's — after a merge, both sides of a conflict in it are that service's own
+attestations — so repairing it by hand, or deleting it and recording that service again from its
+repository, loses no other team's evidence. The one-file `verification.yaml` may hold every other
+service's attestation, so its advice is to repair it or **restore it from version control** (after a
+merge, the copy on the branch you merged into) and then record again — **never to delete it**. The
+old one-size advice, "delete it and record again", erased other teams' attestations when followed on
+a shared record, and the miscount advice, "record the answers again", sent the reader straight back
+into this refusal: `--record` will not write over a file it could not read. Both now end in a record. Extra keys a human adds
 still pass through untouched. Every verdict names who answered it — `answered_by: runner` (a
 cucumber report's green run, mechanical), `answered_by: external-runner` (a contract-test report's
 operationId-matched green entry, mechanical too), or `answered_by: agent` (somebody's word about the
@@ -2749,7 +2863,7 @@ next `--record` makes it drift-checkable), warn `evidence.unresolved` (the cited
 unsafe, not a regular file, or the cited line is past its end), `evidence.moved` (the file's digest
 differs while the cited line still reads as pinned), `evidence.line-changed` (the cited line no
 longer says what was recorded), `evidence.token-missing` (the file contained the token at the
-attested commit and no longer does) and `evidence.record-unreadable` (a verification.yaml that
+attested commit and no longer does) and `evidence.record-unreadable` (a verification record file that
 exists but cannot be read — none of its evidence was checked, and a silent skip would read as clean,
 on the very file a hand edit to the pins most plausibly breaks). Archived records are deliberately
 not linted — frozen history, and post-ship code drift is normal evolution. From the docs repo the
@@ -2759,13 +2873,18 @@ verdict in either direction, `attested` never silently becomes `verified`, and t
 fail `validate`; `--strict` remains the CI lever it always was.
 
 It lives inside the feature, so `archive` carries it into `features/archive/<FEAT>/` with everything
-else. `loam verify` re-run later compares `checklist` against the current digest and reports the
+else — the `verification/` directory moves with the feature it sits in, and `unarchive` brings it
+back the same way; the frozen view reads it through the same union. `loam verify` re-run later compares `checklist` against the current digest and reports the
 record as **stale** if the feature moved under it — while the feature is active. Once archived there
 is no current checklist to be stale against (the merge itself moved the feature's operations into
 the living OpenAPI, so a re-derived checklist could only disagree): `loam verify` on an archived
 feature renders the record verbatim as **frozen history** (`frozen: true` under `--json`, no
 staleness judgment), and `--record` refuses (`invalid-option` — there is no current checklist for
-the answers to answer): the record is about the words that shipped, and it stays that way.
+the answers to answer): the record is about the words that shipped, and it stays that way. One
+reader holds it to something all the same: `loam gate --since <ref>` grades an archived record
+against the checklist digest `archive` captured as the feature merged (the snapshot manifest's
+`checklist`, above), because the deploy question is whether what shipped was what was checked — a
+record that had gone stale before the archive is `stale` there, never `verified` again.
 
 **Verification does not gate `archive`.** Coherence gates because loam computed it from the
 documents; a verdict is an agent's word about code loam never read, and a gate in front of shipping
@@ -2779,7 +2898,7 @@ can back up. `loam verify` exits 0 either way; branch on `verified` in the `--js
 `loam verify` answers *answered, and by whom*. `loam tasks <FEAT> [--service <id>] [--next]
 [--json]` answers the other half of the same question — *still open, at which step, and what fact
 closes it* — and it is the identical checklist read in the other direction. It is derived on every
-run from the feature's deltas, the generated suite and `verification.yaml`; it writes nothing,
+run from the feature's deltas, the generated suite and the verification record; it writes nothing,
 anywhere, ever, and it adds no artifact for a later run to disagree with.
 
 **One unit per promise, and a unit's id is the claim's id.** Every claim the checklist derives is
@@ -2799,7 +2918,7 @@ agent reads beside this one, and a third meaning for either word is how a consum
 on the wrong field.
 
 **Done is a fact, not a tick.** A closed unit simply stops appearing, and exactly one thing closes
-one: a claim recorded `confirmed` in a `verification.yaml` that is **not stale** against the current
+one: a claim recorded `confirmed` in a verification record that is **not stale** against the current
 checklist. A stale record closes nothing — the words moved under the answers, which is the state
 `loam verify` already reports. An agent-attested scenario never vanishes either: it stays visible at
 `attested`, because attested is not verified, and a work list that hid the difference would be
@@ -2991,11 +3110,14 @@ repairing anything:
 
   And it reports the **agent surface**: which tool and profile the repo is wired for, how many command and skill
   files it holds, how many a newer loam would lay down (`doctor.agent-files-missing`), and how many
-  have fallen behind (`doctor.agent-files-stale`). The staleness check reads exactly one thing — the
-  `<!-- generated by loam vX.Y.Z -->` line every generated body opens with — and nothing else.
+  have fallen behind (`doctor.agent-files-stale`). A file has fallen behind when BOTH hold: its
+  bytes, the `<!-- generated by loam vX.Y.Z -->` line every generated body opens with set aside, are
+  not what this binary writes; and that stamp is missing or older than this binary. A stamp-only
+  difference is not staleness — the stamp moves in every file at every release, and a warning that
+  fires on every upgrade hides the release where a pointer's body really changed. A customized body
+  under a current stamp is not staleness either: the stamp is the record that somebody reviewed it.
   The digest manifest is what authorizes `init` to refresh an unchanged pointer; a different body is
-  treated as human-owned and never overwritten. A stamp is a separate claim and can be stale while
-  every edit around it is legitimate. Which deliveries a repo holds is asked of the files rather
+  treated as human-owned and never overwritten. Which deliveries a repo holds is asked of the files rather
   than of a record: `loam.json` stores tools and profile, not deliveries, and a repo initialized
   `--no-skills` is not reported as missing the selected skills.
 
@@ -3098,6 +3220,7 @@ and publishes it wherever the fleet view reads:
   "errors": 0,
   "warnings": 2,
   "sources": { "current": 1, "stale": 0, "unvouched": 0, "absent": 0 },
+  "contentStale": 0,
   "generatedAt": "2026-08-03T12:00:00Z"
 }
 ```
@@ -3116,9 +3239,15 @@ loam validate --service "$SVC" --json | jq '{
     unvouched: [.targets[0].findings[] | select(.code == "sources.unvouched")] | length,
     absent:    [.targets[0].findings[] | select(.code == "sources.absent")]    | length
   },
+  contentStale: [.targets[0].findings[] | select(.code == "content.stale")] | length,
   generatedAt: (now | todate)
 }'
 ```
+
+`contentStale` counts the spec documents whose words moved after their vouch — the doc-side half of
+staleness, beside the code-side `sources.stale`. Unlike that half it is not owed to the service repo
+alone (the docs repo's own `validate --all` scorecard counts it too), but a summary that left it out
+would publish "0 stale" over a document nobody re-read.
 
 `generatedAt` is the CI's clock, never loam's — loam output carries no timestamps, by design, so the
 same repo state always yields the same bytes. That is also what makes the timestamp the liveness
@@ -3189,7 +3318,7 @@ says what its architecture means, and two generated models of the same code disa
 every run — a done-check built on diffing them would flap until somebody turned it off. What is
 deterministic is the **question**: which files, in which grammar, bound to which existing elements;
 which operations, which edges, which scenarios. loam owns the questions and the checking; an agent
-owns the reading. `sources` and `verification.yaml` are where the answers are written down.
+owns the reading. `sources` and the verification record are where the answers are written down.
 
 ## Status
 

@@ -2,23 +2,29 @@
  * The diff computation: join the base fleet (`./base-state.ts`) against the
  * working tree (`./current-state.ts`) and say, per service, what changed in
  * FLEET-MEANINGFUL terms — requirements by identity and digest, operations
- * and messages by their join tokens, cross-service joins by tuple — with the
- * current consumers of every removal named (`./victims.ts`).
+ * and messages by their join tokens and their `$ref`-closure digests,
+ * cross-service joins by tuple — with the authored consumers of every
+ * removal, deprecation and modification named (`./victims.ts`).
  *
  * Two disciplines rule every branch here. Removal is graded against who still
  * depends on it: a removal nobody names is a warning, a removal the fleet
- * still joins to is an error and sets `breaking`. And "nobody could look" is
+ * still joins to is an error and sets `breaking`. A MODIFICATION is never an
+ * error, whoever is joined to it: whether a changed schema breaks its readers
+ * is a field-level question loam hands to oasdiff on purpose, so the finding
+ * names the consumers and the tool, and stops there. And "nobody could look" is
  * never "nothing changed": an unreadable artifact on EITHER side suspends
  * that subject's axis — recorded in `unreadable[]`, counted in the summary,
  * carried into the exit code by the command — instead of letting an
  * unreadable base read as everything-added or an unreadable working file
- * read as everything-removed.
+ * read as everything-removed. The one thing that is not a suspension is a
+ * contract the base held byte-for-byte: somebody COULD look, at the bytes,
+ * and they did not change (`comparable`, `UNTOUCHED_SKIPS`).
  */
 import { requirementDigest, type Requirement } from "../document/spec.js";
 import type { Severity, Finding } from "../vocabulary/report.js";
 import type { AxisState, BaseFleet, ServiceState } from "./base-state.js";
 import type { CurrentFleet } from "./current-state.js";
-import { consumerJoinChanges, type VictimIndex } from "./victims.js";
+import { consumerJoinChanges, type ConsumerScan, type VictimIndex } from "./victims.js";
 
 /**
  * The stable finding codes `loam diff` emits. Codes are the machine contract;
@@ -44,12 +50,16 @@ export type DiffCode =
   | "diff.op-removed-consumed"
   /** `deprecated: true` introduced since base; details name the current consumers. */
   | "diff.op-deprecated"
+  /** Same operationId on both sides, and its node or anything its internal `$ref`s reach moved; details name the authored consumers. Whether it BREAKS them is oasdiff's question, not loam's. */
+  | "diff.op-modified"
   /** An AsyncAPI message name absent at base. */
   | "diff.message-added"
   /** A base message gone, nothing currently consumes it (or another service still declares it — the details say). */
   | "diff.message-removed"
   /** Removed since base AND still consumed — a `Consumes:` line or a consumes-edge; details list the victims. Sets `breaking`. */
   | "diff.message-removed-consumed"
+  /** Same message name on both sides, and its declaration or anything its internal `$ref`s reach moved; details name the authored consumers. Whether it BREAKS them is not graded. */
+  | "diff.message-modified"
   /** A cross-service join appeared since base: another service's living requirement now names this service's operation or message. */
   | "diff.consumer-added"
   /** A cross-service join present at base is gone. */
@@ -66,9 +76,11 @@ const DIFF_SEVERITY: Record<DiffCode, Severity> = {
   "diff.op-removed": "warn",
   "diff.op-removed-consumed": "error",
   "diff.op-deprecated": "warn",
+  "diff.op-modified": "warn",
   "diff.message-added": "ok",
   "diff.message-removed": "warn",
   "diff.message-removed-consumed": "error",
+  "diff.message-modified": "warn",
   "diff.consumer-added": "ok",
   "diff.consumer-removed": "ok",
 };
@@ -108,11 +120,36 @@ const ABSENT = { kind: "absent" } as const;
 const emptyState = (id: string): ServiceState => ({ id, dir: "", spec: ABSENT, archSpec: ABSENT, openapi: ABSENT, asyncapi: ABSENT });
 
 /**
+ * The axes on which an unreadable document the branch left byte-identical is
+ * SKIPPED rather than suspended: the two contracts. Identical bytes are a
+ * proof, not a guess — the same parser over the same bytes cannot read
+ * differently on the two sides, so there is nothing of this document's own
+ * to diff, and suspending it anyway made every `loam diff` exit 1 over a
+ * fleet that holds one AsyncAPI 2.x file (unreadable by policy since
+ * core/asyncapi/read.ts refused pre-3.0), whatever the branch changed.
+ *
+ * Not the spec axes, and that is the victims scan's doing, not an oversight:
+ * an unreadable spec.md or arch.spec.md is also the document ANOTHER
+ * service's removal could not be checked against (`victims.ts`'s
+ * `scanRequirements`), and its `unreadable[]` entry here is what carries that
+ * suspension to exit 1 (`opsDiff`'s removal branch says so). No scan reads a
+ * contract it could not parse as evidence of anything — `declarers` takes
+ * positive evidence only — so skipping one hides no other answer.
+ */
+const UNTOUCHED_SKIPS: ReadonlySet<UnreadableEntry["axis"]> = new Set(["openapi", "asyncapi"]);
+
+/**
  * Guard one axis pair: record unreadable sides on the sink and say whether
  * the axis may be compared at all. Reading one good side against a suspended
- * one would grade absence it never proved.
+ * one would grade absence it never proved. A contract unreadable on BOTH
+ * sides with one byte hash is the branch's untouched file: not compared and
+ * not recorded either (`UNTOUCHED_SKIPS`). A changed one, or one only one
+ * side cannot read, still suspends.
  */
 function comparable(sink: ServiceDiff, axis: UnreadableEntry["axis"], pair: { base: AxisState<unknown>; current: AxisState<unknown> }): boolean {
+  const { base, current } = pair;
+  if (UNTOUCHED_SKIPS.has(axis) && base.kind === "unreadable" && current.kind === "unreadable" &&
+    base.bytes !== undefined && base.bytes === current.bytes) return false;
   for (const side of ["base", "current"] as const) {
     const state = pair[side];
     if (state.kind === "unreadable") sink.unreadable.push({ side, axis, path: state.path, error: state.error });
@@ -159,6 +196,22 @@ function requirementsDiff(sink: ServiceDiff, pair: { base: ServiceState; current
   }
 }
 
+/** Three honest phrasings of one consumer scan — never a confident negative over a scan that skipped something it could not check. */
+function stance(scan: ConsumerScan): string {
+  return scan.victims.length > 0 ? `${scan.victims.length} current consumer(s) still name it`
+    : scan.suspended.length > 0 ? "whether current consumers name it could not be fully answered"
+    : "no current consumer names it";
+}
+
+/**
+ * The second half of every modification message. loam joins consumers to the
+ * thing that moved; it does not read what a schema SAYS (core/brief/unchecked.ts
+ * lists that as unchecked), so a breaking rename and a new optional field are
+ * the same finding here — the specialist diff tells them apart.
+ */
+const notGraded = (tool: string): string =>
+  `loam does not grade whether the change is breaking — run ${tool} on the two states of this contract`;
+
 async function opsDiff(sink: ServiceDiff, pair: { base: ServiceState; current: ServiceState }, victims: VictimIndex): Promise<void> {
   if (!comparable(sink, "openapi", { base: pair.base.openapi, current: pair.current.openapi })) return;
   const base = firstWins(valueOr(pair.base.openapi), (op) => op.id);
@@ -169,11 +222,20 @@ async function opsDiff(sink: ServiceDiff, pair: { base: ServiceState; current: S
       sink.findings.push(found("diff.op-added", `operation '${id}' added since base (${op.method.toUpperCase()} ${op.path})`));
     } else if (!before.deprecated && op.deprecated) {
       const scan = await victims.opConsumers(sink.id, id);
-      // Three honest phrasings — never a confident negative over a scan that skipped an unreadable consumer document.
-      const stance = scan.victims.length > 0 ? `${scan.victims.length} current consumer(s) still name it`
-        : scan.suspended.length > 0 ? "whether current consumers name it could not be fully answered"
-        : "no current consumer names it";
-      sink.findings.push(found("diff.op-deprecated", `operation '${id}' is deprecated since base — ${stance}`, [...scan.victims, ...scan.suspended]));
+      sink.findings.push(found("diff.op-deprecated", `operation '${id}' is deprecated since base — ${stance(scan)}`, [...scan.victims, ...scan.suspended]));
+    } else if (before.closureDigest !== op.closureDigest || before.path !== op.path || before.method !== op.method) {
+      // `else`, because setting the flag moves the digest by itself (it is a
+      // key of the node): a deprecation already names the same consumers, and
+      // a second finding over them would say nothing new. The digest covers
+      // the `$ref` closure — a field renamed in a shared component is exactly
+      // the change this code exists for, and the operation's own bytes never
+      // move for it. A relocated slot is a change too, though the node is not.
+      const scan = await victims.opConsumers(sink.id, id);
+      sink.findings.push(found(
+        "diff.op-modified",
+        `operation '${id}' (${op.method.toUpperCase()} ${op.path}) changed since base, in its own definition or a schema it references — ${stance(scan)}; ${notGraded("`oasdiff breaking`")}`,
+        [...scan.victims, ...scan.suspended],
+      ));
     }
   }
   for (const [id] of [...base].sort(byKey)) {
@@ -182,10 +244,12 @@ async function opsDiff(sink: ServiceDiff, pair: { base: ServiceState; current: S
     if (scan.victims.length > 0) {
       sink.findings.push(found("diff.op-removed-consumed", `operation '${id}' was removed since base and the current fleet still names it — these joins break`, [...scan.victims, ...scan.suspended]));
     } else if (scan.suspended.length > 0) {
-      // "Nobody could be scanned" is not "nobody names it" — the consumer's own
-      // unreadable[] entry already carries the run to exit 1; this message must
-      // not assert a negative the scan never proved.
-      sink.findings.push(found("diff.op-removed", `operation '${id}' was removed since base; whether the current fleet still names it could NOT be fully answered — ${scan.suspended.length} consumer document(s) were not scannable`, scan.suspended));
+      // "Nobody could be checked" is not "nobody names it", so this message
+      // must not assert a negative the scan never proved. An unreadable
+      // consumer document carries the run to exit 1 through its own
+      // unreadable[] entry; a caller drawn with no op does not — it stays this
+      // warning, so a seeded, op-less map does not fail every removal.
+      sink.findings.push(found("diff.op-removed", `operation '${id}' was removed since base; whether the current fleet still names it could NOT be fully answered — ${scan.suspended.length} possible consumer(s) could not be checked`, scan.suspended));
     } else {
       sink.findings.push(found("diff.op-removed", `operation '${id}' was removed since base; no current landscape edge or living requirement names it`));
     }
@@ -196,8 +260,18 @@ async function messagesDiff(sink: ServiceDiff, pair: { base: ServiceState; curre
   if (!comparable(sink, "asyncapi", { base: pair.base.asyncapi, current: pair.current.asyncapi })) return;
   const base = firstWins(valueOr(pair.base.asyncapi), (m) => m.name);
   const current = firstWins(valueOr(pair.current.asyncapi), (m) => m.name);
-  for (const [name] of [...current].sort(byKey)) {
-    if (!base.has(name)) sink.findings.push(found("diff.message-added", `message '${name}' added since base`));
+  for (const [name, message] of [...current].sort(byKey)) {
+    const before = base.get(name);
+    if (before === undefined) {
+      sink.findings.push(found("diff.message-added", `message '${name}' added since base`));
+    } else if (before.closureDigest !== message.closureDigest) {
+      const scan = await victims.messageConsumers(sink.id, name);
+      sink.findings.push(found(
+        "diff.message-modified",
+        `message '${name}' changed since base, in its declaration or a schema its payload references — ${stance(scan)}; ${notGraded("`asyncapi diff`")}`,
+        [...scan.victims, ...scan.suspended],
+      ));
+    }
   }
   for (const [name] of [...base].sort(byKey)) {
     if (current.has(name)) continue;
@@ -290,7 +364,9 @@ export async function computeDiff(input: { base: BaseFleet; current: CurrentFlee
     summary: {
       added: count((f) => f.code.endsWith("-added")),
       removed: count((f) => f.code.endsWith("-removed") || f.code.endsWith("-removed-consumed")),
-      modified: count((f) => f.code === "diff.requirement-modified"),
+      // Requirements, operations and messages alike: a reader scanning the one
+      // summary line must not see "0 modified" over a PR that renamed a field.
+      modified: count((f) => f.code.endsWith("-modified")),
       deprecated: count((f) => f.code === "diff.op-deprecated"),
       unreadable:
         services.reduce((n, s) => n + s.unreadable.length, 0) +

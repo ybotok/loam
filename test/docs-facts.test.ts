@@ -21,6 +21,7 @@ import { join } from "node:path";
 import { buildProgram } from "../src/cli.js";
 import { readVocabulary } from "../src/core/permissions/permissions.js";
 import { CLAIM_KINDS } from "../src/core/verify/claims/identity.js";
+import { listCodes } from "../src/core/explain/lookup.js";
 import { PACKAGED_MARKDOWN } from "../scripts/package-docs.mjs";
 import { collectEmittedCodes } from "./helpers/stable-codes.js";
 import { makeProject } from "./helpers/harness.js";
@@ -246,6 +247,35 @@ describe("counted facts are live or dated", () => {
         String.raw`\`core/envelope/config\.ts\`\s+and\s+\`core/repo/repo\.ts\`\s+by\s+${live.config}\s+and\s+${live.repo}\s+of\s+them`,
       ),
     );
+  });
+
+  it("a finding- or refusal-code count, wherever a page quotes one, is the count `loam explain --codes` lists", async () => {
+    // README and WORKFLOW said "293 finding codes and 46 refusal codes" for six
+    // weeks after the vocabulary reached 304: the number was typed in once and
+    // nothing derived it. The pages now say "every finding code" instead, and
+    // this keeps a number from coming back unless it is the live one. The
+    // byte sizes those same sentences quoted (`loam-check`'s page, the
+    // orientation file) were dropped rather than pinned — they move on every
+    // edit to a fix table, and the one that matters as a limit, AGENTS.md's
+    // 12,000-byte ceiling, is asserted by test/agents.test.ts itself.
+    const codes = listCodes();
+    const live = {
+      finding: codes.filter((c) => c.kind === "finding").length,
+      refusal: codes.filter((c) => c.kind === "refusal").length,
+    };
+    const failures: string[] = [];
+    // CHANGELOG is the one page that is SUPPOSED to hold old counts: each entry
+    // records what was true the day it was cut.
+    for (const page of FACT_PAGES.filter((p) => p !== "CHANGELOG.md")) {
+      const text = flat(await read(page));
+      for (const m of text.matchAll(/(\d[\d,]*) (finding|refusal) codes/g)) {
+        const kind = m[2] as "finding" | "refusal";
+        if (Number(m[1]!.replace(/,/g, "")) !== live[kind]) {
+          failures.push(`${page}: "${m[0]}" — \`loam explain --codes\` lists ${live[kind]} ${kind} codes`);
+        }
+      }
+    }
+    expect(failures, failures.join("\n")).toEqual([]);
   });
 });
 

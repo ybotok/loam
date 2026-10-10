@@ -65,9 +65,9 @@ export const REFUSAL_MEANINGS = {
   "repository-unavailable":
     "The repository this operation must be bound to (or read from) cannot be answered for — most commonly a writing `loam verify`, a `loam gherkin` or a `loam vouch` run where loam.json declares no `service` at all (the docs repo, usually), or a docs repo that cannot be enumerated — so the command refuses rather than guessing which service it is about.",
   "record-federated":
-    "`loam verify --record` without `--service` over a federated (schema 2) record — the all-at-once form would erase other repositories' attestations, so it is refused naming the attestors; record per service instead.",
+    "`loam verify --record` without `--service` over a federated (schema 2) record — per-service files under `verification/`, or a one-file record carrying attestations — the all-at-once form would put one unattested answer set over other repositories' attestations, so it is refused naming the attestors; record per service instead.",
   "record-unreadable":
-    "A verification.yaml exists but cannot be read as a record — it is never overwritten and never reported as absent; repair it by hand, or re-record from the service's repo.",
+    "A file of the verification record (`verification.yaml`, or one service's `verification/<svc>.yaml`) exists but cannot be read — broken YAML, git conflict markers, a summary contradicting its claims, or a per-service file holding anything but its own service's attestation. It is never overwritten and never reported as absent. The message names the file and the safe repair: a service's own file holds only that service's word, so it may be repaired, or deleted and recorded again from that service's repo; the one-file `verification.yaml` may hold other services' attestations, so it is repaired or restored from version control (after a merge, the copy on the branch you merged into), never deleted.",
   "record-raced":
     "`loam verify --record` found the record changed between its locked read and the swap — an editor or a lock-ignoring writer landed first; nothing was written, and re-running merges over the record as it now stands.",
   "gherkin-conflict":
@@ -105,7 +105,7 @@ export const REFUSAL_MEANINGS = {
   "seed-unknown-subsystem":
     "A service's `subsystem:` in fleet.yaml names nothing `subsystems:` declares — the message carries a did-you-mean over the names the file really declares; add the subsystem or fix the spelling, then re-run.",
   "seed-landscape-edited":
-    "architecture/landscape.likec4 carries hand edits (the line-1 stamp's digest no longer matches) or was authored some other way, which includes anything written ABOVE the scaffold's stub — `loam seed` never overwrites human work and wrote nothing; fold the edits into fleet.yaml and delete the file, or keep the hand-authored map and stop using seed.",
+    "architecture/landscape.likec4 carries hand edits (the line-1 stamp's digest no longer matches) or was authored some other way, which includes anything written ABOVE the scaffold's stub — `loam seed` never overwrites human work and wrote nothing. Seed runs once, before any operation is drawn: fleet.yaml cannot carry `metadata { op }`, publishes or consumes, so once the map holds them it grows without seed — `loam adopt --service <id>` for a new service, a feature's C4 delta for everything else. Folding the edits into fleet.yaml and deleting the file works only when every edit is a service, subsystem or plain call fleet.yaml can say.",
   internal:
     "An unexpected throw — the one refusal with no stable meaning; it exists so a `--json` consumer still receives an envelope instead of a stack trace, and a repeatable `internal` is a loam defect worth reporting.",
 } as const satisfies Record<ErrorCode, string>;

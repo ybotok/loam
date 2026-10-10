@@ -28,6 +28,15 @@ export interface EventMessage {
    */
   slot: string;
   /**
+   * The declaration plus every internal `$ref` it reaches, transitively — the
+   * OpenAPI axis's `closureDigester` (core/openapi/digest.ts), so a payload
+   * schema factored into `components.schemas` still moves it. Content equality
+   * only, and so inside the stance read.ts states: what `loam diff` compares to
+   * say a message changed, never a join on a payload field. Absent on a removal
+   * marker, which declares nothing to compare.
+   */
+  closureDigest?: string;
+  /**
    * Present when the declaration's payload defines no shape a consumer could
    * code against (`payloadUndeclared`, depth.ts). Set only when true, and
    * never set for a payload declaring a non-JSON `schemaFormat`.

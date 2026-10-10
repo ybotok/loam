@@ -10,21 +10,34 @@
  * warnings exit 0, errors exit 1, and `--strict` is the CI lever that
  * escalates warnings — validate's exact idiom, not a second spelling of it.
  *
+ * Without `--since` the verification check reads IN-FLIGHT features only: a
+ * feature leaves it the moment it is archived, so a deploy that ships slices
+ * after their feature archived would be gated without it. `--since <ref>` —
+ * a docs-repo git ref, the commit the pipeline last deployed from — adds every
+ * feature archived after it, read out of git exactly as `loam diff --base`
+ * reads its base (`core/diff/base-git.ts`), with the same two refusals when
+ * git cannot answer (`baseOrRefuse`). Nothing is stored: the pipeline already
+ * knows its last-deployed ref, and loam keeps no deployment state.
+ *
  * Not to be confused with `commands/policy/gate.ts`, which is the docs-repo
- * READINESS doctrine (docsRepoReady and friends) every reading command shares
- * — including this one, one import below.
+ * READINESS doctrine (docsRepoReady and friends, and `baseOrRefuse` for a git
+ * ref) every reading command shares — including this one, one import below.
  */
 import type { Command } from "commander";
 import { loadConfig } from "../../core/envelope/config.js";
 import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../../core/envelope/json.js";
 import { FleetContext } from "../../core/fleet-context.js";
+import { listBaseSubdirs, subdirsChangedSince } from "../../core/diff/base-git.js";
 import { gateReport } from "../../core/gate/checks.js";
-import { gateSummary, gateVerdict } from "../../core/gate/report.js";
+import { gateSummary, gateVerdict, type GateSince } from "../../core/gate/report.js";
+import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import { nearestIds } from "../../core/repo/entries.js";
+import { archiveDir } from "../../core/repo/paths.js";
 import { enumeratedServiceIds, resolveServiceTarget } from "../../core/repo/service-target.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { findingJson } from "../../core/vocabulary/report.js";
 import {
+  baseOrRefuse,
   docsRepoReady,
   reportDocsRepoError,
   reportRepositoryUnavailable,
@@ -33,8 +46,46 @@ import { printGate } from "./print.js";
 
 interface GateOptions {
   service?: string;
+  since?: string;
   strict?: boolean;
   json?: boolean;
+}
+
+/**
+ * `--since <ref>` resolved against the docs repo's history, or null after
+ * refusing. A listing git declines is a refusal too, never an empty one: "no
+ * archive at the ref" grades every archived feature in the repo as shipped
+ * since, and reading "could not list" as that would be a guess. The second
+ * question — which of those directories changed since — has a safe answer to
+ * fall to, and falls to it (see below).
+ */
+async function readSince(json: boolean, docsDir: DocsDir, ref: string): Promise<GateSince | null> {
+  const base = await baseOrRefuse(json, docsDir, {
+    flag: "--since",
+    ref,
+    reads: "loam gate --since reads which features were already archived at that ref",
+  });
+  if (base === null) return null;
+  const listing = await listBaseSubdirs(base, archiveDir(docsDir));
+  if (listing.kind === "failed") {
+    fail(
+      json,
+      "repository-unavailable",
+      `git could not list features/archive/ at ${ref} in the docs repo at ${docsDir} (${listing.detail}) — ` +
+        `without it there is no telling which features shipped since, and the gate will not guess. Re-run once git can answer.`,
+    );
+    return null;
+  }
+  // Present at the ref is not enough to have shipped by then: a feature
+  // unarchived, edited and archived again sits at the same path with
+  // different contents, and it is this deploy's to answer for. Only a
+  // directory whose contents are what they were at the ref stays out. When
+  // git will not say what changed, every one of them is graded — the
+  // direction this gate fails in is "looked at too much", never "skipped a
+  // ship" — unlike the listing above, which has no safe default to fall to.
+  const changed = await subdirsChangedSince(base, archiveDir(docsDir));
+  const moved = changed.kind === "ok" ? changed.names : new Set(listing.names);
+  return { ref, commit: base.commit, shippedAtRef: new Set(listing.names.filter((name) => !moved.has(name))) };
 }
 
 export function registerGate(program: Command): void {
@@ -42,6 +93,10 @@ export function registerGate(program: Command): void {
     .command("gate")
     .description("Can this service deploy? A read-only query over recorded evidence — advisory by default")
     .option("--service <id>", "the service being deployed (defaults to the configured service)")
+    .option(
+      "--since <ref>",
+      "also grade the features archived after this docs-repo git ref (e.g. the docs commit your last deploy recorded) — without it only in-flight features are read",
+    )
     .option("--strict", "exit 1 on any warning too — a per-invocation CI lever; the report and --json payload do not change")
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (opts: GateOptions) => {
@@ -64,6 +119,8 @@ export function registerGate(program: Command): void {
         fail(json, "invalid-option", NO_SERVICE_MESSAGE);
         return;
       }
+      const since = opts.since === undefined ? undefined : await readSince(json, docsDir, opts.since);
+      if (since === null) return;
       // One invocation, one filesystem snapshot (validate's rule).
       const fleet = new FleetContext();
 
@@ -100,6 +157,7 @@ export function registerGate(program: Command): void {
           service: resolved.id,
           repoDir: bound === resolved.id ? (config.root ?? process.cwd()) : undefined,
           fleet,
+          since,
         });
         const verdict = gateVerdict(report.checks);
         const summary = gateSummary(report.checks);
@@ -110,6 +168,7 @@ export function registerGate(program: Command): void {
             service: report.service,
             verdict,
             strict: opts.strict === true,
+            since: report.since,
             landscape: report.landscape,
             partners: report.partners,
             features: report.features,

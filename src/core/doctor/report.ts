@@ -139,8 +139,10 @@ export interface AgentSurface {
   /** Repo-relative paths of those files that are not there. */
   missingFiles: string[];
   /**
-   * Repo-relative paths of the ones that ARE there carrying no version stamp,
-   * or one older than this binary — see `staleAgentFiles`.
+   * Repo-relative paths of the ones that ARE there whose body differs from the
+   * one this binary writes AND whose version stamp is missing or older than
+   * this binary — see `staleAgentFiles`. A file differing only in its stamp is
+   * not listed.
    */
   staleFiles: string[];
   stamp: {

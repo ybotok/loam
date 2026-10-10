@@ -30,7 +30,7 @@ import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 import { mergeOpenapiPaths } from "../src/core/openapi/merge/merge.js";
 import { classifyOperationBaseline, pinOpenapiOperations } from "../src/core/openapi/merge/pin.js";
-import { operationDigest } from "../src/core/openapi/digest.js";
+import { closureDigester, operationDigest } from "../src/core/openapi/digest.js";
 import { operations } from "../src/core/openapi/doc.js";
 import { gatesArchive, type Issue } from "../src/core/vocabulary/issue.js";
 import { featureCoherence } from "../src/core/coherence/coherence.js";
@@ -121,6 +121,43 @@ describe("operationDigest matches the comparison the merge itself makes", () => 
     } finally {
       await p.destroy();
     }
+  });
+});
+
+describe("closureDigester — an operation's identity through its $refs", () => {
+  /** A document whose one operation reaches A, which reaches B, which reaches A back; C is unreferenced. */
+  const doc = (schemas: Record<string, unknown>) => ({
+    paths: { "/x": { get: { operationId: "x", responses: { "200": { $ref: "#/components/schemas/A" } } } } },
+    components: { schemas },
+  });
+  const CYCLE = {
+    A: { type: "object", properties: { b: { $ref: "#/components/schemas/B" } } },
+    B: { type: "object", properties: { a: { $ref: "#/components/schemas/A" } } },
+    C: { type: "string" },
+  };
+  const opOf = (d: ReturnType<typeof doc>) => d.paths["/x"].get;
+  const digestOf = (d: ReturnType<typeof doc>) => closureDigester(d)(opOf(d));
+
+  it("terminates on a ref cycle and is stable across runs", () => {
+    expect(digestOf(doc(CYCLE))).toMatch(/^[0-9a-f]{16}$/);
+    expect(digestOf(doc(CYCLE))).toBe(digestOf(doc(structuredClone(CYCLE))));
+  });
+
+  it("moves for a change anywhere in the closure — the operation's own node never does", () => {
+    const deeper = { ...CYCLE, B: { ...CYCLE.B, required: ["a"] } };
+    expect(operationDigest(opOf(doc(deeper)))).toBe(operationDigest(opOf(doc(CYCLE))));
+    expect(digestOf(doc(deeper))).not.toBe(digestOf(doc(CYCLE)));
+  });
+
+  it("does not move for a component the operation never reaches", () => {
+    expect(digestOf(doc({ ...CYCLE, C: { type: "integer" } }))).toBe(digestOf(doc(CYCLE)));
+  });
+
+  it("moves when a dangling ref starts resolving, and excludes the pin like operationDigest", () => {
+    const { B: _b, ...dangling } = CYCLE;
+    expect(digestOf(doc(dangling))).not.toBe(digestOf(doc(CYCLE)));
+    const d = doc(CYCLE);
+    expect(closureDigester(d)({ ...opOf(d), "x-loam-based-on": "0123456789abcdef" })).toBe(digestOf(d));
   });
 });
 

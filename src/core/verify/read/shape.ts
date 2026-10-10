@@ -1,112 +1,17 @@
 /**
- * `verification.yaml` read back, and refused when it cannot be trusted.
+ * What a file must hold to be a verification record — the shape check and the
+ * self-consistency check every file of the record passes on the way in.
  *
- * Reading is deliberately not the inverse of rendering. A record loam wrote is
- * re-graded on the way in — unreadable YAML, a shape that is not a
- * verification, a `summary` that disagrees with the claims below it — because
- * the file is data meant to survive without loam, and anything may have edited
- * it since. The render lives with the writer it feeds (`store/render.ts`
- * produces exactly the bytes `store/commit.ts` swaps into place; races and
- * kills mid-write live there too), and the lock that serialises writers is
- * taken by `commands/verify/verify.ts` before this module's authoritative
- * read. Nothing here touches the filesystem except to read.
+ * Moved out of `./file.ts` when the record became several files: that module
+ * now owns WHICH files make up a record and how a damaged one is reported,
+ * while this one owns what any single file has to say to be read at all. The
+ * two are phases — find the files, then grade each — and the grading never
+ * needed to know where its bytes came from.
  */
-import { lstat, readFile } from "node:fs/promises";
-import { parse } from "yaml";
-import { isRecord } from "../kernel/records.js";
-import { VERDICTS } from "./answers.js";
-import { isEvidencePinList } from "./pins/pin.js";
-import { tallyAnswers, verificationPath, type Verification } from "./record.js";
-
-/**
- * What is on disk beside a feature: nothing, something unreadable, or a record.
- *
- * The three are kept apart because they call for opposite handling. "Absent" is
- * a feature nobody has verified — verify starts a fresh record over it without
- * a second thought. "Unreadable" is a file that IS somebody's record: it parses
- * as garbage, or its shape is not a record's, and every answer and attestation
- * it holds is unaccounted for. Collapsing the two (which this function used to
- * do, returning null for both) meant a hand-edited or half-written
- * verification.yaml read as "not verified" and the next `--record` overwrote a
- * whole fleet's attestations without a word.
- */
-export type VerificationRead =
-  | { state: "absent" }
-  /**
-   * `reason` names the YAML line when the parser gave one — the file is the
-   * thing to fix. `code` is set for the one unreadable that parses perfectly: a
-   * record whose `summary` contradicts its own `claims[]`. That lives here
-   * rather than in a state of its own so every reader which already refuses an
-   * unreadable record refuses this one too, without a line of new code.
-   */
-  | { state: "unreadable"; reason: string; code?: "verify.record-miscounted" }
-  /**
-   * `raw` is the exact bytes `verification` was parsed from. A writer merges
-   * over the PARSE, but commits over the BYTES: `commitVerification` compares
-   * these against the file immediately before its swap, so an edit that landed
-   * between this read and that write — an editor, a writer that ignored the
-   * docs lock — is refused and preserved instead of silently buried.
-   */
-  | { state: "ok"; verification: Verification; raw: Buffer };
-
-export async function readVerificationState(featureDir: string): Promise<VerificationRead> {
-  const path = verificationPath(featureDir);
-  let raw: Buffer;
-  try {
-    raw = await readFile(path);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      // ENOENT is "absent" — except from a symlink whose target is gone, which
-      // `existsSync` used to fold into the same answer. That mislabel was a
-      // trap: the read said "no record" while the commit's exclusive link(2)
-      // saw the link itself and refused EEXIST, so every `--record` answered
-      // `record-raced` with advice (re-run) that could never work. The lstat
-      // must CONFIRM the link before the message asserts one: a real file can
-      // also appear between the two calls, and telling its owner to "remove
-      // the link" would delete a valid record.
-      let entry;
-      try {
-        entry = await lstat(path);
-      } catch {
-        return { state: "absent" };
-      }
-      if (entry.isSymbolicLink()) {
-        return {
-          state: "unreadable",
-          reason: "it is a symlink whose target does not exist — replace the link with a real record, or remove it",
-        };
-      }
-      return {
-        state: "unreadable",
-        reason: "it appeared while being read — another writer is landing; re-run",
-      };
-    }
-    return { state: "unreadable", reason: err instanceof Error ? err.message : String(err) };
-  }
-  let doc: unknown;
-  try {
-    doc = parse(raw.toString("utf8"));
-  } catch (err) {
-    return { state: "unreadable", reason: yamlReason(err) };
-  }
-  const verification = asVerification(doc);
-  if (verification === null) {
-    return {
-      state: "unreadable",
-      reason:
-        "it parses as YAML but does not have a verification record's shape (feature, recorded, checklist, summary and claims)",
-    };
-  }
-  const miscount = summaryDisagreement(verification);
-  if (miscount === null) return { state: "ok", verification, raw };
-  return {
-    state: "unreadable",
-    // Spelled twice on purpose: the field is what a caller branches on, the
-    // prose is what a terminal prints and what somebody greps for.
-    code: "verify.record-miscounted",
-    reason: `verify.record-miscounted: ${miscount}`,
-  };
-}
+import { isRecord } from "../../kernel/records.js";
+import { VERDICTS } from "../answers.js";
+import { isEvidencePinList } from "../pins/pin.js";
+import { tallyAnswers, type Verification } from "../record.js";
 
 /**
  * Does the record's `summary` add up from its own `claims[]`?
@@ -119,7 +24,7 @@ export async function readVerificationState(featureDir: string): Promise<Verific
  * record that contradicts itself is refused like any other file loam cannot
  * use. The code is in the reason: it travels wherever the reason is printed.
  */
-function summaryDisagreement(v: Verification): string | null {
+export function summaryDisagreement(v: Verification): string | null {
   const t = tallyAnswers(v.claims);
   const unanswered = v.summary.unanswered ?? 0;
   const says: string[] = [];
@@ -146,33 +51,9 @@ function summaryDisagreement(v: Verification): string | null {
     : `its summary ${says.join(", ")} — the record contradicts itself, so neither half can be believed`;
 }
 
-/** A YAML failure with its line, when the parser located one: that line is the fix. */
-function yamlReason(err: unknown): string {
-  const message = err instanceof Error ? err.message.split("\n")[0]!.trim() : String(err);
-  const pos = (err as { linePos?: Array<{ line: number; col: number }> } | null)?.linePos;
-  const line = Array.isArray(pos) ? pos[0]?.line : undefined;
-  return line === undefined ? `YAML error: ${message}` : `YAML error at line ${line}: ${message}`;
-}
-
 /**
- * The record beside a feature, or null when there is none loam can use. Kept
- * for readers that have nothing to say about the difference (`loam list`'s
- * verification column shows one glyph either way); anything that WRITES must
- * use {@link readVerificationState} instead, or it overwrites what it could not
- * read.
- *
- * A record whose summary contradicts its own claims is one of the nulls now, so
- * no reader can print its counts as fact. Reading it as ABSENT is the safe half
- * of the truth and not the whole of it: a reader that can say why should take
- * {@link readVerificationState} and its `code`.
- */
-export async function readVerification(featureDir: string): Promise<Verification | null> {
-  const read = await readVerificationState(featureDir);
-  return read.state === "ok" ? read.verification : null;
-}
-
-/**
- * The shape check `readVerification` stands behind: everything its readers
+ * The shape check `readVerificationState` (`./file.ts`) stands behind:
+ * everything its readers
  * dereference (verify's report/frozen views, list's verification column) must
  * be present and typed, or the cast would manufacture a Verification that
  * crashes them. Deliberately no tighter than the readers need: extra keys pass
@@ -180,7 +61,7 @@ export async function readVerification(featureDir: string): Promise<Verification
  * predate `--results`) and is any string, like `kind` — the readers only ever
  * compare them, and a record written by a newer loam must not read as absent.
  */
-function asVerification(doc: unknown): Verification | null {
+export function asVerification(doc: unknown): Verification | null {
   if (!isRecord(doc)) return null;
   const summary = doc["summary"];
   if (
@@ -276,4 +157,3 @@ function isConsumedContractReport(v: unknown): boolean {
 function isCount(v: unknown): v is number {
   return typeof v === "number" && Number.isInteger(v);
 }
-

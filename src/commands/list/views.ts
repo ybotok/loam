@@ -18,7 +18,7 @@ import {
 import { type FeatureEntry, type ServiceEntry } from "../../core/repo/entries.js";
 import { landscapePath, servicePathsAt } from "../../core/repo/paths.js";
 import { featureChecklist } from "../../core/verify/checklist.js";
-import { readVerification } from "../../core/verify/file.js";
+import { answering, readVerificationState } from "../../core/verify/read/file.js";
 import { type AnsweredBy } from "../../core/verify/answers.js";
 import {
   confirmedProvenance,
@@ -32,7 +32,12 @@ export interface ServiceView extends MaturityInput {
   /** True when this service's `sources` can only be resolved from its own repo. */
   unverifiableFromHere: boolean;
   maturity: Maturity;
-  /** What stands between this service and the next rung, in fix order. */
+  /**
+   * What stands between this service and the next rung, in fix order — and at
+   * `vouched`, the re-vouch a document that moved under its stamp owes
+   * (`maturityGaps`). Empty exactly when nothing is owed, which is the
+   * worklist's membership test.
+   */
   missing: string[];
 }
 
@@ -126,25 +131,37 @@ export interface VerificationCell {
 }
 
 /**
- * The verification column. `readVerification` is one file read; the checklist
- * is derived only when there is a record to judge — on a fleet-sized repo most
- * features have none, and deriving N checklists to print N dashes is the cost
- * that would get this column dropped.
+ * The verification column. Reading the record is cheap but no longer one file
+ * read — a directory listing and one small read per attesting service, plus the
+ * one-file `verification.yaml` — and the checklist is derived only when there
+ * is a record to judge: on a fleet-sized repo most features have none, and
+ * deriving N checklists to print N dashes is the cost that would get this
+ * column dropped.
  *
  * An archived feature's record is frozen history (see `core/verify/record.ts`): archive
  * merged the feature's operations into the living openapi, so a re-derived
  * checklist can only mismatch — the record is reported as recorded, never
  * judged stale.
+ *
+ * An in-flight record kept as per-service files is added up again against the
+ * checklist just derived (`answering`), so the files that answered the
+ * question being asked now are the ones that count — the cell `status` and
+ * `gate` compute, for the reason `core/verify/read/union.ts` gives. A record
+ * that cannot be read is one dash like an absent one: this column shows one
+ * glyph either way. That includes a record whose summary contradicts its own
+ * claims (`verify.record-miscounted`), so no count from it is printed as fact —
+ * reading it as absent is the safe half of the truth, and `status` and
+ * `verify`, which can say why, report it as unreadable instead.
  */
 export async function featureVerification(
   docsDir: DocsDir,
   f: FeatureEntry,
 ): Promise<VerificationCell | null> {
-  const v = await readVerification(f.dir);
-  if (v === null) return null;
-  const stale = f.archived
-    ? false
-    : (await featureChecklist(docsDir, f.dir, f.id)).digest !== v.checklist;
+  const read = await readVerificationState(f.dir);
+  if (read.state !== "ok") return null;
+  const live = f.archived ? null : (await featureChecklist(docsDir, f.dir, f.id)).digest;
+  const v = live === null ? read.verification : (answering(read.files, live) ?? read.verification);
+  const stale = live !== null && live !== v.checklist;
   const tally = tallyRecord(v);
   return {
     state: stale ? "stale" : "recorded",

@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  citeable,
   coherentFixture,
   FEATURE_SPEC,
   makeProject,
@@ -30,6 +31,9 @@ async function withProject(
   fn: (p: Project) => Promise<void>,
 ): Promise<void> {
   const p = await makeProject(files);
+  // The all-at-once form resolves every agent citation in the repository it
+  // records from, so the evidence this file's answer sets cite is made real.
+  await citeable(p.workDir, "src/split/Service.ts:12");
   try {
     await fn(p);
   } finally {
@@ -78,6 +82,9 @@ describe("text output", () => {
       // the async contract follows the API for the same reason, in the same case
       expect(full).toContain("M S - A - R H");
       expect(bare).toContain("- S - - - - -");
+      // One legend key per column, in the columns' order. The `e` column
+      // shipped without one, so the legend explained six of seven.
+      expect(res.out).toContain("[M]odel [S]pec [a]rch-spec [A]pi [e]vents [R]unbook [H]ealth");
     });
   });
 

@@ -11,7 +11,7 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { stringify as stringifyYaml } from "yaml";
-import { parseRequirements } from "../../../core/document/parse.js";
+import { openspecRequirements } from "../../../core/openspec/scan/shape.js";
 import { type Requirement } from "../../../core/document/spec.js";
 import { DOCS_SUBDIRS, docsRepoFiles } from "../../../core/docs.js";
 import { compareIds } from "../../../core/repo/entries.js";
@@ -42,7 +42,7 @@ export async function planMigrationWrites(
   for (const capability of inventory.living.capabilities) {
     livingByCapability.set(
       capability.id,
-      parseRequirements(await readSourceArtifact(inventory.root, capability.files[0]!)),
+      openspecRequirements(await readSourceArtifact(inventory.root, capability.files[0]!)),
     );
   }
   const livingWrites = await materializeLivingSpecs(inventory, mapping, target, livingByCapability);

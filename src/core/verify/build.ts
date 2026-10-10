@@ -6,16 +6,14 @@
  * because the two disagree about what an unanswered claim means: answering
  * everything at once, a missing answer is a gap in this run, while a federated
  * record is assembled from attestations that each covered one service and were
- * never expected to cover the rest.
+ * never expected to cover the rest. They also land in different places: the
+ * all-at-once record is the one file `verification.yaml`, while each service's
+ * attestation is a file of its own under `verification/` (`./location.ts` says
+ * why, on `verificationDir`).
  */
 import { type Checklist } from "./checklist.js";
 import { type Answer } from "./answers.js";
-import {
-  type ConsumedReports,
-  type RecordedClaim,
-  type ServiceAttestation,
-  type Verification,
-} from "./record.js";
+import { type ConsumedReports, type RecordedClaim, type Verification } from "./record.js";
 
 export function buildVerification(
   checklist: Checklist,
@@ -61,8 +59,8 @@ export function buildVerification(
 /**
  * An answer the previous record held that the new one does not carry.
  *
- * Dropping these is correct — see `buildFederatedVerification` — but doing it
- * silently is not: a schema-1 record answers the WHOLE checklist, so the first
+ * Dropping these is correct — see `buildServiceRecord` — but doing it silently
+ * is not: a schema-1 record answers the WHOLE checklist, so the first
  * federated write turns a green record into a partial one, and an operator who
  * is not told which answers went missing reads the drop as loam losing data.
  */
@@ -80,18 +78,6 @@ export interface DiscardedAnswer {
   reason: "off-checklist" | "unattested";
 }
 
-export interface FederatedBuild {
-  verification: Verification;
-  /** In checklist-independent record order — see {@link DiscardedAnswer}. */
-  discarded: DiscardedAnswer[];
-}
-
-/**
- * Replace one service's contribution while retaining current contributions
- * from other repositories. Claim ids removed from the live checklist are
- * pruned from both the answers and their attestations, so a changed feature can
- * never keep a green answer to a question it no longer asks.
- */
 /** One service's attestation: whose word it is, when, and against which commit. */
 export interface Attestation {
   service: string;
@@ -102,113 +88,153 @@ export interface Attestation {
   docsCommit?: string;
 }
 
-export function buildFederatedVerification(
+/**
+ * The record files a service's write replaces, as the authoritative read found
+ * them: the one-file record, and this service's own `verification/<svc>.yaml`.
+ * `filed` names every service that already has a file of its own — what
+ * decides whether anything in the one-file record still counts.
+ */
+export interface PreviousFiles {
+  legacy: Verification | null;
+  own: Verification | null;
+  filed: ReadonlySet<string>;
+}
+
+export interface ServiceBuild {
+  /** `verification/<svc>.yaml` as it will be written: this service's attestation and answers, nobody else's. */
+  record: Verification;
+  /**
+   * Whether the one-file record goes in the same commit, because nothing in it
+   * counts any more: an all-at-once record never counts once a service has a
+   * file (its answers carry no attestation — today's write used to overwrite it
+   * for the same reason), and a federated one stops counting once every
+   * service it names has a file of its own.
+   */
+  dropLegacy: boolean;
+  /** In record order — see {@link DiscardedAnswer}. */
+  discarded: DiscardedAnswer[];
+}
+
+/**
+ * One service's attestation, as the file only that service ever writes.
+ *
+ * This used to be a merge: the new attestation spliced into the one shared
+ * record, every other service's answers retained, pruned to the current
+ * checklist and re-sorted — and that rewrite of everybody's bytes is exactly
+ * what made two teams' docs PRs conflict. Now nothing else is touched. The
+ * other services' files stand as they are, the union is added up at read time
+ * (`read/union.ts`), and an answer of theirs the feature no longer asks is
+ * simply not counted there rather than pruned here.
+ *
+ * The file is a whole schema-2 record with one attestation, so it is graded
+ * with the same shape check as every record and reads without loam: its
+ * `summary` counts the whole checklist, with the claims other services answer
+ * honestly `unanswered` in it.
+ */
+export function buildServiceRecord(
   checklist: Checklist,
   attestation: Attestation,
   answers: Answer[],
-  previous: Verification | null,
-): FederatedBuild {
+  previous: PreviousFiles,
+): ServiceBuild {
   const { service, recorded, commit, reports, docsCommit } = attestation;
-  const currentById = new Map(checklist.claims.map((claim) => [claim.id, claim]));
-  const localIds = new Set(checklist.claims.filter((claim) => claim.subject === service).map((claim) => claim.id));
-
-  // An old all-at-once record remains readable, but its answers have no commit
-  // attestation and therefore cannot silently become somebody else's
-  // federated contribution. The first schema-2 write starts a clean federation.
-  const previouslyAttested = new Set((previous?.attestations ?? []).flatMap((a) => a.claims));
-  const retained = (previous?.schema === 2 ? previous.claims : []).filter((claim) => {
-    const current = currentById.get(claim.id);
-    return current !== undefined && current.subject !== service && previouslyAttested.has(claim.id);
-  });
-  const local = answers.map((answer): RecordedClaim => {
+  const byId = new Map(answers.map((answer) => [answer.id, answer]));
+  const currentIds = new Set(checklist.claims.map((claim) => claim.id));
+  for (const answer of answers) {
     // Same contract as `buildVerification`: an answer is built from the live
     // checklist, so it always names a current claim. Off-checklist answers do
     // NOT belong here — `discarded` means "an answer the PREVIOUS record held",
     // and routing an incoming stray into it would change what the printed
     // notice tells an operator. A caller that reaches this gets told which
-    // answer it was rather than a `TypeError` on `claim.kind`.
-    const claim = currentById.get(answer.id);
-    if (claim === undefined) {
-      throw new Error(`buildFederatedVerification: answer ${answer.id} names no current claim`);
+    // answer it was rather than an answer silently missing from the file.
+    if (!currentIds.has(answer.id)) {
+      throw new Error(`buildServiceRecord: answer ${answer.id} names no current claim`);
     }
-    return {
-      id: claim.id,
-      kind: claim.kind,
-      subject: claim.subject,
-      claim: claim.claim,
-      verdict: answer.verdict,
-      answered_by: answer.answered_by,
-      evidence: answer.evidence,
-      ...(answer.note === undefined ? {} : { note: answer.note }),
-      // The pins the evidence validation stamped onto this repository's
-      // answers ride into the record here; retained other-service claims are
-      // spread whole below, so THEIR pins survive a re-record untouched.
-      ...(answer.evidence_pins === undefined ? {} : { evidence_pins: answer.evidence_pins }),
-    };
-  });
-  const byId = new Map([...retained, ...local].map((claim) => [claim.id, claim]));
-  const claims = checklist.claims.flatMap((claim) => {
+  }
+  const claims = checklist.claims.flatMap((claim): RecordedClaim[] => {
     const answer = byId.get(claim.id);
     if (answer === undefined) return [];
-    // Normalize retained legacy entries to the current question text and add
-    // the subject schema 2 needs for future independent replacement.
-    return [{ ...answer, kind: claim.kind, subject: claim.subject, claim: claim.claim }];
+    return [
+      {
+        id: claim.id,
+        kind: claim.kind,
+        subject: claim.subject,
+        claim: claim.claim,
+        verdict: answer.verdict,
+        answered_by: answer.answered_by,
+        evidence: answer.evidence,
+        ...(answer.note === undefined ? {} : { note: answer.note }),
+        // The pins the evidence validation stamped onto this repository's
+        // answers ride into the file here; no other service's file is
+        // rewritten, so THEIR pins are never touched at all.
+        ...(answer.evidence_pins === undefined ? {} : { evidence_pins: answer.evidence_pins }),
+      },
+    ];
   });
-
-  const retainedAttestations = (previous?.attestations ?? []).flatMap((attestation) => {
-    if (attestation.service === service) return [];
-    const ids = attestation.claims.filter(
-      (id) => currentById.get(id)?.subject === attestation.service && byId.has(id),
-    );
-    return ids.length === 0 ? [] : [{ ...attestation, claims: ids }];
-  });
-  const attestations: ServiceAttestation[] = [
-    ...retainedAttestations,
-    {
-      service,
-      commit,
-      recorded,
-      claims: checklist.claims.filter((c) => localIds.has(c.id)).map((c) => c.id),
-      // What THIS repository answered, and what it answered it against. Both
-      // ride with the attestation rather than the record for the reason the
-      // reports do: they are one repository's facts, pruned and retained with
-      // that repository's answers.
-      checklist: checklist.digest,
-      ...(docsCommit === undefined ? {} : { docsCommit }),
-      // Filed with the attestation, not the record: each report is one
-      // repository's run, and it is pruned or retained with that repository's
-      // answers rather than outliving them — the contract report under the
-      // same rule as the cucumber one.
-      ...(reports.results === undefined ? {} : { report: reports.results }),
-      ...(reports.contract === undefined ? {} : { contractReport: reports.contract }),
-    },
-  ].sort((a, b) => a.service.localeCompare(b.service));
-
   const confirmed = claims.filter((claim) => claim.verdict === "confirmed").length;
-  const unconfirmed = claims.length - confirmed;
-  const unanswered = checklist.claims.length - claims.length;
+  const record: Verification = {
+    schema: 2,
+    feature: checklist.feature,
+    recorded,
+    checklist: checklist.digest,
+    summary: {
+      claims: checklist.claims.length,
+      confirmed,
+      unconfirmed: claims.length - confirmed,
+      unanswered: checklist.claims.length - claims.length,
+    },
+    claims,
+    attestations: [
+      {
+        service,
+        commit,
+        recorded,
+        claims: checklist.claims.filter((c) => c.subject === service).map((c) => c.id),
+        // What THIS repository answered, and what it answered it against.
+        // `checklist` is what `verify.checklist-forked` and the union's
+        // one-version rule read; `docsCommit` pins the side the question came
+        // from.
+        checklist: checklist.digest,
+        ...(docsCommit === undefined ? {} : { docsCommit }),
+        // Each report is one repository's run, filed with that repository's
+        // attestation — the contract report under the same rule as the
+        // cucumber one.
+        ...(reports.results === undefined ? {} : { report: reports.results }),
+        ...(reports.contract === undefined ? {} : { contractReport: reports.contract }),
+      },
+    ],
+  };
 
-  // Everything the old record answered that the new one does not. The caller
-  // prints it; nothing here decides it is acceptable.
-  const discarded = (previous?.claims ?? [])
-    .filter((claim) => !byId.has(claim.id))
+  const { legacy, own, filed } = previous;
+  const federatedLegacy = legacy?.schema === 2;
+  const dropLegacy =
+    legacy !== null &&
+    (!federatedLegacy || (legacy.attestations ?? []).every((a) => a.service === service || filed.has(a.service)));
+  // Everything this write takes off the disk that the new file does not carry:
+  // this service's own previous answers (from its file, or from its share of a
+  // one-file record no file of its own had superseded yet) and, when the
+  // one-file record is dropped, an all-at-once record's answers. Another
+  // service's answers are never in this list — their files are not touched.
+  const replaced = [
+    ...(own?.claims ?? []),
+    ...(legacy === null
+      ? []
+      : !federatedLegacy
+        ? legacy.claims
+        : own === null
+          ? legacy.claims.filter((claim) => claim.subject === service)
+          : []),
+  ];
+  const carried = new Set(claims.map((claim) => claim.id));
+  // Keyed by id: a service's own file and its share of the one-file record
+  // can both hold the same stale answer, and it is one answer.
+  const dropped = new Map(replaced.filter((claim) => !carried.has(claim.id)).map((claim) => [claim.id, claim]));
+  const discarded = [...dropped.values()]
     .map((claim): DiscardedAnswer => ({
       id: claim.id,
       claim: claim.claim,
       ...(claim.subject === undefined ? {} : { subject: claim.subject }),
-      reason: currentById.has(claim.id) ? "unattested" : "off-checklist",
+      reason: currentIds.has(claim.id) ? "unattested" : "off-checklist",
     }));
-
-  return {
-    verification: {
-      schema: 2,
-      feature: checklist.feature,
-      recorded,
-      checklist: checklist.digest,
-      summary: { claims: checklist.claims.length, confirmed, unconfirmed, unanswered },
-      claims,
-      attestations,
-    },
-    discarded,
-  };
+  return { record, dropLegacy, discarded };
 }

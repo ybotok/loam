@@ -494,6 +494,35 @@ ${DELTA}`;
     ]));
   });
 
+  it("reads every CommonMark marker on RENAMED pairs, and a bare FROM:/TO: — the OpenSpec 1.13 grammar", async () => {
+    // `* FROM:` matched nothing, so `openspec.renamed-malformed` said "must
+    // contain a FROM/TO pair" about a section that held one. v1.9.0 already
+    // accepted the bare form; 1.13.0 accepts `*` and `+` beside `-`.
+    for (const [from, to] of [["* FROM:", "* TO:"], ["+ FROM:", "+ TO:"], ["FROM:", "TO:"]] as const) {
+      const fixture = await workspace({
+        "config.yaml": "schema: spec-driven\n",
+        "specs/payments/spec.md": LIVING_RENAME,
+        "changes/rename/specs/payments/spec.md": RENAMED.replace("- FROM:", from).replace("- TO:", to),
+      });
+      const inventory = await inventoryOpenSpec(fixture.openspec);
+      expect(inventory.renamed.map((r) => [r.from, r.to]), from).toEqual([["Old name", "New name"]]);
+      expect(codesOf(inventory.unsupported), from).not.toContain("openspec.renamed-malformed");
+    }
+  });
+
+  it("reads a REMOVED list of bullets as removals, whichever marker, instead of an empty change", async () => {
+    for (const marker of ["-", "*", "+"]) {
+      const fixture = await workspace({
+        "config.yaml": "schema: spec-driven\n",
+        "specs/payments/spec.md": LIVING_TWO,
+        "changes/drop/specs/payments/spec.md": `## REMOVED Requirements\n${marker} \`### Requirement: Capture\`\n`,
+      });
+      const inventory = await inventoryOpenSpec(fixture.openspec);
+      expect(codesOf(inventory.unsupported), marker).not.toContain("openspec.change-empty");
+      expect(inventory.mechanicallyCompatible, marker).toBe(true);
+    }
+  });
+
   it("recognizes config-only projects and empty Store roots without inventing a missing-spec blocker", async () => {
     const project = await workspace({ "config.yaml": "schema: spec-driven\n" });
     const projectInventory = await inventoryOpenSpec(project.root);
@@ -1011,6 +1040,44 @@ describe("OpenSpec audit and mapping-driven migration commands", () => {
     expect(delta).toContain("OpenSpec-Living-Source: payments :: Old name");
     expect(delta).toContain("#### Scenario: Existing behavior");
     expect(await treeHashes(fixture.root)).toEqual(before);
+  });
+
+  it("drops a closing # run from requirement headings at ingest, so a MODIFIED delta finds its living requirement", async () => {
+    // `### Requirement: Invoice totals ###` renders as `Invoice totals`
+    // (OpenSpec 1.13.1 normalizes it the same way). Kept, it audited "ready",
+    // staged as `Invoice totals ###`, and the MODIFIED delta then failed
+    // `loam validate` as delta.modified-unknown — "Did you mean ADDED?".
+    const fixture = await workspace({
+      "config.yaml": "schema: spec-driven\n",
+      "specs/payments/spec.md": LIVING_TWO.replace("### Requirement: Authorize", "### Requirement: Authorize ###"),
+      "changes/tighten/specs/payments/spec.md": `## MODIFIED Requirements
+
+### Requirement: Authorize
+The system SHALL authorize, and SHALL decline an expired card.
+
+#### Scenario: Accepted
+- **WHEN** a valid card is used
+- **THEN** it is accepted
+
+## REMOVED Requirements
+* \`### Requirement: Capture ##\`
+`,
+    });
+    const inventory = await inventoryOpenSpec(fixture.root);
+    const mapping = await mappingFile(inventory);
+    const target = join(await makeTmpDir("loam-openspec-closing-hash-"), "target");
+    cleanups.push(() => rm(join(target, ".."), { recursive: true, force: true }));
+    const result = await runLoam(
+      fixture.root, "migrate-openspec", fixture.root, "--map", mapping.path, "--apply", "--target", target, "--json",
+    );
+    expect(result.code, result.stdout).toBe(0);
+    const living = await readFile(join(target, "services", "payments", "spec.md"), "utf8");
+    expect(living).toMatch(/^### Requirement: Authorize$/m);
+    const delta = await readFile(join(target, "features", "FEAT-1-tighten", "specs", "payments", "spec.md"), "utf8");
+    expect(delta).toMatch(/^### Requirement: Authorize$/m);
+    expect(delta).toMatch(/## REMOVED Requirements\n\n### Requirement: Capture$/m);
+    const validated = await runLoam(target, "validate", "--feature", "FEAT-1", "--json");
+    expect(validated.stdout).not.toContain("delta.modified-unknown");
   });
 
   it("reuses an existing living Requirement-ID for RENAMED without asking for a replacement", async () => {

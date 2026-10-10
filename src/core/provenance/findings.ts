@@ -15,6 +15,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import {
+  movedUnderVouch,
   parseFrontmatter,
   readFrontmatter,
   stringField,
@@ -29,7 +30,6 @@ import type { FleetContext } from "../fleet-context.js";
 import { locateServicePaths } from "../repo/service-target.js";
 import { readVouchScope } from "./sample/scope.js";
 import { sourceFindings } from "./sources.js";
-import { contentDigest } from "./stamp.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
 /** Fields every artifact is expected to carry, beyond its identity and status. */
@@ -42,6 +42,12 @@ export interface ProvenanceOptions {
    * which case the paths are not ours to resolve and are left alone.
    */
   repoDir?: string;
+  /**
+   * Repo-relative files loam itself owns in `repoDir` — loam.json and the agent
+   * files it records (`loamOwnedFiles`). Only the walk check reads them, to
+   * leave them out of `sources.unwalked`'s denominator; absent means none.
+   */
+  loamOwned?: readonly string[];
   /** The invocation's read index, when the caller holds one — resolves the service's directory without a second walk. */
   fleet?: FleetContext;
 }
@@ -52,7 +58,9 @@ export async function serviceProvenance(
   opts: ProvenanceOptions = {},
 ): Promise<Finding[]> {
   const paths = await locateServicePaths(docsDir, service, opts.fleet);
+  const repo = opts.repoDir === undefined ? undefined : { dir: opts.repoDir, loamOwned: opts.loamOwned ?? [] };
   const findings: Finding[] = [];
+  const owners: { file: string; owner: string }[] = [];
   // Both requirement-carrying specs get the same pass: arch.spec.md follows
   // spec.md's frontmatter conventions exactly, so the checks are one loop —
   // only the label tells a reader which file moved. The pair comes from
@@ -76,12 +84,50 @@ export async function serviceProvenance(
     // `sources.absent` against a header nobody can read is the same false
     // advice as the field cascade, so frontmatter.malformed stands alone.
     if (fm.present && !fm.malformed) {
-      findings.push(...(await sourceFindings(fm, service, label, opts.repoDir)));
+      findings.push(...(await sourceFindings(fm, service, label, repo)));
       findings.push(...contentFindings(fm, raw, service, label));
       findings.push(...scopeFindings(fm, service, label));
+      // Trimmed and non-empty, so `owner: ""` stays the absence it means
+      // rather than a second owner that disagrees with the first.
+      const owner = stringField(fm, "owner")?.trim();
+      if (owner !== undefined && owner.length > 0) owners.push({ file, owner });
     }
   }
+  findings.push(...ownerFindings(service, owners));
   return findings;
+}
+
+/**
+ * The two spec files of ONE service naming two different owners.
+ *
+ * `owner` is free text and loam never decides who owns anything (SCHEMA:
+ * ownership is CODEOWNERS, and there is no permission model to grow). But
+ * `loam show` and `loam context` print spec.md's value as the service's badge,
+ * so when spec.md says `orders-team` and arch.spec.md says a team that left
+ * last quarter, an agent reading arch.spec.md routes its question to one team
+ * while every summary names the other — and nothing said so. That is a
+ * disagreement between two documents in one directory, which is loam's own job
+ * to catch whatever the forge says. Comparing against CODEOWNERS is NOT done
+ * here: that is a separate question with a separate owner decision behind it.
+ *
+ * A WARNING: neither value is wrong on its own, and only a person knows which
+ * one is current. Silent when either file names no owner — absence is
+ * `frontmatter.field-missing`'s finding, and one fact gets one code.
+ */
+function ownerFindings(service: string, owners: { file: string; owner: string }[]): Finding[] {
+  if (new Set(owners.map((o) => o.owner)).size < 2) return [];
+  return [
+    {
+      severity: "warn",
+      code: "frontmatter.owner-mismatch",
+      subject: service,
+      message:
+        `${service}: ${owners.map((o) => `${o.file} names owner '${o.owner}'`).join(", ")} — ` +
+        "one service, two owners, while `loam show` and `loam context` print only spec.md's. " +
+        "Make them agree; only a person knows which one is current",
+      details: owners.map((o) => `${o.file}: ${o.owner}`),
+    },
+  ];
 }
 
 export async function featureProvenance(
@@ -182,13 +228,12 @@ function identityFindings(fm: Frontmatter, spec: IdentitySpec): Finding[] {
  * the exact agent-written-prose threat model this layer exists for.
  */
 function contentFindings(fm: Frontmatter, raw: string, service: string, label: string): Finding[] {
-  if (stringField(fm, "status") !== "verified") return [];
-  const stamped = stringField(fm, "content_digest");
-  // A verified doc with no stamp predates the field. Quiet on purpose: the fix
-  // is re-vouching, and grading years of pre-feature vouches as suspect would
-  // drown the fleet in warnings nobody chose.
-  if (stamped === undefined) return [];
-  if (contentDigest(raw) === stamped) return [];
+  // `movedUnderVouch` is the one spelling of the condition, read by the fleet
+  // enumeration (core/repo/repo.ts) and `loam archive` too, so `loam list`
+  // cannot call a document fresh that this check calls stale. A verified doc
+  // with no stamp predates the field and is quiet on purpose; `contentStamp`'s
+  // docblock says why.
+  if (!movedUnderVouch(fm, raw)) return [];
   const since = stringField(fm, "last_verified") ?? "it was vouched";
   return [
     {

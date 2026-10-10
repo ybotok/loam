@@ -144,19 +144,26 @@ views {
       "`Operations: <operationId>[, <operationId>]` in the requirement body names the API operations it governs. Every one must exist in this service's openapi.yaml — a name that does not is `spec-api.op-undefined` (error), reported against the LIVING spec, not only inside a feature delta.",
       "Document what the service DOES today, not what it should do. This is the baseline; changes to it belong in a feature delta.",
     ],
+    // `<svc>` is the model example's placeholder, filled the same way: the
+    // frontmatter `service:` must equal the directory it sits in, so a header
+    // naming payment-service was a paste that failed `frontmatter.field-mismatch`
+    // for every other service. And the blank line under each `### Requirement:`
+    // is the canonical shape `serializeRequirements` writes — a living spec
+    // copied from an example without it is reflowed by its first archive.
     example: `---
-service: payment-service
+service: <svc>
 status: draft
 owner: payments-team
 sources:
   - src/main/java/com/shop/payment/
 ---
 
-# payment-service
+# <svc>
 
 ## Requirements
 
 ### Requirement: Authorize a payment
+
 WHEN authorization is requested for a captured-eligible order THE SYSTEM SHALL
 authorize it against the issuer before any capture.
 
@@ -168,6 +175,7 @@ Operations: authorizePayment
 - **Then** the payment is authorized and an authorization id is returned
 
 ### Requirement: Refunding is permission-gated
+
 IF the caller lacks the refund permission THEN THE SYSTEM SHALL refuse the
 request and leave the payment untouched.
 
@@ -198,19 +206,21 @@ Operations: refundPayment
       "Optional, but expected for a service with real architecture: every alert/SLI health.yaml declares wants a covering requirement here (`health.uncovered`, warn) — a signal nothing tests is dashboard decoration.",
       "Write the obligations no business requirement states — the transactional outbox, what a caller's retry may assume, what pages whom. An arch scenario becomes an integration/ops test, not an acceptance test.",
     ],
+    // Same placeholder and same canonical requirement shape as spec.md's above.
     example: `---
-service: payment-service
+service: <svc>
 status: draft
 owner: payments-team
 sources:
   - src/main/java/com/shop/payment/
 ---
 
-# payment-service — architecture
+# <svc> — architecture
 
 ## Requirements
 
 ### Requirement: Events leave through the transactional outbox
+
 The service SHALL write a domain event and its state change in one transaction,
 published by an outbox relay — never a dual write.
 
@@ -303,7 +313,7 @@ views {
     required: false,
     purpose: "the async contract — the messages this service puts on and takes off the bus",
     shape: [
-      "AsyncAPI **3.0** with `channels`, `operations` and `components.messages`. Only 3.0 is read: its operations are named top-level objects carrying `action: send|receive`, which is what makes a message's direction legible. A 2.x document declares no `operations` and reads as a contract with no messages.",
+      "AsyncAPI **3.0** with `channels`, `operations` and `components.messages`. Only 3.0 is read: its operations are named top-level objects carrying `action: send|receive`, which is what makes a message's direction legible. A 1.x or 2.x document is refused as `asyncapi.invalid` and nothing on the event axis is graded against it; upgrade an existing one with `asyncapi convert --target-version=3.0.0` rather than copying it in as is.",
       "EVERY message carries a `name` (or is declared under the key you intend to reference). That token is the spine: the C4 edge's `metadata { publishes }` / `metadata { consumes }`, the requirement's `Publishes:` / `Consumes:` line and this name are one name spelled three times.",
       "Namespace the name by the domain that owns it — `payment.PaymentAuthorized`. One message has exactly one producer; two services declaring they send one name is `asyncapi.message-contested`, and then which contract a consumer reads is a coin flip.",
       "loam reads message names and the `action` of the operation carrying them. **It never joins on anything inside `payload`** — the one look inside is a presence probe: a payload declaring no shape at all warns (`asyncapi.payload-undescribed`), and a payload with a non-JSON `schemaFormat` is skipped outright. Write the payload as JSON Schema today; if the fleet later adopts Avro, that is a `schemaFormat` line here and nothing in loam changes.",

@@ -14,7 +14,7 @@
  * The resolution order below is the whole of it, and its last rung is the one
  * that lies: read that comment before adding a caller.
  */
-import { ancestorIds } from "../../kernel/ids/fqn/ancestors.js";
+import { ancestorIds, properAncestorIds } from "../../kernel/ids/fqn/ancestors.js";
 import { declaredService, type DeclaredService } from "../../kernel/ids/service.js";
 import { type Elem } from "../likec4.js";
 
@@ -152,4 +152,28 @@ export function resolverFor(elements: Elem[], known?: ReadonlySet<string>): (id:
   const resolver = serviceResolver(elements, known);
   perSet.set(known, resolver);
   return resolver;
+}
+
+/**
+ * The element each service is DRAWN as: for every service the map resolves an
+ * element to, the first service-level one in document order — an element that
+ * resolves to the service while an ancestor does too is a container of it,
+ * never a second box. The same filter and the same "first one" the adopt brief
+ * names (`core/brief/landscape.ts`), so `loam new` and `loam adopt` can never
+ * hand an author two different ids for one box.
+ *
+ * Exists so a scaffold reuses the id the map already spells instead of
+ * guessing one: a feature delta whose context ids differ from the landscape's
+ * does not line up at archive, and a guessed camelCase id on a seeded map
+ * (`svc_<id>`) never matched once.
+ */
+export function drawnServiceElements(elements: Elem[], known?: ReadonlySet<string>): Map<string, string> {
+  const svcOf = serviceResolver(elements, known);
+  const drawn = new Map<string, string>();
+  for (const e of elements) {
+    const service = svcOf(e.id);
+    if (drawn.has(service) || properAncestorIds(e.id).some((a) => svcOf(a) === service)) continue;
+    drawn.set(service, e.id);
+  }
+  return drawn;
 }

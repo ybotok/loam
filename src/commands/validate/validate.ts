@@ -15,18 +15,12 @@ import { agentsStaleFinding, binaryBehindFinding } from "../../core/agent/agents
 import { inOrder } from "../../core/kernel/concurrency.js";
 import type { RawServiceId } from "../../core/kernel/ids/service.js";
 import { resolveServiceTarget } from "../../core/repo/service-target.js";
-import { loadConfig } from "../../core/envelope/config.js";
+import { loadConfig, loamOwnedFiles } from "../../core/envelope/config.js";
 import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../../core/envelope/json.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { agentsPath as agentsFile, landscapePath as landscapeFile } from "../../core/repo/paths.js";
 import { listFeatures, listServices, missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
-import {
-  countSeverity,
-  reportValid,
-  targetJson,
-  targetValid,
-  type TargetReport,
-} from "../../core/vocabulary/report.js";
+import { countSeverity, reportValid, targetJson, type TargetReport } from "../../core/vocabulary/report.js";
 import { LOAM_VERSION } from "../../core/envelope/version.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { fixesFor } from "../policy/format.js";
@@ -43,6 +37,7 @@ import { buildScorecard } from "./fleet/scorecard/scorecard.js";
 import { printScorecard } from "./fleet/scorecard/print.js";
 import { validateFeature } from "./feature.js";
 import { validateService } from "./service/service.js";
+import { scopedLandscapeFindings } from "./scope.js";
 import { ambiguousTarget, capDetails, guarded, renderText, summary, unverifiableSubjects } from "./report.js";
 
 interface ValidateOptions {
@@ -121,11 +116,13 @@ export function registerValidate(program: Command): void {
       // what loam.json's `service` records.
       const repoOf = (service: string): string | undefined =>
         config.service === service ? process.cwd() : undefined;
+      // What loam itself wrote into that repository, which no `sources` list owes a reading of.
+      const loamOwned = loamOwnedFiles(config);
 
       /** One service target, from a name the enumeration or the grammar approved. */
       const serviceTarget = (id: RawServiceId): Promise<TargetReport> =>
         guarded({ kind: "service", id }, () =>
-          validateService({ docsDir, service: id, repoDir: repoOf(id), gherkinDir: config.gherkinDir, contracts: config.contracts, fleet }),
+          validateService({ docsDir, service: id, repoDir: repoOf(id), loamOwned, gherkinDir: config.gherkinDir, contracts: config.contracts, fleet }),
         );
 
       const targets: TargetReport[] = [];
@@ -167,7 +164,9 @@ export function registerValidate(program: Command): void {
           // The fleet-level cross-check first: it frames everything below it, and a
           // service nobody drew is worth knowing before its own findings scroll past.
           // Under `--base` it is a target only when `architecture/` changed — the
-          // landscape owns no service directory, so that is its whole footprint.
+          // landscape owns no service directory, so that is its whole footprint —
+          // and even then not whole: `scope.ts` drops what grades a file the
+          // branch left alone and adds the call edges it wrote.
           if (scope === null || scope.landscape) {
             const landscape = await validateLandscape(docsDir, land, fleet);
             targets.push(landscape);
@@ -186,6 +185,11 @@ export function registerValidate(program: Command): void {
             // read as prose and produces no join to fail.
             const behind = binaryBehindFinding(agentsText, LOAM_VERSION);
             if (behind !== null) landscape.findings.push(behind);
+            if (scope !== null) {
+              landscape.findings = await scopedLandscapeFindings(landscape.findings, {
+                docsDir, scope, land, services: enumerated, fleet,
+              });
+            }
           }
           targets.push(
             ...(await inOrder(services, (svc) =>
@@ -194,6 +198,7 @@ export function registerValidate(program: Command): void {
                   docsDir,
                   service: svc.id,
                   repoDir: repoOf(svc.id),
+                  loamOwned,
                   preloaded: land,
                   gherkinDir: config.gherkinDir,
                   contracts: config.contracts,
@@ -381,5 +386,3 @@ export function registerValidate(program: Command): void {
       if (!valid || strictFailed) process.exitCode = 1;
     });
 }
-
-export { targetValid };

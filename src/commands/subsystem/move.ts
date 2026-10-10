@@ -26,7 +26,7 @@ import { servicesDir, serviceViewsPath, subsystemPathUnder, subsystemViewsPath }
 import { listFeatures } from "../../core/repo/repo.js";
 import { findInTree, nearestTreeNames, treeNames, withinSubsystem } from "../../core/repo/tree/find.js";
 import type { FleetTree } from "../../core/repo/tree/walk.js";
-import { SNAPSHOT_COMPAT_VERSION, SNAPSHOT_MANIFEST, snapshotDir } from "../../core/staging/snapshot.js";
+import { SNAPSHOT_COMPAT_VERSION, SNAPSHOT_MANIFEST, snapshotDir } from "../../core/staging/snapshot/manifest.js";
 import { commitWindow, reportViews, type SubsystemTxn, type ViewsActions } from "./txn/txn.js";
 import { movedTree } from "./txn/views.js";
 

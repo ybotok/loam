@@ -230,14 +230,19 @@ export function registerList(program: Command): void {
           linkedBy: citations === undefined ? [] : citations.linkersOf(term.path),
         }));
 
-        const worklist = (shown ?? []).filter((v) => v.maturity !== "vouched");
+        // Every row that still owes something — `missing` is non-empty below
+        // `vouched` by construction, and at `vouched` exactly when a stamped
+        // document moved under its vouch. The test used to be the rung alone,
+        // so a service whose spec was edited after the person read it dropped
+        // off the worklist and the footer said "nothing to do".
+        const worklist = (shown ?? []).filter((v) => v.missing.length > 0);
         // The ranked review queue, derived never stored: fan-in is computed
         // FLEET-WIDE (the joins need every service's slice anyway — and a
         // --subsystem filter must never change a service's count, only which
         // rows appear) while ranks are assigned over the WORKLIST only — a
-        // vouched service needs no review, and ranking it would put gaps in
-        // the queue. The worklist is already sliced, so under --subsystem the
-        // ranks are contiguous within the filtered set.
+        // service that owes nothing needs no review, and ranking it would put
+        // gaps in the queue. The worklist is already sliced, so under
+        // --subsystem the ranks are contiguous within the filtered set.
         let ranked: { queue: ServiceView[]; fanIn: ReadonlyMap<string, number> } | undefined;
         if (opts.reviewOrder === true && services !== undefined) {
           const fanIn = await fanInByService(services, fleet, land ?? null);
@@ -333,10 +338,10 @@ export function registerList(program: Command): void {
         }
         if (owned !== undefined && rows !== undefined && shown !== undefined) {
           if (opts.needsWork && rows.length === 0) {
-            // printWorklist's own affordance, kept under the grouping flag:
-            // empty owner groups would answer "who owns the work" without
-            // saying there is none.
-            console.log(`nothing to do — all ${shown.length} service(s) are vouched`);
+            // printWorklist's own affordance — called rather than respelled —
+            // kept under the grouping flag: empty owner groups would answer
+            // "who owns the work" without saying there is none.
+            printWorklist([], shown.length);
             return;
           }
           const kind = opts.needsWork

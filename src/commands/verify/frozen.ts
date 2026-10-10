@@ -21,9 +21,9 @@ import {
   type ConsumedReport,
   type Verification,
   type VerifyNotice,
-  verificationPath,
   verificationVerdict,
 } from "../../core/verify/record.js";
+import { recordLocation } from "../../core/verify/location.js";
 import { plural } from "../policy/format.js";
 import { type VerifyTarget } from "./report.js";
 
@@ -55,7 +55,7 @@ export function reportFrozen(
         v === null
           ? null
           : {
-              path: repoPath(docsDir, verificationPath(featureDir)),
+              path: repoPath(docsDir, recordLocation(featureDir)),
               recorded: v.recorded,
               checklist: v.checklist,
               ...(v.attestations === undefined ? {} : { attestations: v.attestations }),
@@ -154,6 +154,14 @@ export function noticesFor(claims: readonly AnsweredClaim[], feature: string): V
  * field are excluded rather than counted as a third version: they make no claim
  * about what they answered, and reading silence as disagreement would fire this
  * on every record written before the field existed.
+ *
+ * In a record kept as per-service files the fork also decides what counts:
+ * the union counts only the files that answered its newest version
+ * (`core/verify/read/union.ts` says why), so the services named here are the
+ * ones whose answers are left out until they record again. In a one-file
+ * record the last writer had already pruned their stale answers, and the rest
+ * still count — which is why the sentence below says only what is true of
+ * both.
  */
 export function forkedChecklistNotices(
   recorded: Verification | null,
@@ -178,8 +186,8 @@ export function forkedChecklistNotices(
         `${plural(behind.length, "service")} answered a different version of this feature's question set ` +
         `than the one it now asks (${current}): ${byVersion.join("; ")}. ` +
         "The feature changed after they recorded, so their answers are not about the questions being asked now. " +
-        "Re-record them from their own repositories (`loam verify <FEAT> --service <id> --record`), " +
-        "or accept the split knowingly — nothing gates on it.",
+        "Re-record them from their own repositories (`loam verify <FEAT> --service <id> --record`) — " +
+        "nothing gates on it, but until they do, the record does not answer what the feature asks.",
     },
   ];
 }

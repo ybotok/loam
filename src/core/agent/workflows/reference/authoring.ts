@@ -179,7 +179,9 @@ the forgery — editing a spec after it was vouched used to leave \`status: veri
 standing over words nobody read. \`loam validate\` recomputes it wherever it can
 read the doc (no service repo needed, so it fires from the docs repo too) and
 reports \`content.stale\` (warn): only a person can say whether verified still
-holds of the new words.
+holds of the new words. The fleet readouts say the same: \`loam list\` shows
+\`vouched (stale)\` and owes the row a re-vouch, and \`loam status\` emits
+\`next.revouch\` — a step for a person, never for you.
 
 \`vouch_scope\` appears only when the person vouched after reading a SAMPLE of the
 document — \`loam vouch --sample <n>\`, whose whole purpose is that a partial read

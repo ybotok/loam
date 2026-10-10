@@ -108,7 +108,7 @@ export type ErrorCode =
   | "repository-unavailable"
   /** `loam verify --record` without `--service` over a federated (schema 2) record: it would erase other repositories' attestations. */
   | "record-federated"
-  /** A `verification.yaml` that exists but cannot be read as a record — never overwritten, never reported as absent. */
+  /** A file of the verification record (`verification.yaml` or a `verification/<svc>.yaml`) that exists but cannot be read — never overwritten, never reported as absent. */
   | "record-unreadable"
   /** `loam verify --record` found the record changed between its locked read and the swap — an editor or a lock-ignoring writer landed first. Nothing was written; re-running merges over the record as it now stands. */
   | "record-raced"
@@ -146,7 +146,7 @@ export type ErrorCode =
   | "seed-duplicate-service"
   /** A service's `subsystem:` in fleet.yaml names nothing `subsystems:` declares; the message carries a did-you-mean hint over the names the file really declares. Fix the spelling (or add the subsystem) and re-run. */
   | "seed-unknown-subsystem"
-  /** architecture/landscape.likec4 carries hand edits (the line-1 stamp's digest no longer matches) or was authored some other way (no stamp, and not the scaffold's untouched stub). Seed never overwrites human work and nothing was written; re-running cannot succeed until the file is deleted or the edits are folded into fleet.yaml. */
+  /** architecture/landscape.likec4 carries hand edits (the line-1 stamp's digest no longer matches) or was authored some other way (no stamp, and not the scaffold's untouched stub). Seed never overwrites human work and nothing was written; re-running cannot succeed until the file is deleted, which loses nothing only while every edit is something fleet.yaml can say. Once an edge carries an op (which fleet.yaml cannot), the map grows through `loam adopt` and feature C4 deltas instead, never through seed again. */
   | "seed-landscape-edited"
   | "internal";
 

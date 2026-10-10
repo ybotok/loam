@@ -40,6 +40,21 @@ function foldName(name: string, kind: ElementKind): string {
   return `${kind}_${name.replace(/[.-]/g, "_")}`;
 }
 
+/**
+ * The element id loam SUGGESTS for a service no map draws yet — this seed's
+ * own convention, exported so it is the only one. The adopt brief and the
+ * `loam new` delta used to camel-case the directory name instead, so a seeded
+ * fleet received three spellings of one box (`svc_payment_service` on the
+ * map, `paymentService` in every brief and scaffold), and a delta that reused
+ * the scaffold's guess never lined up with the map it was told to match. The
+ * id stays cosmetic — `metadata { service '<id>' }` is the join — but a
+ * suggestion gets pasted, so it has to be one spelling, and the keyword-proof
+ * one above is the one already on disk in every seeded repo.
+ */
+export function serviceElementId(service: string): string {
+  return foldName(service, "svc");
+}
+
 /** Element ids for every declared name (services ∪ externals), collision-suffixed deterministically. */
 function elementIds(seed: FleetSeed): Map<string, string> {
   const ids = new Map<string, string>();
@@ -76,7 +91,7 @@ export function renderLandscape(seed: FleetSeed): string {
     "// As contracts arrive, give each call the operationId it uses, so",
     "// requirements, C4 and OpenAPI can be cross-checked:",
     "//",
-    "//   checkout -> paymentService 'Authorizes' {",
+    "//   svc_checkout -> svc_payment_service 'Calls authorizePayment' {",
     "//     metadata { op 'authorizePayment' }",
     "//   }",
     "",

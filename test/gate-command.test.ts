@@ -10,18 +10,25 @@
  * never lose: it writes NOTHING (treeHashes identical around every run), and
  * "could not look" never reads as "nothing is wrong" (absent landscape warns,
  * an unreadable sibling artifact is an error, both distinguishable in the
- * exit code).
+ * exit code). The last block pins `--since <ref>`, the gate's memory of what
+ * shipped after the docs commit a deploy last recorded.
  */
 import { describe, expect, it, afterEach } from "vitest";
-import { mkdir, writeFile, rm } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { cp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseRequirements } from "../src/core/document/parse.js";
 import { scenarioDigest } from "../src/core/gherkin/stamp.js";
 import {
+  citeable,
   coherentFixture,
   makeProject,
+  makeTmpDir,
+  pinOpenapi,
   runLoam,
   treeHashes,
+  writeFiles,
   FEATURE_SPEC,
   type Project,
 } from "./helpers/harness.js";
@@ -37,6 +44,9 @@ async function project(
 ): Promise<Project> {
   const p = await makeProject(files, opts);
   cleanups.push(() => p.destroy());
+  // The all-at-once form resolves every agent citation in the repository it
+  // records from, so the evidence this file's answer sets cite is made real.
+  await citeable(p.workDir, "src/split/Service.ts:12");
   return p;
 }
 
@@ -158,7 +168,8 @@ async function recordVerified(p: Project, digests: string[]): Promise<void> {
         tags: [{ name: "@FEAT-1", line: 2 }, { name: `@loam-digest-${digest}` }],
         // A run with no step results is not a green run — the reader rightly
         // refuses to confirm from it, so the report carries passed steps.
-        steps: [{ keyword: "Then ", result: { status: "passed", duration: 1 } }],
+        // One per Given/When/Then: a cucumber run is held to the stamped scenario's step count.
+        steps: ["Given ", "When ", "Then "].map((keyword) => ({ keyword, result: { status: "passed", duration: 1 } })),
       })),
     },
   ];
@@ -834,3 +845,234 @@ describe("the human view", () => {
     expect(res.stderr).toContain("No service 'nobody-here'");
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* --since <ref>: the features shipped after the last deploy          */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Without the flag the verification check reads in-flight features only, so
+ * a feature left the gate the moment it was archived: on the example fleet,
+ * `gate --service order-service --strict` went from exit 1 (FEAT-112 has no
+ * verification record) to exit 0 after `loam archive FEAT-112`, which reads
+ * no record by design. Archiving was the cheapest way past --strict — on a
+ * draft service, and on a VOUCHED one too when the feature changed only a
+ * contract, because `content_digest` covers the spec bodies and not
+ * openapi.yaml, so freshness cannot catch that ship either.
+ *
+ * Pinned here: the flag reads the docs repo's git the way `loam diff --base`
+ * does — with the git root one level ABOVE the docs repo, so the monorepo
+ * prefix is exercised and a broken strip would drag every archived feature
+ * in — it adds exactly the features archived after the ref that touch the
+ * service (FEAT-088 touches order-service too and was archived BEFORE the ref,
+ * so it must stay out), each as the same row plus `archived: true` under the
+ * same warn-only code, and the answer without the flag is unchanged.
+ */
+
+const SHIPPED_EXAMPLE = fileURLToPath(new URL("../examples/docs", import.meta.url));
+
+function git(cwd: string, ...args: string[]): void {
+  const res = spawnSync("git", args, { cwd, encoding: "utf8", timeout: 30_000 });
+  if (res.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${res.stderr}`);
+}
+
+/** Stage and commit everything under `dir`, initialising the repository first when asked. */
+function commitAll(dir: string, message: string, init = false): void {
+  if (init) git(dir, "init", "-q", "-b", "main");
+  git(dir, "add", "-A");
+  git(dir, "-c", "user.email=since@test.invalid", "-c", "user.name=Since Test", "commit", "-q", "-m", message);
+}
+
+/** A byte copy of the shipped example docs repo at `<root>/fleet`, committed with the git root at `<root>`. */
+async function exampleFleet(): Promise<{ root: string; fleet: string }> {
+  const root = await makeTmpDir("loam-gate-since-");
+  cleanups.push(() => rm(root, { recursive: true, force: true }));
+  const fleet = join(root, "fleet");
+  await cp(SHIPPED_EXAMPLE, fleet, { recursive: true });
+  commitAll(root, "base", true);
+  return { root, fleet };
+}
+
+/** `gate` from any directory — the example fleet carries its own loam.json, the vouch repo another. */
+async function gateIn(cwd: string, ...args: string[]): Promise<GateRun> {
+  const res = await runLoam(cwd, "gate", "--json", ...args);
+  return { code: res.code, out: res.out, stdout: res.stdout, payload: JSON.parse(res.stdout) };
+}
+
+describe("gate --since: a feature archived after the ref is still graded", () => {
+  it("archiving FEAT-112 no longer buys a --strict pass — without --since the answer is today's", async () => {
+    const { fleet } = await exampleFleet();
+    const strict = ["--service", "order-service", "--strict"];
+
+    // In flight: the plain gate already sees it.
+    const before = await gateIn(fleet, ...strict);
+    expect(before.code, before.out).toBe(1);
+    expect(before.payload.since).toBeNull();
+    expect(before.payload.features.map((f: { id: string }) => f.id)).toEqual(["FEAT-112"]);
+    expect(before.payload.features[0]).not.toHaveProperty("archived");
+
+    const archived = await runLoam(fleet, "archive", "FEAT-112");
+    expect(archived.code, archived.out).toBe(0);
+
+    // Without --since: in-flight features only, exactly as before the flag.
+    const plain = await gateIn(fleet, ...strict);
+    expect(plain.payload.since).toBeNull();
+    expect(plain.payload.features).toEqual([]);
+    expect(findingsOf(plain.payload, "verification")).toEqual([]);
+
+    // With the ref the last deploy recorded, the shipped feature is back.
+    const since = await gateIn(fleet, ...strict, "--since", "main");
+    expect(since.code, since.out).toBe(1);
+    expect(since.payload.verdict).toBe("pass");
+    expect(since.payload.since).toEqual({ ref: "main", commit: expect.stringMatching(/^[0-9a-f]{40}$/) });
+    // FEAT-088 touches order-service as well, but its archive directory was
+    // there at the ref: it shipped in an earlier deploy and stays out.
+    expect(since.payload.features).toEqual([
+      expect.objectContaining({ id: "FEAT-112", archived: true, state: "absent", verdict: "unverified" }),
+    ]);
+    const findings = findingsOf(since.payload, "verification");
+    expect(findings.map((f) => [f.severity, f.code, f.subject])).toEqual([
+      ["warn", "gate.feature-unverified", "FEAT-112"],
+    ]);
+    expect(findings[0]!.message).toContain("archived after main");
+    // The in-flight remedy would send the pipeline to a `verify --record` an
+    // archived feature refuses; the frozen wording names the reopen instead.
+    expect(findings[0]!.message).toContain("`loam unarchive FEAT-112`");
+
+    // Advisory without --strict, like every other warning.
+    expect((await gateIn(fleet, "--service", "order-service", "--since", "main")).code).toBe(0);
+
+    // The human view names the bound and marks the shipped row.
+    const text = await runLoam(fleet, "gate", "--service", "order-service", "--since", "main");
+    expect(text.stdout).toContain("verification — in flight, and archived since main");
+    expect(text.stdout).toContain("FEAT-112 · unverified (absent; 0/0 confirmed) · archived");
+  });
+
+  it("a contract-only feature shipped on a VOUCHED service is graded too — freshness cannot see it", async () => {
+    const { root, fleet } = await exampleFleet();
+    expect((await runLoam(fleet, "archive", "FEAT-112")).code).toBe(0);
+    // A bound service repo, so the vouch stamps from the code it names.
+    const repo = join(root, "order-repo");
+    await writeFiles(repo, {
+      "loam.json": JSON.stringify({ docsDir: "../fleet", service: "order-service" }),
+      "src/main/kotlin/Order.kt": "class Order\n",
+    });
+    const vouched = await runLoam(repo, "vouch", "--yes");
+    expect(vouched.code, vouched.out).toBe(0);
+
+    // FEAT-200 changes order-service's contract and no requirement.
+    const living = await readFile(join(fleet, "services/order-service/openapi.yaml"), "utf8");
+    await writeFiles(fleet, {
+      "features/FEAT-200-order-gone-status/intent.md": FEAT_200_INTENT,
+      "features/FEAT-200-order-gone-status/specs/order-service/spec.md":
+        "# order-service — requirement delta for FEAT-200\n",
+      "features/FEAT-200-order-gone-status/specs/order-service/openapi.yaml": pinOpenapi(FEAT_200_OPENAPI, living),
+    });
+    commitAll(root, "deployed: FEAT-200 in flight");
+
+    const inFlight = await gateIn(repo, "--strict");
+    expect(inFlight.code, inFlight.out).toBe(1);
+    expect(findingsOf(inFlight.payload, "verification").map((f) => f.subject)).toEqual(["FEAT-200"]);
+
+    const shipped = await runLoam(fleet, "archive", "FEAT-200");
+    expect(shipped.code, shipped.out).toBe(0);
+
+    // Without --since the verification check has nothing left to read.
+    expect(findingsOf((await gateIn(repo, "--strict")).payload, "verification")).toEqual([]);
+
+    // FEAT-112 was archived before this ref, FEAT-200 after it.
+    const since = await gateIn(repo, "--strict", "--since", "main");
+    expect(since.code, since.out).toBe(1);
+    expect(since.payload.features).toEqual([
+      expect.objectContaining({ id: "FEAT-200", archived: true, verdict: "unverified" }),
+    ]);
+    expect(findingsOf(since.payload, "verification").map((f) => [f.code, f.subject])).toEqual([
+      ["gate.feature-unverified", "FEAT-200"],
+    ]);
+  });
+
+  it("an archive directory absent at the ref is git answering — every archived feature shipped since", async () => {
+    const p = await project(coherentFixture());
+    commitAll(p.docsDir, "base", true);
+    expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+    const since = await gate(p, "--service", "payment-split-service", "--since", "main");
+    expect(since.payload.features, since.out).toEqual([expect.objectContaining({ id: "FEAT-1", archived: true })]);
+  });
+});
+
+describe("gate --since: the refusals are loam diff --base's", () => {
+  it("a docs repo git cannot answer from refuses repository-unavailable — never 'nothing shipped'", async () => {
+    const p = await project(coherentFixture());
+    const res = await gate(p, "--service", "payment-service", "--since", "main");
+    expect(res.code).toBe(1);
+    expect(res.payload.ok).toBe(false);
+    expect(res.payload.error.code).toBe("repository-unavailable");
+    expect(res.payload.error.message).toContain("loam gate --since");
+  });
+
+  it("a ref that names no commit refuses unknown-target, naming the flag and the ref", async () => {
+    const p = await project(coherentFixture());
+    commitAll(p.docsDir, "base", true);
+    for (const ref of ["no-such-deploy", "--strict"]) {
+      const res = await gate(p, "--service", "payment-service", `--since=${ref}`);
+      expect(res.code, ref).toBe(1);
+      expect(res.payload.error.code, ref).toBe("unknown-target");
+      expect(res.payload.error.message, ref).toContain(`--since ${ref}`);
+    }
+  });
+});
+
+const FEAT_200_INTENT = `---
+feature: FEAT-200
+title: Order gone status
+status: in_progress
+owner: orders-team
+---
+
+# Order gone status
+
+## Why
+
+Purged orders should answer 410 instead of 404 so clients stop retrying.
+
+## Scope
+
+order-service's read contract only.
+`;
+
+const FEAT_200_OPENAPI = `openapi: 3.1.0
+info:
+  title: order-service
+  version: "1.0"
+paths:
+  /orders/{id}:
+    get:
+      operationId: getOrder
+      summary: Read an order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The order as it currently stands.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        "404":
+          description: No order with that id was ever placed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        "410":
+          description: The order was purged.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+`;

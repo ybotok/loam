@@ -115,7 +115,7 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/vocabulary/` | `issue` `report` `health` `steps` `maturity` | kernel |
 | `core/agent/` | the generated AGENTS.md, the slash commands, the tool registry | envelope, kernel |
 | `core/document/` | `frontmatter` `spec` `parse` `apply` `scenarios` | kernel, vocabulary |
-| `core/staging/` | the write path; `staging/recovery/` is the crash half | envelope, kernel |
+| `core/staging/` | the write path; `staging/recovery/` is the crash half, `staging/snapshot/` the undo snapshot (taking one in `snapshot.ts`, its layout in `manifest.ts`, which a read-only command may import) | envelope, kernel |
 | `core/repo/` | `entries` `paths` `state` `repo` `service-target` | c4, document, kernel, provenance |
 | `core/c4/` | `likec4` `arch` `source-mask` `source-scan`, with `parsed/` `project/` `resolve/` beneath | kernel, repo |
 | `core/c4/splice/` | `contract` `landscape-merge` `authored-source` `placement` | c4 |
@@ -142,7 +142,7 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/explore/` | the read-only survey `loam explore` prints before a feature exists | c4, capabilities, fleet-context, repo, usecases, vocabulary |
 | `core/mcp/` | the MCP facade's pure half: stdio framing, JSON-RPC routing and resources, the read-only plus opt-in authoring tool tables, output schema and argv boundary | agent, envelope, explain, kernel |
 | `core/pack/` | the context pack — one service's whole docs slice as one deterministic briefing | c4, capabilities, document, envelope, fleet-context, kernel, permissions, projection, provenance, repo, usecases, vocabulary |
-| `core/verify/` | the done-check: questions, answers, the record | asyncapi, c4, document, envelope, fleet-context, gherkin, kernel, openapi, repo, staging, vocabulary |
+| `core/verify/` | the done-check: questions, answers, the record | asyncapi, c4, conflict-markers, document, envelope, fleet-context, gherkin, kernel, openapi, repo, staging, vocabulary |
 | `core/status/` | aggregate answers for a feature (`feature/`) or a fleet (`fleet/`) | coherence, dependencies, document, envelope, fleet-context, kernel, provenance, repo, scaffold, staging, usecases, verify, vocabulary |
 | `core/gate/` | the deploy-time query — `loam gate`'s partner scan and its four checks over recorded evidence | c4, kernel, provenance, repo, staging, status, vocabulary |
 
@@ -371,7 +371,7 @@ the workspace layout differs, and that part is already isolated.
     nothing else — no `package.json`, no workspace, no separate publish. That layout tracks how many
     artifacts you publish; you publish one `bin`, and `scripts/release-check.mjs` hard-asserts it.
     It is also the one option here that is not cheaply reversible.
-23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 65 of the 158
+23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 66 of the 160
     modules in `commands/` — the entry module of every command among them; `core/envelope/config.ts`
     and `core/repo/repo.ts` by 25 and 29 of them. Slices would duplicate the hubs or produce a
     `shared/` folder — which is what `src/core/` already is.

@@ -17,11 +17,10 @@
  * module can never disagree with the rest of loam about whether a `## ` line
  * inside a code fence is structure.
  */
-import { rawBody, type Frontmatter } from "../../../core/document/frontmatter.js";
+import { contentDigest, rawBody, type Frontmatter } from "../../../core/document/frontmatter.js";
 import { sectionHeadings } from "../../../core/document/parse.js";
 import { splitSections } from "../../../core/provenance/sample/sections.js";
 import { planSample, readVouchScope, sampledSections, scopeText, type VouchScope } from "../../../core/provenance/sample/scope.js";
-import { contentDigest } from "../../../core/provenance/stamp.js";
 
 /** How the delta names the text above the first H2 — a section with no heading to call it by. */
 const PREAMBLE_LABEL = "(before the first heading)";
