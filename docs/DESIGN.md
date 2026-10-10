@@ -115,7 +115,7 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/vocabulary/` | `issue` `report` `health` `steps` `maturity` | kernel |
 | `core/agent/` | the generated AGENTS.md, the slash commands, the tool registry | envelope, kernel |
 | `core/document/` | `frontmatter` `spec` `parse` `apply` `scenarios` | kernel, vocabulary |
-| `core/staging/` | the write path; `staging/recovery/` is the crash half | envelope, kernel |
+| `core/staging/` | the write path; `staging/recovery/` is the crash half, `staging/snapshot/` the undo snapshot (taking one in `snapshot.ts`, its layout in `manifest.ts`, which a read-only command may import) | envelope, kernel |
 | `core/repo/` | `entries` `paths` `state` `repo` `service-target` | c4, document, kernel, provenance |
 | `core/c4/` | `likec4` `arch` `source-mask` `source-scan`, with `parsed/` `project/` `resolve/` beneath | kernel, repo |
 | `core/c4/splice/` | `contract` `landscape-merge` `authored-source` `placement` | c4 |

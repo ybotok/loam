@@ -21,13 +21,8 @@ import {
   swapStaged,
 } from "../../core/staging/commit.js";
 import { clearCommitIntent, writeCommitIntent } from "../../core/staging/recovery/intent.js";
-import {
-  SNAPSHOT_DIR,
-  SnapshotClobberError,
-  snapshotDir,
-  writeSnapshot,
-  type ServiceKey,
-} from "../../core/staging/snapshot.js";
+import { SNAPSHOT_DIR, snapshotDir } from "../../core/staging/snapshot/manifest.js";
+import { SnapshotClobberError, writeSnapshot, type ServiceKey } from "../../core/staging/snapshot/snapshot.js";
 import { enumeratedServices } from "../../core/repo/service-target.js";
 import { listFleetTree } from "../../core/repo/repo.js";
 import { serviceViewsPath, subsystemViewsPath } from "../../core/repo/paths.js";

@@ -477,7 +477,7 @@ describe("wrapping a tool run", () => {
  * the seam and not just a list of files.
  */
 const COMMIT_EXECUTORS = [
-  "src/core/staging/snapshot.ts",
+  "src/core/staging/snapshot/snapshot.ts",
   "src/core/staging/txn/transaction.ts",
   "src/core/staging/txn/forward.ts",
   "src/core/staging/recovery/recover.ts",
