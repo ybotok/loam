@@ -26,7 +26,7 @@ import type { FleetContext } from "../../fleet-context.js";
 import { declaredEvents, type EventDeltaScope } from "./declared.js";
 import { eventLookups } from "./lookups.js";
 import type { RetiredLookup } from "../retired/archived.js";
-import { revivedEvents } from "../retired/revived.js";
+import { revivedEvents } from "../retired/revival/revived.js";
 
 /** What featureCoherence hands the event axis — the delta facts it already computed. */
 export interface EventCoherenceRequest {
@@ -91,7 +91,7 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
   // contract no longer has because an ARCHIVED feature retired it, or a
   // message name declared again at a key an archived feature took it out of
   // — the contract axis's `openapi.op-revived`, on the slot and the message
-  // name (../retired/revived.ts). Asked of the index only when the merged
+  // name (../retired/revival/revived.ts). Asked of the index only when the merged
   // contract declares something the living one does not.
   for (const [svc, arrived] of declared.revivalCandidates) {
     if (arrived.slots.length === 0 && arrived.messages.length === 0) continue;

@@ -12,7 +12,7 @@ import { serviceOperationIds } from "../openapi/doc.js";
 import type { FleetContext } from "../fleet-context.js";
 import { declaredByService, type DeltaScope } from "./declared.js";
 import { retiredLookup } from "./retired/archived.js";
-import { revivedOperations } from "./retired/revived.js";
+import { revivedOperations } from "./retired/revival/revived.js";
 import { coherenceLookups } from "./lookups.js";
 import { eventCoherence } from "./events/events.js";
 import { authoringIssues } from "./authoring/scaffold.js";

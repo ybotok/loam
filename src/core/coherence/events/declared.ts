@@ -34,7 +34,7 @@ import type { FleetContext } from "../../fleet-context.js";
 import type { DocsDir, FeatureDir } from "../../kernel/ids/dirs.js";
 import { gradeBaselines, gradeMarkers } from "./grades.js";
 import { messageRetirements } from "../retired/retirement.js";
-import { eventArrivals, type EventArrivals } from "../retired/revived.js";
+import { eventArrivals, type EventArrivals } from "../retired/revival/arrivals.js";
 import { readEventPair } from "../retired/event-pair.js";
 
 /** The three facts this walk needs about the feature it is reading. */

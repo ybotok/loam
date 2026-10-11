@@ -24,7 +24,7 @@ import {
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import { issueFinding, type Issue } from "../../core/vocabulary/issue.js";
 import { retiredLookup } from "../../core/coherence/retired/archived.js";
-import { serviceRevivals } from "../../core/coherence/retired/revived.js";
+import { serviceRevivals } from "../../core/coherence/retired/revival/revived.js";
 import { rebaseLivingLocked } from "./living.js";
 
 /**

@@ -33,7 +33,7 @@ import type { Requirement } from "../document/spec.js";
 import { openapiBaselineIssues } from "../openapi/baseline/gate.js";
 import { readOpenapi } from "../openapi/doc.js";
 import { operationRetirements } from "./retired/retirement.js";
-import { operationArrivals, type Arrival } from "./retired/revived.js";
+import { operationArrivals, type Arrival } from "./retired/revival/arrivals.js";
 import type { FleetContext } from "../fleet-context.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
@@ -177,7 +177,7 @@ export async function declaredByService(
       // a delta may restate living operations it does not change (a quote), and
       // a quote adds nothing. "Not in living" is not quite "new", though — an
       // operation an archived feature RETIRED is absent too, and adding it back
-      // is `openapi.op-revived`'s question (./retired/revived.ts), asked of the
+      // is `openapi.op-revived`'s question (./retired/revival/revived.ts), asked of the
       // `revivalCandidates` collected below.
       const featDoc = await readOpenapi(paths.openapi, context);
       // A feature contract that EXISTS but does not read is a broken document,

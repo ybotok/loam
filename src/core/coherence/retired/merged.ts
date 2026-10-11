@@ -7,7 +7,7 @@
  * this" BEFORE archive, or a leftover `Publishes:` line passes the gate and
  * breaks the post-archive fleet), the consumer gate's wire half (a channel or
  * operation removal that stops the service SENDING a message the fleet still
- * consumes), and the revival check (./revived.ts) — which asks it on both
+ * consumes), and the revival check (./revival/arrivals.ts) — which asks it on both
  * axes: where does each operationId and message name stand once the delta
  * merges, against where it stands now.
  *

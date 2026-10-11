@@ -116,7 +116,7 @@ export interface Vacated {
  * Every vacation of one entry, in feature id order and distinct per feature,
  * address and kind — never empty, because an entry is recorded only together
  * with its first vacation. The tuple says so to the compiler, so the one
- * sentence that names the features (./revived.ts) cannot be handed nobody.
+ * sentence that names the features (./revival/revived.ts) cannot be handed nobody.
  */
 export type Vacations = readonly [Vacated, ...Vacated[]];
 
