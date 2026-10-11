@@ -1588,7 +1588,10 @@ the source for tests.
   there; for a message declared inline, restate or retire its channel) — and where the delta
   already spells that address, so no marker can stand there, archive with `--approve`. `loam rebase`
   never pins such an entry as new: it prints the same finding (`revived[]` in `--json`) and leaves
-  the decision to the author. A channel-slot removal retires the messages its living channel
+  the decision to the author. It asks the question of the delta as it will WRITE it, pins
+  included: a quote pinned to its own content is skipped by the merge, and the same quote
+  repinned to whatever now lives at its address is an edit the merge writes — so a revival
+  rebase's own repin creates is in that list, `--dry-run` included, and the next validate agrees. A channel-slot removal retires the messages its living channel
   declared inline, which the delta never spells, so those names are read from the archived
   feature's undo snapshot (`.loam-before/`, the pre-image of the contract the merge ran against) —
   only while that pre-image still hashes to what the manifest recorded. A marker is a request, not a

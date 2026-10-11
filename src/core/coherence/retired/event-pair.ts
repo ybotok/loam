@@ -76,6 +76,17 @@ export interface PairSides<Doc = AsyncapiDoc> {
   livingDoc: Doc;
   /** The service the pair belongs to — what a refusal of the simulated merge would name. */
   service: string;
+  /**
+   * The delta's text when the caller holds a version of it that is not on
+   * disk yet — `loam rebase`'s, with the pins it is about to write; read from
+   * `featPath` when absent. The merge's quote/edit verdict turns on the pins,
+   * so the revival question asked of the delta as it stood before a repin can
+   * answer for a document rebase is about to replace: a quote pinned to its
+   * own content is skipped, and repinned over another operation it is an edit
+   * that lands. A pin changes no identity or address, so `featDoc`, read from
+   * disk, still names what the text declares.
+   */
+  featText?: string;
 }
 
 /**
@@ -86,7 +97,7 @@ export interface PairSides<Doc = AsyncapiDoc> {
  */
 export async function readEventPair(sides: PairSides, context?: FleetContext): Promise<EventPairRead> {
   const { featPath, featDoc, livingPath, livingDoc, service } = sides;
-  const featText = await readOr(featPath, context);
+  const featText = sides.featText ?? (await readOr(featPath, context));
   const featPlain: unknown = featText === undefined ? {} : parse(featText);
   const livingExists = existsSync(livingPath);
   const livingText = !livingExists || livingDoc.unreadable ? undefined : await readOr(livingPath, context);

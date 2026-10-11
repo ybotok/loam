@@ -213,12 +213,17 @@ async function rebaseLocked(
     // An operation or event slot the living docs do not hold reads `unresolved`
     // above — "this feature is adding it". For one an ARCHIVED feature retired,
     // that is the false sentence that put retired operations back: unpinned, the
-    // merge upserts it as an addition. Rebase pins nothing either way, so what it
+    // merge upserts it as an addition. Rebase pins nothing for it, so what it
     // owes is the same finding the gate raises, said here before the archive
-    // refuses it, and the decision left to the human.
+    // refuses it, and the decision left to the human. Asked of the documents
+    // as this run leaves them (`planned`): a repin over whatever lives at an
+    // address now turns a quote the merge skipped into an edit it writes, and
+    // a revival that edit makes is this run's to report — the next validate
+    // reports it, and a dry run must say what the real one would leave.
     const retired = retiredLookup(docsDir, repo.fleet);
+    const planned = new Map(writes.flatMap((w) => (typeof w.content === "string" ? [[w.path, w.content] as const] : [])));
     for (const service of services) {
-      revived.push(...(await serviceRevivals({ docsDir, featureDir: feature.dir, service, retired, context: repo.fleet })));
+      revived.push(...(await serviceRevivals({ docsDir, featureDir: feature.dir, service, retired, context: repo.fleet, planned })));
     }
   } catch (err) {
     if (!(err instanceof NotUtf8DocumentError)) throw err;
@@ -345,13 +350,17 @@ async function rebaseLocked(
 /**
  * The revival findings, in the gate's own words. Printed rather than acted on:
  * deleting a quote and re-adding a retired operation on purpose are both
- * legitimate, and which one this is is the author's call.
+ * legitimate, and which one this is is the author's call. The sentence once
+ * said "nothing was pinned" for them — true of a retired entry, which has no
+ * living version, and false of a quote this run repinned over whatever lives
+ * at its address now, the very pin that made it a revival.
  */
 function sayRevived(revived: readonly Issue[]): void {
   if (revived.length === 0) return;
+  const one = revived.length === 1;
   console.log(
-    `\n⚠ ${plural(revived.length, "item")} this feature spells ${revived.length === 1 ? "was" : "were"} RETIRED by an archived feature, or moved to another address by one — ` +
-      `nothing was pinned for ${revived.length === 1 ? "it" : "them"}, and \`loam archive\` refuses ${revived.length === 1 ? "it" : "them"} until you decide:`,
+    `\n⚠ ${plural(revived.length, "item")} this feature spells ${one ? "was" : "were"} RETIRED by an archived feature, or moved to another address by one — ` +
+      `${one ? "it is" : "they are"} not new, pinned or not, and \`loam archive\` refuses ${one ? "it" : "them"} until you decide:`,
   );
   for (const issue of revived) console.log(`  ⚠ ${issue.message}`);
 }

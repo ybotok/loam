@@ -67,7 +67,12 @@ Two codes, both added to the `IssueCode` union, and one additive `--json` key we
 - **`loam rebase` no longer calls a retired operation one "this feature is adding".** It pins
   nothing for it either way, and now prints the same finding after its pin lines; the additive
   `--json` key `revived[]` carries the findings (`severity`, `code`, `gates`, `subject`,
-  `message`). The operation's `pins[]` row still reads `unresolved`.
+  `message`). The operation's `pins[]` row still reads `unresolved`. The check runs over the
+  delta as rebase will write it, pins included, under `--dry-run` too: a quote pinned to its
+  own content is skipped by the merge, and repinned over another operation that now lives at an
+  address an archived feature moved it away from it becomes an edit that would put it back
+  there — that finding is in `revived[]` as well, and its `pins[]` row reads `repinned`. The
+  text output's revival banner no longer says "nothing was pinned" for such items.
 - **`openapi.baseline-invalid` and `asyncapi.baseline-invalid` reworded** for a pin whose living
   operation or slot is gone: they used to say "drop the marker", which turned the quote into the
   revival above. They now say to re-read the living contract and delete the quote unless the
