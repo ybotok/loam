@@ -25,7 +25,7 @@ import { readOr } from "../../openapi/contract-text.js";
 import { asyncapiSlots, slotsByKey, type AsyncapiSlot } from "../../asyncapi/digest.js";
 import type { AsyncapiDoc } from "../../asyncapi/model.js";
 import type { FleetContext } from "../../fleet-context.js";
-import { mergedAsyncapiDoc } from "./merged.js";
+import { mergedAsyncapiDoc, type MergedEvents } from "./merged.js";
 
 /** The four facts every slot judgement reads: each side as the reader parsed it, and as its slots. */
 export interface EventPair {
@@ -59,8 +59,9 @@ export interface EventPairRead extends EventPair {
    * on first ask and kept — the create branch's document where no living
    * contract exists; undefined where the living side does not answer, or the
    * merge refuses the pair. The walk asks it only with a living text in hand.
+   * Its tree rides along for the one reader that follows a `$ref` back.
    */
-  merged(): AsyncapiDoc | undefined;
+  merged(): MergedEvents | undefined;
 }
 
 /**
@@ -105,13 +106,13 @@ export async function readEventPair(sides: PairSides, context?: FleetContext): P
   const livingAnswers = livingText !== undefined || !livingExists;
   // Lazy: most pairs never need it on the rebase path, and the walk asks for
   // it once. Boxed, so an `undefined` answer is remembered too.
-  let simulated: { doc: AsyncapiDoc | undefined } | undefined;
-  const merged = (): AsyncapiDoc | undefined =>
+  let simulated: { merged: MergedEvents | undefined } | undefined;
+  const merged = (): MergedEvents | undefined =>
     (simulated ??= {
-      doc: !livingAnswers || featText === undefined
+      merged: !livingAnswers || featText === undefined
         ? undefined
-        : mergedAsyncapiDoc({ livingText, livingDoc, featureText: featText, service }),
-    }).doc;
+        : mergedAsyncapiDoc({ livingText, livingDoc, livingRoot: livingPlain, featureText: featText, service }),
+    }).merged;
   return {
     featDoc,
     featSlots: asyncapiSlots(featPlain),

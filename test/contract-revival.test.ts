@@ -1401,6 +1401,11 @@ components:
     const [invalid] = ofCode(pinned, "asyncapi.baseline-invalid");
     expect(invalid!.message).toContain("message 'payment.Legacy' is declared at components.messages.LegacyV2 now: a parallel feature moved it");
     expect(invalid!.message).not.toContain("past `asyncapi.slot-revived`");
+    // The channel FEAT-44 pointed at the new key is named: retired alone, the
+    // key would leave legacyEvents pointing at nothing.
+    expect(invalid!.message).toContain(
+      "To move it back on purpose, drop the pin and retire it at components.messages.LegacyV2, and restate channel legacyEvents with every $ref to components.messages.LegacyV2 pointed at components.messages.Legacy in this delta.",
+    );
     expect(ofCode(pinned, "asyncapi.slot-revived")).toHaveLength(1);
   });
 
@@ -1669,6 +1674,50 @@ components:
     expect(warned!.message).toContain(
       "archived FEAT-44 moved it to components.messages.LegacyV2; it is declared at components.messages.LegacyV3 now, and archiving this delta would declare it at components.messages.Legacy beside components.messages.LegacyV3",
     );
+  });
+
+  it("a message re-keyed in components: the move-back remedy names the channel still pointing at the new key, and followed verbatim the delta reaches coherence.ok", async () => {
+    // The remedy said only "retire it at components.messages.OrderPlacedV2".
+    // Followed exactly, the living orderEvents channel still $ref'd that key,
+    // so sendOrderPlaced stopped sending a message notification-service
+    // consumes — asyncapi.remove-message-consumed, an error that gates.
+    const f = await exampleFleet();
+    const events = (feature: string, dir: string, asyncapi: string): void => {
+      f.write(`features/${dir}/intent.md`, `---\nfeature: ${feature}\ntitle: ${dir}\nstatus: in_progress\nowner: orders-team\nservices: [order-service]\n---\n\n# ${feature}\n\n## Why\nThe order events want a new key.\n`);
+      f.write(`features/${dir}/specs/order-service/asyncapi.yaml`, asyncapi);
+    };
+    const placed = (key: string): string =>
+      `    ${key}:\n      name: order.OrderPlaced\n      payload:\n        type: object\n        properties:\n          orderId:\n            type: string\n`;
+    const channel = (to: string): string =>
+      `channels:\n  orderEvents:\n    address: order.events.v1\n    messages:\n      OrderPlaced:\n        $ref: '#/components/messages/${to}'\n`;
+    const retire = (key: string): string => `    ${key}:\n      name: order.OrderPlaced\n      x-loam-remove: true\n`;
+
+    events("FEAT-500", "FEAT-500-rekey", `asyncapi: 3.0.0\n${channel("OrderPlacedV2")}components:\n  messages:\n${retire("OrderPlaced")}${placed("OrderPlacedV2")}`);
+    // --approve past the channel restated unpinned: setup, not the subject.
+    const rekeyed = await runLoam(f.fleet, "archive", "FEAT-500", "--approve");
+    expect(rekeyed.code, rekeyed.out).toBe(0);
+    const LIVING_EVENTS_API = "services/order-service/asyncapi.yaml";
+    expect(f.read(LIVING_EVENTS_API)).toMatch(/\$ref: ["']#\/components\/messages\/OrderPlacedV2["']/);
+
+    events("FEAT-501", "FEAT-501-quote", `asyncapi: 3.0.0\ncomponents:\n  messages:\n${placed("OrderPlaced")}`);
+    const [warned, ...more] = ofCode(findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-501", "--json")).stdout), "asyncapi.slot-revived");
+    expect(more).toEqual([]);
+    expect(warned!.message).toContain(
+      "to move it back on purpose, retire it at components.messages.OrderPlacedV2, and restate channel orderEvents with every $ref to components.messages.OrderPlacedV2 pointed at components.messages.OrderPlaced in this same delta.",
+    );
+
+    // The remedy, followed verbatim — then the pins rebase owes the restated channel.
+    events("FEAT-501", "FEAT-501-quote", `asyncapi: 3.0.0\n${channel("OrderPlaced")}components:\n  messages:\n${placed("OrderPlaced")}${retire("OrderPlacedV2")}`);
+    expect((await runLoam(f.fleet, "rebase", "FEAT-501")).code).toBe(0);
+    const after = findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-501", "--json")).stdout);
+    expect(after.filter((x) => x.severity === "error" || x.gates === true)).toEqual([]);
+    expect(ofCode(after, "coherence.ok")).toHaveLength(1);
+    const archived = await runLoam(f.fleet, "archive", "FEAT-501");
+    expect(archived.code, archived.out).toBe(0);
+    const living = f.read(LIVING_EVENTS_API);
+    expect(living.match(/name: order\.OrderPlaced/g)).toHaveLength(1);
+    expect(living).toMatch(/\$ref: ["']#\/components\/messages\/OrderPlaced["']/);
+    expect(living).not.toContain("OrderPlacedV2");
   });
 
   describe("a message an archived feature moved INLINE, under its channel", () => {

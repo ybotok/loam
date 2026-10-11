@@ -55,13 +55,18 @@ Two codes, both added to the `IssueCode` union, and one additive `--json` key we
   with nothing naming it. The retired-shape message names such an entry too. A quote of an
   address an archived feature moved the operation away from is the finding even where the living
   contract holds the operation nowhere (taken out of its new address by a hand edit, which leaves
-  no marker): the move is on the record, and the message reads as a retirement brought back, naming the move. On the event
-  axis the vacated addresses are `components.messages` keys (a marker there) and the inline
-  declarations a channel removal took; a delta that restates the channel a name stands inline in
-  with a `$ref`, or retires it, takes the name out of there and is not graded. For an inline
-  declaration the remedy names the channel (restate it with a `$ref`, or retire it), never a
-  marker nested on the inline message, which retires nothing. A channel or operation slot is its
-  key, so a "moved" one is a retirement, as before.
+  no marker): the move is on the record, and the message reads as a retirement brought back,
+  naming the move. On the event axis the vacated addresses are `components.messages` keys (a
+  marker there) and the inline declarations a channel removal took; a delta that restates the
+  channel a name stands inline in with a `$ref`, or retires it, takes the name out of there and
+  is not graded. For an inline declaration the remedy names the channel (restate it with a
+  `$ref`, or retire it), never a marker nested on the inline message, which retires nothing. For
+  a `components.messages` key the remedy also names every channel (or operation) of the merged
+  contract still `$ref`-ing that key, to restate with the `$ref` pointed at the quoted key: told
+  only to retire the key, an author left the channel pointing at nothing, and its send stopped
+  sending the message — `asyncapi.remove-message-consumed`, which gates. `asyncapi.baseline-invalid`'s
+  move-back remedy says the same. A channel or operation slot is its key, so a "moved" one is a
+  retirement, as before.
 - **Exit code: `loam archive` now exits 1 (`not-coherent`) on this shape** without `--approve`;
   with `--approve` it merges as before, and the operation lands in `overridden[]` and the text
   output's "archiving despite" list, naming what came back and whose retirement it reverses.
