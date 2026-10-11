@@ -1563,11 +1563,14 @@ the source for tests.
   is `openapi.op-revived` when the living contract holds the id nowhere and an archived feature
   retired it (anywhere — by identity) or moved it away from that very address, or when the merged
   contract answers the id at two or more addresses and an archived feature retired it at, or moved
-  it away from, that very address: archived, it would answer the id at both. An id the merged
-  contract answers at exactly one address is never a revival — a delta moving it back with its own
-  removal marker where it lives now, or swapping another operation in there (named or not: the
-  merge writes per method and path), leaves it at one address — while a marker standing where the
-  id does not live deletes nothing, and excuses nothing. Reading the merged contract replaced a
+  it away from, that very address: archived, it would answer the id at both. An id that the living
+  contract still holds and the merged contract answers at exactly one address is never a revival —
+  a delta moving it back with its own removal marker where it lives now, or swapping another
+  operation in there (named or not: the merge writes per method and path), leaves it at one
+  address — while a marker standing where the id does not live deletes nothing, and excuses
+  nothing. One address is no exemption for an id the living contract holds nowhere: that is the
+  first case, so a quote of an address a move vacated is the finding even after a hand edit took
+  the id out of where the move put it. Reading the merged contract replaced a
   case-by-case re-derivation of the merge that each review found a new hole in.
   On the event axis the same rule runs on the message name, over the event merge: the addresses a
   feature vacates are `components.messages` keys (a marker there) and the inline declarations a
