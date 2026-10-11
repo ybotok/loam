@@ -1586,7 +1586,14 @@ the source for tests.
   address beside a living one it names the address to drop instead: delete the quote, or, to move
   the id back on purpose, take it out of where it lives now in the same delta (a removal marker
   there; for a message declared inline, restate or retire its channel) — and where the delta
-  already spells that address, so no marker can stand there, archive with `--approve`. `loam rebase`
+  already spells that address, so no marker can stand there, archive with `--approve`. A slot
+  holds one entry, so where the living contract has ANOTHER operation (or message) at the address
+  the delta spells the id at, the merge replaces it there: the message names it ("now holds
+  'requestCancellation', and archiving this delta replaces it there"), and the move-back remedy
+  says to define it at another address (another key, for a message) in the same delta if it is
+  to stay — never an address
+  "the living contract no longer has", a remedy that once led to a clean gate and an archive that
+  deleted the other entry unnamed. `loam rebase`
   never pins such an entry as new: it prints the same finding (`revived[]` in `--json`) and leaves
   the decision to the author. It asks the question of the delta as it will WRITE it, pins
   included: a quote pinned to its own content is skipped by the merge, and the same quote
