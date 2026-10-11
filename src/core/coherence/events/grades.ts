@@ -8,7 +8,7 @@
  */
 import type { Issue } from "../../vocabulary/issue.js";
 import { ASYNCAPI_BASELINES_KEY, slotKey } from "../../asyncapi/digest.js";
-import type { EventPair } from "../retired/event-pair.js";
+import type { EventPair, EventPairRead } from "../retired/event-pair.js";
 import { moveBackRemedy } from "../retired/revival/revived.js";
 import { asyncapiSurfaces } from "../../asyncapi/baseline/surfaces.js";
 import { messageName } from "../../asyncapi/read.js";
@@ -21,7 +21,7 @@ import {
 } from "../../openapi/digest.js";
 
 /** Everything the two baseline graders need about one service's pair of contracts. */
-export interface AsyncapiBaselineInput extends EventPair {
+export interface AsyncapiBaselineInput extends EventPair, Pick<EventPairRead, "merged"> {
   /** The FEATURE document's resolved parse — where the record and the surfaces are read from. */
   featPlain: unknown;
   /** The LIVING document's resolved parse; `{}` where no living contract exists. */
@@ -73,12 +73,16 @@ export function gradeBaselines(input: AsyncapiBaselineInput, issues: Issue[]): v
       // that channel takes the name out of it, and only the pin is left.
       const name = slot.section === "components.messages" ? messageName(slot.node, slot.key) : undefined;
       const movedTo = livingDoc.messages.filter((m) => m.remove !== true && m.name === name).map((m) => m.slot);
+      // The channels still pointing at a key the remedy retires are read off
+      // the contract the merge would leave; where it refuses (and the archive
+      // with it), off the living one, which is what the merge would start from.
+      const remedy = (): string => moveBackRemedy(movedTo, label, input.merged()?.root ?? input.livingPlain);
       issues.push({
         severity: "error",
         code: "asyncapi.baseline-invalid",
         subject: svc,
         message: movedTo.length > 0
-          ? `${svc}: ${label} carries x-loam-based-on, but the living contract has no slot there — message '${name}' is declared at ${movedTo.join(" and ")} now: a parallel feature moved it there (or retired it here, and another re-declared it there). Re-read it there and delete this slot from the delta, making any change at its new key; archived while it is still declared there, it would declare '${name}' at ${label} as well. To move it back on purpose, drop the pin and ${moveBackRemedy(movedTo, label)} in this delta.`
+          ? `${svc}: ${label} carries x-loam-based-on, but the living contract has no slot there — message '${name}' is declared at ${movedTo.join(" and ")} now: a parallel feature moved it there (or retired it here, and another re-declared it there). Re-read it there and delete this slot from the delta, making any change at its new key; archived while it is still declared there, it would declare '${name}' at ${label} as well. To move it back on purpose, drop the pin and ${remedy()} in this delta.`
           : `${svc}: ${label} carries x-loam-based-on, but the living contract has no slot there — the version it was pinned to is gone. If a parallel feature retired it, re-read the living contract and delete this slot from the delta, unless this feature deliberately brings it back (then drop the pin and archive with --approve past \`asyncapi.slot-revived\`). A genuinely new channel, operation or message has no living version to be based on and carries no pin.`,
       });
     } else if (verdict === "stale") {

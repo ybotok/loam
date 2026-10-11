@@ -32,6 +32,8 @@ import { featureSpecPaths } from "../../../repo/paths.js";
 import { locateServicePaths } from "../../../repo/service-target.js";
 import { readOpenapi } from "../../../openapi/doc.js";
 import { readAsyncapi } from "../../../asyncapi/read.js";
+import { entriesOf } from "../../../asyncapi/digest.js";
+import { collectRefs } from "../../../openapi/depth.js";
 import type { FleetContext } from "../../../fleet-context.js";
 import { retiredKey, type RetiredIndex, type RetiredLookup, type Vacated, type Vacations } from "../archived.js";
 import { readEventPair } from "../event-pair.js";
@@ -97,14 +99,38 @@ export function revivedOperations(service: string, arrived: readonly Arrival[], 
  * the message as a `$ref` (an upsert replaces the interior), or retired. The
  * channel key is read the way the archive plan's remove-marker-inline
  * message reads it, so the two name the same channel.
+ *
+ * A `components.messages` key is retired by its marker, but a channel (or an
+ * operation) of the contract the merge would leave (`root`) that still
+ * `$ref`s it would point at nothing: its send stops sending the message,
+ * `asyncapi.remove-message-consumed` where the fleet consumes it. This once
+ * said only "retire it at components.messages.<K2>", a remedy that, followed
+ * exactly, drew that error — so every slot still pointing there is named,
+ * to restate with the `$ref` pointed at `to`.
  */
-export function moveBackRemedy(declaredAt: readonly string[], to: string): string {
+export function moveBackRemedy(declaredAt: readonly string[], to: string, root: unknown): string {
   const steps = declaredAt.map((slot) => {
-    if (!slot.startsWith("channels.")) return `retire it at ${slot}`;
+    if (!slot.startsWith("channels.")) {
+      const holders = pointingAt(root, slot);
+      return holders.length === 0 ? `retire it at ${slot}` : `retire it at ${slot}, and restate ${holders.join(" and ")} with every $ref to ${slot} pointed at ${to}`;
+    }
     const channel = slot.slice("channels.".length, slot.lastIndexOf(".messages."));
     return `restate channel ${channel} with a $ref to ${to}, or retire channel ${channel}`;
   });
   return [...new Set(steps)].join("; and ");
+}
+
+/** The channels and operations of `root` holding a `$ref` to one `components.messages` slot, at any depth. */
+function pointingAt(root: unknown, slot: string): string[] {
+  const key = slot.slice("components.messages.".length);
+  // JSON Pointer escaping, `~` before `/`, so a key spelling either is the pointer that reaches it.
+  const pointer = `#/components/messages/${key.replace(/~/g, "~0").replace(/\//g, "~1")}`;
+  const sections = root !== null && typeof root === "object" ? (root as Record<string, unknown>) : {};
+  return (["channels", "operations"] as const).flatMap((section) =>
+    entriesOf(sections[section])
+      .filter(([, node]) => collectRefs(node).includes(pointer))
+      .map(([key]) => `${section === "channels" ? "channel" : "operation"} ${key}`),
+  );
 }
 
 /** The event arrivals that are revivals — `revivedOperations`' rule, on the slot and the message name. */
@@ -130,7 +156,7 @@ export function revivedEvents(service: string, arrived: EventArrivals, index: Re
     const { id, at, livesAt, besides } = arrival;
     revive(livesAt.length === 0
       ? `message '${id}' (${at}), ${broughtBack(by, replacing(arrival, "declares"))}`
-      : `message '${id}' at ${at}, ${arrival.replaces === undefined ? "a key the living contract no longer has" : "a key it is no longer declared at"} — ${vacators(by, " there")}${present(by, livesAt, "is declared")}, and archiving this delta would declare it at ${at} beside ${besides.join(" and ")}: one message name in ${count(besides.length + 1)} places.${replacing(arrival, "declares")} ${dropOne(arrival, `${moveBackRemedy(besides, at)} in this same delta${keeping(arrival, "key")}`)}`);
+      : `message '${id}' at ${at}, ${arrival.replaces === undefined ? "a key the living contract no longer has" : "a key it is no longer declared at"} — ${vacators(by, " there")}${present(by, livesAt, "is declared")}, and archiving this delta would declare it at ${at} beside ${besides.join(" and ")}: one message name in ${count(besides.length + 1)} places.${replacing(arrival, "declares")} ${dropOne(arrival, `${moveBackRemedy(besides, at, arrived.mergedRoot)} in this same delta${keeping(arrival, "key")}`)}`);
   }
   return issues;
 }

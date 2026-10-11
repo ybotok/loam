@@ -113,6 +113,12 @@ export interface EventArrivals {
   slots: AsyncapiSlot[];
   /** Message names at slots the living contract does not declare them in — the operation axis's arrivals. */
   messages: Arrival[];
+  /**
+   * The merged contract's tree, where the move-back remedy follows a `$ref`
+   * back to the channel holding it (`moveBackRemedy`) — absent where the
+   * merge refused, and then no message is graded.
+   */
+  mergedRoot?: unknown;
 }
 
 /**
@@ -134,5 +140,5 @@ export function eventArrivals(read: EventPairRead): EventArrivals {
   const spelled = new Set(featSlots.filter((s) => s.section === "components.messages").map((s) => `${s.section}.${s.key}`));
   const markable = (b: string, livesAt: readonly string[]): boolean =>
     b.startsWith("channels.") || (livesAt.includes(b) && !spelled.has(b));
-  return { slots, messages: arrivals(messagesPlaced(livingDoc.messages), messagesPlaced(merged.messages), markable) };
+  return { slots, messages: arrivals(messagesPlaced(livingDoc.messages), messagesPlaced(merged.doc.messages), markable), mergedRoot: merged.root };
 }

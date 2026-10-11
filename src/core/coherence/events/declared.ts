@@ -203,7 +203,7 @@ export async function declaredEvents(
       gradeMarkers(read, svc, issues);
       // The pair's one simulation — the revival candidates above have already
       // asked it, comparing it with the living contract.
-      const merged = read.merged();
+      const merged = read.merged()?.doc;
       if (merged !== undefined) {
         mergedDocs.set(svc, merged);
         stoppedSending.set(svc, livingDoc.sent.filter((m) => !merged.sent.includes(m)));

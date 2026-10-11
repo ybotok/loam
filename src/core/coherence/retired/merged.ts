@@ -45,6 +45,26 @@ export interface MergeSimulationInput<Doc> {
   service: string;
 }
 
+/** The event simulation's input: the pair's texts, plus the living side's tree. */
+export interface EventMergeInput extends MergeSimulationInput<AsyncapiDoc> {
+  /** The reader's parse of livingText — the merged tree, verbatim, when the merge writes nothing. */
+  livingRoot: unknown;
+}
+
+/** The contract the event merge would leave: as read, and the tree it was read from. */
+export interface MergedEvents {
+  doc: AsyncapiDoc;
+  /**
+   * The merged document's parse — where a `$ref` can be followed back to the
+   * slot holding it. The read model keeps no pointer, and the move-back
+   * remedy (./revival/revived.ts) has to name the channels still pointing at
+   * a key it tells the author to retire: told only to retire it, an author
+   * left a living channel `$ref`-ing nothing and its send operation stopped
+   * sending a message the fleet consumes.
+   */
+  root: unknown;
+}
+
 /**
  * Simulate the archive-time event merge, or stand down. Both documents are
  * known readable here (the pair, ./event-pair.ts, asks only with the delta's
@@ -58,12 +78,13 @@ export interface MergeSimulationInput<Doc> {
  * archive's own plan surfaces the refusal by name — a refusal `--approve`
  * cannot pass, so nothing it would have graded can land.
  */
-export function mergedAsyncapiDoc(input: MergeSimulationInput<AsyncapiDoc>): AsyncapiDoc | undefined {
-  const { livingText, livingDoc, featureText, service } = input;
+export function mergedAsyncapiDoc(input: EventMergeInput): MergedEvents | undefined {
+  const { livingText, livingDoc, livingRoot, featureText, service } = input;
   try {
-    if (livingText === undefined) return asyncapiDocOf(parse(stripAsyncapiMarkers(featureText, service)));
-    const out = mergeAsyncapiSlots(livingText, featureText, service);
-    return out.text === null ? livingDoc : asyncapiDocOf(parse(out.text));
+    const text = livingText === undefined ? stripAsyncapiMarkers(featureText, service) : mergeAsyncapiSlots(livingText, featureText, service).text;
+    if (text === null) return { doc: livingDoc, root: livingRoot };
+    const root: unknown = parse(text);
+    return { doc: asyncapiDocOf(root), root };
   } catch (error) {
     if (error instanceof AsyncapiMergeError) return undefined;
     throw error;

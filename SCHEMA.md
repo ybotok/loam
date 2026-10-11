@@ -1585,7 +1585,10 @@ the source for tests.
   over nothing is `openapi.baseline-invalid`, so a deliberate re-add drops it first). At a vacated
   address beside a living one it names the address to drop instead: delete the quote, or, to move
   the id back on purpose, take it out of where it lives now in the same delta (a removal marker
-  there; for a message declared inline, restate or retire its channel) — and where the delta
+  there; for a message declared inline, restate or retire its channel; for a `components.messages`
+  key, also restate every channel or operation of the merged contract still `$ref`-ing it, with
+  the `$ref` pointed at the quoted key — the message names them, since a marker alone would leave
+  them pointing at nothing and their send would stop sending the message) — and where the delta
   already spells that address, so no marker can stand there, archive with `--approve`. A slot
   holds one entry, so where the living contract has ANOTHER operation (or message) at the address
   the delta spells the id at, the merge replaces it there: the message names it ("now holds
