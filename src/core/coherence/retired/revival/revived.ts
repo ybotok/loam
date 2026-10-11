@@ -149,8 +149,13 @@ export function revivedEvents(service: string, arrived: EventArrivals, index: Re
   for (const arrival of arrived.messages) {
     // A message declared inline under a channel that is itself coming back is
     // that channel's interior, and the channel's finding already names the
-    // revival — one act, one finding.
-    if ([...revivedChannels].some((ck) => arrival.at.startsWith(`channels.${ck}.messages.`))) continue;
+    // revival — one act, one finding. Only while the merged contract declares
+    // the name nowhere else: where it does, the channel's finding says nothing
+    // of the second place, and this was once skipped all the same — a stale
+    // delta restating a channel whose inline message an archived feature
+    // re-declared under components archived under --approve into
+    // `asyncapi.duplicate-message`.
+    if (arrival.besides.length === 0 && [...revivedChannels].some((ck) => arrival.at.startsWith(`channels.${ck}.messages.`))) continue;
     const by = revivalOf(arrival, index.messages.get(retiredKey(service, arrival.id)));
     if (by === undefined) continue;
     const { id, at, livesAt, besides } = arrival;
