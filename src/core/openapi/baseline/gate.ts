@@ -84,7 +84,7 @@ export function openapiBaselineIssues(input: BaselineGateInput): Issue[] {
       // are a condition ("while it still lives there"), not a forecast: a
       // delta swapping the id back defines another operation at the address
       // it lives at, with or without an operationId, and the merge replaces
-      // it there. The revival check (coherence/retired/revived.ts) reads the
+      // it there. The revival check (coherence/retired/revival/) reads the
       // contract that merge would write and stands down whenever it answers
       // the id at one address, so this must not tell the author otherwise —
       // and for that delta a removal marker at the address cannot be written

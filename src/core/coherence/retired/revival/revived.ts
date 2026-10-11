@@ -13,154 +13,33 @@
  * merge cannot tell a quote of a dead operation from an addition, and treated
  * every one as an addition.
  *
- * The question is asked of the contract the archive would WRITE: the
- * archive's own merge runs over the two texts (./merged.ts), and where the
- * result answers each operationId and message name is compared with where
- * the living contract answers it now. This once re-derived the merge from
- * the delta, case by case — any removal marker naming the id excused a quote,
- * another NAMED operation at the id's address made a swap — and every review
- * found a shape the derivation got wrong: a marker at an address the id never
- * lived at (it deletes nothing, so the second address stays), a replacement
- * with no operationId (it replaces all the same, so there is no second
- * address), a retirement whose address became a second one when a later
- * feature re-added the id elsewhere. The merged contract answers each of
- * them by construction.
- *
- * The candidates are computed where both documents are already in hand — the
- * feature gate's two walks (../declared.ts, ../events/declared.ts) — and only
- * graded here, so the archive walk (./archived.ts) is paid for only when the
- * merged contract answers something at an address the living one does not.
+ * The candidates — what the contract the archive would WRITE answers that
+ * the living one does not (./arrivals.ts) — are computed where both
+ * documents are already in hand, in the feature gate's two walks
+ * (../../declared.ts, ../../events/declared.ts), and only graded here, so
+ * the archive walk (../archived.ts) is paid for only when the merged
+ * contract answers something at an address the living one does not.
  * `serviceRevivals` asks the same two functions per axis standalone, for
  * `loam rebase`, which reads no gate — on the event axis through the gate's
- * own reading of the pair (./event-pair.ts) — so the two can never grade one
+ * own reading of the pair (../event-pair.ts) — so the two can never grade one
  * tree two ways.
  */
 import { existsSync } from "node:fs";
-import type { Issue } from "../../vocabulary/issue.js";
-import type { PathableService } from "../../kernel/ids/service.js";
-import type { DocsDir, FeatureDir } from "../../kernel/ids/dirs.js";
-import { featureSpecPaths } from "../../repo/paths.js";
-import { locateServicePaths } from "../../repo/service-target.js";
-import { readOpenapi, type OpenapiDoc, type Operation } from "../../openapi/doc.js";
-import { readOr } from "../../openapi/contract-text.js";
-import { slotKey, type AsyncapiSlot } from "../../asyncapi/digest.js";
-import { readAsyncapi } from "../../asyncapi/read.js";
-import type { EventMessage } from "../../asyncapi/model.js";
-import type { FleetContext } from "../../fleet-context.js";
-import {
-  operationAddress,
-  retiredKey,
-  type RetiredIndex,
-  type RetiredLookup,
-  type Vacated,
-  type Vacations,
-} from "./archived.js";
-import { readEventPair, type EventPairRead, type PairSides } from "./event-pair.js";
-import { mergedOpenapiDoc } from "./merged.js";
+import type { Issue } from "../../../vocabulary/issue.js";
+import type { PathableService } from "../../../kernel/ids/service.js";
+import type { DocsDir, FeatureDir } from "../../../kernel/ids/dirs.js";
+import { featureSpecPaths } from "../../../repo/paths.js";
+import { locateServicePaths } from "../../../repo/service-target.js";
+import { readOpenapi } from "../../../openapi/doc.js";
+import { readAsyncapi } from "../../../asyncapi/read.js";
+import type { FleetContext } from "../../../fleet-context.js";
+import { retiredKey, type RetiredIndex, type RetiredLookup, type Vacated, type Vacations } from "../archived.js";
+import { readEventPair } from "../event-pair.js";
+import { eventArrivals, operationArrivals, type Arrival, type EventArrivals } from "./arrivals.js";
 
 /** The two remedies, spelled once: which one applies is the human's call, never loam's. */
 const REMEDY =
   "Delete the quote if you only restated it; archive with --approve if the feature brings it back on purpose.";
-
-/**
- * One identity — an operationId, or a message name — that the merged
- * contract answers at an address the living contract does not. The only
- * shape a revival can take: everything else the merge writes is already
- * living where it stands.
- */
-export interface Arrival {
-  id: string;
-  /** The new address: `METHOD /path`, or the slot a message is declared in. */
-  at: string;
-  /** Where the living contract answers the identity now — empty for nowhere. */
-  livesAt: string[];
-  /** Every OTHER address the merged contract answers it at. */
-  besides: string[];
-  /**
-   * Can this same delta take it out of every one of `besides`? A living
-   * address the delta spells nothing at takes a removal marker; a declaration
-   * inline under a channel is taken out by restating or retiring the channel
-   * (`moveBackRemedy`). A key the delta already spells holds what it spells,
-   * and a marker cannot be written beside it — the remedy that once named
-   * one there could not be followed.
-   */
-  markable: boolean;
-}
-
-/** An identity and one address a contract answers it at. */
-type Placed = readonly [id: string, at: string];
-
-const opsPlaced = (ops: readonly Operation[]): Placed[] => ops.filter((op) => !op.remove).map((op) => [op.id, operationAddress(op)]);
-const messagesPlaced = (all: readonly EventMessage[]): Placed[] => all.filter((m) => m.remove !== true).map((m) => [m.name, m.slot]);
-
-/** Every (identity, address) the merged contract has and the living one lacks, in the merged contract's order. */
-function arrivals(
-  living: readonly Placed[],
-  merged: readonly Placed[],
-  markable: (address: string, livesAt: readonly string[]) => boolean,
-): Arrival[] {
-  const where = (all: readonly Placed[], id: string): string[] => all.filter(([i]) => i === id).map(([, at]) => at);
-  return merged.flatMap(([id, at]) => {
-    const livesAt = where(living, id);
-    if (livesAt.includes(at)) return [];
-    const besides = where(merged, id).filter((b) => b !== at);
-    return [{ id, at, livesAt, besides, markable: besides.every((b) => markable(b, livesAt)) }];
-  });
-}
-
-/**
- * The OpenAPI candidates: the merged contract against the living one. An
- * unreadable side proves nothing (`openapi.invalid` owns it), nor does a text
- * that does not decode, so either yields none; neither does a merge the
- * archive refuses (`merge-failed`, which `--approve` cannot pass). The merge
- * runs only when some definition in the delta is not living at its own
- * address already: nothing else the merge writes can be new, so a delta that
- * only restates what stands has nothing to compare and never pays for it.
- */
-export async function operationArrivals(sides: PairSides<OpenapiDoc>, context?: FleetContext): Promise<Arrival[]> {
-  const { featPath, featDoc, livingPath, livingDoc, service } = sides;
-  if (featDoc.unreadable || livingDoc.unreadable) return [];
-  const living = opsPlaced(livingDoc.ops);
-  if (arrivals(living, opsPlaced(featDoc.ops), () => true).length === 0) return [];
-  const featureText = sides.featText ?? (await readOr(featPath, context));
-  const livingExists = existsSync(livingPath);
-  const livingText = livingExists ? await readOr(livingPath, context) : undefined;
-  if (featureText === undefined || (livingExists && livingText === undefined)) return [];
-  const merged = mergedOpenapiDoc({ livingText, livingDoc, featureText, service });
-  if (merged === undefined) return [];
-  const spelled = new Set([...featDoc.ops, ...featDoc.anonymousRemovals].map(operationAddress));
-  return arrivals(living, opsPlaced(merged.ops), (b, livesAt) => livesAt.includes(b) && !spelled.has(b));
-}
-
-/** What an event delta brings that the living contract does not have. */
-export interface EventArrivals {
-  /** `channels` and `operations` slots whose key the living contract lacks — their identity IS the key. */
-  slots: AsyncapiSlot[];
-  /** Message names at slots the living contract does not declare them in — the operation axis's arrivals. */
-  messages: Arrival[];
-}
-
-/**
- * The event axis's candidates. A message is graded by its NAME, not by its
- * key: the name is what every join reads, so a retired message redeclared
- * under a new key is the same message back, and a new message reusing a dead
- * key is not. A living side that does not answer (./event-pair.ts) proves
- * nothing, so it yields none; a merge the pair refuses grades no message.
- * The slots are read off the delta, and they are the merged contract's new
- * slots exactly: the merge writes every slot the delta declares, bar a quote,
- * which has a living counterpart.
- */
-export function eventArrivals(read: EventPairRead): EventArrivals {
-  const { featDoc, featSlots, livingDoc, livingSlots } = read;
-  if (!read.livingAnswers || featDoc.unreadable || livingDoc.unreadable) return { slots: [], messages: [] };
-  const slots = featSlots.filter((s) => !s.remove && s.section !== "components.messages" && !livingSlots.has(slotKey(s)));
-  const merged = read.merged();
-  if (merged === undefined) return { slots, messages: [] };
-  const spelled = new Set(featSlots.filter((s) => s.section === "components.messages").map((s) => `${s.section}.${s.key}`));
-  const markable = (b: string, livesAt: readonly string[]): boolean =>
-    b.startsWith("channels.") || (livesAt.includes(b) && !spelled.has(b));
-  return { slots, messages: arrivals(messagesPlaced(livingDoc.messages), messagesPlaced(merged.messages), markable) };
-}
 
 /**
  * The vacations that make one arrival a revival — undefined when it is none.

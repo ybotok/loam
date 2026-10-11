@@ -5,7 +5,7 @@
  *
  * Two readers build it, and they must never disagree: the feature gate's walk
  * (../events/declared.ts), which grades baselines and markers and collects the
- * revival candidates, and `serviceRevivals` (./revived.ts), which asks the
+ * revival candidates, and `serviceRevivals` (./revival/revived.ts), which asks the
  * revival question standalone for `loam rebase`. The second used to re-spell
  * the first's guards — existence, decode, an unreadable living side — and its
  * own living-slot map, so a change to the gate's guard would have left rebase
@@ -66,7 +66,7 @@ export interface EventPairRead extends EventPair {
 /**
  * Where one service's two contracts of one axis live, and their parses — read
  * by the caller, which needs them before this. The OpenAPI revival read
- * (./revived.ts) takes the same shape.
+ * (./revival/arrivals.ts) takes the same shape.
  */
 export interface PairSides<Doc = AsyncapiDoc> {
   featPath: string;

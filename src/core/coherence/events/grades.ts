@@ -9,7 +9,7 @@
 import type { Issue } from "../../vocabulary/issue.js";
 import { ASYNCAPI_BASELINES_KEY, slotKey } from "../../asyncapi/digest.js";
 import type { EventPair } from "../retired/event-pair.js";
-import { moveBackRemedy } from "../retired/revived.js";
+import { moveBackRemedy } from "../retired/revival/revived.js";
 import { asyncapiSurfaces } from "../../asyncapi/baseline/surfaces.js";
 import { messageName } from "../../asyncapi/read.js";
 import { entryFor, readBaselineRecord, surfaceIn } from "../../openapi/baseline/record.js";
@@ -65,7 +65,7 @@ export function gradeBaselines(input: AsyncapiBaselineInput, issues: Issue[]): v
       // this axis: a `components.messages` key whose message name the living
       // contract now declares elsewhere. A channel or operation slot's
       // identity is its key, so it is never "moved" — it is retired. The
-      // move-back remedy is the revival finding's own (../retired/revived.ts):
+      // move-back remedy is the revival finding's own (../retired/revival/revived.ts):
       // where the name now stands inline under a channel, a marker there
       // retires nothing, so the remedy names the channel instead. The two
       // places are said as a condition ("while it is still declared there"),
