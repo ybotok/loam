@@ -43,6 +43,14 @@ export interface Arrival {
   /** Every OTHER address the merged contract answers it at. */
   besides: string[];
   /**
+   * What the living contract answers at `at` now — another operationId, or
+   * another message name — which the merge replaces there: a slot holds one
+   * entry. Absent where nothing does. A finding that called such an address
+   * one "the living contract no longer has" sent its reader to a remedy that
+   * deleted the other entry with nothing naming it.
+   */
+  replaces?: string;
+  /**
    * Can this same delta take it out of every one of `besides`? A living
    * address the delta spells nothing at takes a removal marker; a declaration
    * inline under a channel is taken out by restating or retiring the channel
@@ -70,7 +78,8 @@ function arrivals(
     const livesAt = where(living, id);
     if (livesAt.includes(at)) return [];
     const besides = where(merged, id).filter((b) => b !== at);
-    return [{ id, at, livesAt, besides, markable: besides.every((b) => markable(b, livesAt)) }];
+    const replaces = living.find(([, address]) => address === at)?.[0];
+    return [{ id, at, livesAt, besides, markable: besides.every((b) => markable(b, livesAt)), ...(replaces === undefined ? {} : { replaces }) }];
   });
 }
 

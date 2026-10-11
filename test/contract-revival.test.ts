@@ -232,6 +232,35 @@ paths:
     expect(warned!.message).toContain("spells 'createOrderV1' (POST /v1/orders/legacy), which the living contract no longer has — archived FEAT-112 retired it");
   });
 
+  it("another operation living at the retired address now is named — archiving the quote replaces it there", async () => {
+    // FEAT-305 put importOrders at the address FEAT-112 retired createOrderV1
+    // from. The merge writes per method and path, so the quote would take
+    // importOrders out of the contract as it put createOrderV1 back — and the
+    // finding used to say only that createOrderV1 came back.
+    const f = await exampleFleet();
+    expect((await runLoam(f.fleet, "archive", "FEAT-112")).code).toBe(0);
+    contractOnly(f, "FEAT-305", "FEAT-305-import", `openapi: 3.1.0
+paths:
+  /v1/orders:
+    post:
+      operationId: importOrders
+      responses:
+        "202":
+          description: Accepted for import.
+`);
+    const added = await runLoam(f.fleet, "archive", "FEAT-305");
+    expect(added.code, added.out).toBe(0);
+    contractOnly(f, "FEAT-304", "FEAT-304-v1-notes", QUOTED_V1);
+    const [warned, ...more] = ofCode(
+      findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-304", "--json")).stdout),
+      "openapi.op-revived",
+    );
+    expect(more).toEqual([]);
+    expect(warned!.message).toContain(
+      "spells 'createOrderV1' (POST /v1/orders), which the living contract no longer has — archived FEAT-112 retired it, and archiving this delta would put it back. POST /v1/orders now holds 'importOrders', and archiving this delta replaces it there.",
+    );
+  });
+
   it("retired, re-added on purpose, now living: a later quote of it is not a revival", async () => {
     const f = await exampleFleet();
     contractOnly(f, "FEAT-304", "FEAT-304-v1-notes", QUOTED_V1);
@@ -622,6 +651,31 @@ paths:
     const after = findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-201", "--json")).stdout);
     expect(ofCode(after, "openapi.op-revived").map((r) => r.message)).toEqual(real.revived.map((r) => r.message));
     expect((await runLoam(f.fleet, "archive", "FEAT-201")).code).toBe(1);
+  });
+
+  it("another operation living at the vacated address is named, and the move-back remedy says it replaces that one too", async () => {
+    // FEAT-205 put requestCancellation at the address FEAT-200 moved
+    // cancelOrder away from. The finding called that address one "the living
+    // contract no longer has", and its move-back remedy — a marker at
+    // /cancellation — followed to coherence.ok and an archive that deleted
+    // requestCancellation with nothing naming it.
+    const f = await occupied();
+    contractOnly(f, "FEAT-206", "FEAT-206-quote-cancel", QUOTED_CANCEL);
+    const [warned, ...more] = ofCode(
+      findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-206", "--json")).stdout),
+      "openapi.op-revived",
+    );
+    expect(more).toEqual([]);
+    expect(warned!.message).not.toContain("an address the living contract no longer has");
+    expect(warned!.message).toContain(
+      "spells 'cancelOrder' at POST /orders/{id}/cancel, an address it no longer lives at — archived FEAT-200 moved it to POST /orders/{id}/cancellation, where it lives now",
+    );
+    expect(warned!.message).toContain(
+      "one operationId at two addresses. POST /orders/{id}/cancel now holds 'requestCancellation', and archiving this delta replaces it there.",
+    );
+    expect(warned!.message).toContain(
+      "to move it back on purpose, add a removal marker for 'cancelOrder' at POST /orders/{id}/cancellation to this same delta — and define 'requestCancellation' at another address in it if it is to stay.",
+    );
   });
 
   it("moved, then retired there and re-added elsewhere: the message names where the mover put it, and apart from that where it lives now", async () => {
@@ -1425,6 +1479,19 @@ components:
     expect(real.written).toHaveLength(1);
     expect(real.revived.map((r) => r.message)).toEqual(dry.revived.map((r) => r.message));
     expect((await eventFindings(p, "FEAT-46")).map((r) => r.message)).toEqual(real.revived.map((r) => r.message));
+
+    // Unpinned, the same quote is graded straight away — and the message
+    // names payment.Other, which the merge replaces at that key.
+    await p.write("features/FEAT-45-quote-legacy/intent.md", INTENT("FEAT-45"));
+    await p.write("features/FEAT-45-quote-legacy/specs/payment-service/asyncapi.yaml", quote);
+    const [warned, ...more] = await eventFindings(p, "FEAT-45");
+    expect(more).toEqual([]);
+    expect(warned!.message).not.toContain("a key the living contract no longer has");
+    expect(warned!.message).toContain("declares message 'payment.Legacy' at components.messages.Legacy, a key it is no longer declared at —");
+    expect(warned!.message).toContain(
+      "one message name in two places. components.messages.Legacy now declares 'payment.Other', and archiving this delta replaces it there.",
+    );
+    expect(warned!.message).toContain("in this same delta — and define 'payment.Other' at another key in it if it is to stay.");
   });
 
   it("retired at its key, re-declared under another, then declared at the first: one message name in two places, refused", async () => {

@@ -46,10 +46,16 @@ Two codes, both added to the `IssueCode` union, and one additive `--json` key we
   that, since anything landed after can have moved it again — where it lives now; its remedy names
   the address to drop: delete the quote, or, to move it back on purpose, add a removal marker
   where it lives now — and where the delta already spells that address, so no marker can be
-  written there, archive with `--approve` instead. A quote of an address an archived feature moved
-  the operation away from is the finding even where the living contract holds the operation
-  nowhere (taken out of its new address by a hand edit, which leaves no marker): the move is on
-  the record, and the message reads as a retirement brought back, naming the move. On the event
+  written there, archive with `--approve` instead. Where another operation lives at the quoted
+  address now (on the event axis, another message is declared at the quoted key), the message
+  names it and says archiving replaces it there — the merge writes one entry per address —
+  instead of calling the address one the living contract no longer has, and the move-back remedy
+  says to define it at another address (key) in the same delta if it is to stay: followed as it
+  read before, the remedy reached a clean gate and an archive that deleted the other operation
+  with nothing naming it. The retired-shape message names such an entry too. A quote of an
+  address an archived feature moved the operation away from is the finding even where the living
+  contract holds the operation nowhere (taken out of its new address by a hand edit, which leaves
+  no marker): the move is on the record, and the message reads as a retirement brought back, naming the move. On the event
   axis the vacated addresses are `components.messages` keys (a marker there) and the inline
   declarations a channel removal took; a delta that restates the channel a name stands inline in
   with a `$ref`, or retires it, takes the name out of there and is not graded. For an inline

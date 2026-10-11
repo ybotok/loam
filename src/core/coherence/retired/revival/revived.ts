@@ -75,10 +75,10 @@ export function revivedOperations(service: string, arrived: readonly Arrival[], 
     if (by === undefined) continue;
     const { id, at, livesAt, besides } = arrival;
     const what = livesAt.length === 0
-      ? `'${id}' (${at}), ${broughtBack(by)}`
+      ? `'${id}' (${at}), ${broughtBack(by, replacing(arrival, "holds"))}`
       // A second address, not the operation back: it is living, so the
       // remedy is which address to drop — never "bring it back".
-      : `'${id}' at ${at}, an address the living contract no longer has — ${vacators(by, " there")}${present(by, livesAt, "lives")}, and archiving this delta would put it back at ${at} beside ${besides.join(" and ")}: one operationId at ${count(besides.length + 1)} addresses. ${dropOne(arrival, `add a removal marker for '${id}' at ${besides.join(" and ")} to this same delta`)}`;
+      : `'${id}' at ${at}, ${arrival.replaces === undefined ? "an address the living contract no longer has" : "an address it no longer lives at"} — ${vacators(by, " there")}${present(by, livesAt, "lives")}, and archiving this delta would put it back at ${at} beside ${besides.join(" and ")}: one operationId at ${count(besides.length + 1)} addresses.${replacing(arrival, "holds")} ${dropOne(arrival, `add a removal marker for '${id}' at ${besides.join(" and ")} to this same delta${keeping(arrival, "address")}`)}`;
     issues.push({ severity: "warn", gates: true, code: "openapi.op-revived", subject: service, message: `${service}: this feature's openapi.yaml spells ${what}` });
   }
   return issues;
@@ -129,8 +129,8 @@ export function revivedEvents(service: string, arrived: EventArrivals, index: Re
     if (by === undefined) continue;
     const { id, at, livesAt, besides } = arrival;
     revive(livesAt.length === 0
-      ? `message '${id}' (${at}), ${broughtBack(by)}`
-      : `message '${id}' at ${at}, a key the living contract no longer has — ${vacators(by, " there")}${present(by, livesAt, "is declared")}, and archiving this delta would declare it at ${at} beside ${besides.join(" and ")}: one message name in ${count(besides.length + 1)} places. ${dropOne(arrival, `${moveBackRemedy(besides, at)} in this same delta`)}`);
+      ? `message '${id}' (${at}), ${broughtBack(by, replacing(arrival, "declares"))}`
+      : `message '${id}' at ${at}, ${arrival.replaces === undefined ? "a key the living contract no longer has" : "a key it is no longer declared at"} — ${vacators(by, " there")}${present(by, livesAt, "is declared")}, and archiving this delta would declare it at ${at} beside ${besides.join(" and ")}: one message name in ${count(besides.length + 1)} places.${replacing(arrival, "declares")} ${dropOne(arrival, `${moveBackRemedy(besides, at)} in this same delta${keeping(arrival, "key")}`)}`);
   }
   return issues;
 }
@@ -188,8 +188,13 @@ export async function serviceRevivals(request: ServiceRevivalRequest): Promise<I
 }
 
 /** The retired shape: absent from living, so the merge reads it as an addition. */
-function broughtBack(by: Vacations): string {
-  return `which the living contract no longer has — ${vacators(by, "")}, and archiving this delta would put it back. ${REMEDY}`;
+function broughtBack(by: Vacations, replaced = ""): string {
+  return `which the living contract no longer has — ${vacators(by, "")}, and archiving this delta would put it back.${replaced} ${REMEDY}`;
+}
+
+/** The entry the merge would replace at the arrival's address, said as a sentence of its own — or nothing. */
+function replacing({ at, replaces }: Arrival, verb: "holds" | "declares"): string {
+  return replaces === undefined ? "" : ` ${at} now ${verb} '${replaces}', and archiving this delta replaces it there.`;
 }
 
 /**
@@ -204,6 +209,16 @@ function dropOne({ at, besides, markable }: Arrival, moveBack: string): string {
   return markable
     ? `${keep}; to move it back on purpose, ${moveBack}.`
     : `${keep}; archive with --approve if the feature brings it back there on purpose.`;
+}
+
+/**
+ * A move back over another living entry takes that entry out too, unless the
+ * same delta puts it elsewhere — said in the remedy, because followed as it
+ * once read, the move back reached a clean gate and an archive that deleted
+ * the other entry with nothing naming it.
+ */
+function keeping({ replaces }: Arrival, place: "address" | "key"): string {
+  return replaces === undefined ? "" : ` — and define '${replaces}' at another ${place} in it if it is to stay`;
 }
 
 function count(n: number): string {
