@@ -38,11 +38,12 @@ Two codes, both added to the `IssueCode` union, and one additive `--json` key we
   check runs the archive's own merge of the delta over the living contract and compares where each
   operationId (each message name) stands there with where it stands now. One the merged contract
   answers at two or more addresses — one of them new, and vacated by an archived feature — is the
-  finding; one it answers at exactly one address is not, whether the delta moves it back with its
-  own removal marker where it lives now or swaps another operation in there (with or without an
-  operationId — the merge replaces what stands at that method and path). A removal marker standing
-  where the id does not live deletes nothing, so it no longer excuses the quote. The message says
-  which archived feature moved the operation and where to, or retired it there, and — apart from
+  finding; one the living contract still holds that it answers at exactly one address is not,
+  whether the delta moves it back with its own removal marker where it lives now or swaps another
+  operation in there (with or without an operationId — the merge replaces what stands at that
+  method and path). A removal marker standing where the id does not live deletes nothing, so it
+  no longer excuses the quote. The message says which archived feature moved the operation and
+  where to, or retired it there, and — apart from
   that, since anything landed after can have moved it again — where it lives now; its remedy names
   the address to drop: delete the quote, or, to move it back on purpose, add a removal marker
   where it lives now — and where the delta already spells that address, so no marker can be

@@ -86,7 +86,8 @@ export function openapiBaselineIssues(input: BaselineGateInput): Issue[] {
       // it lives at, with or without an operationId, and the merge replaces
       // it there. The revival check (coherence/retired/revival/) reads the
       // contract that merge would write and stands down whenever it answers
-      // the id at one address, so this must not tell the author otherwise —
+      // an id the living contract still holds — as here — at one address, so
+      // this must not tell the author otherwise —
       // and for that delta a removal marker at the address cannot be written
       // beside the other operation, hence the second remedy.
       const movedTo = livingDoc.ops.filter((l) => !l.remove && l.id === op.id).map((l) => `${l.method.toUpperCase()} ${l.path}`);

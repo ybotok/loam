@@ -51,9 +51,13 @@ const REMEDY =
  * declared) or moved it away from this very address; or the merged contract
  * answers it at two or more addresses, and an archived feature retired it at,
  * or moved it away from, this very address — an old address resurrected
- * beside the current one. An identity the merged contract answers at exactly
- * one address — a move back, a swap, a replacement with no operationId — is
- * never a revival, and neither is an address no archived feature vacated.
+ * beside the current one. An identity the living contract still holds that
+ * the merged contract answers at exactly one address — a move back, a swap,
+ * a replacement with no operationId — is never a revival, and neither is an
+ * address no archived feature vacated. One the living contract holds nowhere
+ * is the first case at one address too: this once said "exactly one address
+ * is never a revival" unqualified, and a quote of an address a move vacated,
+ * after a hand edit took the id out of where the move put it, is one.
  *
  * Any archived feature — the one asking is never among them: coherence
  * grades only features in flight (status/feature/feature.ts), so a vacation
