@@ -122,7 +122,7 @@ export async function operationArrivals(sides: PairSides<OpenapiDoc>, context?: 
   if (featDoc.unreadable || livingDoc.unreadable) return [];
   const living = opsPlaced(livingDoc.ops);
   if (arrivals(living, opsPlaced(featDoc.ops), () => true).length === 0) return [];
-  const featureText = await readOr(featPath, context);
+  const featureText = sides.featText ?? (await readOr(featPath, context));
   const livingExists = existsSync(livingPath);
   const livingText = livingExists ? await readOr(livingPath, context) : undefined;
   if (featureText === undefined || (livingExists && livingText === undefined)) return [];
@@ -263,6 +263,11 @@ export interface ServiceRevivalRequest {
   service: PathableService;
   retired: RetiredLookup;
   context?: FleetContext;
+  /**
+   * The text rebase will write, by the path it writes it to — a contract
+   * delta absent here is graded as it stands on disk (`PairSides.featText`).
+   */
+  planned?: ReadonlyMap<string, string>;
 }
 
 /**
@@ -271,10 +276,14 @@ export interface ServiceRevivalRequest {
  * `loam rebase` holds none, and must not pin a revived operation as if this
  * feature were adding it. One detection, the gate's: `operationArrivals` on
  * the contract axis, and on the event axis `readEventPair` and
- * `eventArrivals`, the walk's own reader and candidates.
+ * `eventArrivals`, the walk's own reader and candidates. Asked of the text
+ * rebase will WRITE (`planned`), not the text it found: its repin can turn a
+ * skipped quote into an edit, and the revival that edit makes is the one the
+ * next validate reports — this once ran over the delta as on disk, before
+ * the repin, and stayed silent about it.
  */
 export async function serviceRevivals(request: ServiceRevivalRequest): Promise<Issue[]> {
-  const { docsDir, featureDir, service, retired, context } = request;
+  const { docsDir, featureDir, service, retired, context, planned } = request;
   const feature = featureSpecPaths(featureDir, service);
   const living = await locateServicePaths(docsDir, service, context);
   const issues: Issue[] = [];
@@ -282,7 +291,7 @@ export async function serviceRevivals(request: ServiceRevivalRequest): Promise<I
   if (existsSync(feature.openapi)) {
     const featDoc = await readOpenapi(feature.openapi, context);
     const livingDoc = await readOpenapi(living.openapi, context);
-    const sides = { featPath: feature.openapi, featDoc, livingPath: living.openapi, livingDoc, service };
+    const sides = { featPath: feature.openapi, featDoc, livingPath: living.openapi, livingDoc, service, featText: planned?.get(feature.openapi) };
     const ops = await operationArrivals(sides, context);
     if (ops.length > 0) issues.push(...revivedOperations(service, ops, await retired()));
   }
@@ -293,7 +302,7 @@ export async function serviceRevivals(request: ServiceRevivalRequest): Promise<I
   // nothing else against it; the guards on the living side are the pair's.
   if (featDoc.unreadable) return issues;
   const livingDoc = await readAsyncapi(living.asyncapi, context);
-  const sides = { featPath: feature.asyncapi, featDoc, livingPath: living.asyncapi, livingDoc, service };
+  const sides = { featPath: feature.asyncapi, featDoc, livingPath: living.asyncapi, livingDoc, service, featText: planned?.get(feature.asyncapi) };
   const events = eventArrivals(await readEventPair(sides, context));
   if (events.slots.length > 0 || events.messages.length > 0) issues.push(...revivedEvents(service, events, await retired()));
   return issues;

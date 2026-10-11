@@ -683,7 +683,10 @@ archive until the quote is deleted, with `openapi.op-revived` beside it — whil
 `openapi.op-revived` alone (`asyncapi.slot-revived` on the event axis), which gates the archive too,
 because the merge would read the retired operation as an addition and put it back. Rebase pins neither as new: it prints
 the same finding (`revived[]` in `--json`), and whether the quote goes or the feature re-adds the
-operation on purpose is the author's call. Restamping is the last step of resolving a collision,
+operation on purpose is the author's call. It judges the delta as it will write it, pins included:
+a quote repinned over whatever now lives at an address an archived feature moved the operation away
+from becomes an edit the merge writes, and that revival is reported by the rebase (or `--dry-run`)
+that makes it, not first by the next validate. Restamping is the last step of resolving a collision,
 not the resolution — the output says which pins moved.
 
 **`loam verify`** — `--results <report.json>` answers the scenario claims from a test run,

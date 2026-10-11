@@ -468,6 +468,16 @@ paths:
   /orders/{id}/cancellation:
     post:
 ${CANCEL_OP}`;
+/** FEAT-205: another operation defined at the address FEAT-200's move vacated. */
+const REQUEST_AT_CANCEL = `openapi: 3.1.0
+paths:
+  /orders/{id}/cancel:
+    post:
+      operationId: requestCancellation
+      responses:
+        "202":
+          description: Cancellation requested.
+`;
 
 describe("openapi.op-revived — an operation an archived feature MOVED, quoted at the address it left", () => {
   // The baseline gate keys on the slot (nothing living there) and the id check
@@ -482,6 +492,16 @@ describe("openapi.op-revived — an operation an archived feature MOVED, quoted 
     expect(archived.code, archived.out).toBe(0);
     expect(f.read(LIVING_ORDER_API)).not.toContain("/orders/{id}/cancel:");
     expect(f.read(LIVING_ORDER_API)).toContain("/orders/{id}/cancellation:");
+    return f;
+  }
+
+  /** `moved()`, then FEAT-205 archived: requestCancellation lives at the address cancelOrder left. */
+  async function occupied(): Promise<Fleet> {
+    const f = await moved();
+    contractOnly(f, "FEAT-205", "FEAT-205-cancel-request", REQUEST_AT_CANCEL);
+    const archived = await runLoam(f.fleet, "archive", "FEAT-205");
+    expect(archived.code, archived.out).toBe(0);
+    expect(f.read(LIVING_ORDER_API)).toContain("operationId: requestCancellation");
     return f;
   }
 
@@ -563,6 +583,45 @@ paths:
     );
     const all = findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-203", "--json")).stdout);
     expect(ofCode(all, "openapi.op-revived")).toEqual([]);
+  });
+
+  it("a pinned quote rebase repins over the operation now at the vacated address: rebase reports the revival its own pin creates, and validate agrees", async () => {
+    // Pinned while cancelOrder stood at /cancel, the quote still equals its
+    // own pin, so the merge skips it and nothing is graded. Rebase repins it
+    // to requestCancellation's digest — the living slot's — and that makes it
+    // an edit: the merge would write cancelOrder over requestCancellation,
+    // beside /cancellation. Rebase asked the question of the delta as it was
+    // on disk, before its own repin, and reported nothing.
+    const f = await occupied();
+    const original = readFileSync(join(SHIPPED_EXAMPLE, LIVING_ORDER_API), "utf8");
+    contractOnly(f, "FEAT-201", "FEAT-201-quote-cancel", pinOpenapi(QUOTED_CANCEL, original));
+    const before = findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-201", "--json")).stdout);
+    expect(ofCode(before, "openapi.op-revived")).toEqual([]);
+
+    interface Rebased {
+      pins: Array<{ target: string; status: string }>;
+      revived: Array<{ code: string; message: string }>;
+      written: string[];
+    }
+    const dry = JSON.parse((await runLoam(f.fleet, "rebase", "FEAT-201", "--dry-run", "--json")).stdout) as Rebased;
+    expect(dry.pins.find((p) => p.target.includes("cancelOrder"))!.status).toBe("repinned");
+    expect(dry.revived.map((r) => r.code)).toEqual(["openapi.op-revived"]);
+    expect(dry.revived[0]!.message).toContain("archived FEAT-200 moved it to POST /orders/{id}/cancellation");
+    expect(dry.written).toEqual([]);
+
+    const text = await runLoam(f.fleet, "rebase", "FEAT-201", "--dry-run");
+    expect(text.code, text.out).toBe(0);
+    expect(text.out).toContain("spells 'cancelOrder' at POST /orders/{id}/cancel");
+    expect(text.out).not.toContain("nothing was pinned");
+
+    const rebased = await runLoam(f.fleet, "rebase", "FEAT-201", "--json");
+    expect(rebased.code, rebased.out).toBe(0);
+    const real = JSON.parse(rebased.stdout) as Rebased;
+    expect(real.written).toHaveLength(1);
+    expect(real.revived.map((r) => r.message)).toEqual(dry.revived.map((r) => r.message));
+    const after = findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-201", "--json")).stdout);
+    expect(ofCode(after, "openapi.op-revived").map((r) => r.message)).toEqual(real.revived.map((r) => r.message));
+    expect((await runLoam(f.fleet, "archive", "FEAT-201")).code).toBe(1);
   });
 
   it("moved, then retired there and re-added elsewhere: the message names where the mover put it, and apart from that where it lives now", async () => {
@@ -1289,6 +1348,83 @@ components:
     expect(invalid!.message).toContain("message 'payment.Legacy' is declared at components.messages.LegacyV2 now: a parallel feature moved it");
     expect(invalid!.message).not.toContain("past `asyncapi.slot-revived`");
     expect(ofCode(pinned, "asyncapi.slot-revived")).toHaveLength(1);
+  });
+
+  it("a pinned quote rebase repins over the message now at the vacated key: rebase reports the revival its own pin creates, and validate agrees", async () => {
+    // The operation case's twin. Pinned while payment.Legacy stood at
+    // components.messages.Legacy, the quote equals its own pin, so the merge
+    // skips it. FEAT-44 re-keyed the name to LegacyV2 and FEAT-49 declared
+    // payment.Other at Legacy; rebase repins the quote to payment.Other's
+    // digest, an edit the merge writes — payment.Legacy at Legacy, beside
+    // LegacyV2.
+    const quote = `asyncapi: 3.0.0
+components:
+  messages:
+    Legacy:
+      name: payment.Legacy
+      payload:
+        type: object
+        properties:
+          paymentId:
+            type: string
+`;
+    const p = await makeProject({
+      "services/payment-service/spec.md": EVENTS_SPEC,
+      "services/payment-service/asyncapi.yaml": LIVING_EVENTS,
+      "features/FEAT-44-rekey-legacy/intent.md": INTENT("FEAT-44"),
+      "features/FEAT-44-rekey-legacy/specs/payment-service/asyncapi.yaml": `asyncapi: 3.0.0
+channels:
+  legacyEvents:
+    address: payment.legacy.v1
+    messages:
+      Legacy:
+        $ref: '#/components/messages/LegacyV2'
+components:
+  messages:
+    Legacy:
+      name: payment.Legacy
+      x-loam-remove: true
+    LegacyV2:
+      name: payment.Legacy
+      payload:
+        type: object
+`,
+      "features/FEAT-49-other/intent.md": INTENT("FEAT-49"),
+      "features/FEAT-49-other/specs/payment-service/asyncapi.yaml": `asyncapi: 3.0.0
+components:
+  messages:
+    Legacy:
+      name: payment.Other
+      payload:
+        type: object
+`,
+      "features/FEAT-46-pinned-legacy/intent.md": INTENT("FEAT-46"),
+      "features/FEAT-46-pinned-legacy/specs/payment-service/asyncapi.yaml": pinAsyncapi(quote, LIVING_EVENTS),
+    });
+    cleanups.push(() => p.destroy());
+    for (const feature of ["FEAT-44", "FEAT-49"]) {
+      const archived = await runLoam(p.workDir, "archive", feature, "--approve");
+      expect(archived.code, archived.out).toBe(0);
+    }
+    expect(await eventFindings(p, "FEAT-46")).toEqual([]);
+
+    interface Rebased {
+      pins: Array<{ target: string; status: string }>;
+      revived: Array<{ code: string; message: string }>;
+      written: string[];
+    }
+    const dry = JSON.parse((await runLoam(p.workDir, "rebase", "FEAT-46", "--dry-run", "--json")).stdout) as Rebased;
+    expect(dry.pins.find((pin) => pin.target === "Legacy")!.status).toBe("repinned");
+    expect(dry.revived.map((r) => r.code)).toEqual(["asyncapi.slot-revived"]);
+    expect(dry.revived[0]!.message).toContain("archived FEAT-44 moved it to components.messages.LegacyV2");
+    expect(dry.written).toEqual([]);
+
+    const rebased = await runLoam(p.workDir, "rebase", "FEAT-46", "--json");
+    expect(rebased.code, rebased.out).toBe(0);
+    const real = JSON.parse(rebased.stdout) as Rebased;
+    expect(real.written).toHaveLength(1);
+    expect(real.revived.map((r) => r.message)).toEqual(dry.revived.map((r) => r.message));
+    expect((await eventFindings(p, "FEAT-46")).map((r) => r.message)).toEqual(real.revived.map((r) => r.message));
   });
 
   it("retired at its key, re-declared under another, then declared at the first: one message name in two places, refused", async () => {

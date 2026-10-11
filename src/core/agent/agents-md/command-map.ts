@@ -236,7 +236,10 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   an ARCHIVED feature retired is not pinned as new: rebase prints the
   \`openapi.op-revived\` / \`asyncapi.slot-revived\` finding (and \`revived[]\` in
   \`--json\`) and leaves the call — delete the quote, or re-add on purpose — to
-  you.
+  you. It judges the delta as it will write it, pins included, so a quote its
+  own repin turns into an edit — repinned over whatever lives now at an
+  address an archived feature moved the entry away from — is in that list too,
+  under \`--dry-run\` as well.
 - \`loam dependencies [<FEAT>]\` derives the ordering of the features in flight
   from the artifacts themselves — requirement identities and OpenAPI
   operationIds, never from validator prose. It is the answer to every
