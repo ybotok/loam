@@ -1115,6 +1115,60 @@ components:
     expect(warned!.message).toContain("archived FEAT-40 retired it");
   });
 
+  it("a revived channel's inline message that the merge would also declare elsewhere is its own finding — two places, not the channel's interior", async () => {
+    // FEAT-40 retired legacyEvents and re-declared its inline payment.Legacy
+    // under components; a stale FEAT-41 restates the channel with the message
+    // still inline. Only the channel's finding was raised — the inline
+    // declaration counted as its interior — and archive --approve then left
+    // the name declared in two places (asyncapi.duplicate-message).
+    const p = await makeProject({
+      "services/payment-service/spec.md": EVENTS_SPEC,
+      "services/payment-service/asyncapi.yaml": LIVING_EVENTS_INLINE,
+      "features/FEAT-40-retire-legacy/intent.md": INTENT("FEAT-40"),
+      "features/FEAT-40-retire-legacy/specs/payment-service/spec.md": RETIRE_SPEC,
+      "features/FEAT-40-retire-legacy/specs/payment-service/asyncapi.yaml": `${RETIRE_CHANNEL}components:
+  messages:
+    Legacy:
+      name: payment.Legacy
+      payload:
+        type: object
+`,
+      "features/FEAT-41-stale/intent.md": INTENT("FEAT-41"),
+      "features/FEAT-41-stale/specs/payment-service/asyncapi.yaml": `asyncapi: 3.0.0
+channels:
+  legacyEvents:
+    address: payment.legacy.v1
+    messages:
+      Legacy:
+        name: payment.Legacy
+        payload:
+          type: object
+`,
+    });
+    cleanups.push(() => p.destroy());
+    const moved = await runLoam(p.workDir, "archive", "FEAT-40", "--approve");
+    expect(moved.code, moved.out).toBe(0);
+    const living = await p.read("services/payment-service/asyncapi.yaml");
+    expect(living).not.toContain("legacyEvents");
+    expect(living).toContain("name: payment.Legacy");
+
+    const warned = (await eventFindings(p, "FEAT-41")).map((w) => w.message);
+    expect(warned).toEqual([
+      expect.stringContaining("declares channels.legacyEvents, which the living contract no longer has — archived FEAT-40 retired it"),
+      expect.stringContaining(
+        "declares message 'payment.Legacy' at channels.legacyEvents.messages.Legacy, a key the living contract no longer has — archived FEAT-40 moved it to components.messages.Legacy, where it is declared now, and archiving this delta would declare it at channels.legacyEvents.messages.Legacy beside components.messages.Legacy: one message name in two places",
+      ),
+    ]);
+  });
+
+  it("a revived channel's inline message declared nowhere else stays the channel's interior — one act, one finding", async () => {
+    const p = await eventFleet(LIVING_EVENTS_INLINE, RETIRE_CHANNEL);
+    await p.write("features/FEAT-41-stale/intent.md", INTENT("FEAT-41"));
+    await p.write("features/FEAT-41-stale/specs/payment-service/asyncapi.yaml", LIVING_EVENTS_INLINE);
+    const warned = (await eventFindings(p, "FEAT-41")).map((w) => w.message.match(/declares (\S+)/)![1]);
+    expect(warned).toEqual(["channels.legacyEvents,", "operations.sendLegacy,"]);
+  });
+
   it("an edited or missing pre-image is not read — the channel's inline names drop out, the documented limit", async () => {
     const p = await eventFleet(LIVING_EVENTS_INLINE, RETIRE_CHANNEL);
     await p.write("features/FEAT-41-legacy-again/intent.md", INTENT("FEAT-41"));

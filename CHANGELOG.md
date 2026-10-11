@@ -66,7 +66,11 @@ Two codes, both added to the `IssueCode` union, and one additive `--json` key we
   only to retire the key, an author left the channel pointing at nothing, and its send stopped
   sending the message — `asyncapi.remove-message-consumed`, which gates. `asyncapi.baseline-invalid`'s
   move-back remedy says the same. A channel or operation slot is its key, so a "moved" one is a
-  retirement, as before.
+  retirement, as before. A message inline under a channel the delta brings back is reported by
+  the channel's finding alone only while the merged contract declares the name nowhere else; where
+  an archived feature re-declared it under `components` as it retired the channel, the inline
+  declaration is a finding of its own (one message name in two places) — it was skipped, and
+  `--approve` archived `asyncapi.duplicate-message`.
 - **Exit code: `loam archive` now exits 1 (`not-coherent`) on this shape** without `--approve`;
   with `--approve` it merges as before, and the operation lands in `overridden[]` and the text
   output's "archiving despite" list, naming what came back and whose retirement it reverses.

@@ -1576,7 +1576,11 @@ the source for tests.
   replaces the channel's interior; a marker nested on the inline message does not
   (`asyncapi.remove-marker-inline`), so the finding names the channel as the remedy. A channel or
   operation slot's identity is its key, so moving one is a retirement plus an addition, graded as
-  such.
+  such. A message declared inline under a channel the delta brings back is that channel's
+  interior, and the channel's finding stands for it — unless the merged contract declares the
+  name somewhere else too (an archived feature re-declared it under `components` when it retired
+  the channel): then the inline declaration is a second place of its own, and gets its own
+  finding, since the channel's says nothing of the duplicate `--approve` would archive.
   Both are warnings that **gate** the archive, `openapi.baseline-missing`'s doctrine: the document
   is legal, and re-adding a retired operation can be exactly what a feature means — a retirement
   rolled back — so `--approve` carries the call, and the archive output then names what came back
