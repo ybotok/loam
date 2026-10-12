@@ -10,6 +10,14 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Fixed — `loam instructions loam-spine` says what `loam rebase` pins for a revived quote
+
+The page said `loam rebase` "pins neither shape". That has been false since rebase began grading
+the delta it will write. Rebase never pins a retired operation as new, but it does repin a quote
+of an address a move vacated over the operation that lives there now, and it reports the revival
+that edit makes. The page now says so, in line with the `loam-codes` command map, WORKFLOW.md
+and SCHEMA.md.
+
 ### Fixed — an operation with no `operationId` is a slot like any other
 
 No code, flag or payload key was added. The OpenAPI reader used to drop an operation written

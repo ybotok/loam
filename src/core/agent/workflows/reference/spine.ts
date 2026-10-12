@@ -247,8 +247,14 @@ feature that MOVES the operation to another address does the same to a quote
 of the old one, which archived would answer the operationId at both. The fix
 for both is to delete the quote. Keep it only when the feature brings a
 retired operation back ON PURPOSE: then drop any pin, and a human archives
-with \`--approve\`. \`loam rebase\` pins neither shape and prints
-the same finding, so the decision stays with you. The check reads the removal
+with \`--approve\`. \`loam rebase\` never pins a retired operation as new —
+nothing lives at its slot, so there is no version to pin — and prints the same
+finding (\`revived[]\` in \`--json\`), so the decision stays with you. It judges
+the delta as it will write it, pins included: a quote of an address another
+operation lives at now — one a move vacated, since re-occupied — IS repinned,
+over the operation living there, which makes it an edit the merge would write;
+the revival that edit makes is reported by that rebase (or its \`--dry-run\`),
+not first by the next validate. The check reads the removal
 markers of the features under \`features/archive/\` — a removal made by
 hand-editing a living contract is invisible to it.
 
