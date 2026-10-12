@@ -20,7 +20,7 @@ import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import { parseSubsystemName } from "../../core/kernel/ids/subsystem.js";
 import { emitJson, fail, repoPath } from "../../core/envelope/json.js";
 import { servicesDir, subsystemPathUnder } from "../../core/repo/paths.js";
-import { findInTree, nearestTreeNames, servicesUnder, subsystemsUnder } from "../../core/repo/tree/find.js";
+import { closeNamesHint, findInTree, servicesUnder, subsystemsUnder } from "../../core/repo/tree/find.js";
 import { entryIs } from "../../core/repo/tree/fs.js";
 import { SUBSYSTEM_MARKER } from "../../core/repo/tree/marker.js";
 import type { FleetTree } from "../../core/repo/tree/walk.js";
@@ -60,12 +60,11 @@ export async function runNew(
     if (opts.under !== undefined) {
       const parent = findInTree(tree, opts.under);
       if (parent === null) {
-        const close = nearestTreeNames(opts.under, tree.subsystems.map((s) => s.name));
         fail(
           json,
           "unknown-target",
           `No subsystem '${opts.under}' in the tree.` +
-            (close.length > 0 ? ` Close names: ${close.join(", ")}.` : " `loam subsystem list` shows what exists."),
+            closeNamesHint(opts.under, tree.subsystems.map((s) => s.name), " `loam subsystem list` shows what exists."),
         );
         return null;
       }
@@ -136,12 +135,11 @@ export async function runRm(docsDir: DocsDir, name: string, json: boolean): Prom
   await commitWindow(docsDir, json, async (tree): Promise<SubsystemTxn | null> => {
     const hit = findInTree(tree, name);
     if (hit === null) {
-      const close = nearestTreeNames(name, tree.subsystems.map((s) => s.name));
       fail(
         json,
         "unknown-target",
         `No subsystem '${name}' in the tree.` +
-          (close.length > 0 ? ` Close names: ${close.join(", ")}.` : " `loam subsystem list` shows what exists."),
+          closeNamesHint(name, tree.subsystems.map((s) => s.name), " `loam subsystem list` shows what exists."),
       );
       return null;
     }

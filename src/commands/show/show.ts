@@ -1,7 +1,6 @@
 import type { Command } from "commander";
-import { loadConfig } from "../../core/envelope/config.js";
 import { FleetContext } from "../../core/fleet-context.js";
-import { fail, reportNoConfig } from "../../core/envelope/json.js";
+import { configOrRefuse, fail } from "../../core/envelope/json.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { listServices, resolveFeature } from "../../core/repo/repo.js";
 import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "../policy/gate.js";
@@ -30,12 +29,8 @@ export function registerShow(program: Command): void {
       }
       const forced = opts.type as TargetType | undefined;
 
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const config = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
       const { docsDir } = config;
       // "No service or feature 'x' in <dir>" is a lie when <dir> is not a docs
       // repo at all — the same refusal validate and list owe (docsRepoReady).

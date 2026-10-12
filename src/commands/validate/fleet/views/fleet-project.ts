@@ -104,9 +104,9 @@ export interface FleetProjectCheck {
  * exclusive.
  *
  * `skipped` is "there is no such project, or loam declines to read one": no model
- * extends the map, the map does not parse, the root `exclude` hides the map
- * (`landscape.excluded` names that entry and this grade stands down behind it),
- * or the run has no fleet index. `clean` carries the view-id
+ * extends the map, the map does not parse, or the root `exclude` hides the map
+ * (`landscape.excluded` names that entry and this grade stands down behind it).
+ * `clean` carries the view-id
  * CENSUS, which is the only thing a caller may take from a project that parsed —
  * and the reason this is not just an empty finding list: an empty list and a
  * clean census are the same thing to `.length`, and one of them licenses

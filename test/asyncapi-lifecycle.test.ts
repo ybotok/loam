@@ -335,7 +335,7 @@ describe("the AsyncAPI feature lifecycle, end to end", () => {
     // the surface write is the half that must ride in the same journaled plan:
     // a components write outside it would survive the rollback below and leave
     // a living contract half-merged behind one that was restored.
-    const pinned = planAsyncapiBaselines(pinAsyncapi(FEATURE_EVENTS, LIVING_EVENTS), LIVING_EVENTS, "payment-service");
+    const pinned = planAsyncapiBaselines(pinAsyncapi(FEATURE_EVENTS, LIVING_EVENTS), LIVING_EVENTS);
     const p = await makeProject(lifecycleFixture(pinned.text!));
     try {
       const before = await treeHashes(p.docsDir);

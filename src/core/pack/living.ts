@@ -9,9 +9,8 @@
  * briefing, and the line limit is what asked the question.
  */
 import { existsSync } from "node:fs";
-import { relative } from "node:path";
 import { FleetContext } from "../fleet-context.js";
-import { type LoadedDoc } from "../c4/likec4.js";
+import { brokenDocumentPaths } from "../c4/likec4.js";
 import { serviceResolver } from "../c4/resolve/service.js";
 import { repoPath } from "../envelope/json.js";
 import { listField, parseFrontmatter, stringField, type Frontmatter } from "../document/frontmatter.js";
@@ -118,9 +117,10 @@ export interface LivingSlice {
     /**
      * The `architecture/` documents that failed, docs-relative POSIX, deduped
      * and sorted — `[]` while `parses` is true. Spelled exactly as
-     * `landscape.invalid` and the adopt brief spell them, because the three
-     * surfaces are read one after another on the same tree and a reader has to
-     * be able to tell they name the same file. It exists because `parses` moved
+     * `landscape.invalid` and the adopt brief spell them (all three through
+     * `c4/likec4.ts`'s `brokenDocumentPaths`), because the three surfaces are
+     * read one after another on the same tree and a reader has to be able to
+     * tell they name the same file. It exists because `parses` moved
      * to the PROJECT while every sentence about it still said
      * `architecture/landscape.likec4`: with a broken sibling that file has no
      * errors at all, so the name sent a reader to bytes loam had read fine
@@ -266,7 +266,7 @@ export async function buildLiving(req: LivingRequest): Promise<LivingSlice> {
       sources: listField(fm, "sources"),
     },
     archSpec: { vouch_scope: scopeText(header(archText)) },
-    landscape: { present, parses, broken: brokenDocuments(docsDir, land), modelled, inbound, outbound },
+    landscape: { present, parses, broken: land === null ? [] : brokenDocumentPaths(docsDir, land.errors), modelled, inbound, outbound },
     deployment,
     requirements: reqs.map(packRequirement),
     archRequirements: archReqs.map(packRequirement),
@@ -293,17 +293,4 @@ export async function buildLiving(req: LivingRequest): Promise<LivingSlice> {
       adrs: { count: entry.adrs, path: repoPath(docsDir, paths.adrsDir) },
     },
   };
-}
-
-/**
- * The `architecture/` documents that failed, docs-relative POSIX, deduped and
- * sorted — the same spelling `commands/validate/fleet/landscape.ts` uses for
- * `landscape.invalid` and `core/brief/landscape.ts` for the brief's unparseable
- * arm, so the three surfaces name one file one way.
- */
-function brokenDocuments(docsDir: DocsDir, land: LoadedDoc | null): string[] {
-  if (land === null) return [];
-  return [...new Set(land.errors.map((e) => e.sourceFsPath).filter((p): p is string => p !== undefined))]
-    .map((abs) => relative(docsDir, abs).split(/[\\/]/).join("/"))
-    .sort();
 }

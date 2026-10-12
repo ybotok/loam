@@ -518,10 +518,13 @@ describe("every FleetContext reader answers exactly what the core module answers
   });
 
   it("every reader on the class has a row — a new method cannot arrive unpinned", () => {
-    // The class's own method list, minus the diagnostics accessor. `stats()`
-    // reports the memo's counters and reads nothing, so it has no counterpart.
+    // The class's own method list, minus the diagnostics accessor and the memo
+    // machinery. `stats()` reports the memo's counters and reads nothing, so it
+    // has no counterpart; `counted()` is the get-or-create every reader below
+    // is spelled with — it reads nothing of its own, and each reader that calls
+    // it has its own row, which is where a wrong loader would show.
     const methods = Object.getOwnPropertyNames(FleetContext.prototype)
-      .filter((name) => name !== "constructor" && name !== "stats")
+      .filter((name) => name !== "constructor" && name !== "stats" && name !== "counted")
       .sort();
     const covered = [...new Set(READERS.map((r) => r.name.replace(/ \(.*\)$/, "")))].sort();
     expect(covered).toEqual(methods);

@@ -5,13 +5,18 @@
  * could check, and says which sources it skipped — a vouch over a spec whose
  * sources could not be read would be the claim this command exists to prevent.
  */
+import { existsSync } from "node:fs";
 import { listField, parseFrontmatter } from "../../../core/document/frontmatter.js";
+import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 import type { PathableService } from "../../../core/kernel/ids/service.js";
 import { missingSources, patternSources, unsafeSources } from "../../../core/provenance/sources.js";
 import { emptySourcesMessage, sourcesDigest, type SourceIndexEntry } from "../../../core/provenance/stamp.js";
 import type { SkippedSource } from "../../../core/provenance/walk.js";
+import { SPEC_AXES } from "../../../core/repo/paths.js";
+import { locateServicePaths } from "../../../core/repo/service-target.js";
 import { NotUtf8Error, readUtf8 } from "../../../core/staging/writes.js";
 
+/** A spec-axis file whose sources all check out, carrying what the stamp needs. */
 export interface VerifiedSpec {
   ok: true;
   path: string;
@@ -53,16 +58,54 @@ export interface SpecRefusal {
  * "There is no living spec here", in one sentence.
  *
  * Three callers reach this state independently — the stamp (`../run.ts`), the
- * reading list (`../sample/plan.ts`) and the reading pack (`../pack/pack.ts`)
- * — and two of them carried a comment promising to keep the wording identical
- * to the third, which is a promise nothing could enforce. It lives in the leaf
- * all three already import, because the failure this repo has actually shipped
- * is four copies of an enumeration `catch` that looked identical for years
- * while a fix landed in one of them: a `--sample` run refusing a missing spec
- * with older advice than a bare run gives is the same defect, one flag wide.
+ * reading list (`../sample/plan.ts`), both now through `verifyAxes` below, and
+ * the reading pack (`../pack/pack.ts`) — and two of them carried a comment
+ * promising to keep the wording identical to the third, which is a promise
+ * nothing could enforce. It lives in the leaf all three already import,
+ * because the failure this repo has actually shipped is four copies of an
+ * enumeration `catch` that looked identical for years while a fix landed in
+ * one of them: a `--sample` run refusing a missing spec with older advice than
+ * a bare run gives is the same defect, one flag wide.
  */
 export function noLivingSpecMessage(specPath: string, service: string): string {
   return `No living spec at ${specPath}. Run \`loam adopt\` for '${service}' first.`;
+}
+
+/** Every spec-axis file of one service, verified: spec.md always, arch.spec.md when it exists. */
+export interface VerifiedAxes {
+  ok: true;
+  spec: VerifiedSpec;
+  arch: VerifiedSpec | null;
+}
+
+/** The walk's refusals: one file's vetting, or no spec.md to vet at all. */
+export type AxesRefusal = SpecRefusal | { ok: false; code: "unknown-target"; message: string };
+
+/**
+ * The axis walk the stamp (`../run.ts`) and the reading list
+ * (`../sample/plan.ts`) both make, spelled once: spec.md is required,
+ * arch.spec.md rides when it exists, and one file that cannot be verified
+ * refuses the walk before the next is read — so a stamp writes nothing and a
+ * person is asked to read nothing.
+ *
+ * Walked by name rather than accumulated in a loop, because every caller
+ * needs to know WHICH file it is holding — the required one or the optional
+ * one — and a loop can only say that positionally. Sequential, not
+ * Promise.all: each verification hashes a whole source tree through the
+ * batched digest, and two of those in flight at once doubles the file
+ * descriptors that batching exists to bound. Two files.
+ */
+export async function verifyAxes(req: SpecVetting & { docsDir: DocsDir }): Promise<VerifiedAxes | AxesRefusal> {
+  const paths = await locateServicePaths(req.docsDir, req.service);
+  if (!existsSync(paths.spec)) {
+    return { ok: false, code: "unknown-target", message: noLivingSpecMessage(paths.spec, req.service) };
+  }
+  const [specAxis, archAxis] = SPEC_AXES;
+  const spec = await verifySpec(req, paths[specAxis.key], specAxis.file);
+  if (!spec.ok) return spec;
+  if (!existsSync(paths[archAxis.key])) return { ok: true, spec, arch: null };
+  const arch = await verifySpec(req, paths[archAxis.key], archAxis.file);
+  return arch.ok ? { ok: true, spec, arch } : arch;
 }
 
 /**

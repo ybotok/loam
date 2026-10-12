@@ -29,13 +29,13 @@ import {
 import { applyRequirementDelta } from "../../../core/document/apply.js";
 import { serializeRequirements, type Requirement } from "../../../core/document/spec.js";
 import { movedUnderVouch, parseFrontmatter, stringField } from "../../../core/document/frontmatter.js";
-import { ArchiveFailure } from "./refusal.js";
+import { CodedFailure } from "../../../core/envelope/json.js";
 import { type Gated, type Plan } from "./state.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 import type { FleetContext } from "../../../core/fleet-context.js";
 
 export async function planSpecs(
-  config: { docsDir: DocsDir; fleet?: FleetContext },
+  config: { docsDir: DocsDir; fleet: FleetContext },
   gated: Gated,
   plan: Plan,
   say: (line?: string) => void,
@@ -86,7 +86,7 @@ export async function planSpecs(
       // Mechanical, like a model-less landscape, so merge-failed, not --approve.
       const reqHeadings = sectionHeadings(livingText).filter((h) => isRequirementsHeading(h.text));
       if (reqHeadings.length > 1) {
-        throw new ArchiveFailure(
+        throw new CodedFailure(
           "merge-failed",
           `living ${axis.file} for ${svc} has ${reqHeadings.length} '## Requirements' headings (lines ${reqHeadings.map((h) => h.line).join(", ")}) — the merge rewrites ONE requirements section and cannot choose; merge them into one, then re-run`,
         );
@@ -144,7 +144,7 @@ export async function planSpecs(
  * is graded on must not do it silently.
  */
 export async function planCapabilities(
-  config: { docsDir: DocsDir; fleet?: FleetContext },
+  config: { docsDir: DocsDir; fleet: FleetContext },
   gated: Gated,
   plan: Plan,
   say: (line?: string) => void,
@@ -184,7 +184,7 @@ export async function planCapabilities(
     // reason it cannot be guessed at.
     const reqHeadings = sectionHeadings(livingText).filter((h) => isRequirementsHeading(h.text));
     if (reqHeadings.length > 1) {
-      throw new ArchiveFailure(
+      throw new CodedFailure(
         "merge-failed",
         `living capabilities/${doc.id}/spec.md has ${reqHeadings.length} '## Requirements' headings (lines ${reqHeadings.map((h) => h.line).join(", ")}) — the merge rewrites ONE requirements section and cannot choose; merge them into one, then re-run`,
       );

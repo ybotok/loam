@@ -23,6 +23,7 @@ import { readVocabulary } from "../src/core/permissions/permissions.js";
 import { CLAIM_KINDS } from "../src/core/verify/claims/identity.js";
 import { listCodes } from "../src/core/explain/lookup.js";
 import { PACKAGED_MARKDOWN } from "../scripts/package-docs.mjs";
+import { committedBlock, payloadBlock } from "../scripts/payload-sizes.js";
 import { collectEmittedCodes } from "./helpers/stable-codes.js";
 import { makeProject } from "./helpers/harness.js";
 
@@ -702,5 +703,27 @@ describe("the example fleet's headline numbers", () => {
       flat(await read("examples/README.md")),
       `examples/README.md must quote the pinned ${warnings} warnings`,
     ).toContain(`**0 errors and ${warnings} warnings**`);
+  });
+});
+
+describe("docs/BENCHMARKS.md's payload table is this tree's, not a recollection", () => {
+  it("the committed block is exactly what scripts/payload-sizes.ts measures now", async () => {
+    // What loam hands an agent is the cost an evaluator reproduces in a minute,
+    // and it moves on every edit to a protocol, a fix table or the brief. The
+    // figures used to live only in prose — the README adopt row's "54,833 bytes
+    // to 20,062", true on the day it was typed and about 60 KB to 25 KB a month
+    // later with nothing saying so. The script measures in process through the
+    // real program, so this costs seconds and needs no build. A mismatch means
+    // the tree moved and the page did not; the fix is to regenerate, never to
+    // edit the numbers by hand.
+    const committed = committedBlock(await read("docs/BENCHMARKS.md"));
+    expect(
+      committed,
+      "docs/BENCHMARKS.md has lost its payload-sizes block — the markers are what scripts/payload-sizes.ts rewrites",
+    ).not.toBeNull();
+    expect(
+      committed,
+      "docs/BENCHMARKS.md's payload table is behind this tree — run `npx tsx scripts/payload-sizes.ts --write` and commit the result",
+    ).toBe(await payloadBlock());
   });
 });

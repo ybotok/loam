@@ -13,9 +13,9 @@ import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { quietRmdir, rollbackStaged, stageWrites } from "../../core/staging/commit.js";
-import { COMMIT_INTENT, type CommitRecovery, InterruptedCommitError } from "../../core/staging/interrupted.js";
-import { acquireDocsLockWaiting, DocsBusyError, LOCK_WAIT_MS } from "../../core/staging/lock.js";
-import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
+import { COMMIT_INTENT, type CommitRecovery } from "../../core/staging/interrupted.js";
+import { LOCK_WAIT_MS } from "../../core/staging/lock.js";
+import { openCommitWindow } from "../../core/staging/recovery/recover.js";
 import { commitStaged } from "../../core/staging/txn/transaction.js";
 import { type PlannedWrite } from "../../core/staging/writes.js";
 import { type ActionRow, type Scope } from "./reconcile.js";
@@ -23,30 +23,6 @@ import { type ActionRow, type Scope } from "./reconcile.js";
 export type EmissionCommit =
   | { ok: true; recovered: CommitRecovery | null }
   | { ok: false; code: "docs-busy" | "commit-interrupted" | "merge-failed" | "rollback-incomplete"; message: string };
-
-/**
- * Roll a predecessor's interrupted emission forward before ANYTHING reads the
- * suite — reconcile grades the very bytes a half-commit corrupts. Cheap when
- * there is nothing to do: no journal, no lock, no I/O beyond one existsSync.
- */
-export async function recoverEmissionRoot(root: string): Promise<EmissionCommit> {
-  if (!existsSync(join(root, COMMIT_INTENT))) return { ok: true, recovered: null };
-  let release: () => Promise<void>;
-  try {
-    release = await acquireDocsLockWaiting(root, LOCK_WAIT_MS);
-  } catch (err) {
-    if (err instanceof DocsBusyError) return { ok: false, code: "docs-busy", message: err.message };
-    throw err;
-  }
-  try {
-    return { ok: true, recovered: await recoverInterruptedCommit(root) };
-  } catch (err) {
-    if (err instanceof InterruptedCommitError) return { ok: false, code: "commit-interrupted", message: err.message };
-    throw err;
-  } finally {
-    await release();
-  }
-}
 
 /**
  * Stage, compare, journal, swap. The compare is against the bytes RECONCILE
@@ -63,27 +39,19 @@ export async function commitEmission(
   // The lock file lives in the root, so the root must exist first. If the
   // commit then fails having created it, the empty directory is removed
   // again — an empty loam/ flips the repo into "opted in" and tells
-  // `loam validate` the whole living suite is missing.
+  // `loam validate` the whole living suite is missing. A window that does not
+  // open is such a failure too, so the removal sits in the one `finally`
+  // every path out of here takes.
   const rootExisted = existsSync(root);
   await mkdir(root, { recursive: true });
-  let release: () => Promise<void>;
-  try {
-    release = await acquireDocsLockWaiting(root, LOCK_WAIT_MS);
-  } catch (err) {
-    if (!rootExisted) await quietRmdir(root);
-    if (err instanceof DocsBusyError) return { ok: false, code: "docs-busy", message: err.message };
-    throw err;
-  }
+  let release: (() => Promise<void>) | null = null;
   try {
     // A writer can have crashed between the command-start recovery and this
     // window; the re-check is one existsSync when nothing happened.
-    let recovered: CommitRecovery | null;
-    try {
-      recovered = await recoverInterruptedCommit(root);
-    } catch (err) {
-      if (err instanceof InterruptedCommitError) return { ok: false, code: "commit-interrupted", message: err.message };
-      throw err;
-    }
+    const opened = await openCommitWindow(root, LOCK_WAIT_MS);
+    if (!opened.ok) return opened;
+    release = opened.release;
+    const { recovered } = opened;
 
     const planned: PlannedWrite[] = [
       // A "written" row was graded against an ABSENT file, so its create is
@@ -143,7 +111,7 @@ export async function commitEmission(
     }
     return { ok: true, recovered };
   } finally {
-    await release();
+    await release?.();
     if (!rootExisted && !existsSync(join(root, COMMIT_INTENT))) await quietRmdir(root);
   }
 }

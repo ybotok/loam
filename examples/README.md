@@ -18,6 +18,7 @@ loam archive FEAT-112 --dry-run    # an operation being retired, writing nothing
 loam verify FEAT-088               # a shipped feature's done-check: attested
 loam verify FEAT-120               # …and its pair, the same check: verified
 loam dependencies                  # the active-feature graph
+loam list suites                   # which services each test suite needs up
 ```
 
 Working on loam itself and running from source, use `npx tsx ../../src/cli.ts <args>` in place of
@@ -57,6 +58,18 @@ the tree spells it as directories, and `capabilities/identity/` holding no `spec
 GROUP and earns no finding. Each requirement in both files is a promise a customer could check,
 names no service, and carries a `Requirement-ID:` — required here, unlike in a service spec, because
 these documents outlive every service that realizes them.
+
+**One journey in two suites.** The same use case also carries `#suite-smoke` and
+`#suite-notifications`, both declared in the landscape's `specification` block, so `loam list
+suites` has a real answer: each suite needs `checkout-web`, `order-service` and
+`notification-service` up — the union of the journey's participants, resolved through the same
+element→service join the step grades use (notification-service is found through its filing under
+`platform/`, because the answer is ids, never paths). Two participants resolve to no service and are
+NAMED rather than dropped: `customer`, who drives the flow, and `kafka.orderEvents`, which is
+`#external` through its `topic` kind and wants a double on the test stand. One journey in both
+suites is the point of the tag: a directory could file it in only one. The suite tags change
+nothing `validate` says here — the view was already graded through its `#cap-` tag — but on a view
+carrying ONLY `#suite-` tags they are the opt-in, and its hops are graded like any other use case's.
 
 **Two glossary terms**, `glossary/order.md` and the nested `glossary/payments/authorization.md`,
 each cited from the capability documents that use the word. This is the axis's whole mechanism in
@@ -113,10 +126,10 @@ for.
   with its own requirements, architecture requirements and contract, a C4 delta that splices a
   nested element into the living landscape, a `MODIFIED` requirement that **renames its heading**
   while keeping its `Requirement-ID` — loam's rename mechanism — and an **event-contract delta**
-  (`specs/payment-service/asyncapi.yaml`): a complete AsyncAPI 3.0 document restating
-  payment-service's living contract under `loam rebase`-written `x-loam-based-on` pins and adding
-  one new producer side, so the archive merges the new slots and leaves every pinned quote to the
-  living contract's own copy.
+  (`specs/payment-service/asyncapi.yaml`) that restates payment-service's living contract under
+  `loam rebase`-written `x-loam-based-on` pins and adds one new producer side, so the archive merges
+  the new slots and leaves every pinned quote to the living contract's own copy. The restatement is
+  there to demonstrate the pin; a real delta holds only the slots it adds, changes or removes.
 - **`features/FEAT-112-retire-order-v1/`** — in flight, and the smallest legal shape: no
   `delta.likec4` at all, because retiring an operation moves no boxes. It carries the two halves
   loam requires together for a removal — a `REMOVED` requirement and an `x-loam-remove: true` marker

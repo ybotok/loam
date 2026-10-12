@@ -43,14 +43,13 @@
  * for the symlink-cycle guard — `entryIs` follows symlinks on purpose, and a
  * followed cycle without the visited-set is an unbounded recursion.
  */
-import { realpathSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { serviceDirOf, serviceTreePath, type DocsDir, type ServiceDir } from "../../kernel/ids/dirs.js";
 import { rawServiceId, type RawServiceId } from "../../kernel/ids/service.js";
 import { subsystemNameProblem } from "../../kernel/ids/subsystem.js";
 import type { Finding } from "../../vocabulary/report.js";
-import { entryIs } from "./fs.js";
+import { entryIs, markDescended, subdirNames } from "./fs.js";
 import { readSubsystemMarker, SUBSYSTEM_MARKER, type SubsystemMeta } from "./marker.js";
 
 /**
@@ -137,38 +136,12 @@ export async function walkServicesTree(request: TreeWalkRequest): Promise<FleetT
     names: new Map(),
   };
   const root = join(request.docsDir, "services");
-  guardDescent(root, ctx);
+  markDescended(root, ctx.visited);
   for (const name of await subdirNames(root)) {
     await visitDir({ dir: join(root, name), name, chain: [] }, ctx);
   }
   namespaceFindings(ctx);
   return ctx.tree;
-}
-
-/**
- * Mark a directory as descended-into; false when it (or another name for it)
- * already was. Guards SUBTREES, not entries: a directory reachable under two
- * names is classified twice — both names exist and hiding the second would be
- * the silent shrink this module refuses — but its children are enumerated
- * once, so a symlink cycle terminates instead of recursing forever. A path
- * realpath cannot resolve is one whose children cannot be read either.
- */
-function guardDescent(dir: string, ctx: WalkContext): boolean {
-  let real: string;
-  try {
-    real = realpathSync(dir);
-  } catch {
-    return false;
-  }
-  if (ctx.visited.has(real)) return false;
-  ctx.visited.add(real);
-  return true;
-}
-
-/** Sorted non-dot subdirectory names — the walk's deterministic child order. */
-async function subdirNames(dir: string): Promise<string[]> {
-  const entries = await readdir(dir, { withFileTypes: true });
-  return entries.filter((e) => !e.name.startsWith(".") && entryIs(dir, e, "dir")).map((e) => e.name).sort();
 }
 
 /** Classify one directory and, for the group kinds, walk what is inside it. */
@@ -282,7 +255,12 @@ async function visitSubsystem(spot: Spot, at: { rel: string; dirs: string[] }, c
  */
 async function descendInto(spot: Spot, dirs: string[], ctx: WalkContext): Promise<WalkedService[]> {
   const before = ctx.tree.services.length;
-  if (guardDescent(spot.dir, ctx)) {
+  // The guard (`./fs.ts`'s `markDescended`) protects SUBTREES, not entries: a
+  // directory reachable under two names is classified twice — both names
+  // exist and hiding the second would be the silent shrink this module
+  // refuses — but its children are enumerated once, so a symlink cycle
+  // terminates instead of recursing forever.
+  if (markDescended(spot.dir, ctx.visited)) {
     for (const child of dirs) {
       await visitDir({ dir: join(spot.dir, child), name: child, chain: [...spot.chain, spot.name] }, ctx);
     }

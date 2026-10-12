@@ -179,11 +179,20 @@ async function intentIssue(scope: AuthoringScope, issues: Issue[]): Promise<void
   if (hasProse(await readFile(path, "utf8"))) return;
   issues.push({
     ...empty,
-    message: `intent.md says nothing yet — its Why and Scope are still the scaffold's comments. Write why ${scope.featureId} exists before archiving it into the living docs, or archive with --approve.`,
+    message: `intent.md says nothing yet — its Why and Scope are still the scaffold's comments (questions under \`## Open questions\` are not a Why). Write why ${scope.featureId} exists before archiving it into the living docs, or archive with --approve.`,
   });
 }
 
-/** Is there any authored text outside frontmatter, HTML comments and headings? */
+/**
+ * The scaffold's `## Open questions` section, up to the next heading of its
+ * level or above. loam-feature's analyze step WRITES there, so prose in it is
+ * an agent's questions about the feature, never the reason it exists — and
+ * counting it would let a feature whose Why nobody wrote clear the one gate
+ * that asks for it, as soon as its author did the step that asks questions.
+ */
+const OPEN_QUESTIONS_SECTION = /^##[ \t]+open questions[ \t]*\n[\s\S]*?(?=^#{1,2}[ \t]|(?![\s\S]))/gim;
+
+/** Is there any authored text outside frontmatter, HTML comments, headings and the open questions? */
 function hasProse(text: string): boolean {
   // Normalized BEFORE the fence regex, the discipline document/parse.ts
   // applies to every other markdown read: `---\r` is not `---`, so a CRLF
@@ -196,7 +205,7 @@ function hasProse(text: string): boolean {
   // Frontmatter: the leading `---` block only, exactly where the scaffold puts it.
   const fm = /^---\n[\s\S]*?\n---\n/.exec(body);
   if (fm !== null) body = body.slice(fm[0].length);
-  body = body.replace(/<!--[\s\S]*?-->/g, "");
+  body = body.replace(/<!--[\s\S]*?-->/g, "").replace(OPEN_QUESTIONS_SECTION, "");
   return body
     .split("\n")
     .some((line) => line.trim().length > 0 && !line.trimStart().startsWith("#"));

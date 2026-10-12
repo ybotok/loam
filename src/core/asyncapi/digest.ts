@@ -39,10 +39,10 @@ import {
 /**
  * The baseline marker: which living version of a slot a FEATURE delta was
  * written against. The OpenAPI axis's key, not a restatement of its
- * spelling, because a feature's asyncapi.yaml is a complete document for
- * the same reason its openapi.yaml is: authors restate the living contract
- * around the slot they change, and the pin is what lets the merge tell a
- * QUOTE from an EDIT.
+ * spelling, because a feature's asyncapi.yaml may restate living slots it
+ * does not change for the same reason its openapi.yaml may — it needs only
+ * the slots it adds, changes or removes, but quoting more is legal — and the
+ * pin is what lets the merge tell a QUOTE from an EDIT.
  */
 export const ASYNCAPI_BASELINE_KEY = OPENAPI_BASELINE_KEY;
 
@@ -79,6 +79,23 @@ export interface AsyncapiSlot {
   digest: string;
 }
 
+/**
+ * A slot's identity as one map key — the (section, key) pair, NUL-joined: no
+ * section name or YAML key a slot walk returns can contain it. Spelled once,
+ * because the gate's walk, the rebase revival read, the marker and baseline
+ * graders, the pin planner and the merge all build or look up the same map,
+ * and a lookup spelled differently from its build finds nothing without
+ * failing.
+ */
+export function slotKey(slot: { section: AsyncapiSection; key: string }): string {
+  return `${slot.section}\0${slot.key}`;
+}
+
+/** Slots by `slotKey` — the living side of every slot judgement. */
+export function slotsByKey(slots: readonly AsyncapiSlot[]): Map<string, AsyncapiSlot> {
+  return new Map(slots.map((slot) => [slotKey(slot), slot]));
+}
+
 /** Is this slot value a feature-only explicit removal marker? One test for both axes. */
 export const isSlotRemoval = isRemoval;
 
@@ -96,8 +113,11 @@ export const slotBaselineOf = operationBaselineOf;
  */
 export const slotDigest = operationDigest;
 
-/** Entries of a mapping node, or nothing — the walker's one structural read. */
-function entriesOf(node: unknown): [string, unknown][] {
+/**
+ * Entries of a mapping node, or nothing — the walker's one structural read,
+ * and every structural read the reader (./read.ts) makes goes through it too.
+ */
+export function entriesOf(node: unknown): [string, unknown][] {
   if (node === null || typeof node !== "object" || Array.isArray(node)) return [];
   return Object.entries(node as Record<string, unknown>);
 }

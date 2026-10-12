@@ -11,6 +11,8 @@ import { enumeratedServiceIds, enumeratedServiceIndex } from "../repo/service-ta
 import { serviceOperationIds } from "../openapi/doc.js";
 import type { FleetContext } from "../fleet-context.js";
 import { declaredByService, type DeltaScope } from "./declared.js";
+import { retiredLookup } from "./retired/archived.js";
+import { revivedOperations } from "./retired/revival/revived.js";
 import { coherenceLookups } from "./lookups.js";
 import { eventCoherence } from "./events/events.js";
 import { authoringIssues } from "./authoring/scaffold.js";
@@ -175,8 +177,22 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
     ...(await authoringIssues({ featureDir, featureId, splicedEls: elements.filter(ridesWithTag), svcNames, context })),
   );
   const {
-    reqOps, removingOps, featureApiOps, unreadableApis,
+    reqOps, removingOps, featureApiOps, unreadableApis, revivalCandidates,
   } = await declaredByService(scope, svcNames, issues, context);
+
+  // A revival: an operation the merged contract would answer that the living
+  // contract no longer has because an ARCHIVED feature retired it — or would
+  // answer again at an address an archived feature took it out of, beside
+  // where it lives now — and the merge would read it as an addition and put
+  // it back (./retired/ says why the gate could not see this before). One
+  // lazy handle for both contract axes, so the walk of features/archive/ is
+  // paid once per call at most, and only when the merged contract answers
+  // something at an address the living one does not.
+  const retired = retiredLookup(docsDir, context);
+  for (const [svc, arrived] of revivalCandidates) {
+    if (arrived.length === 0) continue;
+    issues.push(...revivedOperations(svc, arrived, await retired()));
+  }
   const {
     governedByLivingSpec, edgeConsumers, requirementConsumers, definedElsewhere,
     deprecatedInLiving, undeprecatedByFeature,
@@ -334,7 +350,7 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
   // feature's asyncapi deltas (pins, markers, justification), the tagged
   // edges' publishes/consumes metadata, and the requirement deltas'
   // Publishes:/Consumes: lines (./events/events.ts owns the walk).
-  issues.push(...(await eventCoherence({ scope, svcNames, taggedRels, svcOf, context })));
+  issues.push(...(await eventCoherence({ scope, svcNames, taggedRels, svcOf, context, retired })));
 
   return issues;
 }

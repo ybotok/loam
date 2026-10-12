@@ -26,14 +26,13 @@ import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { relative } from "node:path";
-import { loadConfig } from "../../core/envelope/config.js";
 import { decodeDocument, NotUtf8DocumentError } from "../../core/kernel/document-bytes.js";
 import {
+  configOrRefuse,
   emitJson,
   emitJsonError,
   fail,
   NO_SERVICE_MESSAGE,
-  reportNoConfig,
 } from "../../core/envelope/json.js";
 import { featureSpecPaths, SPEC_AXES, type SpecAxis } from "../../core/repo/paths.js";
 import { locateServicePaths } from "../../core/repo/service-target.js";
@@ -44,7 +43,8 @@ import { axisLabel, planEmission } from "../../core/gherkin/emit.js";
 import { gherkinRoot } from "../../core/gherkin/stamp.js";
 import { LOAM_VERSION } from "../../core/envelope/version.js";
 import { UnsafePathError } from "../../core/kernel/path-safety.js";
-import { commitEmission, recoverEmissionRoot } from "./commit.js";
+import { recoverIfJournaled } from "../../core/staging/recovery/recover.js";
+import { commitEmission } from "./commit.js";
 import { reconcile, type Scope } from "./reconcile.js";
 import { render } from "./render.js";
 import { sayRecovered } from "../policy/format.js";
@@ -72,12 +72,8 @@ export function registerGherkin(program: Command): void {
       const json = opts.json === true;
       const dryRun = opts.dryRun === true;
 
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const config = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
       const service = opts.service ?? config.service;
       if (service === undefined) {
         return fail(json, "invalid-option", NO_SERVICE_MESSAGE);
@@ -139,8 +135,10 @@ export function registerGherkin(program: Command): void {
       // name a feature that has since ARCHIVED, whose recovery must still
       // work. `new` fixed the same ordering and documented it; refusing
       // unknown-target over a wedged root left doctor printing a repair that
-      // could never run.
-      const early = await recoverEmissionRoot(root);
+      // could never run. The lock is the emission root's own, given straight
+      // back: the slow half below runs unlocked, and `commitEmission` retakes
+      // it for the commit window.
+      const early = await recoverIfJournaled(root);
       if (!early.ok) return fail(json, early.code, early.message);
       let recovered = early.recovered;
 
@@ -209,12 +207,8 @@ export function registerGherkin(program: Command): void {
         version: LOAM_VERSION,
       });
 
-      // Orphans of THIS scope, inside loam/ and nowhere else. Feature mode owns
-      // only its own emissions: stamped files carrying this feature's tag whose
-      // file is no longer in the plan (a requirement renamed or dropped).
-
-      // `Set<string>`, not the ids' own brand: this set answers membership
-      // questions for tags read out of .feature files — document text.
+      // `Set<string>`, not the ids' own brand — core/gherkin/stale.ts's reason:
+      // it answers membership for tags read out of .feature files.
       const activeIds = new Set<string>((await listFeatures(config.docsDir)).map((f) => f.id));
       let reconciled;
       try {
@@ -225,11 +219,8 @@ export function registerGherkin(program: Command): void {
       }
       const { actions, orphans, conflicts } = reconciled;
 
-      // All or nothing: one conflicting file refuses the whole emission, so a
-      // half-written suite can never be the state an agent has to reason about.
-      // Only a feature run can conflict — living mode keeps the in-flight file
-      // rather than refusing — and standing inside that scope is also how the
-      // message names the feature without asserting there is one.
+      // All or nothing, and only a feature run can conflict — `./reconcile.ts`
+      // records why, where the conflicts are collected.
       if (scope.mode === "feature" && conflicts.length > 0) {
         const detail = conflicts
           .map((c) => `${rel(c.path)} is @${c.owners.join(" @")} (requirement '${c.requirement.name}')`)

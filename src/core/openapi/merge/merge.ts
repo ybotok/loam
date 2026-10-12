@@ -9,16 +9,17 @@
  * survives a refactor.
  */
 import { isDeepStrictEqual } from "node:util";
-import { isMap, isScalar, parseDocument } from "yaml";
+import { isMap } from "yaml";
 // Every `isRecord` below asks one question of a resolved plain tree: is this a
 // node that can hold OpenAPI keys — an object, not an array?
 import { isRecord } from "../../kernel/records.js";
 import { HTTP_METHODS } from "../doc.js";
-import { errorMessage, OpenapiMergeError } from "./error.js";
+import { OpenapiMergeError, openapiRefusal } from "./error.js";
+import { readTree, writeTree } from "../contract-tree.js";
 import { classifyOperationBaseline } from "./pin.js";
 import { classifyBaselineDigests, isRemoval, valueDigest } from "../digest.js";
 import { entryFor, readBaselineRecord, restatedSurfaces } from "../baseline/record.js";
-import { opLabel, operationIdOf, plainChild, withoutFeatureMarkers } from "./markers.js";
+import { dropPathIfNoOperations, opLabel, operationIdOf, plainChild, withoutFeatureMarkers } from "./markers.js";
 import { mergeComponentClosure } from "./components.js";
 
 /** What an OpenAPI path merge computed, including every condition the caller must surface. */
@@ -33,6 +34,15 @@ export interface OpenapiMergeResult {
   text: string | null;
   /** Labels of existing operations overwritten with different content. */
   modified: string[];
+  /**
+   * The operationId each `modified` label overwrites, keyed by the label: the
+   * LIVING operation's id, or the delta's when the living slot carries none.
+   * The living id first because it is the join key consumers name today —
+   * `loam archive` asks the fleet's consumer scan with it, to say who the
+   * overwrite lands on. A label whose operation carries no id on either side
+   * is absent: nothing can name it, so no consumer joins to it by name.
+   */
+  modifiedOperationIds: ReadonlyMap<string, string>;
   /**
    * Labels of PATH-LEVEL keys (`parameters`, `servers`, `summary`, `x-*`)
    * overwritten with different content. They are not operations, so they were
@@ -106,19 +116,8 @@ export function mergeOpenapiPaths(
   featureText: string,
   service: string,
 ): OpenapiMergeResult {
-  const feature = parseDocument(featureText);
-  if (feature.errors.length > 0) {
-    throw new OpenapiMergeError("feature", service, feature.errors[0]!.message);
-  }
-  let featPlain: unknown;
-  try {
-    // Resolve aliases once with the document's own anchor context. Calling an
-    // individual AST node's toJSON() loses that context and can silently turn
-    // an aliased operation or component into the wrong value.
-    featPlain = feature.toJS() ?? {};
-  } catch (error) {
-    throw new OpenapiMergeError("feature", service, errorMessage(error));
-  }
+  // Aliases resolved once, with the document's own anchor context (readTree).
+  const { plain: featPlain } = readTree(featureText, openapiRefusal("feature", service));
   const featPathsPlain = plainChild(featPlain, "paths");
   // The SHAPE refusal is unchanged and stays first: a `paths` that is a
   // sequence or a scalar is a document loam cannot merge. Absent and null
@@ -142,21 +141,13 @@ export function mergeOpenapiPaths(
     return noop();
   }
 
-  const living = parseDocument(livingText);
-  if (living.errors.length > 0) {
-    throw new OpenapiMergeError("living", service, living.errors[0]!.message);
-  }
-  let livingPlain: unknown;
-  try {
-    livingPlain = living.toJS() ?? {};
-  } catch (error) {
-    throw new OpenapiMergeError("living", service, errorMessage(error));
-  }
+  const { doc: living, plain: livingPlain } = readTree(livingText, openapiRefusal("living", service));
   const livingPathsPlain = plainChild(livingPlain, "paths");
   if (livingPathsPlain !== undefined && livingPathsPlain !== null && !isRecord(livingPathsPlain)) {
     throw new OpenapiMergeError("living", service, "`paths` is not a mapping");
   }
   const modified: string[] = [];
+  const modifiedOperationIds = new Map<string, string>();
   const pathItemModified: string[] = [];
   const removed: string[] = [];
   const quoted: string[] = [];
@@ -213,7 +204,7 @@ export function mergeOpenapiPaths(
         if (HTTP_METHODS.has(m)) {
           const verdict = classifyOperationBaseline(afterPlain, before === undefined ? undefined : beforePlain);
           // A QUOTE is not a merge input. The author wrote this operation down
-          // because the document is complete, not because they changed it, so
+          // as a restatement, not because they changed it, so
           // the living contract keeps whatever it holds — including a change
           // that landed after this delta was written. This is mechanical, not a
           // judgement, so `--approve` does not turn it back on: overriding a
@@ -251,8 +242,14 @@ export function mergeOpenapiPaths(
         // The difference check covers EVERY key of the path item; only the
         // LABEL depends on whether the key is an HTTP method.
         if (before !== undefined && !isDeepStrictEqual(beforePlain, afterPlain)) {
-          if (HTTP_METHODS.has(m)) modified.push(opLabel(beforePlain, afterPlain, m, path));
-          else pathItemModified.push(`'${m}' (${path})`);
+          if (HTTP_METHODS.has(m)) {
+            const label = opLabel(beforePlain, afterPlain, m, path);
+            modified.push(label);
+            const id = operationIdOf(beforePlain) ?? operationIdOf(afterPlain);
+            if (id !== undefined) modifiedOperationIds.set(label, id);
+          } else {
+            pathItemModified.push(`'${m}' (${path})`);
+          }
         }
         // Every shape question above was answered from the RESOLVED tree, which
         // is exactly what makes an aliased path item read as an ordinary
@@ -274,16 +271,10 @@ export function mergeOpenapiPaths(
         living.setIn(["paths", path, m], publishable[m]);
         written.push({ from: `paths ${path}`, value: publishable[m] });
       }
-      // Removing the last method leaves a path the contract still advertises
-      // and nothing answers — and `{}` is only the easy shape of that state: a
-      // surviving path-LEVEL key (`parameters`, `summary`) kept the path alive
-      // with zero operations just as misleadingly. No methods left means the
-      // path goes, whatever else survived beside them. The same cleanup
-      // stripOpenapiRemovalMarkers does on the feature side.
-      const remaining = living.getIn(["paths", path]);
-      if (isMap(remaining) && !remaining.items.some((it) => isScalar(it.key) && HTTP_METHODS.has(String(it.key.value)))) {
-        living.deleteIn(["paths", path]);
-      }
+      // No methods left means the path goes, whatever else survived beside
+      // them — the same cleanup stripOpenapiRemovalMarkers does on the
+      // feature side, and the reason is spelled once, on the helper.
+      dropPathIfNoOperations(living, path);
       continue;
     }
     if (!isRecord(featItemPlain)) {
@@ -299,14 +290,9 @@ export function mergeOpenapiPaths(
   const closure = mergeComponentClosure({ living, featPlain, livingPlain, record, written, componentsAreTheDelta });
   const { componentsModified, componentsAdded, componentsQuoted, componentsStale, unresolved } = closure;
 
-  let text: string;
-  try {
-    text = living.toString();
-  } catch (error) {
-    throw new OpenapiMergeError("living", service, errorMessage(error));
-  }
+  const text = writeTree(living, openapiRefusal("living", service));
   return {
-    text, modified, pathItemModified, removed, quoted, baselineStale,
+    text, modified, modifiedOperationIds, pathItemModified, removed, quoted, baselineStale,
     pathItemQuoted, pathItemStale, componentsModified, componentsAdded, componentsQuoted, componentsStale, unresolved,
   };
 }
@@ -320,8 +306,8 @@ export function mergeOpenapiPaths(
  */
 function noop(): OpenapiMergeResult {
   return {
-    text: null, modified: [], pathItemModified: [], removed: [], quoted: [], baselineStale: [],
-    pathItemQuoted: [], pathItemStale: [], componentsModified: [], componentsAdded: [],
+    text: null, modified: [], modifiedOperationIds: new Map(), pathItemModified: [], removed: [], quoted: [],
+    baselineStale: [], pathItemQuoted: [], pathItemStale: [], componentsModified: [], componentsAdded: [],
     componentsQuoted: [], componentsStale: [], unresolved: [],
   };
 }

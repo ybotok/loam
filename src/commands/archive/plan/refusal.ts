@@ -3,10 +3,11 @@
  *
  * Every arm here keeps one property: a refusal means nothing was written. The
  * `--json` shapes carry the issues that caused it so an agent can act on the
- * list rather than on the sentence, and `ArchiveFailure` exists so a merge that
- * could not be computed reports as a merge failure rather than as `internal` —
- * a read-only directory or an unreadable pre-image is not a bug in loam, and
- * saying so sends the reader looking for one.
+ * list rather than on the sentence, and a refusal thrown from below is a
+ * `CodedFailure` (core/envelope/json.ts) so a merge that could not be computed
+ * reports as a merge failure rather than as `internal` — a read-only directory
+ * or an unreadable pre-image is not a bug in loam, and saying so sends the
+ * reader looking for one.
  */
 import { existsSync } from "node:fs";
 import { emitJsonError, repoPath, type ErrorCode } from "../../../core/envelope/json.js";
@@ -25,24 +26,10 @@ export interface ArchiveOptions {
   json?: boolean;
 }
 
-
 /**
- * A refusal or failure with its stable `--json` code attached. Thrown from the
- * plan phase (nothing written yet) and from the commit's rollback path (whose
- * message says whether the rollback held). Anything ELSE that escapes runArchive
- * is a bug, and the action handler reports it as `internal`.
- */
-export class ArchiveFailure extends Error {
-  constructor(
-    readonly code: ErrorCode,
-    msg: string,
-  ) {
-    super(msg);
-  }
-}
-
-/**
- * An Issue as the `--json` envelope spells it — the Finding shape, minus details.
+ * An Issue as the `--json` envelope spells it — the whole Finding shape, `details`
+ * included (`[]` when the issue carries none; the overwrite warnings list their
+ * current consumers there), plus `overridable`.
  * `gates` and `overridable` are always present and already resolved: a consumer
  * must not have to re-implement the severity default to know what blocks
  * archive, nor keep a code list to know what `--approve` can move.

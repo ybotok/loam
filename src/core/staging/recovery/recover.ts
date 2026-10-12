@@ -10,6 +10,12 @@
  * way, a file in NEITHER recorded state was written by somebody else since,
  * so recovery refuses and names it rather than choosing which of two truths
  * to destroy.
+ *
+ * The journaled writers reach it through `openCommitWindow` below — the lock,
+ * then this — so the two refusals that can keep a commit window shut are
+ * spelled once rather than once per writer. Archive and unarchive are the
+ * exception: they call it directly, inside their plan, under a lock they took
+ * themselves, and throw its refusal to a handler that maps it.
  */
 import { existsSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
@@ -24,6 +30,7 @@ import {
   InterruptedCommitError,
   sweepPidTemps,
 } from "../interrupted.js";
+import { acquireDocsLock, acquireDocsLockWaiting, DocsBusyError, LOCK_WAIT_MS } from "../lock.js";
 import { readTxnIntent } from "../txn/journal.js";
 import { recoverForward } from "../txn/forward.js";
 import {
@@ -144,4 +151,68 @@ async function finishRecovery(docsDir: string, intent: CommitIntent): Promise<vo
   await clearCommitIntent(docsDir);
 }
 
+/** The lock is held and a predecessor's interrupted commit is resolved: this run may read, then write. */
+export interface OpenCommitWindow {
+  ok: true;
+  recovered: CommitRecovery | null;
+  /** Idempotent. The caller's one obligation, in a `finally`. */
+  release: () => Promise<void>;
+}
+
+/** The window did not open. Nothing was read or written, and no lock is held. */
+export interface CommitWindowRefusal {
+  ok: false;
+  code: "docs-busy" | "commit-interrupted";
+  message: string;
+}
+
+/**
+ * Open a writer's commit window: take the lock in `root` — the docs repo, or
+ * gherkin's emission root in the service repo — then refuse or repair a
+ * predecessor's interrupted commit before this run reads a byte.
+ *
+ * `waitMs` is how long to sit out a live holder before answering `docs-busy`,
+ * and 0 refuses on first contact; `acquireDocsLockWaiting` says which writers
+ * wait and why archive does not.
+ *
+ * Each writer here used to spell this sequence out by hand, and the copy in
+ * `verify` once let its recovery refusal keep the lock — one bad answer set
+ * became a wedged docs repo for everyone else. So the refusal releases HERE,
+ * before it is returned, and an error that is neither refusal releases before
+ * it propagates.
+ */
+export async function openCommitWindow(root: string, waitMs: number): Promise<OpenCommitWindow | CommitWindowRefusal> {
+  let release: () => Promise<void>;
+  try {
+    release = waitMs > 0 ? await acquireDocsLockWaiting(root, waitMs) : await acquireDocsLock(root);
+  } catch (err) {
+    if (!(err instanceof DocsBusyError)) throw err;
+    return { ok: false, code: "docs-busy", message: err.message };
+  }
+  try {
+    return { ok: true, recovered: await recoverInterruptedCommit(root), release };
+  } catch (err) {
+    await release();
+    if (!(err instanceof InterruptedCommitError)) throw err;
+    return { ok: false, code: "commit-interrupted", message: err.message };
+  }
+}
+
+/**
+ * Recover a predecessor's interrupted commit NOW and hand the lock straight
+ * back — for a writer whose slow half runs UNLOCKED over the very bytes a
+ * half-commit corrupts (vouch's verification, gherkin's reconcile); each says
+ * at its call site why recovery inside its own commit window comes too late.
+ * Cheap when there is nothing to do: no journal, no lock, no I/O beyond one
+ * existsSync.
+ */
+export async function recoverIfJournaled(
+  root: string,
+): Promise<{ ok: true; recovered: CommitRecovery | null } | CommitWindowRefusal> {
+  if (!existsSync(join(root, COMMIT_INTENT))) return { ok: true, recovered: null };
+  const opened = await openCommitWindow(root, LOCK_WAIT_MS);
+  if (!opened.ok) return opened;
+  await opened.release();
+  return { ok: true, recovered: opened.recovered };
+}
 

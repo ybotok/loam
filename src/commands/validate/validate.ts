@@ -15,8 +15,10 @@ import { agentsStaleFinding, binaryBehindFinding } from "../../core/agent/agents
 import { inOrder } from "../../core/kernel/concurrency.js";
 import type { RawServiceId } from "../../core/kernel/ids/service.js";
 import { resolveServiceTarget } from "../../core/repo/service-target.js";
-import { loadConfig, loamOwnedFiles } from "../../core/envelope/config.js";
-import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../../core/envelope/json.js";
+import type { LoadedDoc } from "../../core/c4/likec4.js";
+import type { FeatureEntry } from "../../core/repo/entries.js";
+import { loamOwnedFiles } from "../../core/envelope/config.js";
+import { configOrRefuse, emitJson, fail, NO_SERVICE_MESSAGE } from "../../core/envelope/json.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { agentsPath as agentsFile, landscapePath as landscapeFile } from "../../core/repo/paths.js";
 import { listFeatures, listServices, missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
@@ -96,12 +98,8 @@ export function registerValidate(program: Command): void {
         return;
       }
 
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const config = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
       const { docsDir } = config;
       // Before anything is enumerated: a docsDir that is not a docs repo must
       // refuse, not report an empty fleet. See docsRepoReady. `--feature` is the
@@ -119,11 +117,32 @@ export function registerValidate(program: Command): void {
       // What loam itself wrote into that repository, which no `sources` list owes a reading of.
       const loamOwned = loamOwnedFiles(config);
 
-      /** One service target, from a name the enumeration or the grammar approved. */
-      const serviceTarget = (id: RawServiceId): Promise<TargetReport> =>
+      /**
+       * One service target, from a name the enumeration or the grammar approved.
+       * `land` is --all's landscape, read once for the whole run and handed to
+       * the service. Null is PASSED — it means "there is no landscape file" —
+       * so the test is `=== undefined`, never truthiness: a repo with no
+       * landscape would otherwise re-load per service and double-report.
+       *
+       * `landscapeReported` says whether this run ALSO emits a landscape target
+       * to carry the map's parse errors, and it is the caller's to state: a
+       * preloaded map does not imply one. It used to be read off `land`, and
+       * under `--base` the landscape is a target only when the branch changed
+       * `architecture/` — so a broken committed map and a branch touching only
+       * a service told that service "reported once, on the landscape target"
+       * with no details, and the parser output was reported nowhere.
+       */
+      const serviceTarget = (id: RawServiceId, land?: LoadedDoc | null, landscapeReported = false): Promise<TargetReport> =>
         guarded({ kind: "service", id }, () =>
-          validateService({ docsDir, service: id, repoDir: repoOf(id), loamOwned, gherkinDir: config.gherkinDir, contracts: config.contracts, fleet }),
+          validateService({
+            docsDir, service: id, repoDir: repoOf(id), loamOwned, gherkinDir: config.gherkinDir, contracts: config.contracts, fleet,
+            ...(land === undefined ? {} : { preloaded: land }),
+            landscapeReported,
+          }),
         );
+      /** One feature target; `land` as above, and left undefined it means "load it if you need it". */
+      const featureTarget = (feature: FeatureEntry, land?: LoadedDoc | null): Promise<TargetReport> =>
+        guarded({ kind: "feature", id: feature.id }, () => validateFeature(docsDir, feature, land, fleet));
 
       const targets: TargetReport[] = [];
       /** What the positional argument turned out to name, for the JSON payload. */
@@ -167,7 +186,8 @@ export function registerValidate(program: Command): void {
           // landscape owns no service directory, so that is its whole footprint —
           // and even then not whole: `scope.ts` drops what grades a file the
           // branch left alone and adds the call edges it wrote.
-          if (scope === null || scope.landscape) {
+          const landscapeIsTarget = scope === null || scope.landscape;
+          if (landscapeIsTarget) {
             const landscape = await validateLandscape(docsDir, land, fleet);
             targets.push(landscape);
             // The agent contract check, --all only: AGENTS.md is written once and
@@ -191,41 +211,15 @@ export function registerValidate(program: Command): void {
               });
             }
           }
-          targets.push(
-            ...(await inOrder(services, (svc) =>
-              guarded({ kind: "service", id: svc.id }, () =>
-                validateService({
-                  docsDir,
-                  service: svc.id,
-                  repoDir: repoOf(svc.id),
-                  loamOwned,
-                  preloaded: land,
-                  gherkinDir: config.gherkinDir,
-                  contracts: config.contracts,
-                  fleet,
-                  landscapeReported: true,
-                }),
-              ),
-            )),
-          );
-          targets.push(
-            ...(await inOrder(features, (feat) =>
-              guarded({ kind: "feature", id: feat.id }, () =>
-                validateFeature(docsDir, feat, land, fleet),
-              ),
-            )),
-          );
+          targets.push(...(await inOrder(services, (svc) => serviceTarget(svc.id, land, landscapeIsTarget))));
+          targets.push(...(await inOrder(features, (feat) => featureTarget(feat, land))));
         } else if (opts.feature) {
           const feature = await resolveFeature(docsDir, opts.feature, "exclude", fleet);
           if (!feature) {
             fail(json, "unknown-target", await missingFeatureMessage(docsDir, opts.feature, fleet));
             return;
           }
-          targets.push(
-            await guarded({ kind: "feature", id: feature.id }, () =>
-              validateFeature(docsDir, feature, undefined, fleet),
-            ),
-          );
+          targets.push(await featureTarget(feature));
         } else if (target !== undefined) {
           // The positional reads the way `show` reads one: try the feature first
           // (ids like FEAT-101 are distinctive, service names are arbitrary), then
@@ -236,9 +230,7 @@ export function registerValidate(program: Command): void {
           const isService = (await listServices(docsDir, fleet)).some((s) => s.id === target);
           if (feature) {
             resolvedKind = "feature";
-            const report = await guarded({ kind: "feature", id: feature.id }, () =>
-              validateFeature(docsDir, feature, undefined, fleet),
-            );
+            const report = await featureTarget(feature);
             if (isService) report.findings.unshift(ambiguousTarget(target, "feature"));
             targets.push(report);
           } else {

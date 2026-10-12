@@ -103,26 +103,38 @@ const UC_FLOW = `views {
  * Derived from `UC_FLOW` rather than written out, so the hops cannot drift apart
  * from the `#cap-` case and leave the two answers incomparable.
  *
- * `UC_LANDSCAPE` still declares `cap-checkout`, so the byte gate opens under
- * either spelling of it and these cases measure the PREDICATE alone.
+ * The byte gate opens on the flow's own `#req-CHK-ONCE` reference — it reads
+ * `#` references, so `UC_LANDSCAPE`'s `tag cap-checkout` declaration no longer
+ * opens it — and the `#req-` gate case below pins that half on its own, so
+ * what these cases add is the PREDICATE.
  */
 const REQ_ONLY_FLOW = UC_FLOW.replace("#cap-checkout", "#req-CHK-ONCE");
 
 /**
  * A document that CANNOT parse — `ghost` is declared nowhere — and that never
- * mentions the reserved prefix. `TAG` is spliced in by the one case that needs
- * the gate to open over the same broken file.
+ * references a reserved tag. `declared` is spliced into its `specification`
+ * and `view` after its model, by the cases that need the gate to open (or to
+ * stay shut) over the same broken file.
  */
-function brokenArchitecture(tag = ""): string {
+function brokenArchitecture(declared = "", view = ""): string {
   return `specification {
   element softwareSystem
-${tag}}
+${declared}}
 
 model {
   web = softwareSystem 'checkout-web'
   web -> ghost 'Calls a system that does not exist'
 }
-`;
+${view}`;
+}
+
+/**
+ * A dynamic view carrying `#<tag>` — the REFERENCE the byte gate reads. The
+ * `tag <name>` declaration beside it is what LikeC4 needs; on its own it opts
+ * no view in, and the gate no longer opens on it.
+ */
+function carrying(tag: string): string {
+  return `\nviews {\n  dynamic view uc_broken {\n    #${tag}\n    web -> ghost 'calls'\n  }\n}\n`;
 }
 
 function fixture(architecture: Record<string, string>): Record<string, string> {
@@ -328,9 +340,33 @@ describe("the landscape load is lazy, and its emptiness is never ambiguous", () 
     }
   });
 
-  it("the same broken document IS parsed once a use-case tag is declared, and reports a hole", async () => {
+  it("a broken document that only DECLARES the tags, or names a prefix in prose, is NOT parsed — the gate reads `#` references", async () => {
+    // The gate used to look for the bare substrings, so a `tag req-…`
+    // declaration, or a comment naming a prefix, opened it over a document
+    // with no view carrying a tag — and `unreadable: true` was reported about
+    // a fleet that, read or not, declares no use case. Every tag a view carries
+    // is written `#name` (LikeC4's only spelling of a tag reference), so a
+    // document set with no `#` before a reserved prefix has nothing to read.
     const p = await makeProject(
-      fixture({ "architecture/landscape.likec4": brokenArchitecture("  tag cap-checkout\n") }),
+      fixture({
+        "architecture/landscape.likec4": brokenArchitecture(
+          "  tag cap-checkout\n  tag req-CHK-ONCE\n  tag suite-smoke\n  // req-CHK-ONCE runs in the e2e-suite-a job\n",
+        ),
+      }),
+    );
+    try {
+      const useCases = await deltaUseCases(p, "payment-split-service");
+      expect(useCases.unreadable).toBe(false);
+      expect(useCases.flows).toEqual([]);
+      expect((await statusUseCases(p)).unreadable).toBe(false);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("the same broken document IS parsed once a view carries a use-case tag, and reports a hole", async () => {
+    const p = await makeProject(
+      fixture({ "architecture/landscape.likec4": brokenArchitecture("  tag cap-checkout\n", carrying("cap-checkout")) }),
     );
     try {
       const useCases = await deltaUseCases(p, "payment-split-service");
@@ -346,16 +382,16 @@ describe("the landscape load is lazy, and its emptiness is never ambiguous", () 
     }
   });
 
-  it("a `req-` mention alone opens it too — a gate narrower than the predicate is silence", async () => {
+  it("a `#req-` reference alone opens it too — a gate narrower than the predicate is silence", async () => {
     // The other half of the widening, and the half that would have made the
     // first half do nothing. A fleet whose only flow carries `#req-<slug>`
     // declares `tag req-…` and writes `cap-` NOWHERE, so a `cap-`-only byte scan
     // answered "no use cases" and the project was never loaded — every reader
     // then agreed about a fleet none of them had looked at. The same broken
     // document as above measures it: `unreadable: true` is only reachable if the
-    // scan opened the gate on `req-` alone.
+    // scan opened the gate on `#req-` alone.
     const p = await makeProject(
-      fixture({ "architecture/landscape.likec4": brokenArchitecture("  tag req-CHK-ONCE\n") }),
+      fixture({ "architecture/landscape.likec4": brokenArchitecture("  tag req-CHK-ONCE\n", carrying("req-CHK-ONCE")) }),
     );
     try {
       const useCases = await deltaUseCases(p, "payment-split-service");

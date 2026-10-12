@@ -18,8 +18,10 @@ import { collectRefs, resolvePointer } from "./depth.js";
  * in the vendor-extension shape this axis already uses for `x-loam-remove`.
  *
  * This axis needs it MORE than the requirement axis does, because a feature's
- * openapi.yaml is a COMPLETE document rather than a patch: authors restate the
- * living contract around the slot they are changing, and the merge upserts every
+ * openapi.yaml may spell operations it does not change: it needs only what it
+ * adds, changes or removes (the merge leaves everything else to the living
+ * contract), but restating more is legal — for context, or a contract pasted
+ * whole, which is what loam's own docs once taught — and the merge upserts every
  * operation the document spells. So a feature that never meant to touch
  * `refundOrder` — it merely quoted it — pushes its authoring-time copy back over
  * whatever landed in between, reverting another team's shipped change without

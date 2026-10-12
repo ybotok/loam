@@ -89,8 +89,8 @@ docs/
     delta.likec4                     C4 delta (architecture)             [authored]
     specs/<svc>/spec.md              requirement delta (ADDED/MODIFIED/REMOVED + scenarios)  [authored]
     specs/<svc>/arch.spec.md         architectural requirement delta, same algebra  [authored]
-    specs/<svc>/openapi.yaml         the endpoints this feature adds     [authored]
-    specs/<svc>/asyncapi.yaml        the event-contract delta, slot-pinned  [authored]
+    specs/<svc>/openapi.yaml         only the endpoints it adds/changes/removes  [authored]
+    specs/<svc>/asyncapi.yaml        only the event slots it adds/changes/removes  [authored]
     capabilities/<cap>/spec.md       capability delta, same requirement grammar  [authored]
     glossary/<term>.md               a word this feature brings with it; create-only  [authored]
     usecases/<name>.likec4           a FLOW this feature brings; views-only, create-only  [authored]
@@ -105,9 +105,9 @@ docs/
 
 There is no `flows/` tree, and there will not be one. A cross-service **interaction flow** is a
 `dynamic view` under `architecture/` — the one place that already holds every cross-service edge —
-tagged with the capability it realizes. A flow that spans services does not belong under one
-service's directory, and the view's steps join to the landscape's own relationships, which is what
-makes the flow checkable rather than merely drawn.
+tagged with the capability it realizes, or with the suites it runs in (below). A flow that spans
+services does not belong under one service's directory, and the view's steps join to the
+landscape's own relationships, which is what makes the flow checkable rather than merely drawn.
 
 A flow that stays INSIDE one service — the hop sequence behind an arch.spec.md requirement whose
 `Covers:` names containers — cannot live under `architecture/`: loam parses that directory as its
@@ -147,6 +147,41 @@ is a views-only document that `loam archive` copies into `architecture/usecases/
 would leave behind — so a flow may draw a hop into a service the feature's own `delta.likec4` adds,
 and a hop into an element the merge does NOT land is refused at plan time rather than archived into
 a map the next reader's `loam validate --all` fails on.
+
+**A fleet flow can also say which SUITE it runs with: `#suite-<name>`.** A suite is a set of
+journeys a test run exercises together — a smoke suite, a payments suite — and a journey joins one
+by carrying the tag on its `dynamic view`, declared like every LikeC4 tag in the landscape's one
+`specification` block (`tag suite-smoke`), so a mistyped suite is a parse error rather than a second,
+empty suite. It is a SEPARATE prefix, not `#cap-`: a capability says what a flow is FOR, a suite says
+what it is RUN WITH, and membership is **many-to-many** — one view may carry several `#suite-` tags,
+and a suite holds as many views as carry its tag, which is why it is a tag and not a directory.
+
+**Tagging is the opt-in, and it grades.** A view carrying only `#suite-` tags — no `#cap-`, no
+`#req-` — IS a use case: every reader takes it (the predicate and the byte gate below now read three
+prefixes), and `loam validate --all` grades its hops like any other's (`usecase.step-unbacked`,
+`usecase.step-contested`, `usecase.step-unlinked`). A journey a test stand is provisioned from must
+be held to the model it is drawn over. The suite tag claims no capability and no requirement, so it
+earns nothing from the capability axis. An UNTAGGED view stays ungraded, exactly as before.
+
+`loam list suites [<name>] [--json]` is the answer the tag exists for: **which services must be up
+for suite X.** For each suite it lists the views carrying the tag, the enumerated services their
+steps resolve to — through the same element→service resolver the step grades use, so a step into
+one of order-service's containers counts order-service — and every participant that resolves to NO
+service, by element id, with whether it (or anything it is drawn inside) carries `#external`: the
+customer who drives the flow, a topic, a partner's API. The walk up stops at the first element
+bound to or titled for a service, as `loam gate`'s partner reading does, so a service drawn inside
+an `#external` grouping is still ours. Those are named and never dropped, because an environment
+list that is silently short comes up, and the journey then fails against something nobody was
+told to start. The payload is `suites[]` (`name`, `views[]` of `{id, file}`, `services[]`, `unresolved[]`
+of `{element, external}`), `ungrouped[]` — the use cases carrying no `#suite-` tag, which every
+per-suite line would otherwise leave out — and `useCases` (`state`: `absent` when the fleet
+declares no use case, `ok`, or `unreadable` with `error`, beside the `unreadable` boolean
+`list capabilities` spells). Over an unreadable `architecture/` the section degrades rather than
+refusing, and `suites` and `ungrouped` are ABSENT rather than `[]`. A `<name>` narrows `suites[]`
+only; an unknown one refuses `unknown-target` with the close names. The listing reads the FLEET
+map's use cases; a `#suite-` tag on a flow inside one service's own project is graded there like any
+other use-case tag, and is not listed — that flow runs inside one service, whose environment is the
+service itself.
 
 ### Two shapes of a service model
 
@@ -1287,9 +1322,14 @@ the edges point at channels it is the channels that collect three consumers each
 broker leaves a row of untagged hubs behind it.
 
 **The feature lifecycle, mirrored from the OpenAPI axis.** A feature changes this contract through
-`features/<FEAT>/specs/<svc>/asyncapi.yaml` — a **complete AsyncAPI 3.0 document**, exactly as an
-openapi delta is a complete document: the author restates the living contract around the part they
-are changing, and the machinery tells restatement from edit. Identity is the **slot** — the pair
+`features/<FEAT>/specs/<svc>/asyncapi.yaml` — a self-contained AsyncAPI 3.0 document holding **only
+the slots the feature adds, changes or removes**, exactly as an openapi delta holds only its own
+operations: the merge walks only the slots the delta declares, so a slot it leaves out stays as the
+living contract has it, and an edited slot is written out whole. A slot restated without being
+changed is legal and the machinery tells it from an edit, but it buys nothing and costs a pin,
+which a parallel feature's removal turns into `asyncapi.baseline-invalid` and `asyncapi.slot-revived`
+— or, unpinned, into `asyncapi.slot-revived` alone, the contract axis's revival check (under *Living
+spec vs delta* below) on this axis's identity. Identity is the **slot** — the pair
 (section, key) over the three named sections `channels.<key>`, `operations.<key>` and
 `components.messages.<key>` — and the join token stays the message name. Three feature-only keys,
 spelled and shaped exactly as on the OpenAPI axis: `x-loam-based-on` inside a slot's value (written
@@ -1455,14 +1495,25 @@ the source for tests.
   never the resolution itself — a pin says "I read this version", so `loam rebase` reports every
   requirement that moved and says plainly that restamping without re-reading merges your text over
   theirs. There is deliberately no three-way merge: requirement prose does not merge.
-- **The same baseline on the contract axis, where it matters more.** A feature's `openapi.yaml` is a
-  **complete document, not a patch** — authors restate the living contract around the slot they
-  change — and the merge upserts every operation the document spells. The collision therefore needs
-  no overlap between the two features at all: two deltas over one service, editing *different*
-  operations, destroy each other, because whichever archives second pushes its authoring-time copy
-  of the operation it never meant to touch back over what landed in between. On a service with
-  thirty operations a delta quotes twenty-nine of them, and each is a candidate. So every operation
-  in a feature contract carries **`x-loam-based-on`** — the same 16-hex digest, in the
+- **The same baseline on the contract axis.** A feature's `openapi.yaml` is a **self-contained
+  document holding only what the feature adds, changes or removes** — not a copy of the living
+  contract. The merge walks only the paths and methods the delta spells: an operation it leaves out
+  stays exactly as the living contract has it, a local `$ref` (`#/components/schemas/Order`)
+  resolves into the living document, and a brand-new operation, path-level key or component has no
+  living version to pin, so an add-only delta never trips `openapi.baseline-missing` and needs no
+  `loam rebase` at all. What the merge does upsert is every operation the document *does* spell,
+  so an operation quoted without being changed — copied for context, or a whole contract pasted in
+  — is a collision waiting for somebody else's edit: two deltas over one service, each quoting the
+  operation the other edits, destroy each other, because whichever archives second pushes its
+  authoring-time copy back over what landed in between. A quote also costs something even pinned:
+  it is one more pin, and a pinned quote whose living operation a parallel feature removes is
+  `openapi.baseline-invalid` — the living slot is gone, so the pin is founded on nothing — an
+  error that blocks the archive until the quote is deleted. Unpinned, the same quote has no living
+  operation behind it, so the baseline axis cannot tell it from an addition — and it used to
+  archive as one, at exit 0, putting the retired operation back. The **revival check** below is
+  what refuses it now. So a delta quotes nothing it does not change, and every operation in it that
+  the living contract already holds carries
+  **`x-loam-based-on`** — the same 16-hex digest, in the
   vendor-extension shape this axis already uses for `x-loam-remove`, written by `loam rebase` and
   stripped on merge exactly like `Based-On:`. The digest is taken over the operation's *canonical*
   form (object keys sorted), which is the same comparison `isDeepStrictEqual` makes when the merge
@@ -1477,7 +1528,8 @@ the source for tests.
   decision, reverting an operation nobody edited is a bug. `openapi.baseline-missing` is a warning
   that gates the archive, exactly like its requirement-axis sibling — every unpinned restatement is
   a candidate rollback — and it is reported **once per service** rather than per operation: the fix
-  is one command, and twenty-nine identical findings teach people to filter the code out. **Covered
+  is one command, and the twenty-nine identical findings a contract pasted whole from a
+  thirty-operation service would raise teach people to filter the code out. **Covered
   since the path-item/component baselines landed:** the same discipline now reaches the two surfaces
   the operation pin cannot — path-level keys (`parameters`, `servers`, `summary`, `x-*`) and every
   `components/<kind>/<name>` — through a single feature-only root record **`x-loam-baselines`** (`{
@@ -1492,6 +1544,93 @@ the source for tests.
   component copying is verdict-driven, with genuinely new components copied only when reachable from
   content actually written. Removal markers still carry no pin, since
   `openapi.remove-target-mismatch` already checks that exact slot.
+- **A retired operation does not come back by accident.** An operation the living contract does
+  not hold is either new or *retired*, and the living contract alone cannot say which: both are
+  simply absent. So the feature gate also reads what every **archived** feature took out — the
+  `x-loam-remove: true` markers left in `features/archive/<FEAT>/specs/<svc>/openapi.yaml` and
+  `asyncapi.yaml`, through the same relocation rule the gate applies to an in-flight delta (a
+  marker on an id the same delta redefines elsewhere moved it, and retired nothing). A delta entry
+  that is not itself a removal, that its service's living contract does not hold, and that an
+  archived feature retired is **`openapi.op-revived`** (by operationId — a
+  retired operation quoted at a new path is the same operation back) or **`asyncapi.slot-revived`**
+  (a `channels` or `operations` slot by its key; a message by its *name*, wherever it is declared).
+  A relocation retires nothing, but it VACATES an address — and so does a retirement, once a later
+  feature re-adds the id somewhere else — so the index records, per id, every address an archived
+  feature's executed marker vacated, which feature, and for a move where its delta put the id. The
+  finding is judged on the contract the archive would WRITE: the check runs the archive's own
+  merge of the delta over the living contract and compares where each operationId stands there with
+  where it stands now. An (operationId, address) the merged contract has and the living one lacks
+  is `openapi.op-revived` when the living contract holds the id nowhere and an archived feature
+  retired it (anywhere — by identity) or moved it away from that very address, or when the merged
+  contract answers the id at two or more addresses and an archived feature retired it at, or moved
+  it away from, that very address: archived, it would answer the id at both. An id that the living
+  contract still holds and the merged contract answers at exactly one address is never a revival —
+  a delta moving it back with its own removal marker where it lives now, or swapping another
+  operation in there (named or not: the merge writes per method and path), leaves it at one
+  address — while a marker standing where the id does not live deletes nothing, and excuses
+  nothing. One address is no exemption for an id the living contract holds nowhere: that is the
+  first case, so a quote of an address a move vacated is the finding even after a hand edit took
+  the id out of where the move put it. Reading the merged contract replaced a
+  case-by-case re-derivation of the merge that each review found a new hole in.
+  On the event axis the same rule runs on the message name, over the event merge: the addresses a
+  feature vacates are `components.messages` keys (a marker there) and the inline declarations a
+  channel removal took. A delta that restates the channel an inline declaration stands in (with
+  the message as a `$ref`) or retires that channel takes the name out, since a channel upsert
+  replaces the channel's interior; a marker nested on the inline message does not
+  (`asyncapi.remove-marker-inline`), so the finding names the channel as the remedy. A channel or
+  operation slot's identity is its key, so moving one is a retirement plus an addition, graded as
+  such. A message declared inline under a channel the delta brings back is that channel's
+  interior, and the channel's finding stands for it — unless the merged contract declares the
+  name somewhere else too (an archived feature re-declared it under `components` when it retired
+  the channel): then the inline declaration is a second place of its own, and gets its own
+  finding, since the channel's says nothing of the duplicate `--approve` would archive.
+  Both are warnings that **gate** the archive, `openapi.baseline-missing`'s doctrine: the document
+  is legal, and re-adding a retired operation can be exactly what a feature means — a retirement
+  rolled back — so `--approve` carries the call, and the archive output then names what came back
+  and whose retirement it reverses. The message offers both remedies: delete the quote if it only
+  restated the operation; archive with `--approve` if the feature brings it back on purpose (a pin
+  over nothing is `openapi.baseline-invalid`, so a deliberate re-add drops it first). At a vacated
+  address beside a living one it names the address to drop instead: delete the quote, or, to move
+  the id back on purpose, take it out of where it lives now in the same delta (a removal marker
+  there; for a message declared inline, restate or retire its channel; for a `components.messages`
+  key, also restate every channel or operation of the merged contract still `$ref`-ing it, with
+  the `$ref` pointed at the quoted key — the message names them, since a marker alone would leave
+  them pointing at nothing and their send would stop sending the message) — and where the delta
+  already spells that address, so no marker can stand there, archive with `--approve`. A slot
+  holds one entry, so where the living contract has ANOTHER operation (or message) at the address
+  the delta spells the id at, the merge replaces it there: the message names it ("now holds
+  'requestCancellation', and archiving this delta replaces it there"), and the move-back remedy
+  says to define it at another address (another key, for a message) in the same delta if it is
+  to stay — never an address
+  "the living contract no longer has", a remedy that once led to a clean gate and an archive that
+  deleted the other entry unnamed. `loam rebase`
+  never pins such an entry as new: it prints the same finding (`revived[]` in `--json`) and leaves
+  the decision to the author. It asks the question of the delta as it will WRITE it, pins
+  included: a quote pinned to its own content is skipped by the merge, and the same quote
+  repinned to whatever now lives at its address is an edit the merge writes — so a revival
+  rebase's own repin creates is in that list, `--dry-run` included, and the next validate agrees. A channel-slot removal retires the messages its living channel
+  declared inline, which the delta never spells, so those names are read from the archived
+  feature's undo snapshot (`.loam-before/`, the pre-image of the contract the merge ran against) —
+  only while that pre-image still hashes to what the manifest recorded. A marker is a request, not a
+  record of what happened: the OpenAPI merge deletes a living operation only when the one at the
+  marker's own method and path carries the marker's `operationId`, and the event merge deletes a
+  `channels` or `operations` slot only when the living contract has that key, and a
+  `components.messages` slot only when the message declared there carries the marker's name. A
+  marker that missed — archived past `remove-target-missing` or `remove-target-mismatch` under
+  `--approve` — deleted nothing, so each marker counts only if the same pre-image held its target
+  (a contract the archive created, or never wrote, lost nothing to it); a feature with no intact
+  snapshot cannot be checked, and its markers count as written. Two marker
+  shapes are never sources, because neither can match anything: a marker with no `operationId`
+  (`openapi.remove-marker-anonymous`) and one written at path level
+  (`openapi.remove-marker-path-level`) — a feature archived past either under `--approve` left the
+  operation living.
+  **The honest limit:** the check knows only what the files under `features/archive/` record. A
+  removal made by hand-editing a living contract leaves no marker anywhere, and an archived feature
+  deleted from disk takes its markers with it; both read as "never retired", and a quote of such an
+  operation grades as an addition exactly as it did before the check existed. A channel's inline
+  messages drop out the same way when its feature carries no intact pre-image (archived before the
+  snapshot existed, or the snapshot edited or removed since) — the channel slot itself is still
+  caught. No git history is read: the archive directory is the record.
 
 A requirement may carry a stable identity in its body: `Requirement-ID: <id>`, where the ID matches
 `[A-Za-z][A-Za-z0-9._-]{0,127}`. It is optional for backward compatibility. When present in a delta,
@@ -1744,6 +1883,12 @@ requirement also needs a current `Based-On:` pin before archive; `loam rebase <F
 Omitting or leaving the intent as scaffold text raises the gating `intent.empty` /
 `scaffold.placeholder` warning, so the old one-file shape is not archive-ready.
 
+Below that floor is no feature at all. A change that touches no requirement, no operation and
+no fleet edge — a refactor, a dependency bump, a fix that brings the code back to behaviour the
+living spec already documents — leaves the docs repo untouched: it is a code PR, then
+`loam validate --service <id>` in the service repo, where `sources.stale` names the moved paths, and
+the re-vouch they owe (`loam vouch --pack` is the reading list; the vouch is a person's).
+
 Each axis may be legitimately empty, and the checks grade absence differently from
 emptiness-by-accident:
 
@@ -1754,7 +1899,8 @@ emptiness-by-accident:
   declared-but-untagged is almost always a forgotten tag, while declaring nothing is a legible
   statement that the architecture is unchanged.
 - **openapi delta** — absent whenever the feature adds no operations; a requirement change that
-  stays inside the existing contract has no API axis to speak on.
+  stays inside the existing contract has no API axis to speak on. Present, it holds only the
+  operations the feature adds, changes or removes.
 - **requirement delta** — the axis that is nearly always present, because a feature that changes no
   requirement changes no promised behaviour. The exception is architecture-only work: a new service
   in the C4 delta with no `specs/<svc>/spec.md` gets `service.no-requirement-delta` as a warning,
@@ -1766,6 +1912,16 @@ overridable) fires when the file is missing or says nothing outside the scaffold
 a feature cannot fold into the living docs with its reason unwritten. Its sibling
 `scaffold.placeholder` refuses the rest of an unedited `loam new` scaffold the same way — the exact
 template strings, a requirement or description nobody authored, must not become living truth.
+
+The scaffolded `intent.md` also carries an optional `## Open questions` heading over a comment.
+It is where `loam-feature`'s analyze step — between authoring and `loam rebase` — writes what the
+documents leave open: a SHALL two engineers could build two ways, a value or window two services
+state differently and which side refuses, a `Realizes:` that does not deliver its capability, an
+edge with no stated timeout, retry, partial-failure or compensation answer, a neighbour left out of
+`--touches`. A person answers by editing the file. Nothing grades the section: `intent.empty` reads
+past it, so questions written there are never mistaken for the Why, and they never gate the archive —
+every check loam has is a join between exact tokens, and whether two services MEAN the same thing by
+one is the part no join reads.
 
 ### Where a capability lives (a declared name, and the document behind it)
 
@@ -1933,13 +2089,19 @@ refusing it, which is why the flattening is a whitelist and not a list of substi
   document declares no requirements yet, it declares none flattening to this slug (close ids
   offered, each already spelled as the tag to write), or two of its ids flatten to one slug.
 
-**Either reserved prefix opts a view in.** A view carrying `#req-` and no `#cap-` is an author who
+**Any reserved prefix opts a view in.** A view carrying `#req-` and no `#cap-` is an author who
 asked to be graded and forgot half the claim; it earns the `unscoped` message rather than silence.
-That opt-in is **one predicate**, and every reader takes it: `loam validate`, `loam diff`,
-`loam delta`, `loam status`, the context and explore packs and `loam list capabilities` all decide
-"is this a use case" the same way, so a flow one of them can see is a flow all of them can see. The
-byte scan that lets a fleet with no use cases skip the LikeC4 load looks for both prefixes for the
-same reason — a gate narrower than the predicate is silence, not a smaller answer.
+A view carrying only `#suite-<name>` is a use case too (see the layout section above). That opt-in
+is **one predicate**, and every reader takes it: `loam validate`, `loam diff`, `loam delta`,
+`loam status`, the context and explore packs, `loam list capabilities` and `loam list suites` all
+decide "is this a use case" the same way, so a flow one of them can see is a flow all of them can
+see. The byte scan that lets a fleet with no use cases skip the LikeC4 load looks for every prefix
+— `cap-`, `req-` and `suite-` — for the same reason: a gate narrower than the predicate is silence,
+not a smaller answer. It looks for each written as a tag REFERENCE: a `#`, then only what LikeC4
+skips between the `#` and a tag's name (whitespace, line breaks, comments), then the prefix — the
+only way a view carries a tag. A prefix in prose, a title or a `tag cap-…` declaration does not open
+it, so a hand-drawn `.likec4` beside a service's model that names `suite-` in its title, carries no
+tagged view and does not parse is not loaded and earns no `usecase.flow-invalid`.
 
 Being SEEN is not the same as claiming something, and the difference is worth stating because it
 looks like a gap and is not. A view with no resolved `#cap-` tag claims no capability, so it seeds

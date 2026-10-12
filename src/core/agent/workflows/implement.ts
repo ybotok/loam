@@ -37,7 +37,8 @@ export const LOAM_IMPLEMENT: CommandContent = {
   ],
   body: `Implement one service's part of a feature. Every step runs in the SERVICE'S own
 repository, which needs its own committed ./loam.json — if there is none,
-\`loam init --docs <path-to-docs-repo> --service $2\` then \`loam doctor\` first.
+\`loam init --docs <path-to-docs-repo> --service $2 --agent-profile service\` then
+\`loam doctor\` first.
 
 0. \`loam status $1 --json\` — where this feature actually is. Run it before
    anything else if you joined halfway or lost the session: it says which
@@ -178,6 +179,8 @@ repository, which needs its own committed ./loam.json — if there is none,
 8. \`loam validate --feature $1 --json\` before handing back.
 
 If the requirement is ambiguous, say so and stop — do not invent behaviour and
-leave the spec disagreeing with the code.
+leave the spec disagreeing with the code. Write the question under
+\`## Open questions\` in the feature's \`intent.md\`, where loam-feature's analyze
+step put the ones it found, so a person answers it once for every service.
 `,
 };

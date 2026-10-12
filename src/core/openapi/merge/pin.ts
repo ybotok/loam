@@ -1,9 +1,10 @@
 /**
  * The pin that tells a QUOTE from an EDIT.
  *
- * A feature's openapi.yaml is a complete document, so most of what it spells is
- * quotation: the author restated the living contract around the slot they were
- * changing. Without a pin the merge cannot tell the two apart and upserts both,
+ * A feature's openapi.yaml needs only what it adds, changes or removes, but it
+ * may also restate living operations it does not change — for context, or a
+ * contract pasted whole — and then much of what it spells is quotation. Without
+ * a pin the merge cannot tell the two apart and upserts both,
  * which is how a feature that only meant to touch `cancelOrder` silently
  * reverted another team's landed change to `refundOrder` — no overlap between
  * the two features required, just two deltas over one service.
@@ -11,7 +12,7 @@
  * Separate from `./merge.ts` because this is `loam rebase`'s half: it plans the
  * pins a delta is missing, while the merge only ever reads pins already written.
  */
-import { isMap, parseDocument } from "yaml";
+import { isMap } from "yaml";
 // Every `isRecord` below asks one question of a resolved plain tree: is this a
 // node that can hold OpenAPI keys — an object, not an array?
 import { isRecord } from "../../kernel/records.js";
@@ -22,34 +23,25 @@ import {
   operationDigest,
   OPENAPI_BASELINE_KEY,
 } from "../digest.js";
-import { errorMessage, OpenapiMergeError } from "./error.js";
+import { openapiRefusal } from "./error.js";
+import { readTree, writeTree } from "../contract-tree.js";
 import { isRemoval } from "../digest.js";
 import { plainChild } from "./markers.js";
 
 /**
- * What a feature's operation IS, relative to the living contract — the one
- * judgement that tells a QUOTE from an EDIT.
- *
- * A feature's openapi.yaml is a complete document, so most of what it spells is
- * quotation: the author restated the living contract around the slot they were
- * changing. Without a pin the merge cannot tell the two apart and upserts both,
- * which is how a feature that only meant to touch `cancelOrder` silently
- * reverted another team's landed change to `refundOrder` — no overlap between
- * the features required, just two deltas over one service.
- */
-export type OperationBaselineVerdict = ReturnType<typeof classifyBaselineDigests>;
-
-/**
  * Classify one feature operation against its living counterpart, from the raw
- * YAML trees the merge works in. The rule itself lives in ../digest.ts, so
- * the gate and the merge cannot drift apart about which operations get written.
+ * YAML trees the merge works in: what the operation IS, relative to the living
+ * contract — the one judgement that tells a QUOTE from an EDIT (the module
+ * header says why that judgement exists). The rule itself lives in
+ * ../digest.ts, so the gate and the merge cannot drift apart about which
+ * operations get written.
  *
  * A malformed pin matches no digest and lands in `stale`, which merges rather
  * than skips. Deliberate: `openapi.baseline-invalid` refuses it at the gate, and
  * a value nobody can evaluate must never be the reason a merge quietly drops an
  * operation.
  */
-export function classifyOperationBaseline(featureOp: unknown, livingOp: unknown): OperationBaselineVerdict {
+export function classifyOperationBaseline(featureOp: unknown, livingOp: unknown): ReturnType<typeof classifyBaselineDigests> {
   return classifyBaselineDigests(
     operationBaselineOf(featureOp),
     operationDigest(featureOp),
@@ -102,23 +94,8 @@ export interface OpenapiPinPlan {
  * path the contract does not serve yet.
  */
 export function pinOpenapiOperations(featureText: string, livingText: string, service: string): OpenapiPinPlan {
-  const doc = parseDocument(featureText);
-  if (doc.errors.length > 0) throw new OpenapiMergeError("feature", service, doc.errors[0]!.message);
-  let featPlain: unknown;
-  let livingPlain: unknown;
-  try {
-    featPlain = doc.toJS() ?? {};
-  } catch (error) {
-    throw new OpenapiMergeError("feature", service, errorMessage(error));
-  }
-  try {
-    const parsed = parseDocument(livingText);
-    if (parsed.errors.length > 0) throw new OpenapiMergeError("living", service, parsed.errors[0]!.message);
-    livingPlain = parsed.toJS() ?? {};
-  } catch (error) {
-    if (error instanceof OpenapiMergeError) throw error;
-    throw new OpenapiMergeError("living", service, errorMessage(error));
-  }
+  const { doc, plain: featPlain } = readTree(featureText, openapiRefusal("feature", service));
+  const { plain: livingPlain } = readTree(livingText, openapiRefusal("living", service));
 
   const featPaths = plainChild(featPlain, "paths");
   if (!isRecord(featPaths)) return { text: null, pins: [] };
@@ -163,11 +140,7 @@ export function pinOpenapiOperations(featureText: string, livingText: string, se
   }
 
   if (!edited) return { text: null, pins };
-  try {
-    return { text: doc.toString(), pins };
-  } catch (error) {
-    throw new OpenapiMergeError("feature", service, errorMessage(error));
-  }
+  return { text: writeTree(doc, openapiRefusal("feature", service)), pins };
 }
 
 

@@ -1,9 +1,10 @@
 /**
  * What the generated views files MUST say — the shared answer every subsystem
- * writer and `subsystem sync` render from. A module beneath the verbs (in the
- * txn/ subpackage) because the commit window and sync both consume it, and a
- * second spelling of "what should the views say" would be a second chance to
- * disagree with `validate`'s staleness check.
+ * writer and `subsystem sync` render from, and the one compare both make against
+ * it (`planGenerated`). A module beneath the verbs (in the txn/ subpackage)
+ * because the commit window and sync both consume it, and a second spelling of
+ * "what should the views say" would be a second chance to disagree with
+ * `validate`'s staleness check.
  *
  * BOTH generated files come out of ONE read of the map, and that is the reason
  * this module answers about the pair rather than about one file: they are
@@ -25,8 +26,10 @@ import {
   type MapFacts,
   renderServiceOverviews,
   renderSubsystemViews,
+  viewsAgree,
 } from "../../../core/repo/tree/render/views.js";
 import type { FleetTree } from "../../../core/repo/tree/walk.js";
+import type { PlannedWrite } from "../../../core/staging/writes.js";
 
 /** What one read of the map yielded, and whether it came from the whole project. */
 export interface LandscapeRead {
@@ -177,6 +180,35 @@ async function declaredStyles(docsDir: DocsDir, landscape: MapFacts): Promise<st
 export interface ExpectedFile {
   path: string;
   content: string | null;
+}
+
+/** What a commit does to one generated file once every writer's own veto has passed. */
+export type ViewsAction = "created" | "updated" | "removed" | "current";
+
+/**
+ * Compare ONE generated file against what it must say: the write when they
+ * differ, and what that write is. Both writers of these files — `../sync.ts`'s
+ * `planFile` and the verbs' `stageGenerated` (`./txn.ts`) — put their own veto
+ * in front of this and nothing else, because the rule is one rule, and a second
+ * spelling of it would be a second chance for the two writers to answer
+ * differently about the same file.
+ *
+ * The compare is over CONTENT, not bytes: `viewsAgree` records why, beside the
+ * generator. A Windows clone hands a generated file back CRLF with not one fact
+ * changed, and a byte compare made `sync` answer `updated` and rewrite it LF —
+ * after which git shows the file permanently modified and the next checkout puts
+ * the CRLF back — and folded the same rewrite into every subsystem move's
+ * transaction and journal. `validate` stopped demanding that rewrite; the
+ * writers must stop offering it, or they disagree about the same file. What gets
+ * WRITTEN is still the LF render as a Buffer, so the decode is a comparison only.
+ */
+export function planGenerated(file: ExpectedFile, current: string | null): { action: ViewsAction; write: PlannedWrite | null } {
+  if (viewsAgree(current, file.content)) return { action: "current", write: null };
+  const bytes = file.content === null ? null : Buffer.from(file.content, "utf8");
+  return {
+    action: current === null ? "created" : bytes === null ? "removed" : "updated",
+    write: { path: file.path, content: bytes },
+  };
 }
 
 /**

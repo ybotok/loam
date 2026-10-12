@@ -20,7 +20,6 @@ import { readUtf8 } from "../../../core/staging/writes.js";
 import { loadFile } from "../../../core/c4/likec4.js";
 import { archiveDir as archiveRoot, featurePaths, featureSpecPaths, SPEC_AXES } from "../../../core/repo/paths.js";
 import { livingCapabilityPaths } from "../../../core/repo/authored/paths.js";
-import { featureCapabilityDeltas } from "../../../core/capabilities/delta/tree.js";
 import { locateServicePaths } from "../../../core/repo/service-target.js";
 import { featureSpecServices, missingFeatureMessage, resolveFeature } from "../../../core/repo/repo.js";
 import { featureCoherence } from "../../../core/coherence/coherence.js";
@@ -37,7 +36,7 @@ import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 import type { FleetContext } from "../../../core/fleet-context.js";
 
 export async function gate(
-  config: { docsDir: DocsDir; fleet?: FleetContext },
+  config: { docsDir: DocsDir; fleet: FleetContext },
   featureId: string,
   opts: ArchiveOptions,
   say: (line?: string) => void,
@@ -76,11 +75,7 @@ export async function gate(
   // no-context path `core/coherence/declared.ts` already documents paying for
   // the arch delta — so this is not the run's only walk, only the one every
   // phase downstream of the gate shares.
-  const capabilityDeltas = (
-    config.fleet === undefined
-      ? await featureCapabilityDeltas(featureDir)
-      : await config.fleet.featureCapabilityDeltas(featureDir)
-  ).docs;
+  const capabilityDeltas = (await config.fleet.featureCapabilityDeltas(featureDir)).docs;
 
   // A `specs/<svc>/` whose NAME is not a legal service id, refused before
   // anything joins that name into a path: the conflict scan below probes

@@ -12,10 +12,12 @@
  *   - init first-hour epilogue: the human output ends with the adopt → validate
  *     → vouch → status sequence exactly when one run both creates the docs repo
  *     and leaves a service bound — by flag or by an existing loam.json's config
- *     spread — the single-repo trial. Silent on joins, on --create with no
- *     binding, and under --json. The printed commands parse against the real
+ *     spread — the single-repo trial. A --create with no binding prints the
+ *     docs repo's own hour (seed → bind → adopt → status) instead. Silent on
+ *     joins and under --json. The printed commands parse against the real
  *     program via test/agent-commands-runnable.test.ts's imported firstHour
- *     entry, and README's Quick start copy of the table is pinned to it here.
+ *     and docsRepoFirstHour entries, and README's Quick start copy of the
+ *     trial table is pinned to it here.
  *   - init --json: {ok, docsDir, created, skipped, tools, detected} — skipped is
  *     the other half of the never-overwrite contract, tools names the agent
  *     tools files were generated for, detected the separate question of which
@@ -48,7 +50,7 @@ import {
   type Project,
 } from "./helpers/harness.js";
 import { docsRepoFiles } from "../src/core/docs.js";
-import { firstHour } from "../src/commands/init/first-hour.js";
+import { docsRepoFirstHour, firstHour } from "../src/commands/init/first-hour.js";
 
 /* ------------------------------------------------------------------ */
 /* Per-test fixture bookkeeping                                        */
@@ -302,23 +304,33 @@ describe("init: the first-hour epilogue on the single-repo trial composition", (
     expect(res.out).not.toContain("first hour");
   });
 
-  it("stays silent on --create without --service — nothing is bound, so adopt/vouch have no id to name", async () => {
+  it("--create without --service prints the DOCS repo's hour — map, bind, adopt — never the trial's", async () => {
+    // This used to be silence, pinned here as "nothing is bound, so adopt/vouch
+    // have no id to name". True of the trial table, and the wrong conclusion:
+    // a docs repo created with nothing bound is Day zero itself, and its next
+    // steps are fixed whatever the ids turn out to be — the map, a binding
+    // from each service's own repo, an adopt there. No vouch line: that step
+    // belongs to a service repo, and naming it here would name it for nobody.
     const dir = await throwawayDir();
     const res = await runLoam(dir, "init", "--create", "--docs", "./d");
     expect(res.code).toBe(0);
-    expect(res.out).not.toContain("first hour");
+    expect(res.out).toContain("next — the docs repo's first hour:");
+    expect(res.out).not.toContain("next — the first hour:");
+    for (const [command] of docsRepoFirstHour()) expect(res.out).toContain(command);
+    expect(res.out).not.toContain("loam vouch");
   });
 
   it("never reaches --json: the envelope stays pure JSON with no epilogue text and no new keys", async () => {
-    const dir = await throwawayDir();
-    const res = await runLoam(
-      dir, "init", "--create", "--docs", "./d", "--service", "payment-service", "--json",
-    );
-    expect(res.code).toBe(0);
-    // JSON.parse over the whole stream is the no-prose assertion.
-    const json = JSON.parse(res.stdout);
-    expect(json.ok).toBe(true);
-    expect(res.stdout).not.toContain("first hour");
+    // Both variants: the docs-repo hour is text only, exactly as the trial's is.
+    for (const bound of [["--service", "payment-service"], []]) {
+      const dir = await throwawayDir();
+      const res = await runLoam(dir, "init", "--create", "--docs", "./d", ...bound, "--json");
+      expect(res.code).toBe(0);
+      // JSON.parse over the whole stream is the no-prose assertion.
+      const json = JSON.parse(res.stdout);
+      expect(json.ok).toBe(true);
+      expect(res.stdout).not.toContain("first hour");
+    }
   });
 });
 

@@ -79,8 +79,8 @@ parsed. If a second reader of the same claims appears, that is the seam to move.
 | L2 | `agent/` `document/` `staging/` | Parse one document kind into a record; the write path |
 | L3 | `repo/` | The read model over the docs tree, and the fan-in hub of the whole layer stack |
 | L4 | `c4/` `gherkin/` `glossary/` `openapi/` `openspec/` `provenance/` `workspace/` | Read and write one artifact family. Not "cheap": `c4/likec4.ts` is the most expensive module in the repo and sits here |
-| L5 | `asyncapi/` `brief/` `capabilities/` `deployment/` `doctor/` | One artifact family that needs another one first |
-| L6 | `explain/` `links/` `projection/` `usecases/` | One link, one flow, projected onto the model |
+| L5 | `asyncapi/` `brief/` `capabilities/` `deployment/` `doctor/` `links/` | One artifact family that needs another one first |
+| L6 | `explain/` `projection/` `usecases/` | One flow, projected onto the model |
 | L7 | `delta/` `dependencies/` `diff/` `explore/` `mcp/` `pack/` `verify/` | One feature, and the whole-fleet reads |
 | L8 | `coherence/` | Cross-artifact rules producing `Issue[]` / `Finding[]` |
 | L9 | `status/` | Aggregate answers for a feature or a fleet |
@@ -120,7 +120,7 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/c4/` | `likec4` `arch` `source-mask` `source-scan`, with `parsed/` `project/` `resolve/` beneath | kernel, repo |
 | `core/c4/splice/` | `contract` `landscape-merge` `authored-source` `placement` | c4 |
 | `core/c4/seed/` | `loam seed`'s file grammar and templater: `fleet-file` (`items` reads one node) `template` `stamp` | c4, kernel |
-| `core/gherkin/` | the generated `.feature` files and the step catalogue over them | document, kernel, repo, vocabulary |
+| `core/gherkin/` | the generated `.feature` files and the step catalogue over them | kernel, repo, vocabulary |
 | `core/glossary/` | `glossary/<term>.md` as a tree where presence classifies, and the fleet-wide backlinks into it | repo |
 | `core/openapi/` | the synchronous contract axis; `openapi/merge/` is the delta path | kernel, repo |
 | `core/openspec/` | the OpenSpec model (`model/`), the scan, and the decisions over it | document, kernel, repo |
@@ -133,10 +133,10 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/doctor/` | the repository's own health: conflict markers, interrupted writes, a stale AGENTS.md | agent, c4, conflict-markers, docs, envelope, gherkin, kernel, repo, staging |
 | `core/delta/` | does the diff apply | capabilities, document, repo, usecases |
 | `core/explain/` | `loam explain`'s lookup — a finding code, a refusal code or a concept term in, one discriminated explanation out | agent, brief |
-| `core/links/` | the corpus of authored documents loam reads links out of, and whether each link resolves | capabilities, envelope, glossary, kernel, repo |
+| `core/links/` | the corpus of authored documents loam reads links out of, and whether each link resolves | envelope, glossary, kernel, repo |
 | `core/projection/` | one feature projected onto one service — the API, event and C4 slices `loam delta` and `loam context` share | asyncapi, c4, kernel, openapi, repo |
-| `core/usecases/` | the fleet's declared use cases and the join from a flow's steps onto the model, with `delta/` beneath for the flows one FEATURE brings and `service/` beneath for the flows one SERVICE keeps beside its model | c4, capabilities, repo |
-| `core/coherence/` | do the three axes agree | asyncapi, c4, capabilities, conflict-markers, delta, document, envelope, glossary, kernel, openapi, repo, usecases |
+| `core/usecases/` | the fleet's declared use cases and the join from a flow's steps onto the model, with `delta/` beneath for the flows one FEATURE brings, `service/` beneath for the flows one SERVICE keeps beside its model, and `suites/` beneath for the journeys grouped by `#suite-` tag and the participant union a test stand is provisioned from (the one subpackage its parent imports, so it imports nothing of the parent's but types) | c4, capabilities, kernel, repo, vocabulary |
+| `core/coherence/` | do the three axes agree; `retired/` beneath reads what archived features took out of the living contracts | asyncapi, c4, capabilities, conflict-markers, delta, deployment, document, envelope, glossary, kernel, openapi, repo, staging, usecases |
 | `core/dependencies/` | who calls whom, and the fan-in over it | c4, fleet-context, kernel, openapi, repo |
 | `core/diff/` | the base-ref read of the docs repo (git show/ls-tree) and the semantic branch diff `loam diff` reports | asyncapi, c4, document, envelope, kernel, openapi, provenance, repo, usecases |
 | `core/explore/` | the read-only survey `loam explore` prints before a feature exists | c4, capabilities, fleet-context, repo, usecases, vocabulary |
@@ -242,11 +242,11 @@ the workspace layout differs, and that part is already isolated.
    exception: `unarchive.ts` imports `sayRecovery` from `archive.ts`. A second exception means a new
    shared module, not a second exception. One structural exception, which is not the shared-code
    shape this rule exists to stop: `commands/mcp/dispatch.ts` imports the `register*` functions of
-   the ten read commands it re-enters — the same functions `src/cli.ts` imports, for the same
-   purpose (building a program), not a helper reached around the layer. The acyclic alternative does
-   not exist: importing `cli.ts` from a command module would be a file cycle, and a second copy of
-   the registrations would agree with itself and with nothing else — the exact drift
-   `buildProgram()`'s doc comment records.
+   the commands it re-enters (the sixteen read tools, plus the four `--author` writers) — the same
+   functions `src/cli.ts` imports, for the same purpose (building a program), not a helper reached
+   around the layer. The acyclic alternative does not exist: importing `cli.ts` from a command
+   module would be a file cycle, and a second copy of the registrations would agree with itself and
+   with nothing else — the exact drift `buildProgram()`'s doc comment records.
 6. **A raw string that reaches a path join passes `assertServiceId` at the command boundary.**
    `new`, `rebase`, `init`, `delta`, `adopt` and `explore` guard — `assertServiceId` for a single
    id, `parseServiceIds` where the flag takes a list. `doctor` reads its id from `loam.json`, which
@@ -285,7 +285,8 @@ the workspace layout differs, and that part is already isolated.
    `rg 'interface \w*(Manager|Handler|Provider|Factory|Repository)' src/` returns zero. Keep it
    zero.
 10. **No `class` unless it is an `Error` subclass or holds per-invocation cache state.** There are
-    18 exported classes: 17 typed errors and `FleetContext`.
+    18 exported classes: 16 typed errors, and the two per-invocation caches — `FleetContext` and the
+    service-model memo it owns, `ServiceModels` (`core/c4/prefetch/fleet.ts`).
 11. **No barrel or index re-export files.** None exist. They would make rule 4 unenforceable by
     hiding the real edge behind a re-export — and under rule 21 they would also defeat the package
     graph, since every import would point at a directory instead of at the module it actually needs.
@@ -371,9 +372,9 @@ the workspace layout differs, and that part is already isolated.
     nothing else — no `package.json`, no workspace, no separate publish. That layout tracks how many
     artifacts you publish; you publish one `bin`, and `scripts/release-check.mjs` hard-asserts it.
     It is also the one option here that is not cheaply reversible.
-23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 66 of the 160
+23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 69 of the 165
     modules in `commands/` — the entry module of every command among them; `core/envelope/config.ts`
-    and `core/repo/repo.ts` by 25 and 29 of them. Slices would duplicate the hubs or produce a
+    and `core/repo/repo.ts` by 3 and 30 of them. Slices would duplicate the hubs or produce a
     `shared/` folder — which is what `src/core/` already is.
 24. **Do not add a dependency to express structure.** No `madge`, no `dependency-cruiser`, no
     boundaries plugin. `oxlint` already ships the one rule that matters.

@@ -17,10 +17,19 @@ vendoring these for test purposes is compatible; the copyright is not ours.
 
 ## Provenance
 
-The released behavior baseline is **OpenSpec v1.9.0**, tag commit
-`2826b8889e5223a9a8095d4428b60b56597e1020`, released 2026-08-13 — the current
-upstream release, and at the time of vendoring also the tip of `main`. These
-fixtures were re-vendored from that commit on 2026-08-18. Six of the seven were
+These fixtures are the bytes of **OpenSpec v1.9.0**, tag commit
+`2826b8889e5223a9a8095d4428b60b56597e1020`, released 2026-08-13 — the certified
+release when they were vendored, and at that time also the tip of `main`. The
+certified pin has since moved to **v1.14.1** (`87c3595ace6a2e22957f39ebe5b74c2f2316e0cb`,
+2026-10-05) and the fixtures stayed: v1.9.0 is now one of the corpus gate's
+regression pins, so they still name an exact commit the gate sweeps. At v1.14.1
+five of the seven are byte-identical; `living/artifact-graph.spec.md` gained
+glob-output prose and nine scenarios, and `living/openspec-conventions.spec.md`
+rewrote one scenario's two lines to document the closing-`#` rule 1.13.1 added.
+Neither change is a shape the set lacks, and the full v1.14.1 sweep reads both
+files as they are upstream, so re-vendoring would have bought no coverage.
+
+They were re-vendored from v1.9.0 on 2026-08-18. Six of the seven were
 byte-identical to the 2026-08-03 canary they came from before; only
 `living/openspec-conventions.spec.md` moved, when upstream #1508 rewrote its
 capability paths as `<capability-path>/ # One or more directories` to document
@@ -51,16 +60,19 @@ re-fetching reproduces the exact bytes:
 
 ## Full corpus gate
 
-The scheduled/manual corpus gate runs `parseRequirements` over every tracked Markdown
-file below living, active, and archived spec trees at three exact commits:
+The scheduled/manual corpus gate reads every tracked Markdown file below living,
+active, and archived spec trees through `openspecRequirements` — the migration's
+own reader, `parseRequirements` plus the grammar only OpenSpec accepts — and
+round-trips it through loam's serializer, at four exact commits:
 
 | `--baseline` | Commit | Files | Requirements | Scenarios |
 | --- | --- | --- | --- | --- |
-| `release` (v1.9.0) | `2826b8889e5223a9a8095d4428b60b56597e1020` | 211 | 746 | 2317 |
+| `release` (v1.14.1) | `87c3595ace6a2e22957f39ebe5b74c2f2316e0cb` | 223 | 765 | 2475 |
+| `previous` (v1.9.0) | `2826b8889e5223a9a8095d4428b60b56597e1020` | 211 | 746 | 2317 |
 | `legacy` (v1.7.0) | `4e16790d90d8f54d4773ad9a5e71a57cd9f1e86b` | 207 | 739 | 2273 |
 | `canary` (post-v1.7 `main`) | `45cca5db6137ed209117cc70510eb3e057fb981b` | 209 | 742 | 2284 |
 
-The older two are kept because a parser change that fixes the current corpus by
+The older three are kept because a parser change that fixes the current corpus by
 breaking an older one would break a repository somebody has already migrated from.
 The seven vendored files remain the routine offline regression set; the
 exact-checkout sweeps detect corpus-wide drift.
@@ -68,8 +80,11 @@ exact-checkout sweeps detect corpus-wide drift.
 To reproduce a sweep, use a clean checkout at the selected exact commit:
 
     git clone https://github.com/Fission-AI/OpenSpec.git /tmp/OpenSpec
-    git -C /tmp/OpenSpec checkout 2826b8889e5223a9a8095d4428b60b56597e1020
+    git -C /tmp/OpenSpec checkout 87c3595ace6a2e22957f39ebe5b74c2f2316e0cb
     npm run test:openspec-corpus -- --baseline release /tmp/OpenSpec
+
+    git -C /tmp/OpenSpec checkout 2826b8889e5223a9a8095d4428b60b56597e1020
+    npm run test:openspec-corpus -- --baseline previous /tmp/OpenSpec
 
     git -C /tmp/OpenSpec checkout 4e16790d90d8f54d4773ad9a5e71a57cd9f1e86b
     npm run test:openspec-corpus -- --baseline legacy /tmp/OpenSpec
@@ -79,7 +94,11 @@ To reproduce a sweep, use a clean checkout at the selected exact commit:
 
 The script refuses another commit or locally modified corpus paths and checks the
 baseline-specific totals, so a future upstream checkout cannot silently masquerade as
-any pinned baseline. The script itself is typechecked by `npm run typecheck` through
+any pinned baseline. `--baseline latest` is the one exception, and it exists for
+`.github/workflows/openspec-canary.yml`: it sweeps whatever commit the checkout
+holds, still fails on a file whose requirement content does not survive the round
+trip, and reports how the totals moved from the `release` pin instead of refusing.
+A `latest` checkout that is a pinned commit is judged as that pin, strictly. The script itself is typechecked by `npm run typecheck` through
 `tsconfig.scripts.json`: it once spent eight days failing at module resolution
 because only `src/` was compiled and this gate runs on a schedule.
 

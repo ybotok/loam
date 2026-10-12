@@ -92,7 +92,9 @@ seventh lifecycle step.
 ## The cycle
 
 0. **Wire the repo** — in each service checkout run
-   `loam init --docs <path-to-docs-repo> --service <id>`, then `loam doctor`.
+   `loam init --docs <path-to-docs-repo> --service <id> --agent-profile service`,
+   then `loam doctor`. The service profile writes the five workflows that run
+   beside the code; `loam-feature` and `loam-ship` stay in the docs repo.
 1. **Adopt** — for an undocumented boundary load `loam instructions loam-adopt
    <id>`, then use `loam adopt --service <id> --json`. Write drafts; a person,
    never an agent, later vouches for them. Draw the map's edges in the same pass:

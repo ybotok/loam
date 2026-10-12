@@ -4,7 +4,8 @@ loam is not a replacement for an architecture renderer, a software catalog, a co
 broker, an API-diff engine, or a code-level architecture test. It is the layer that keeps an
 authored C4 model, requirements, contracts and verification evidence semantically connected while
 the system changes. Most of the tools below can sit beside it; the useful question is which part of
-the problem each one should own.
+the problem each one should own. One section is different in kind and carries a date: the
+spec-driven change tools overlap loam's own job, and they change every week.
 
 ## Architecture as code: LikeC4 and Structurizr
 
@@ -73,6 +74,90 @@ dependencies and enforce rules such as layers, allowed imports and cycle freedom
 question loam intentionally does not: whether the code actually has the structure the architecture
 claims. Use them to turn selected architecture rules into executable code checks; use loam to keep
 the authored system model and the rest of its semantic record coherent.
+
+## Spec-driven change tools, as of October 2026
+
+These are the tools a team evaluating loam usually holds it against, and unlike the neighbours
+above they overlap its job: each turns an intended change into specs an agent implements. They
+release about weekly, so this section is dated — checked 2026-10-09 against each project's
+releases, documentation and issue tracker — and each claim links its source. It records what each
+offers for a change that crosses repositories or services, what is still open upstream, and where
+loam differs. It does not rank them.
+
+**OpenSpec** (1.14.1, published 2026-10-05)
+
+- [Stores](https://openspec.dev/docs/stores), in beta since 1.5.0, keep specs in a repository of
+  their own that several code repositories plan against; worksets, also beta, group them. The guide
+  says OpenSpec does not route tasks to repositories: for a change spanning components, its pattern
+  is a shared contract in the store plus a separate local change in each component repository,
+  linked by hand. Since 1.14.0, a store-backed apply may also edit the code repository that
+  declares the store.
+- `openspec show <change> --diff` (1.11.0) renders each requirement of a change as a unified diff
+  against its base, with `--json --diff` for pipelines
+  ([releases](https://github.com/Fission-AI/OpenSpec/releases)).
+- The [Cloud Agent](https://openspec.dev/blog/openspec-cloud-agents), in early access since
+  2026-08-28 with new sign-ups paused on 2026-09-11, is hosted. It checks pull requests against
+  spec requirements, shows requirements across repositories as in sync, drifted or needing a
+  decision, scans daily and opens corrective pull requests. The page does not say how it detects
+  drift.
+- Open: [#725](https://github.com/Fission-AI/OpenSpec/issues/725), multi-repository and
+  microservice spec management, open since 2026-02-18. On 2026-09-07 the maintainers' bot confirmed
+  that shared changes with repository slices and explicit apply targets do not exist yet.
+
+**Spec Kit** (1.1.2, 2026-10-07)
+
+- The [contract-driven development
+  guide](https://github.github.com/spec-kit/guides/contract-driven-development.html) (September
+  2026) covers interfaces between repositories or components by convention: the owner publishes a
+  versioned contract, consumers pin it, and provider and consumer contract tests go into the tasks.
+  It excludes contract sync, cross-repository dependency resolution and release orchestration, and
+  describes no automated check between consumer and provider.
+- [`/speckit.converge`](https://raw.githubusercontent.com/github/spec-kit/main/templates/commands/converge.md)
+  (June 2026) runs after implementation: the agent compares the code with one feature's spec, plan
+  and tasks, classes each gap as missing, partial, contradicting or unrequested, and appends tasks
+  for them.
+- 1.1.1 added an experimental MCP server, and 1.1.2 MCP tools that list a project's artifacts
+  ([releases](https://github.com/github/spec-kit/releases)).
+- Open: [#4583](https://github.com/github/spec-kit/issues/4583), multi-repository microservices,
+  open since 2026-09-14 and labelled triage-can-wait. The maintainer linked the contract-driven
+  guide and asked whether it is enough to close it.
+
+**Kiro** (IDE 1.2, CLI 2.28)
+
+- [Feature specs](https://kiro.dev/docs/specs/) are Requirements-First or, since IDE 0.10
+  (February 2026), Design-First — requirements derived from an existing architecture or sketch —
+  and live per feature under `.kiro/specs`. Analyze Requirements (0.12, May 2026) checks a
+  requirements document for ambiguity, conflicts and gaps before design.
+- [Kiro Web](https://kiro.dev/changelog/web/introducing-kiro-web-preview/) (preview from
+  2026-05-18) clones several repositories into one cloud session, coordinates a change across them
+  and opens a pull or merge request in each repository it changed; since June, GitHub and GitLab
+  repositories can share a session.
+- For specs that span repositories, the [best-practices
+  page](https://kiro.dev/docs/specs/best-practices/) suggests a central specs repository linked by
+  submodules, packages or symlinks. The docs describe no merge of a finished spec into a living
+  baseline and no drift detection; [#9435](https://github.com/kirodotdev/Kiro/issues/9435), open,
+  asks for a git ref stamped into spec metadata and a warning when referenced code changed.
+
+**Where loam differs**
+
+- A cross-service change is one feature with a requirement delta for each service it touches, and
+  each service's part is computed: `loam delta <FEAT> --service <id>` is that service's slice, and
+  `loam tasks` lists the work per service, providers before consumers. That is the routing #725
+  asks for, held as data rather than executed. loam clones nothing and opens no pull request;
+  running an agent in each repository is the host's job — Kiro Web's, or a cloud agent's.
+- The joins between services are exact tokens that `loam validate` grades: a call edge's `op`
+  against the provider's OpenAPI `operationId`, a requirement's `Operations:` line against its own
+  contract. Spec Kit's guide leaves that agreement to people, and converge and the Cloud Agent ask
+  a model. loam asks no model and judges no meaning, so a requirement that is wrong but correctly
+  joined passes.
+- Drift is detected by digests kept in the files: `sources.stale` when vouched code moves,
+  `content.stale` when vouched words move, and a digest on every generated scenario. The checks run
+  in each repository's CI and store nothing elsewhere. There is no dashboard, and nothing opens a
+  corrective pull request.
+- Two gaps against these tools are open. loam has no per-requirement diff of a change against the
+  living spec like `openspec show --diff`: `loam delta` prints whole requirements, and
+  `loam archive --dry-run` says only which contract slots the merge quotes unchanged and which it
+  overwrites. And it has no analysis pass before code like Kiro's Analyze Requirements.
 
 ## The boundary
 

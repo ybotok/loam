@@ -21,7 +21,7 @@ import { pinOpenapiOperations, type OpenapiPinPlan } from "../../core/openapi/me
 import { planOpenapiBaselines, type OpenapiBaselinePlan } from "../../core/openapi/baseline/plan.js";
 import { AsyncapiMergeError } from "../../core/asyncapi/merge/error.js";
 import { pinAsyncapiSlots, type AsyncapiPinPlan } from "../../core/asyncapi/merge/pin.js";
-import { planAsyncapiBaselines, type AsyncapiBaselinePlan } from "../../core/asyncapi/baseline/plan.js";
+import { planAsyncapiBaselines } from "../../core/asyncapi/baseline/plan.js";
 import { applyEdits, pinEdit, type LineEdit } from "./edit.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import type { FleetContext } from "../../core/fleet-context.js";
@@ -230,7 +230,7 @@ export async function planOpenapi(repo: RepoRead, service: PathableService, open
     // writes one file once. Order is safe: a surface digest never includes an
     // operation pin (`restatedSurfaces` skips the methods entirely), and the
     // root record never enters an operation digest.
-    baselines = planOpenapiBaselines(plan.text ?? delta, living, service);
+    baselines = planOpenapiBaselines(plan.text ?? delta, living);
   } catch (err) {
     // A document loam cannot read is validate's diagnosis to make
     // (`openapi.invalid`), not this command's to guess at — and stamping into a
@@ -291,7 +291,7 @@ export async function planAsyncapi(
   const living = existsSync(livingPath) ? decodeDocument(await readFile(livingPath), livingPath) : "";
   const delta = decodeDocument(await readFile(asyncapiPath), asyncapiPath);
   let plan: AsyncapiPinPlan;
-  let baselines: AsyncapiBaselinePlan;
+  let baselines: OpenapiBaselinePlan;
   try {
     plan = pinAsyncapiSlots(delta, living, service);
     // The surface record, planned over the SLOT pass's output so one run
@@ -299,7 +299,7 @@ export async function planAsyncapi(
     // directions: a surface digest never includes a slot pin (`asyncapiSurfaces`
     // skips `components.messages` entirely, and no other section is a
     // surface), and the root record never enters a slot digest.
-    baselines = planAsyncapiBaselines(plan.text ?? delta, living, service);
+    baselines = planAsyncapiBaselines(plan.text ?? delta, living);
   } catch (err) {
     // A document loam cannot read is validate's diagnosis to make
     // (`asyncapi.invalid`), not this command's to guess at — and stamping

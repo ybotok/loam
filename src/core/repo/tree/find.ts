@@ -34,9 +34,18 @@ export function treeNames(tree: FleetTree): string[] {
   return [...tree.services.map((s) => s.id), ...tree.subsystems.map((s) => s.name)];
 }
 
-/** The near-miss hints a refusal offers, over whichever pool the verb resolves against. */
-export function nearestTreeNames(name: string, pool: string[]): string[] {
-  return closeIds(name, pool);
+/**
+ * The near-miss tail a refusal appends to its "no such name" sentence, over
+ * whichever pool the verb resolves against: the close names when there are
+ * any, else `otherwise` — the verb's own pointer at what exists, or "" for
+ * none. Eight refusals across `subsystem`, `adopt --subsystem` and
+ * `list --subsystem` end this way, and each spelled the conditional itself;
+ * the lead sentence and the fallback stay theirs, because those are what
+ * differ.
+ */
+export function closeNamesHint(name: string, pool: string[], otherwise: string): string {
+  const close = closeIds(name, pool);
+  return close.length > 0 ? ` Close names: ${close.join(", ")}.` : otherwise;
 }
 
 /**

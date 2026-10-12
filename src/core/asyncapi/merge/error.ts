@@ -33,6 +33,11 @@ export class AsyncapiMergeError extends Error {
   }
 }
 
-export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+/**
+ * The `fail` the shared tree helpers take (../../openapi/contract-tree.ts), for
+ * one side of this axis — always the default "is not valid YAML" problem,
+ * because every failure they report is a parse or a serialization.
+ */
+export function asyncapiRefusal(source: AsyncapiMergeSource, service: string): (detail: string) => AsyncapiMergeError {
+  return (detail) => new AsyncapiMergeError(source, service, detail);
 }

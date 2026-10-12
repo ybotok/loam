@@ -6,7 +6,9 @@
  * representative verbatim spec files vendored from Fission-AI/OpenSpec (see
  * test/fixtures/openspec/README.md for provenance) and pins what we actually do with
  * them — including what we get wrong. scripts/check-openspec-corpus.ts reproduces
- * the separate exact release/canary sweeps against clean pinned checkouts.
+ * the separate exact release/regression sweeps against clean pinned checkouts,
+ * and the moving `--baseline latest` sweep openspec-canary.yml runs; the verdict
+ * it reaches is held at the end of this file.
  *
  * Unlike test/spec.test.ts, which asserts DESIRED behavior and treats a failure as a
  * suspected bug, this file pins OBSERVED behavior. A failure here means either our
@@ -16,19 +18,26 @@
  * FINDINGS — where we diverge from OpenSpec
  * ============================================================================
  *
- * Established by parsing the three exact living, active, and archived spec corpora
- * the corpus gate pins (v1.9.0 release: 211/746/2317; v1.7.0: 207/739/2273;
- * post-v1.7 canary: 209/742/2284), and by reading OpenSpec's own parsers
- * (src/core/parsers/{markdown-parser,change-parser,spec-structure}.ts).
+ * Established by parsing the four exact living, active, and archived spec corpora
+ * the corpus gate pins (v1.14.1 release: 223/765/2475; v1.9.0: 211/746/2317;
+ * v1.7.0: 207/739/2273; post-v1.7 canary: 209/742/2284), and by reading
+ * OpenSpec's own parsers (src/core/parsers/{markdown-parser,change-parser,
+ * requirement-blocks,spec-structure}.ts). The seven fixtures below are still
+ * the v1.9.0 bytes: at v1.14.1 five are unchanged and two only gained prose and
+ * scenarios of shapes already here (test/fixtures/openspec/README.md).
  *
  * The constructs v1.9 added are workspace metadata, not requirement Markdown —
  * `goal`, `affected_areas`, `initiative`, `retire_capabilities` live in
  * `.openspec.yaml` — so their observed-behavior pin lives with the migration
  * surface in test/migrate-openspec-command.test.ts ("v1.9 metadata surface"
- * inventory), not in this file. This note is the trail between the two.
+ * inventory), not in this file. So does the requirement grammar 1.13 added —
+ * a closing `#` run, `*`/`+` bullets on REMOVED and RENAMED, repeated delta
+ * sections — because the migration reads it through `openspecRequirements`,
+ * the OpenSpec-only layer over the parser this file pins. This note is the
+ * trail between the two.
  *
  * WHAT WORKS. Requirement and scenario extraction is compatible on every corpus file:
- * every requirement and scenario in all three corpora is found, with the
+ * every requirement and scenario in all four corpora is found, with the
  * same delta kinds, and round-trip is lossless (see "round-trip" below). Nested bullets, fenced blocks,
  * `**Reason for removal**:` metadata, CRLF, and non-ASCII names all survive.
  *
@@ -86,10 +95,14 @@
  *    `operations`, so the C4/OpenAPI link in `loam validate` is unreachable for
  *    adopted specs until a human adds the line.
  *
- * 9. Scenario names and empty scenarios — WE KEEP MORE. OpenSpec's Scenario is
- *    `{ rawText }`: the `#### Scenario:` title is discarded, and a scenario with an
- *    empty body is dropped entirely. We retain both. Strictly richer, so it is a
- *    compatibility risk only in the direction of us accepting what they would ignore.
+ * 9. Scenario names and empty scenarios — WE KEEP MORE. Through v1.9.0 OpenSpec's
+ *    Scenario was `{ rawText }`, the `#### Scenario:` title discarded; since 1.14.0
+ *    it carries the name too, so on names the two now agree. A scenario with an
+ *    empty body is still dropped entirely there, and since 1.13.1 `validate`
+ *    refuses a requirement whose only scenario is a bare header. We retain the
+ *    empty scenario — and `loam validate` names it stepless. Strictly richer, so
+ *    it is a compatibility risk only in the direction of us accepting what they
+ *    would ignore; no file in any pinned corpus has one.
  *
  * NOT A PROBLEM (checked, no divergence found): the `# H1` title line is dropped by
  * both; nested list indentation is preserved verbatim; `### Requirement:` quoted
@@ -109,6 +122,10 @@ import { KIND_RE, type DeltaKind } from "../src/core/document/spec.js";
 import { join } from "node:path";
 import { deltaShapeIssues } from "../src/core/delta/delta.js";
 import { makeProject } from "./helpers/harness.js";
+// The corpus gate's decisions, split from its git I/O so they can be held here
+// without an upstream checkout; scripts/check-openspec-corpus.ts is the I/O.
+import { BASELINES, SWEEP_MODES, judgeSweep, tallyCorpus } from "../scripts/openspec-corpus.js";
+import { OPENSPEC_BASELINES } from "../src/core/openspec/model/model.js";
 
 const FIXTURES = fileURLToPath(new URL("./fixtures/openspec/", import.meta.url));
 
@@ -642,5 +659,87 @@ describe("gap: OpenSpec semantics we do not interpret", () => {
     for (const file of ALL_FILES) {
       expect(fixture(file).split("\n").filter((l) => /^\s*Operations?:/i.test(l))).toEqual([]);
     }
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* The corpus gate's verdict (scripts/openspec-corpus.ts)              */
+/* ------------------------------------------------------------------ */
+
+describe("the OpenSpec corpus gate's verdict", () => {
+  const FIXTURE_FILES = ALL_FILES.map((path) => ({ path, raw: fixture(path) }));
+  const counts = [
+    ...LIVING.flatMap((f) => f.rows.map(([, n]) => n)),
+    ...DELTA.flatMap((f) => f.rows.map(([, , n]) => n)),
+  ];
+  const FIXTURE_TOTALS = {
+    files: ALL_FILES.length,
+    requirements: counts.length,
+    scenarios: counts.reduce((sum, n) => sum + n, 0),
+  };
+  const stable = (totals: typeof FIXTURE_TOTALS) => ({ totals, unstable: [] });
+  const UNPINNED = "0123456789abcdef0123456789abcdef01234567";
+
+  it("tallies the seven fixtures to the rows pinned above, every one round-tripped", () => {
+    expect(tallyCorpus(FIXTURE_FILES)).toEqual({ totals: FIXTURE_TOTALS, unstable: [] });
+  });
+
+  it("counts a corpus through the migration's reader, so OpenSpec-only grammar is swept as the migration reads it", () => {
+    // A `*` REMOVED bullet is a removal to OpenSpec (since 1.13.0) and to
+    // `migrate-openspec`, and nothing at all to loam's own parser. Read with
+    // that parser, the sweep counted 0 requirements here and certified a
+    // reading no migration performs.
+    const removal = {
+      path: "openspec/changes/drop/specs/cli-list/spec.md",
+      raw: "## REMOVED Requirements\n* `### Requirement: Sorting`\n",
+    };
+    expect(tallyCorpus([removal]).totals).toEqual({ files: 1, requirements: 1, scenarios: 0 });
+    // A closing `#` run is not part of the name (OpenSpec 1.13.1), and the
+    // round trip stays stable with it dropped.
+    const closing = fixture("living/cli-list.spec.md").replace("### Requirement: Sorting", "### Requirement: Sorting ###");
+    expect(tallyCorpus([{ path: "openspec/specs/cli-list/spec.md", raw: closing }]).unstable).toEqual([]);
+  });
+
+  it("takes the certified release pin from the constant audit-openspec prints, and keeps the v1.9.0 pin beside it", () => {
+    expect(BASELINES.release.commit).toBe(OPENSPEC_BASELINES.release.commit);
+    expect(BASELINES.release.label).toBe(`OpenSpec v${OPENSPEC_BASELINES.release.version} release`);
+    expect(BASELINES.previous.commit).toBe("2826b8889e5223a9a8095d4428b60b56597e1020");
+    expect(SWEEP_MODES).toEqual(["release", "previous", "legacy", "canary", "latest"]);
+  });
+
+  it("a pinned mode refuses any other HEAD, and fails on a total that moved", () => {
+    const refused = judgeSweep("release", UNPINNED, stable(BASELINES.release.expected));
+    expect(refused).toEqual({
+      ok: false,
+      lines: [`OpenSpec checkout is ${UNPINNED}; expected release ${BASELINES.release.commit}`],
+    });
+    expect(judgeSweep("previous", BASELINES.previous.commit, stable(BASELINES.previous.expected)).ok).toBe(true);
+    const moved = { ...BASELINES.previous.expected, scenarios: BASELINES.previous.expected.scenarios + 1 };
+    const failed = judgeSweep("previous", BASELINES.previous.commit, stable(moved));
+    expect(failed.ok).toBe(false);
+    expect(failed.lines[0]).toMatch(/^corpus totals changed/);
+  });
+
+  it("latest sweeps an unpinned commit and reports its drift from the certified release instead of refusing", () => {
+    const { files, requirements, scenarios } = BASELINES.release.expected;
+    const verdict = judgeSweep("latest", UNPINNED, stable({ files: files + 4, requirements, scenarios: scenarios - 2 }));
+    expect(verdict.ok).toBe(true);
+    expect(verdict.lines[1]).toBe(
+      `drift since the certified ${BASELINES.release.label} (${BASELINES.release.commit.slice(0, 7)}): ` +
+        "files +4, requirements +0, scenarios -2",
+    );
+  });
+
+  it("latest still fails on a broken round trip, and judges a pinned commit as that pin, strictly", () => {
+    const broken = judgeSweep("latest", UNPINNED, { totals: FIXTURE_TOTALS, unstable: ["openspec/specs/x/spec.md"] });
+    expect(broken).toEqual({
+      ok: false,
+      lines: ["requirement round-trip changed parsed content in openspec/specs/x/spec.md"],
+    });
+    // The canary must not pass a pinned corpus the pinned gate would fail.
+    expect(judgeSweep("latest", BASELINES.legacy.commit, stable(FIXTURE_TOTALS)).ok).toBe(false);
+    const exact = judgeSweep("latest", BASELINES.legacy.commit, stable(BASELINES.legacy.expected));
+    expect(exact.ok).toBe(true);
+    expect(exact.lines[1]).toBe("this checkout is the legacy pin, so it was swept as that pin, exactly");
   });
 });

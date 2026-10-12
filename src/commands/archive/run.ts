@@ -10,7 +10,7 @@
  */
 import { existsSync } from "node:fs";
 import { mkdir, rename } from "node:fs/promises";
-import { emitJson, repoPath, sayExplain } from "../../core/envelope/json.js";
+import { CodedFailure, emitJson, repoPath, sayExplain } from "../../core/envelope/json.js";
 import {
   message,
   quietPruneEmptyParents,
@@ -30,10 +30,11 @@ import { serviceViewsState, viewsState } from "../../core/repo/tree/render/stale
 import { loadArchitecture } from "../../core/c4/project/architecture.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { gate } from "./plan/gate.js";
-import { ArchiveFailure, issueJson, printPlan, refuseJson, type ArchiveOptions } from "./plan/refusal.js";
+import { issueJson, printPlan, refuseJson, type ArchiveOptions } from "./plan/refusal.js";
 import { planCapabilities, planGlossary, planSpecs } from "./plan/specs.js";
 import { planOpenapiContracts } from "./plan/contracts/openapi.js";
 import { planAsyncapiContracts } from "./plan/contracts/asyncapi.js";
+import { contractConsumers } from "./plan/contracts/consumers.js";
 import { planDeployments, planFlows, planLandscape } from "./plan/landscape.js";
 import { emptyPlan } from "./plan/state.js";
 import { checklistAtArchive } from "./shipped.js";
@@ -77,8 +78,12 @@ export async function archiveLocked(
   // a create-only whole-file copy, refused at the gate if the word already
   // lives (`core/glossary/delta.ts`).
   await planGlossary(read, gated, planned, say);
-  await planOpenapiContracts(read, gated, planned, say);
-  await planAsyncapiContracts(read, gated, planned, say);
+  // One consumer index for both contract planners, built only if one of them
+  // overwrites an operation or a message (./plan/contracts/consumers.ts) —
+  // and then over the living fleet as it stands before this merge.
+  const contracts = { ...read, consumers: contractConsumers(read) };
+  await planOpenapiContracts(contracts, gated, planned, say);
+  await planAsyncapiContracts(contracts, gated, planned, say);
   // `read`, not `config`: the C4 merge now asks which services own their own
   // interior, and that answer comes from the fleet enumeration this run has
   // already paid for.
@@ -181,7 +186,7 @@ export async function archiveLocked(
   try {
     staged = await stageWrites(writes);
   } catch (err) {
-    throw new ArchiveFailure("merge-failed", `${message(err)} — nothing was written`);
+    throw new CodedFailure("merge-failed", `${message(err)} — nothing was written`);
   }
   let snapshot = false;
   let createdArchiveDir: string | undefined;
@@ -243,7 +248,7 @@ export async function archiveLocked(
       // the answer is not "re-run": a previous archive of this feature is still
       // sitting in the living docs.
       await rollbackStaged(staged);
-      throw new ArchiveFailure("commit-interrupted", err.message);
+      throw new CodedFailure("commit-interrupted", err.message);
     }
     // Everything this run made, unmade: the swapped files, the snapshot inside the
     // feature that is staying put, and features/archive/ if we are the ones who
@@ -272,7 +277,7 @@ export async function archiveLocked(
       snapshot && failures.length > 0
         ? ` Pre-images of the overwritten files are kept in features/${dirName}/${SNAPSHOT_DIR}/files/.`
         : "";
-    throw new ArchiveFailure(failures.length > 0 ? "rollback-incomplete" : "merge-failed", wrapped.message + kept);
+    throw new CodedFailure(failures.length > 0 ? "rollback-incomplete" : "merge-failed", wrapped.message + kept);
   }
 
   // This merge just changed the map, and both generated views files are a

@@ -256,10 +256,11 @@ async function derive(input: ScorecardInput): Promise<Scorecard> {
   // feature's record is a directory listing plus a small read per record file
   // (the one-file `verification.yaml` and one `verification/<svc>.yaml` per
   // attesting service), and a recorded cell additionally derives its checklist
-  // (the same cost `list` pays for the same column) — real filesystem work, so
-  // it runs through the bounded pool.
+  // (the same cost `list` pays for the same column; only its enumerations and
+  // delta parse are memo hits through `fleet`) — real filesystem work, so it
+  // runs through the bounded pool.
   const features = await fleet.listFeatures(docsDir);
-  const cells = await inOrder(features, (f) => featureVerification(docsDir, f));
+  const cells = await inOrder(features, (f) => featureVerification(docsDir, f, fleet));
   const recorded = cells.filter((c): c is VerificationCell => c !== null);
   const verdicts = Object.fromEntries(VERIFICATION_VERDICTS.map((v) => [v, 0])) as Record<VerificationVerdict, number>;
   for (const cell of recorded) verdicts[cell.verdict] += 1;

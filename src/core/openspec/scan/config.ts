@@ -9,11 +9,12 @@
  */
 import { existsSync } from "node:fs";
 import { lstat, readdir, realpath } from "node:fs/promises";
-import { isAbsolute, join, relative, sep } from "node:path";
-import { asRecord } from "../../kernel/records.js";
+import { join } from "node:path";
+import { isPathInside } from "../../kernel/path-safety.js";
+import { asRecord, isStringArray } from "../../kernel/records.js";
 import { compareIds } from "../../repo/entries.js";
 import { type OpenSpecConfigSummary, type OpenSpecUnsupportedShape } from "../model/model.js";
-import { isSymbolicLink, isStringArray, yamlRecord } from "./walk.js";
+import { isSymbolicLink, yamlRecord } from "./walk.js";
 import { issue } from "./shape.js";
 
 export async function inspectConfig(
@@ -51,18 +52,6 @@ export async function inspectConfig(
       references: [],
     };
   }
-}
-
-/**
- * A calendar date, optionally with a time. OpenSpec's template writes the plain
- * date, but a timestamp is still a date — and rejecting it blocked every change
- * and every capability in the workspace over one field nobody reads, fixable
- * only by editing the source migration promises not to touch.
- */
-
-export function isContainedPath(parent: string, candidate: string): boolean {
-  const rel = relative(parent, candidate);
-  return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
 }
 
 /**
@@ -108,9 +97,9 @@ export async function registeredProjectSchemaPath(
       realpath(schemaDir),
       realpath(schemaFile),
     ]);
-    if (!isContainedPath(canonicalRoot, canonicalSchemasRoot)
-      || !isContainedPath(canonicalSchemasRoot, canonicalSchemaDir)
-      || !isContainedPath(canonicalSchemaDir, canonicalSchemaFile)) {
+    if (!isPathInside(canonicalRoot, canonicalSchemasRoot)
+      || !isPathInside(canonicalSchemasRoot, canonicalSchemaDir)
+      || !isPathInside(canonicalSchemaDir, canonicalSchemaFile)) {
       return { registered: true, path: null };
     }
     return { registered: true, path: schemaFile };

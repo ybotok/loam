@@ -70,6 +70,13 @@ export interface Attestor {
    * caller hands in loam.json's own validated id, never the raw flag.
    */
   service: PathableService | undefined;
+  /**
+   * The repository an attestation is ABOUT: the commit it names, the tree its
+   * evidence must resolve inside, and where a `--results` report has to live.
+   * It is threaded rather than read in `record` because it comes from
+   * `config.root`, and a `process.cwd()` in that function was the whole bug —
+   * from a subdirectory, "this repo" quietly became that subdirectory.
+   */
   repoDir: string;
   /**
    * The existing record as ONE read — the union the refusals consult and the

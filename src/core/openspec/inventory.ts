@@ -29,8 +29,7 @@ import {
   portable,
   sourceInventoryPath,
   subdirs,
-  walkFiles,
-  walkSymlinks,
+  walkTree,
 } from "./scan/walk.js";
 import { inspectSpecFile, issue } from "./scan/shape.js";
 import { inspectConfig } from "./scan/config.js";
@@ -57,7 +56,7 @@ export async function inventoryOpenSpec(
   // contract pins — five arrays merged afterwards would be a different report.
   const ingest: Ingest = { root, mapping, renamed, unsupported: blockers };
   const archiveDiagnostics: OpenSpecUnsupportedShape[] = [];
-  for (const absolute of await walkSymlinks(root)) {
+  for (const absolute of (await walkTree(root)).links) {
     const path = portable(root, absolute);
     const scope = artifactScope(path);
     issue(scope === "archive" ? archiveDiagnostics : blockers, scope, {
@@ -102,7 +101,7 @@ export async function inventoryOpenSpec(
   const capabilities: OpenSpecCapability[] = [];
   const livingRequirements = new Map<string, ReturnType<typeof parseRequirements>>();
   const livingCounts: OpenSpecCounts = { specFiles: 0, requirements: 0, scenarios: 0 };
-  const livingTree = await walkFiles(specsRoot);
+  const livingTree = (await walkTree(specsRoot)).files;
   const livingFiles = livingTree.filter((path) => basename(path) === "spec.md");
   // The living twin of openspec.nonstandard-change-spec. Selecting living specs
   // by exact basename is right, but without the mirror a mis-cased or renamed
@@ -179,7 +178,7 @@ export async function inventoryOpenSpec(
     });
   }
 
-  const artifactFiles = await walkFiles(root);
+  const artifactFiles = (await walkTree(root)).files;
   if (storeMetadataExists && !storeMetadataSymlink && !artifactFiles.includes(storeMetadata)) {
     artifactFiles.push(storeMetadata);
   }
@@ -231,7 +230,6 @@ export async function inventoryOpenSpec(
 
   return inventoryVerdict({
     located,
-    mapping,
     inventoryDigest,
     config,
     storeMetadataPath: storeMetadataExists ? sourceInventoryPath(root, storeMetadata) : null,

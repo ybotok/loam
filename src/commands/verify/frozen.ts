@@ -27,6 +27,21 @@ import { recordLocation } from "../../core/verify/location.js";
 import { plural } from "../policy/format.js";
 import { type VerifyTarget } from "./report.js";
 
+/**
+ * The frozen view: an archived feature's record, verbatim. No checklist is
+ * derived and no staleness is judged — there is nothing current to judge
+ * against, and pretending otherwise is how a true record reads as a lie.
+ * `frozen` is the marker a consumer branches on.
+ *
+ * The verdict is recounted from `claims[]`, never taken from `summary`: this is
+ * the post-ship verdict on a feature nobody can re-derive a checklist for, so a
+ * record whose counts had drifted from its own answers reported a shipped
+ * feature as fully confirmed. (A record that contradicts itself never reaches
+ * here — `readVerificationState` refuses it — so the recount and the summary
+ * agree; the recount is what says WHY.) No record at all is reported as exactly
+ * that, with `summary: null`, not zero claims, which would falsely say the
+ * feature promised nothing.
+ */
 export function reportFrozen(
   target: VerifyTarget,
   featureId: string,
@@ -51,17 +66,7 @@ export function reportFrozen(
       verdict,
       attested: tally?.attested ?? 0,
       summary: v === null ? null : v.summary,
-      recorded:
-        v === null
-          ? null
-          : {
-              path: repoPath(docsDir, recordLocation(featureDir)),
-              recorded: v.recorded,
-              checklist: v.checklist,
-              ...(v.attestations === undefined ? {} : { attestations: v.attestations }),
-              ...(v.report === undefined ? {} : { report: v.report }),
-              ...(v.contractReport === undefined ? {} : { contractReport: v.contractReport }),
-            },
+      recorded: v === null ? null : recordedPayload(target, v),
       claims: v === null ? [] : v.claims,
       ...(notices.length === 0 ? {} : { notices }),
     });
@@ -106,6 +111,28 @@ export function reportFrozen(
 }
 
 export const MARK: Record<string, string> = { confirmed: "✓", unconfirmed: "✗", unanswered: "?" };
+
+/**
+ * The `recorded` block both views emit: where the record is, when it was
+ * written, which checklist it answered, and the evidence provenance it carries.
+ * `extra` lands right after `checklist` — the read view's `stale` — so each
+ * payload keeps the key order it has always had.
+ */
+export function recordedPayload(
+  target: VerifyTarget,
+  v: Verification,
+  extra: { stale?: boolean } = {},
+): Record<string, unknown> {
+  return {
+    path: repoPath(target.docsDir, recordLocation(target.featureDir)),
+    recorded: v.recorded,
+    checklist: v.checklist,
+    ...extra,
+    ...(v.attestations === undefined ? {} : { attestations: v.attestations }),
+    ...(v.report === undefined ? {} : { report: v.report }),
+    ...(v.contractReport === undefined ? {} : { contractReport: v.contractReport }),
+  };
+}
 
 /**
  * Who answered, where that changes what the verdict means. `[runner]` is a
@@ -268,16 +295,3 @@ export function reportLine(r: ConsumedReport): string {
 export function contractReportLine(r: ConsumedContractReport): string {
   return `${r.path} (sha256 ${r.digest.slice(0, 12)}…, ${plural(r.operations, "operation")}, written ${r.mtime})`;
 }
-
-
-/* ------------------------------------------------------------------ */
-/* Recording                                                           */
-/* ------------------------------------------------------------------ */
-
-/**
- * `repoDir` is the repository an attestation is ABOUT: the commit it names, the
- * tree its evidence must resolve inside, and where a `--results` report has to
- * live. It is threaded rather than read here because it comes from
- * `config.root`, and a `process.cwd()` in this function was the whole bug —
- * from a subdirectory, "this repo" quietly became that subdirectory.
- */

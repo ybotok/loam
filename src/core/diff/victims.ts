@@ -47,6 +47,13 @@
  * landscape file), and because the attributed/contested distinction it turns on
  * belongs beside `attributeStep`, not beside a requirement scan. Coherence has
  * no equivalent to keep in step with, so nothing here owes it a mirror.
+ *
+ * TWO READERS, ONE INDEX. `loam archive` asks `opConsumers`/`messageConsumers`
+ * too, to name who an `openapi.op-modified` / `asyncapi.message-modified`
+ * overwrite lands on (commands/archive/plan/contracts/consumers.ts). That is a
+ * second CALLER of this index, not a third copy of the join — Rule 13 counts
+ * copies — and it is why the index takes any already-read `current` fleet
+ * rather than the diff's own snapshot.
  */
 import { existsSync } from "node:fs";
 import { type LoadedDoc, type Rel } from "../c4/likec4.js";
@@ -69,6 +76,20 @@ import type { ServiceState } from "./base-state.js";
 export interface ConsumerScan {
   victims: string[];
   suspended: string[];
+}
+
+/**
+ * Three honest phrasings of one consumer scan — never a confident negative
+ * over a scan that skipped something it could not check. Beside the type it
+ * phrases rather than inside `./semantic.ts`, because `loam diff` is no longer
+ * its only reader: `loam archive`'s overwrite warnings ask the same scan of
+ * the same fleet, and one sentence for one answer is what lets a reader meet
+ * one vocabulary in both.
+ */
+export function consumerStance(scan: ConsumerScan): string {
+  return scan.victims.length > 0 ? `${scan.victims.length} current consumer(s) still name it`
+    : scan.suspended.length > 0 ? "whether current consumers name it could not be fully answered"
+    : "no current consumer names it";
 }
 
 /** The current-state consumer questions `semantic.ts` asks per removal, deprecation and modification. */

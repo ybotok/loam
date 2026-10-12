@@ -15,7 +15,8 @@
  */
 import { existsSync } from "node:fs";
 import { link, mkdir, readFile, rename, rm, rmdir, unlink, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { isPathInside } from "../kernel/path-safety.js";
 import { sameBytes, toBytes, type PlannedWrite, type StagedWrite } from "./writes.js";
 
 /**
@@ -165,21 +166,11 @@ async function discardStaged(staged: StagedWrite[]): Promise<void> {
   for (const s of staged) if (s.tmp !== null) await quietRm(s.tmp);
   const roots = staged.filter((s) => s.createdDir !== null).map((s) => resolve(s.createdDir!));
   for (const s of [...staged].reverse()) {
-    const root = roots.find((candidate) => contains(candidate, s.write.path));
+    const root = roots.find((candidate) => isPathInside(candidate, s.write.path));
     if (root !== undefined) await quietPruneEmptyParents(dirname(s.write.path), root);
   }
 }
 
-function contains(parent: string, candidate: string): boolean {
-  const rel = relative(parent, resolve(candidate));
-  return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
-}
-
-/**
- * Undo the directories a write had to create, from `start` up to and including
- * `boundary`. Remove only directories that are still EMPTY: anything else in
- * there arrived after we made it, and belongs to whoever put it there.
- */
 /** Remove `dir` if it is empty. Best effort — a directory left standing is noise, not corruption. */
 export async function quietRmdir(dir: string): Promise<void> {
   try {
@@ -189,10 +180,16 @@ export async function quietRmdir(dir: string): Promise<void> {
   }
 }
 
+/**
+ * Undo the directories a write had to create, from `start` up to and including
+ * `boundary` — or, for unarchive, the ones a restore's deletes left empty.
+ * Remove only directories that are still EMPTY: anything else in there arrived
+ * after we made it, and belongs to whoever put it there.
+ */
 export async function quietPruneEmptyParents(start: string, boundary: string): Promise<void> {
   let cursor = resolve(start);
   const root = resolve(boundary);
-  while (contains(root, cursor)) {
+  while (isPathInside(root, cursor)) {
     try {
       await rmdir(cursor);
     } catch {

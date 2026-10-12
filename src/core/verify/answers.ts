@@ -58,6 +58,17 @@ export interface Answer {
   evidence_pins?: EvidencePin[];
 }
 
+/**
+ * The entries an answers file holds — a bare array, or an object with an
+ * `answers` array — or null for any other shape. One reading of the file's
+ * shape for `checkAnswers` and `--diff-answers`' off-lens note, so the two
+ * cannot disagree about which entries a file has.
+ */
+export function answerEntries(raw: unknown): unknown[] | null {
+  if (Array.isArray(raw)) return raw;
+  return isRecord(raw) && Array.isArray(raw["answers"]) ? (raw["answers"] as unknown[]) : null;
+}
+
 /** Why an answer set was refused. Each names a different way it fails to answer. */
 export type AnswerRefusal = "answers-unreadable" | "answers-mismatch" | "answers-unevidenced";
 
@@ -102,11 +113,7 @@ export function checkAnswers(
 ): AnswerCheck {
   const refuse = (code: AnswerRefusal, message: string): AnswerCheck => ({ ok: false, code, message });
 
-  const list = Array.isArray(raw)
-    ? raw
-    : isRecord(raw) && Array.isArray(raw["answers"])
-      ? (raw["answers"] as unknown[])
-      : null;
+  const list = answerEntries(raw);
   if (list === null) {
     return refuse(
       "answers-unreadable",

@@ -43,7 +43,9 @@ drawn nowhere breaks no rule; a cycle breaks every rule while the map stays curr
 it prints the exact line to add — use the `self-model` skill, which also says which prose in
 `docs/DESIGN.md` carries the same fact and is not derived from anything.
 
-If the change touched `src/core/agent/agents-md/` or `src/core/agent/workflows/`, also run:
+If the change touched `src/core/agent/agents-md.ts` — the `ORIENTATION` literal the generated file
+is built from; `src/core/agent/agents-md/` and `src/core/agent/workflows/` are `loam instructions`
+pages and never reach it, though running it after touching them costs nothing — also run:
 
 ```bash
 npm run meta:agents

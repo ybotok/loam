@@ -113,16 +113,14 @@ import {
 } from "../../core/repo/tree/render/projects.js";
 import type { WalkedService } from "../../core/repo/tree/walk.js";
 import { stageWrites } from "../../core/staging/commit.js";
-import { type CommitRecovery, InterruptedCommitError } from "../../core/staging/interrupted.js";
-import { acquireDocsLockWaiting, DocsBusyError, LOCK_WAIT_MS } from "../../core/staging/lock.js";
-import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
+import { LOCK_WAIT_MS } from "../../core/staging/lock.js";
+import { openCommitWindow } from "../../core/staging/recovery/recover.js";
 import { commitStaged } from "../../core/staging/txn/transaction.js";
 import { planWrite, type PlannedWrite } from "../../core/staging/writes.js";
 import { readGeneratedFile } from "../../core/repo/tree/render/service/header.js";
-import { viewsAgree } from "../../core/repo/tree/render/views.js";
 import { NO_EXCLUDE, planExclude } from "./txn/exclude.js";
 import { type ProjectsReport, reportSync, type SyncAction } from "./txn/report.js";
-import { type ExpectedFile, expectedViews } from "./txn/views.js";
+import { type ExpectedFile, expectedViews, planGenerated } from "./txn/views.js";
 
 /**
  * The per-service project half of one sync, before the write: what the
@@ -149,26 +147,15 @@ interface ProjectPlan {
 }
 
 export async function runSync(docsDir: DocsDir, json: boolean): Promise<void> {
-  let releaseLock: () => Promise<void>;
-  try {
-    releaseLock = await acquireDocsLockWaiting(docsDir, LOCK_WAIT_MS);
-  } catch (err) {
-    if (!(err instanceof DocsBusyError)) throw err;
-    fail(json, "docs-busy", err.message);
+  // A predecessor's journal is recovered (or refused) before the tree is
+  // read: the views file itself may be the half-written one.
+  const opened = await openCommitWindow(docsDir, LOCK_WAIT_MS);
+  if (!opened.ok) {
+    fail(json, opened.code, opened.message);
     return;
   }
+  const { recovered } = opened;
   try {
-    // A predecessor's journal is recovered (or refused) before the tree is
-    // read: the views file itself may be the half-written one.
-    let recovered: CommitRecovery | null;
-    try {
-      recovered = await recoverInterruptedCommit(docsDir);
-    } catch (err) {
-      if (!(err instanceof InterruptedCommitError)) throw err;
-      fail(json, "commit-interrupted", err.message);
-      return;
-    }
-
     const tree = await listFleetTree(docsDir);
     // BOTH generated files, from ONE read of the map — `./txn/views.ts` says why
     // the pair is one answer and why the parsed document, never a literal, is
@@ -266,7 +253,7 @@ export async function runSync(docsDir: DocsDir, json: boolean): Promise<void> {
     }
     say();
   } finally {
-    await releaseLock();
+    await opened.release();
   }
 }
 
@@ -276,14 +263,9 @@ export async function runSync(docsDir: DocsDir, json: boolean): Promise<void> {
  *
  * ONE function for both generated files, because the rule is one rule and a
  * second spelling of it would be a second chance for `subsystems.likec4` and
- * `services.likec4` to answer differently about the same map.
- *
- * The compare is over CONTENT, not bytes: `viewsAgree` records why, beside the
- * generator. A Windows clone hands a generated file back CRLF with not one fact
- * changed, and a byte compare made `sync` answer `updated` and rewrite it LF —
- * after which git shows the file permanently modified and the next checkout puts
- * the CRLF back. `validate` stopped demanding that rewrite; `sync` must stop
- * offering it, or the two disagree about the same file.
+ * `services.likec4` to answer differently about the same map. Past the two
+ * vetoes below, the compare is `planGenerated` (`./txn/views.ts`), the one the
+ * tree-changing verbs make too, which says why it is over CONTENT, not bytes.
  *
  * `blocked` is the map's veto and it is the whole reason `known` is threaded
  * this far. The render cannot be trusted against a file that already exists when
@@ -322,12 +304,7 @@ async function planFile(file: ExpectedFile, known: boolean): Promise<{ action: S
   // somebody else's. Absent is not refused: there is nothing to lose.
   if (authored) return { action: "refused", write: null };
   if (!known && actual !== null) return { action: "blocked", write: null };
-  if (viewsAgree(actual, file.content)) return { action: "current", write: null };
-  const bytes = file.content === null ? null : Buffer.from(file.content, "utf8");
-  return {
-    action: actual === null ? "created" : bytes === null ? "removed" : "updated",
-    write: { path: file.path, content: bytes },
-  };
+  return planGenerated(file, actual);
 }
 
 /**

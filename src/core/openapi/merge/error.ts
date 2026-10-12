@@ -6,10 +6,11 @@
  * merge each throw it: whichever of them fails, the command above has to map
  * one domain error onto its own envelope. A module that owned the error would
  * be imported by its two siblings for that reason alone.
+ *
+ * Every stage reads and writes its contract through ../contract-tree.ts, and
+ * hands those helpers `openapiRefusal` as the error to raise — which is what
+ * makes each of them fail with this one identically.
  */
-// Every `isRecord` below asks one question of a resolved plain tree: is this a
-// node that can hold OpenAPI keys — an object, not an array?
-
 export type OpenapiMergeSource = "feature" | "living";
 
 /** A document the merge planner cannot read. Commands map this domain error to their own envelope. */
@@ -25,6 +26,7 @@ export class OpenapiMergeError extends Error {
   }
 }
 
-export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+/** The `fail` the tree helpers take, for one side of this axis. */
+export function openapiRefusal(source: OpenapiMergeSource, service: string): (detail: string) => OpenapiMergeError {
+  return (detail) => new OpenapiMergeError(source, service, detail);
 }

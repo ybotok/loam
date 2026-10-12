@@ -321,6 +321,46 @@ describe("a #req- flow beside model.likec4 is graded by the service target", () 
       await p.destroy();
     }
   }, 60_000);
+
+  it("grades a #suite- tag written with comments and a line break after its `#` — the gate skips what LikeC4 skips", async () => {
+    // LikeC4 lexes a tag reference as `#` then the name, with its hidden
+    // tokens — whitespace, line breaks, comments — allowed between them, so
+    // this view carries `suite-smoke` though the bytes `#suite-` appear
+    // nowhere. A gate that looked for those bytes alone would skip the
+    // project and grade the unbacked hop by nothing.
+    const model = MODEL.replace("  tag cap-checkout\n", "  tag cap-checkout\n  tag suite-smoke\n");
+    const p = await project(
+      { [`${DIR}/views.likec4`]: flow("uc_authorize", ["/* the stand */ // and its double\n    suite-smoke"], UNBACKED) },
+      { [`${DIR}/model.likec4`]: model },
+    );
+    try {
+      const res = await runLoam(p.workDir, "validate", "--service", SVC, "--json");
+      expect(codeFor(res.stdout, "usecase.step-unbacked").map((f) => f.subject)).toEqual(["uc_authorize"]);
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
+  it("grades a flow whose only reserved tag is a suite — one predicate and one byte gate serve both scopes", async () => {
+    // The sibling carries `#suite-smoke` and nothing else: no `req-`, no `cap-`
+    // in the file the service's byte gate scans. Before the gate and the
+    // predicate took the suite prefix, this flow was skipped before LikeC4 was
+    // started and the unbacked hop was graded by nothing — the fleet scope's
+    // rule (`test/usecase-checks.test.ts`) arriving at service altitude, because
+    // both read `isUseCase` and `mentionsTagPrefix` from one module.
+    const model = MODEL.replace("  tag cap-checkout\n", "  tag cap-checkout\n  tag suite-smoke\n");
+    const p = await project(
+      { [`${DIR}/views.likec4`]: flow("uc_authorize", ["suite-smoke"], UNBACKED) },
+      { [`${DIR}/model.likec4`]: model },
+    );
+    try {
+      const res = await runLoam(p.workDir, "validate", "--service", SVC, "--json");
+      expect(codeFor(res.stdout, "usecase.step-unbacked").map((f) => f.subject)).toEqual(["uc_authorize"]);
+      expect(useCaseFindings(res.stdout)).toHaveLength(1);
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
 });
 
 describe("the #req- tag resolves against THIS service's own Requirement-IDs", () => {
@@ -451,14 +491,36 @@ describe("a sibling that does not parse", () => {
     // The opt-in is the tag, exactly as it is for a fleet view: an untagged
     // sibling is somebody's hand-drawn diagram, and its parse errors are the
     // renderer's business until a view opts the project in. The gate is
-    // exact: no view in model.likec4 opts in, and this sibling mentions
-    // neither reserved prefix anywhere in its bytes, so it is not even loaded.
-    // The case below is the other side of that gate.
+    // exact: no view in model.likec4 opts in, and this sibling references no
+    // reserved tag anywhere in its bytes — no `#` before `cap-`, `req-` or
+    // `suite-` — so it is not even loaded. The next case is the same sibling
+    // naming the prefixes in prose; the one after it is the other side of the
+    // gate.
     const p = await project({ [`${DIR}/views.likec4`]: flow("uc_sketch", [], "    paymentService.api -> paymentService.ghost 'talks to nothing'\n") });
     try {
       const res = await runLoam(p.workDir, "validate", "--service", SVC, "--json");
       expect(useCaseFindings(res.stdout)).toEqual([]);
       expect(codeFor(res.stdout, "c4.invalid")).toEqual([]);
+      expect(codeFor(res.stdout, "c4.valid")).toHaveLength(1);
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
+  it("stays silent when that untagged sibling names suite- and req- in prose — the gate reads `#` references, not substrings", async () => {
+    // The gate used to open on the bare substrings, so a hand-drawn diagram
+    // titled after an e2e-suite job, or a comment naming a requirement, was
+    // loaded with the model — and, not parsing, turned this service red with
+    // `usecase.flow-invalid` (exit 1) over a view that opted nothing in.
+    // LikeC4 spells every tag a view carries as `#name`, so prose without the
+    // `#` can never be one.
+    const sketch = flow("uc_sketch", [], "    paymentService.api -> paymentService.ghost 'talks to nothing'\n")
+      .replace("title 'Authorize a payment'", "title 'What the e2e-suite-a job exercises'")
+      .replace("views {\n", "// req-PAY-AUTH and cap-checkout are drawn in the map, not here\nviews {\n");
+    const p = await project({ [`${DIR}/views.likec4`]: sketch });
+    try {
+      const res = await runLoam(p.workDir, "validate", "--service", SVC, "--json");
+      expect(useCaseFindings(res.stdout)).toEqual([]);
       expect(codeFor(res.stdout, "c4.valid")).toHaveLength(1);
     } finally {
       await p.destroy();

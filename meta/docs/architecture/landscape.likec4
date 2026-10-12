@@ -4,21 +4,26 @@
 // there is not another one — loam is a single binary, and ROADMAP.md's
 // "Self-hosting: loam on loam" is the standing statement of what that costs.
 //
-// THE COLLAPSE RULE, and it is the whole design of this file. `src/` holds 424
-// modules in 129 package directories (`npm run arch:graph` prints both). Drawing
-// 129 boxes would model the tree's INDENTATION; drawing three would model
+// THE COLLAPSE RULE, and it is the whole design of this file. `src/` holds 487
+// modules in 150 package directories (`npm run arch:graph` prints both). Drawing
+// 150 boxes would model the tree's INDENTATION; drawing three would model
 // nothing. The unit here is the TOP-LEVEL SUBJECT — exactly what
 // `docs/DESIGN.md`'s package-layout table has one row for:
 //
 //     src/cli.ts               -> loam.cli
-//     src/core/<name>/**       -> loam.core.<name>         (37 packages)
+//     src/core/<name>/**       -> loam.core.<name>         (38 packages)
 //     src/core/<name>.ts       -> loam.core.<name>         (the 4 loose modules)
-//     src/commands/<name>/**   -> loam.commands.<name>     (24, policy included)
+//     src/commands/<name>/**   -> loam.commands.<name>     (25, policy included)
 //     src/commands/<name>.ts   -> loam.commands.<name>     (the 5 loose modules)
 //
-// 71 containers, and one edge for every VALUE import that crosses two of them:
-// 427 of them — 165 inside core, 196 from a command into core, 37 command to
-// command, 29 out of cli.ts and the loose modules. A `-` in a directory name
+// 73 containers, and one edge for every VALUE import that crosses two of them:
+// 456 of them — 179 out of core (its packages and its loose modules alike), 208
+// from a command into core, 39 command to command, 30 out of cli.ts. These are
+// the counts `npm run meta:check` prints (units / import edges) and
+// `node scripts/self-model.mjs --print` lists; they were last moved on
+// 2026-10-10 and drift with every package added, so trust the script over this
+// paragraph. (The split used to name "the loose modules" beside cli.ts; their
+// edges were always counted under core and commands.) A `-` in a directory name
 // becomes `_` in the element name, because a LikeC4 element name is an
 // identifier and `conflict-markers` would parse as a subtraction. The real path
 // is the TITLE, and `scripts/self-model.mjs` checks the title as strictly as it
@@ -38,7 +43,7 @@
 //     spelled at all — it is not a preference that was weighed and lost.
 //   - An element is graded at service level only when NO ancestor already stands
 //     for a service (`validate/fleet/census.ts`), so one `metadata { service }`
-//     on the root puts all 70 boxes on the map while
+//     on the root puts all 73 boxes on the map while
 //     `landscape.service-undocumented` stays correctly silent: none of them is a
 //     service, and none of them owes a directory under `services/`.
 //
@@ -77,7 +82,7 @@ specification {
 model {
   loam = softwareSystem 'loam' {
     // The binding that makes services/loam/ this element's directory, and the
-    // one line that keeps 70 containers off the service census: an element is
+    // one line that keeps 73 containers off the service census: an element is
     // graded at service level only when no ancestor already stands for a
     // service, and this is that ancestor.
     metadata {
@@ -228,8 +233,8 @@ model {
 
   loam.commands.archive -> loam.core.asyncapi
   loam.commands.archive -> loam.core.c4
-  loam.commands.archive -> loam.core.capabilities
   loam.commands.archive -> loam.core.coherence
+  loam.commands.archive -> loam.core.diff
   loam.commands.archive -> loam.core.document
   loam.commands.archive -> loam.core.envelope
   loam.commands.archive -> loam.core.fleet_context
@@ -325,10 +330,12 @@ model {
   loam.commands.list -> loam.core.links
   loam.commands.list -> loam.core.owners
   loam.commands.list -> loam.core.repo
+  loam.commands.list -> loam.core.status
   loam.commands.list -> loam.core.usecases
   loam.commands.list -> loam.core.verify
   loam.commands.list -> loam.core.vocabulary
 
+  loam.commands.mcp -> loam.commands.adopt
   loam.commands.mcp -> loam.commands.context
   loam.commands.mcp -> loam.commands.archive
   loam.commands.mcp -> loam.commands.delta
@@ -382,6 +389,7 @@ model {
   loam.commands.rebase -> loam.commands.policy
   loam.commands.rebase -> loam.core.asyncapi
   loam.commands.rebase -> loam.core.capabilities
+  loam.commands.rebase -> loam.core.coherence
   loam.commands.rebase -> loam.core.document
   loam.commands.rebase -> loam.core.envelope
   loam.commands.rebase -> loam.core.fleet_context
@@ -389,6 +397,7 @@ model {
   loam.commands.rebase -> loam.core.openapi
   loam.commands.rebase -> loam.core.repo
   loam.commands.rebase -> loam.core.staging
+  loam.commands.rebase -> loam.core.vocabulary
 
   loam.commands.seed -> loam.commands.policy
   loam.commands.seed -> loam.core.c4
@@ -528,6 +537,7 @@ model {
   loam.core.coherence -> loam.core.kernel
   loam.core.coherence -> loam.core.openapi
   loam.core.coherence -> loam.core.repo
+  loam.core.coherence -> loam.core.staging
   loam.core.coherence -> loam.core.usecases
 
   loam.core.delta -> loam.core.capabilities
@@ -603,14 +613,12 @@ model {
   loam.core.gate -> loam.core.status
   loam.core.gate -> loam.core.vocabulary
 
-  loam.core.gherkin -> loam.core.document
   loam.core.gherkin -> loam.core.kernel
   loam.core.gherkin -> loam.core.repo
   loam.core.gherkin -> loam.core.vocabulary
 
   loam.core.glossary -> loam.core.repo
 
-  loam.core.links -> loam.core.capabilities
   loam.core.links -> loam.core.envelope
   loam.core.links -> loam.core.glossary
   loam.core.links -> loam.core.kernel
@@ -693,6 +701,7 @@ model {
   loam.core.usecases -> loam.core.capabilities
   loam.core.usecases -> loam.core.kernel
   loam.core.usecases -> loam.core.repo
+  loam.core.usecases -> loam.core.vocabulary
 
   loam.core.verify -> loam.core.asyncapi
   loam.core.verify -> loam.core.c4
@@ -723,8 +732,10 @@ model {
 // Views are LikeC4's renderer's; loam reads the model and never a view
 // (docs/DESIGN.md rule 26). Three scoped views rather than one `include *`,
 // and the scoping is not taste: computing a view is superlinear in the number
-// of edges, and one view over 70 boxes and 403 edges is both the slow one to
-// draw and the one nobody can read. `core` alone is 271 of those edges.
+// of edges, and one view over 70 boxes and 403 edges was both the slow one to
+// draw and the one nobody could read, `core` alone 271 of those edges — the
+// measurement when these views were scoped. The banner's counts today are
+// larger, which only strengthens it.
 //
 // No `dynamic view` is declared, and that absence is a finding about the
 // PRODUCT rather than an omission here: a use case is a call sequence between

@@ -43,8 +43,8 @@ import type { DocsDir } from "../kernel/ids/dirs.js";
  * killed and the file reads as unreadable for its subject, never truncated.
  *
  * The question-asking mechanics — `gitText`, `GitAnswer`, `gitSaid`,
- * `declineDetail`, `collectStderr` — are the shared set exported beside
- * `collectStdout`: `../provenance/gitq/vouched-ancestor.ts` asks with the
+ * `declineDetail`, `collectStderr` — are the shared set `../provenance/git.ts`
+ * exports: `../provenance/gitq/vouched-ancestor.ts` asks with the
  * same shapes and the opposite consequence (it degrades to "full read" where
  * this module's callers REFUSE), and the helpers stay verdict-free so the two
  * doctrines cannot bleed into each other through a shared line.

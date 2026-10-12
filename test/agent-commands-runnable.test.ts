@@ -29,7 +29,7 @@ import { HELP_EPILOG, buildProgram } from "../src/cli.js";
 import { AGENTS_MD } from "../src/core/agent/agents-md.js";
 import { PROTOCOLS } from "../src/core/agent/protocol.js";
 import { SLASH_COMMANDS } from "../src/core/agent/scaffold.js";
-import { firstHour } from "../src/commands/init/first-hour.js";
+import { docsRepoFirstHour, firstHour } from "../src/commands/init/first-hour.js";
 
 const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 
@@ -253,6 +253,10 @@ async function corpus(): Promise<Invocation[]> {
       "the init first-hour epilogue (src/commands/init/first-hour.ts)",
       firstHour("PLACEHOLDER").map(([command]) => command),
     ],
+    [
+      "the init docs-repo first-hour epilogue (src/commands/init/first-hour.ts)",
+      docsRepoFirstHour().map(([command]) => command),
+    ],
     // The `--help` epilog, by IMPORT for the same reason. Its two lines are the
     // only instruction a reader who has run nothing yet receives, and one of
     // them exists to be typed into an empty directory. printedInvocations does
@@ -358,5 +362,69 @@ describe("every loam command loam prints is a command loam has", () => {
     // `--service`, and the positional form must stay a hard failure.
     expect(await parseFailure(["adopt", "payment-service"])).toMatch(/too many arguments/);
     expect(await parseFailure(["adopt", "--service", "payment-service"])).toBeNull();
+  });
+});
+
+/**
+ * Printed `loam init … --service` lines that may leave `--agent-profile` out,
+ * each with its reason. Keyed by the text as written, so a new bind line
+ * elsewhere cannot borrow an exemption by sharing a file.
+ */
+const PROFILE_KEPT_ON_RERUN = new Map<string, string>([
+  [
+    'loam init --docs ${inspected.config?.docsDirAsWritten ?? "<dir>"} --service <id>',
+    "doctor.service-unbound's fix (src/core/doctor/doctor.ts): a RE-RUN in a checkout that is already "
+      + "wired, where an omitted --agent-profile keeps the recorded one (init/options.ts). That checkout may "
+      + "be the single-repo trial's, whose full profile is the right one, so naming `service` here could "
+      + "strip loam-feature and loam-ship from the only repository that has them.",
+  ],
+  [
+    "loam init --docs <dir> --service <id>",
+    "the same doctor.service-unbound fix as `loam explain` prints it (src/core/explain/families.ts).",
+  ],
+]);
+
+/** The value an invocation passes to `--agent-profile`, or undefined when it passes none. */
+function profileOf(tokens: readonly string[]): string | undefined {
+  const at = tokens.indexOf("--agent-profile");
+  return at === -1 ? undefined : tokens[at + 1];
+}
+
+describe("every service bind loam prints names the service profile", () => {
+  it("a printed `loam init … --service <id>` carries `--agent-profile service`", () => {
+    // README, QUICKSTART and SERVICE-TEAMS tell a fleet to bind each service
+    // checkout with `--agent-profile service`, because the default is `full`
+    // and `full` writes loam-feature and loam-ship into every service repo.
+    // Every bind line the binary printed left the flag out — the init epilogue,
+    // `next.bind-service`, its explain entry, AGENTS.md and two protocols —
+    // and agents type what loam prints, not what the README says. The parse
+    // suite above could not see it: the bare line parses perfectly.
+    //
+    // `--create` is the single-repo trial, whose one checkout holds the docs
+    // repo it creates and keeps the full profile, so it is not a service bind.
+    const binds = INVOCATIONS.filter(
+      (i) => i.tokens[1] === "init" && i.tokens.includes("--service") && !i.tokens.includes("--create"),
+    );
+    const bare = binds
+      .filter((i) => !PROFILE_KEPT_ON_RERUN.has(i.text) && profileOf(i.tokens) !== "service")
+      .map((i) => `${i.where}: ${i.text}`);
+    expect(bare, `service bind(s) printed without --agent-profile service:\n  ${bare.join("\n  ")}`).toEqual([]);
+    // An exemption whose line is gone is a stale promise, not a harmless one.
+    for (const text of PROFILE_KEPT_ON_RERUN.keys()) {
+      expect(binds.some((i) => i.text === text), `exempted bind no longer printed: ${text}`).toBe(true);
+    }
+    // Not vacuous: each site the defect named is in the corpus as a bind that
+    // names the profile.
+    const named = binds.filter((i) => profileOf(i.tokens) === "service").map((i) => i.where);
+    for (const where of [
+      "src/commands/init/first-hour.ts",
+      "a next[] step (src/core/status/fleet/next.ts)",
+      "src/core/explain/families.ts",
+      "AGENTS.md",
+      "/loam-adopt protocol",
+      "/loam-implement protocol",
+    ]) {
+      expect(named.some((w) => w.includes(where)), `no profiled bind found in ${where}`).toBe(true);
+    }
   });
 });

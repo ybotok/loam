@@ -72,7 +72,7 @@ components:
 
 /** What `loam rebase` would stamp for the surfaces — the real planner, never a hand copy. */
 const pinSurfaces = (feature: string, living: string): string =>
-  planAsyncapiBaselines(feature, living, "payment-service").text ?? feature;
+  planAsyncapiBaselines(feature, living).text ?? feature;
 
 /** A delta that only restates the Authorized message, pinned against `against`. */
 function quoteDelta(against: string): string {
@@ -201,6 +201,10 @@ components:
       { section: "operations", label: "operations.sendAuthorized" },
       { section: "components.messages", label: "'payment.Authorized' (components.messages.Authorized)" },
     ]);
+    // The join token `loam archive` asks the consumer scan with — messages only.
+    expect(result.modifiedMessageNames).toEqual(
+      new Map([["'payment.Authorized' (components.messages.Authorized)", "payment.Authorized"]]),
+    );
     expect(result.baselineStale).toEqual([]);
     const merged = parse(result.text!);
     expect(merged.channels.paymentEvents.address).toBe("payment.events.v2");
@@ -284,6 +288,7 @@ components:
     expect(result).toEqual({
       text: null,
       modified: [],
+      modifiedMessageNames: new Map(),
       removed: [],
       quoted: [],
       baselineStale: [],
@@ -669,6 +674,22 @@ status: proposed
 The payment event contract grows a refund message.
 `;
 
+/** A service whose living arch requirement consumes the fixture's `payment.Authorized`. */
+const CONSUMER_ARCH_SPEC = `# checkout-web arch
+
+## Requirements
+
+### Requirement: React to authorization
+The UI SHALL refresh when a payment authorizes.
+
+Consumes: payment.Authorized
+
+#### Scenario: Refresh
+- **Given** an open checkout
+- **When** payment.Authorized arrives
+- **Then** the view refreshes
+`;
+
 function fixture(featureAsyncapi: string, over: Record<string, string | null> = {}): Record<string, string> {
   const files: Record<string, string | null> = {
     "services/payment-service/spec.md": LIVING_SPEC,
@@ -708,16 +729,24 @@ components:
             type: number
 `;
     const pinned = pinAsyncapiSlots(delta, LIVING, "payment-service").text ?? delta;
-    const p = await makeProject(fixture(pinned));
+    // A living consumer of the message the delta overwrites, so the warning
+    // has someone to name — `loam diff`'s own scan, asked by the archive.
+    const p = await makeProject(fixture(pinned, { "services/checkout-web/arch.spec.md": CONSUMER_ARCH_SPEC }));
     try {
       const res = await runLoam(p.workDir, "archive", "FEAT-50", "--json");
       expect(res.code).toBe(0);
       const payload = JSON.parse(res.stdout);
-      expect((payload.warnings as Array<{ code: string }>).map((w) => w.code).sort()).toEqual([
+      const warnings = payload.warnings as Array<{ code: string; message: string; details: string[] }>;
+      expect(warnings.map((w) => w.code).sort()).toEqual([
         "asyncapi.channel-modified",
         "asyncapi.message-modified",
         "asyncapi.operation-modified",
       ]);
+      const message = warnings.find((w) => w.code === "asyncapi.message-modified")!;
+      expect(message.message).toContain("1 current consumer(s) still name it");
+      expect(message.details).toEqual(["checkout-web's living requirement 'React to authorization'"]);
+      // A channel or an operation is joined by nothing, so it names nobody.
+      for (const w of warnings.filter((x) => x.code !== "asyncapi.message-modified")) expect(w.details).toEqual([]);
       expect(payload.asyncapiRemovals).toEqual([]);
       const living = await p.read("services/payment-service/asyncapi.yaml");
       expect(living).not.toContain("x-loam");

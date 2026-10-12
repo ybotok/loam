@@ -34,7 +34,7 @@ import { enumeratedServiceIds } from "../../../core/repo/service-target.js";
 import { extendingModels } from "../../../core/c4/service-model/fleet/extending.js";
 import { modelMergeErrors } from "./model/extending.js";
 import { type Gated, type Plan } from "./state.js";
-import { ArchiveFailure } from "./refusal.js";
+import { CodedFailure } from "../../../core/envelope/json.js";
 import { featurePaths } from "../../../core/repo/paths.js";
 import { featureFlows, livingFlowPath, USECASE_SUBDIR } from "../../../core/usecases/delta/flows.js";
 import { featureDeployments, livingDeploymentPath } from "../../../core/deployment/delta.js";
@@ -58,7 +58,7 @@ export async function planLandscape(
       // read an axis. Skipping here would silently drop one merge axis in the one
       // command engineered against quiet partial merges — same rule as an
       // unparseable landscape or openapi: the plan stops before anything is written.
-      throw new ArchiveFailure(
+      throw new CodedFailure(
         "merge-failed",
         `delta.likec4 has ${delta.errors.length} parse error(s) — the architecture axis cannot be merged; fix it (\`loam validate --feature ${id}\`) or delete the file`,
       );
@@ -76,7 +76,7 @@ export async function planLandscape(
       ...Object.entries(delta.specification?.relationshipKindTags ?? {}),
     ].find(([, tags]) => tags.includes(id));
     if (kindTagged !== undefined) {
-      throw new ArchiveFailure(
+      throw new CodedFailure(
         "merge-failed",
         `delta.likec4 declares the feature tag '#${id}' on kind '${kindTagged[0]}' in its specification block, so every ` +
           `'${kindTagged[0]}' in the file inherits it — the merge would treat the whole document as this feature's ` +
@@ -137,7 +137,7 @@ export async function planLandscape(
           model: { path: additions.model.path, content },
         });
         if (errors.length > 0) {
-          throw new ArchiveFailure(
+          throw new CodedFailure(
             "merge-failed",
             `the merged ${additions.model.path} would not parse (${errors.length} error(s): ${errors.slice(0, 3).join("; ")}) — ` +
               `nothing was written. This model is read beside architecture/landscape.likec4 and nothing else, so an addition ` +

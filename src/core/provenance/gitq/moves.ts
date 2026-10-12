@@ -1,16 +1,15 @@
 /**
  * The subsystem surface's git questions, beside the provenance ones
- * (`../git.ts`) whose timeout and capped stdout reader they share. A package
- * of their own because `git.ts` sits against the 300-line limit and these
- * three are one subject: what a `subsystem move` must know before renaming
- * (`gitDirtyPaths`), what `subsystem history` asks after (`gitRenameHops`),
- * and the ONE write the roadmap blesses (`gitStageRenames` — "move stages
- * renames without committing"). The doctrine is unchanged: every way git can
- * decline reads as "git will not say", never as an error a caller must
- * handle.
+ * (`../git.ts`) whose `gitText` — one spawn, its timeout and its capped
+ * stdout reader — they ask through. A package of their own because `git.ts`
+ * sat against the then 300-line limit and these three are one subject: what a
+ * `subsystem move` must know before renaming (`gitDirtyPaths`), what
+ * `subsystem history` asks after (`gitRenameHops`), and the ONE write the
+ * roadmap blesses (`gitStageRenames` — "move stages renames without
+ * committing"). The doctrine is unchanged: every way git can decline reads as
+ * "git will not say", never as an error a caller must handle.
  */
-import { spawn } from "node:child_process";
-import { collectStdout, GIT_TIMEOUT_MS } from "../git.js";
+import { gitText } from "../git.js";
 
 /**
  * Which of these repo-relative paths carry UNCOMMITTED work — anything
@@ -28,34 +27,21 @@ import { collectStdout, GIT_TIMEOUT_MS } from "../git.js";
  */
 export async function gitDirtyPaths(repoDir: string, rels: string[]): Promise<string[] | null> {
   if (rels.length === 0) return [];
-  return new Promise<string[] | null>((done) => {
-    const child = spawn("git", ["status", "--porcelain", "-z", "--", ...rels], {
-      cwd: repoDir,
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: GIT_TIMEOUT_MS,
-    });
-    const out = collectStdout(child);
-    child.on("error", () => done(null));
-    child.on("close", (code) => {
-      if (code !== 0 || out.overflowed()) {
-        done(null);
-        return;
-      }
-      const tokens = out.text().split("\0").filter((t) => t !== "");
-      const paths: string[] = [];
-      for (let i = 0; i < tokens.length; i += 1) {
-        const entry = tokens[i]!;
-        // "XY <path>" — two status letters and a space. A rename/copy entry's
-        // ORIGINAL path follows as its own NUL token; take it too.
-        paths.push(entry.slice(3));
-        if (entry.startsWith("R") || entry.startsWith("C")) {
-          i += 1;
-          if (tokens[i] !== undefined) paths.push(tokens[i]!);
-        }
-      }
-      done(paths);
-    });
-  });
+  const a = await gitText(repoDir, ["status", "--porcelain", "-z", "--", ...rels]);
+  if (a.code !== 0 || a.overflowed) return null;
+  const tokens = a.out.split("\0").filter((t) => t !== "");
+  const paths: string[] = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    const entry = tokens[i]!;
+    // "XY <path>" — two status letters and a space. A rename/copy entry's
+    // ORIGINAL path follows as its own NUL token; take it too.
+    paths.push(entry.slice(3));
+    if (entry.startsWith("R") || entry.startsWith("C")) {
+      i += 1;
+      if (tokens[i] !== undefined) paths.push(tokens[i]!);
+    }
+  }
+  return paths;
 }
 
 /** One hop of a path's rename history: the commit, and the path either side of it. */
@@ -81,33 +67,20 @@ export interface RenameHop {
  * fewer hops, never a wrong pairing.
  */
 export async function gitRenameHops(repoDir: string, rel: string): Promise<RenameHop[] | null> {
-  return new Promise<RenameHop[] | null>((done) => {
-    const child = spawn(
-      "git",
-      ["log", "--follow", "--diff-filter=R", "--name-status", "-z", "--format=%H", "--", rel],
-      { cwd: repoDir, stdio: ["ignore", "pipe", "ignore"], timeout: GIT_TIMEOUT_MS },
-    );
-    const out = collectStdout(child);
-    child.on("error", () => done(null));
-    child.on("close", (code) => {
-      if (code !== 0 || out.overflowed()) {
-        done(null);
-        return;
-      }
-      const tokens = out.text().split("\0").map((t) => (t.startsWith("\n") ? t.slice(1) : t));
-      const hops: RenameHop[] = [];
-      let commit = "";
-      for (let i = 0; i < tokens.length; i += 1) {
-        const token = tokens[i]!;
-        if (/^[0-9a-f]{40}$/.test(token)) commit = token;
-        else if (/^R\d*$/.test(token) && tokens[i + 1] !== undefined && tokens[i + 2] !== undefined) {
-          hops.push({ commit, from: tokens[i + 1]!, to: tokens[i + 2]! });
-          i += 2;
-        }
-      }
-      done(hops.reverse());
-    });
-  });
+  const a = await gitText(repoDir, ["log", "--follow", "--diff-filter=R", "--name-status", "-z", "--format=%H", "--", rel]);
+  if (a.code !== 0 || a.overflowed) return null;
+  const tokens = a.out.split("\0").map((t) => (t.startsWith("\n") ? t.slice(1) : t));
+  const hops: RenameHop[] = [];
+  let commit = "";
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i]!;
+    if (/^[0-9a-f]{40}$/.test(token)) commit = token;
+    else if (/^R\d*$/.test(token) && tokens[i + 1] !== undefined && tokens[i + 2] !== undefined) {
+      hops.push({ commit, from: tokens[i + 1]!, to: tokens[i + 2]! });
+      i += 2;
+    }
+  }
+  return hops.reverse();
 }
 
 /**
@@ -128,48 +101,32 @@ export async function gitRenamePairingAmbiguous(
   commit: string,
   dest: string,
 ): Promise<boolean | null> {
-  return new Promise<boolean | null>((done) => {
-    const child = spawn("git", ["diff-tree", "-r", "-M", "-z", commit], {
-      cwd: repoDir,
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: GIT_TIMEOUT_MS,
+  const a = await gitText(repoDir, ["diff-tree", "-r", "-M", "-z", commit]);
+  if (a.code !== 0 || a.overflowed) return null;
+  // `-z` raw form: `:<mode> <mode> <sha> <sha> <status>` NUL, then one
+  // path token — two for a rename/copy. The leading token is the commit.
+  const tokens = a.out.split("\0").filter((t) => t !== "");
+  const entries: { srcSha: string; dstSha: string; status: string; paths: string[] }[] = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i]!;
+    if (!token.startsWith(":")) continue;
+    const fields = token.slice(1).split(" ");
+    const status = fields[4] ?? "";
+    const paths = status.startsWith("R") || status.startsWith("C") ? [tokens[i + 1], tokens[i + 2]] : [tokens[i + 1]];
+    entries.push({
+      srcSha: fields[2] ?? "",
+      dstSha: fields[3] ?? "",
+      status,
+      paths: paths.filter((p): p is string => p !== undefined),
     });
-    const out = collectStdout(child);
-    child.on("error", () => done(null));
-    child.on("close", (code) => {
-      if (code !== 0 || out.overflowed()) {
-        done(null);
-        return;
-      }
-      // `-z` raw form: `:<mode> <mode> <sha> <sha> <status>` NUL, then one
-      // path token — two for a rename/copy. The leading token is the commit.
-      const tokens = out.text().split("\0").filter((t) => t !== "");
-      const entries: { srcSha: string; dstSha: string; status: string; paths: string[] }[] = [];
-      for (let i = 0; i < tokens.length; i += 1) {
-        const token = tokens[i]!;
-        if (!token.startsWith(":")) continue;
-        const fields = token.slice(1).split(" ");
-        const status = fields[4] ?? "";
-        const paths = status.startsWith("R") || status.startsWith("C") ? [tokens[i + 1], tokens[i + 2]] : [tokens[i + 1]];
-        entries.push({
-          srcSha: fields[2] ?? "",
-          dstSha: fields[3] ?? "",
-          status,
-          paths: paths.filter((p): p is string => p !== undefined),
-        });
-        i += paths.length;
-      }
-      const own = entries.find((e) => e.status.startsWith("R") && e.paths[1] === dest);
-      if (own === undefined) {
-        // The hop's own rename is not in the commit's record — an answer this
-        // check cannot ground is an answer git will not give.
-        done(null);
-        return;
-      }
-      const twins = entries.filter((e) => e.srcSha === own.dstSha || e.dstSha === own.dstSha);
-      done(twins.length > 1);
-    });
-  });
+    i += paths.length;
+  }
+  const own = entries.find((e) => e.status.startsWith("R") && e.paths[1] === dest);
+  // The hop's own rename is not in the commit's record — an answer this
+  // check cannot ground is an answer git will not give.
+  if (own === undefined) return null;
+  const twins = entries.filter((e) => e.srcSha === own.dstSha || e.dstSha === own.dstSha);
+  return twins.length > 1;
 }
 
 /**
@@ -183,13 +140,5 @@ export async function gitRenamePairingAmbiguous(
  */
 export async function gitStageRenames(repoDir: string, rels: string[]): Promise<void> {
   if (rels.length === 0) return;
-  return new Promise<void>((done) => {
-    const child = spawn("git", ["add", "-A", "--", ...rels], {
-      cwd: repoDir,
-      stdio: ["ignore", "ignore", "ignore"],
-      timeout: GIT_TIMEOUT_MS,
-    });
-    child.on("error", () => done());
-    child.on("close", () => done());
-  });
+  await gitText(repoDir, ["add", "-A", "--", ...rels]);
 }

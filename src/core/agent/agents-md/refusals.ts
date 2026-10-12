@@ -109,8 +109,11 @@ export const REFUSALS = `- \`loam audit-openspec <root>\` is the read-only OpenS
   \`evidence.token-missing\` and \`evidence.record-unreadable\` the warnings.
   Demote-only, by doctrine: a warn here is a reading priority for a reviewer,
   never a verdict change — no pin state moves \`attested\` or \`verified\` in
-  either direction. From the docs repo the family is silent;
-  \`sources.unverifiable-from-here\` already names that blind spot.
+  either direction. From the docs repo the service target's family is silent;
+  \`sources.unverifiable-from-here\` already names that blind spot. The record
+  itself lives in the docs repo, so the FEATURE target (\`--feature\`, and every
+  active feature under \`--all\`) raises \`evidence.record-unreadable\` from
+  anywhere — the same warn, about readability only.
 - \`loam archive\` alone reports the breaches only the merge computation can see:
   \`living.requirement-outside-requirements\`, \`openapi.op-modified\`,
   \`openapi.path-item-modified\`, \`openapi.component-modified\`,
@@ -165,8 +168,9 @@ filtered-and-ordered row order, \`unowned[]\` listing the rows no rule matched,
 worklists. A CODEOWNERS path that cannot be read, or a line that cannot be
 parsed as \`pattern owner…\`, refuses \`owners-unreadable\` naming the path and
 line — fail-closed, exactly as \`answers-unreadable\` treats the other
-user-named file. Either flag with the \`features\` or \`capabilities\` section
-is refused (\`invalid-option\`).
+user-named file. Either flag with the \`features\`, \`capabilities\`, \`glossary\`
+or \`suites\` section is refused (\`invalid-option\`), as is \`--needs-work\` with
+\`features\` or \`suites\`, and a \`[name]\` after any section but \`suites\`.
 
 \`--strict\` (every targeting mode, \`--all\` included) exits 1 when any error
 or warning exists — \`ok\`-severity findings are confirmations and never trip

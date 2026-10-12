@@ -9,12 +9,13 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PassThrough } from "node:stream";
-import { coherentFixture, makeProject, makeTmpDir, runLoam, type Project } from "./helpers/harness.js";
+import { coherentFixture, makeProject, makeTmpDir, runLoam, treeHashes, type Project } from "./helpers/harness.js";
 import { rm } from "node:fs/promises";
 import { serve, type ToolRunner } from "../src/commands/mcp/serve.js";
-import { captureConsole, runToolArgv, type Sinks } from "../src/commands/mcp/dispatch.js";
+import { captureConsole, resolveRegistrars, toolRunner, type Sinks } from "../src/commands/mcp/dispatch.js";
+import { mcpToolTable, startMcp } from "../src/commands/mcp/mcp.js";
 import { LOAM_VERSION } from "../src/core/envelope/version.js";
-import { MCP_TOOLS } from "../src/core/mcp/tools.js";
+import { MCP_TOOLS, type McpTool } from "../src/core/mcp/tools.js";
 import { MCP_AUTHOR_TOOLS } from "../src/core/mcp/author-tools.js";
 
 interface SessionResult {
@@ -31,7 +32,7 @@ interface SessionResult {
  * commands resolve loam.json through process.cwd(); serial within the file, so
  * nothing else observes the moved cwd.
  */
-async function drive(cwd: string, chunks: readonly string[], runTool: ToolRunner = runToolArgv): Promise<SessionResult> {
+async function drive(cwd: string, chunks: readonly string[], runTool: ToolRunner = toolRunner()): Promise<SessionResult> {
   const previousCwd = process.cwd();
   process.chdir(cwd);
   try {
@@ -173,6 +174,34 @@ describe("a full session over the coherent fixture", () => {
   });
 });
 
+describe("loam_adopt: the brief an MCP-only host could read about and never receive", () => {
+  it("returns the CLI's adopt envelope verbatim, narrowed by --targets, and writes nothing", async () => {
+    // The loam-adopt protocol opens with `loam adopt --service <id> --json`;
+    // before the tool existed an MCP-only host could fetch that protocol
+    // through loam_instructions and then not run its first step. The tree
+    // fingerprint is the read-only half of the claim: readOnlyHint is only
+    // true of this tool because adopt hands the writing to the agent.
+    const p = await makeProject(coherentFixture());
+    try {
+      const before = await treeHashes(p.docsDir);
+      const res = await session(p.workDir, [
+        call(1, "loam_adopt", { service: "payment-service" }),
+        call(2, "loam_adopt", { service: "payment-service", targets: true }),
+      ]);
+      const full = resultOf(res.frames, 1);
+      expect(full["isError"]).toBe(false);
+      const direct = await runLoam(p.workDir, "adopt", "--service", "payment-service", "--json");
+      expect(envelopeOf(full)).toEqual(JSON.parse(direct.stdout));
+      const narrowed = envelopeOf(resultOf(res.frames, 2));
+      expect(narrowed).toMatchObject({ ok: true, command: "adopt", service: "payment-service" });
+      expect(typeof narrowed["full"]).toBe("string");
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
 describe("a repository the server cannot serve still answers coherently", () => {
   it("no loam.json: a refusal is isError true, a graded ok:true answer is not — even at exit 1", async () => {
     const bare = await makeTmpDir();
@@ -229,39 +258,167 @@ describe("protocol errors surface per call and never kill the loop", () => {
       await rm(bare, { recursive: true, force: true });
     }
   });
+
+  it("an optional positional after an absent one is invalid params naming the absent one — never read in its place", async () => {
+    // Positionals reach argv by POSITION, so a later optional supplied without
+    // the earlier one used to slide into its slot. `{name: "services"}` became
+    // `list services` and came back ok:true with the services listing — a
+    // wrong answer to a question nobody asked, with nothing saying so; and
+    // `{name: "smoke"}` blamed a section the caller never named. The refusal
+    // is the one a missing required positional already gets: -32602, before
+    // any command runs. A workflow's `args` without the `workflow` slides the
+    // same way, and an empty `args` contributes no token, so nothing shifts.
+    const bare = await makeTmpDir();
+    try {
+      const res = await drive(bare, [
+        JSON.stringify(call(1, "loam_list", { name: "services" })) + "\n",
+        JSON.stringify(call(2, "loam_list", { name: "smoke" })) + "\n",
+        JSON.stringify(call(3, "loam_instructions", { args: ["FEAT-1"] })) + "\n",
+        JSON.stringify(call(4, "loam_list", { section: "suites", name: "smoke" })) + "\n",
+        JSON.stringify(call(5, "loam_instructions", { args: [] })) + "\n",
+      ]);
+      for (const [id, absent, present] of [[1, "section", "name"], [2, "section", "name"], [3, "workflow", "args"]] as const) {
+        const error = errorOf(res.frames, id);
+        expect(error.code, `call ${id}`).toBe(-32602);
+        expect(error.message, `call ${id}`).toContain(`argument '${present}' requires '${absent}'`);
+      }
+      // Both slots filled — and an empty variadic — reach the command: a
+      // result frame (the bare directory's own refusal, or the listing), not
+      // a protocol error.
+      for (const id of [4, 5]) {
+        expect(byId(res.frames, id)["error"], `call ${id}`).toBeUndefined();
+        expect(byId(res.frames, id)["result"], `call ${id}`).toBeDefined();
+      }
+    } finally {
+      await rm(bare, { recursive: true, force: true });
+    }
+  });
 });
 
+/** What a roster probe reads back: the envelope's error, if the call refused. */
+type ProbeEnvelope = { ok: boolean; error?: { code?: string; message?: string } };
+
 describe("every advertised tool is a command the dispatcher can actually run", () => {
-  it("no tool in MCP_TOOLS answers `unknown command` — the two rosters are one roster", async () => {
+  it("no tool in MCP_TOOLS answers `unknown command` or `internal` — the two rosters are one roster", async () => {
     // The hole this closes shipped once. `MCP_TOOLS` is what `tools/list`
-    // advertises; `readProgram` in dispatch.ts is what `tools/call` runs, and
-    // the two are separate lists because core/ may not import commands/. When
-    // `loam_instructions` and `loam_steps` were added to the first and not the
-    // second, `tools/list` promised fourteen tools and two of them answered
-    // `{ ok: false, error: { code: "invalid-option", message: "unknown
-    // command 'instructions'" } }` — an envelope that reads as the CALLER's
-    // mistake, which is the worst shape a server-side gap can take. Every
-    // suite stayed green: nothing called a tool it had just been told about.
+    // advertises; `toolRunner` in dispatch.ts is what `tools/call` runs, and
+    // its `REGISTRARS` lookup is a separate list because core/ may not import
+    // commands/ (it registers from the table now, and refuses a miss at
+    // startup). When `loam_instructions` and `loam_steps` were added to the
+    // first and not the second, `tools/list` promised fourteen tools and two
+    // of them answered `{ ok: false, error: { code: "invalid-option", message:
+    // "unknown command 'instructions'" } }` — an envelope that reads as the
+    // CALLER's mistake, which is the worst shape a server-side gap can take.
+    // Every suite stayed green: nothing called a tool it had just been told
+    // about.
+    //
+    // `unknown command` alone stopped being the symptom once the program was
+    // built from the table: the miss then surfaced as an `internal` envelope
+    // on EVERY call, and this test — asserting only the old message — passed
+    // over exactly the drift it was written for. Both shapes are asserted now.
     //
     // Run with no arguments beyond the command name: most tools then refuse
     // for a real reason (`no-config` in a bare directory), and that is fine —
     // this asserts only that the verb REACHES a command, never that it
     // succeeds.
+    const run = toolRunner();
     for (const tool of MCP_TOOLS) {
-      const res = await runToolArgv([tool.command, "--json"]);
+      const res = await run([tool.command, "--json"]);
       expect(res.stdout, `${tool.name} produced no envelope`).not.toBe("");
-      const envelope = JSON.parse(res.stdout) as { ok: boolean; error?: { message?: string } };
-      const message = envelope.error?.message ?? "";
-      expect(message, `${tool.name} -> ${tool.command}`).not.toContain("unknown command");
+      const envelope = JSON.parse(res.stdout) as ProbeEnvelope;
+      expect(envelope.error?.message ?? "", `${tool.name} -> ${tool.command}`).not.toContain("unknown command");
+      expect(envelope.error?.code, `${tool.name} -> ${tool.command}: ${envelope.error?.message}`).not.toBe("internal");
     }
   });
 
   it("the opt-in author roster reaches registered commands too", async () => {
+    const run = toolRunner([...MCP_TOOLS, ...MCP_AUTHOR_TOOLS]);
     for (const tool of MCP_AUTHOR_TOOLS) {
-      const res = await runToolArgv([tool.command, "--json"], true);
+      const res = await run([tool.command, "--json"]);
       expect(res.stdout, `${tool.name} produced no envelope`).not.toBe("");
-      const envelope = JSON.parse(res.stdout) as { error?: { message?: string } };
+      const envelope = JSON.parse(res.stdout) as ProbeEnvelope;
       expect(envelope.error?.message ?? "", `${tool.name} -> ${tool.command}`).not.toContain("unknown command");
+      expect(envelope.error?.code, `${tool.name} -> ${tool.command}: ${envelope.error?.message}`).not.toBe("internal");
+    }
+  });
+
+  it("every command either tool table names has a registrar", () => {
+    // The roster probes above prove a call REACHES its command; this proves
+    // the lookup itself, without running anything — the startup check
+    // `loam mcp` makes, asserted for both tables the server can be launched
+    // with.
+    const commands = new Set([...MCP_TOOLS, ...MCP_AUTHOR_TOOLS].map((tool) => tool.command));
+    expect(resolveRegistrars(MCP_TOOLS)).toHaveLength(new Set(MCP_TOOLS.map((tool) => tool.command)).size);
+    expect(resolveRegistrars([...MCP_TOOLS, ...MCP_AUTHOR_TOOLS])).toHaveLength(commands.size);
+  });
+
+  it("a table naming a command with no registrar refuses at startup, not per call", () => {
+    // The drift this file guards, injected: one tool with no registrar. The
+    // refusal must come from building the runner — once, when `loam mcp`
+    // starts — and name the command; a runner that existed would have had to
+    // answer every call, the correctly wired ones included, for the sake of
+    // the one tool none of them named.
+    const fake: McpTool = { name: "loam_frobnicate", command: "frobnicate", description: "probe", positionals: [], flags: [] };
+    expect(() => resolveRegistrars([...MCP_TOOLS, fake])).toThrow(/no command registered for MCP tool command 'frobnicate'/);
+    expect(() => toolRunner([...MCP_TOOLS, fake])).toThrow(/'frobnicate'/);
+  });
+
+  it("`loam mcp` itself refuses that table before serving — no startup line, no frame", async () => {
+    // The two assertions above pin `toolRunner`; this pins the WIRING that
+    // calls it. `startMcp` is the action's body with the stdio triple
+    // injected, so a rewrite to `(argv) => toolRunner(tools)(argv)` — a
+    // runner per call, the refusal moved back onto every `tools/call` —
+    // fails here: the server would log its startup line, read the ended
+    // input and resolve, and nothing would have refused.
+    const fake: McpTool = { name: "loam_frobnicate", command: "frobnicate", description: "probe", positionals: [], flags: [] };
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const log = new PassThrough();
+    const written: string[] = [];
+    output.on("data", (chunk) => written.push(String(chunk)));
+    log.on("data", (chunk) => written.push(String(chunk)));
+    input.end(JSON.stringify(request(1, "ping")) + "\n");
+    let refused: unknown;
+    try {
+      await startMcp([...MCP_TOOLS, fake], { input, output, log });
+    } catch (err) {
+      refused = err;
+    }
+    expect(refused).toBeInstanceOf(Error);
+    expect((refused as Error).message).toMatch(/no command registered for MCP tool command 'frobnicate'/);
+    expect(written).toEqual([]);
+  });
+
+  it("`--author` selects the author roster and its absence the read roster — tools/list advertises the table `loam mcp` selected", async () => {
+    // The selection is `mcpToolTable`, the one place the flag is read, and
+    // both of its answers are held here through the server that advertises
+    // them: written as `MCP_TOOLS` alone, the authoring tools vanish from
+    // every `loam init --mcp-author` host. That the action hands the flag to
+    // it is test/mcp-stdio.test.ts's, which spawns `loam mcp --author`.
+    const listed = async (author: boolean): Promise<string[]> => {
+      const input = new PassThrough();
+      const output = new PassThrough();
+      const log = new PassThrough();
+      const out: string[] = [];
+      output.on("data", (chunk) => out.push(String(chunk)));
+      input.end(JSON.stringify(request(1, "tools/list")) + "\n");
+      await startMcp(mcpToolTable(author), { input, output, log });
+      const frame = JSON.parse(out.join("").trim()) as { result: { tools: Array<{ name: string }> } };
+      return frame.result.tools.map((tool) => tool.name);
+    };
+    expect(await listed(true)).toEqual([...MCP_TOOLS, ...MCP_AUTHOR_TOOLS].map((tool) => tool.name));
+    expect(await listed(false)).toEqual(MCP_TOOLS.map((tool) => tool.name));
+  });
+
+  it("without the author roster, no authoring writer is registered at all", async () => {
+    // The read-only table is the gate: the program a call runs holds only the
+    // commands its active table names, so an argv naming a writer cannot reach
+    // one even if something upstream were to build it.
+    const run = toolRunner();
+    for (const tool of MCP_AUTHOR_TOOLS) {
+      const res = await run([tool.command, "--json"]);
+      const envelope = JSON.parse(res.stdout) as ProbeEnvelope;
+      expect(envelope.error?.message ?? "", tool.command).toContain(`unknown command '${tool.command}'`);
     }
   });
 });

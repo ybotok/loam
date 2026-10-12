@@ -20,12 +20,10 @@
  * file already earns `link.unreadable`; `loam list` has no such finding, so it
  * needs the list to say what it did not read.
  */
-import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { repoPath } from "../envelope/json.js";
 import type { FleetContext } from "../fleet-context.js";
-import { decodeDocument } from "../kernel/document-bytes.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 import { pathCaseIndex } from "./case.js";
 import { allAuthoredDocuments } from "./corpus.js";
@@ -45,7 +43,7 @@ export interface BacklinkIndex {
  * and the same directories are asked about hundreds of times. Still not a
  * module-level cache: it lives exactly as long as this call.
  */
-export async function backlinkIndex(docsDir: DocsDir, fleet?: FleetContext): Promise<BacklinkIndex> {
+export async function backlinkIndex(docsDir: DocsDir, fleet: FleetContext): Promise<BacklinkIndex> {
   const linkers = new Map<string, Set<string>>();
   const unreadable: string[] = [];
   const scope = { docsDir, cases: pathCaseIndex() };
@@ -53,7 +51,7 @@ export async function backlinkIndex(docsDir: DocsDir, fleet?: FleetContext): Pro
     if (!existsSync(path)) continue;
     let text: string;
     try {
-      text = fleet === undefined ? decodeDocument(await readFile(path), path) : await fleet.readText(path);
+      text = await fleet.readText(path);
     } catch {
       unreadable.push(repoPath(docsDir, path));
       continue;

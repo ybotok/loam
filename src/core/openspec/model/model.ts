@@ -19,16 +19,21 @@ import {
 /**
  * The upstream commits this binary's OpenSpec compatibility is measured against:
  * `release` is the certified current release, swept file by file by the corpus
- * gate (`scripts/check-openspec-corpus.ts`) and vendored as the seven verbatim
- * fixtures. `mainCanary` is the older post-v1.7 canary, kept as a regression pin
- * rather than as a claim about where `main` points today — at the time of the
- * v1.9.0 pin, `main` and the release tag were the same commit.
+ * gate (`scripts/check-openspec-corpus.ts`; the `release` pin in
+ * `scripts/openspec-corpus.ts` reads this constant, so the banner and the gate
+ * cannot name different commits). The seven verbatim fixtures were vendored at
+ * the previous pin, v1.9.0, and stay there: that commit is now one of the
+ * gate's regression pins, and the v1.14.1 sweep exposed no shape the seven
+ * lack. `mainCanary` is the older
+ * post-v1.7 canary, kept as a regression pin rather than as a claim about where
+ * `main` points today — at the time of the v1.9.0 pin, `main` and the release
+ * tag were the same commit.
  */
 export const OPENSPEC_BASELINES = Object.freeze({
   release: Object.freeze({
-    version: "1.9.0",
-    ref: "v1.9.0",
-    commit: "2826b8889e5223a9a8095d4428b60b56597e1020",
+    version: "1.14.1",
+    ref: "v1.14.1",
+    commit: "87c3595ace6a2e22957f39ebe5b74c2f2316e0cb",
   }),
   mainCanary: Object.freeze({
     ref: "main",

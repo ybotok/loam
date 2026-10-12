@@ -9,12 +9,13 @@
  * command exists to interrupt. So the reading list is computed first, printed,
  * and only then is the person asked.
  *
- * It runs the vouch's own vetting (`../vet/verify.ts`, the same call
- * `run.ts` and the reading pack make), which means every refusal a vouch can
- * raise about a document — an unreadable header, no `sources`, a glob
- * pattern, a source that is gone, an expansion covering no files — fires HERE,
- * before the prompt, with the same code and the same words. A person should
- * not read four sections and then be told the run was never going to stamp.
+ * It runs the vouch's own vetting (`../vet/verify.ts`: the same axis walk
+ * `run.ts` makes, over the call the reading pack makes), which means every
+ * refusal a vouch can raise about a document — an unreadable header, no
+ * `sources`, a glob pattern, a source that is gone, an expansion covering no
+ * files — fires HERE, before the prompt, with the same code and the same
+ * words. A person should not read four sections and then be told the run was
+ * never going to stamp.
  *
  * The cost is that the sources are walked and hashed twice: once to seed the
  * sample, once at the stamp. That is the honesty price of the seed being
@@ -22,15 +23,12 @@
  * second walk buys is the drift check, which refuses a stamp whose sample was
  * chosen from a document that has since moved.
  */
-import { existsSync } from "node:fs";
 import { contentDigest, rawBody } from "../../../core/document/frontmatter.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 import type { PathableService } from "../../../core/kernel/ids/service.js";
 import type { DocSection } from "../../../core/provenance/sample/sections.js";
 import { planSample, type VouchScope } from "../../../core/provenance/sample/scope.js";
-import { SPEC_AXES } from "../../../core/repo/paths.js";
-import { locateServicePaths } from "../../../core/repo/service-target.js";
-import { noLivingSpecMessage, verifySpec, type SpecRefusal, type VerifiedSpec } from "../vet/verify.js";
+import { verifyAxes, type AxesRefusal, type VerifiedSpec } from "../vet/verify.js";
 
 /**
  * One spec-axis file's share of a `--sample <n>` run, as the pre-pass decided
@@ -138,32 +136,20 @@ export interface SampleRequest {
   n: number;
 }
 
-export type SampleOutcome =
-  | { ok: true; plan: SamplePlan }
-  | { ok: false; code: SpecRefusal["code"] | "unknown-target"; message: string };
+export type SampleOutcome = { ok: true; plan: SamplePlan } | AxesRefusal;
 
 /**
- * Build the reading list. Same axis walk as `run.ts` — spec.md required,
- * arch.spec.md when it exists — and the same all-or-nothing discipline: one
- * file that cannot be verified refuses the run before a person is asked to
- * read anything.
+ * Build the reading list. The axis walk is `run.ts`'s own — `verifyAxes`, which
+ * refuses a missing spec.md in vet/verify.ts's one sentence (the same absence
+ * and the same fix; three spellings would read as three different problems) —
+ * and so is the all-or-nothing discipline: one file that cannot be verified
+ * refuses the run before a person is asked to read anything.
  */
 export async function buildSamplePlan(req: SampleRequest): Promise<SampleOutcome> {
-  const paths = await locateServicePaths(req.docsDir, req.service);
-  if (!existsSync(paths.spec)) {
-    // One sentence, from `vet/verify.ts`: the same absence and the same fix,
-    // and three spellings of it would read as three different problems.
-    return { ok: false, code: "unknown-target", message: noLivingSpecMessage(paths.spec, req.service) };
-  }
+  const verified = await verifyAxes(req);
+  if (!verified.ok) return verified;
   const axes: PlannedAxis[] = [];
-  for (const axis of SPEC_AXES) {
-    const path = paths[axis.key];
-    if (!existsSync(path)) continue;
-    // Sequential, not Promise.all: each iteration hashes a whole source tree
-    // through the batched digest, and two of those in flight at once doubles
-    // the file descriptors that batching exists to bound. Two files.
-    const vetted = await verifySpec({ service: req.service, repoDir: req.repoDir }, path, axis.file);
-    if (!vetted.ok) return vetted;
+  for (const vetted of verified.arch === null ? [verified.spec] : [verified.spec, verified.arch]) {
     const digest = contentDigest(vetted.raw);
     // The BODY, so no frontmatter line can be picked as a section — and the
     // same slice `content_digest` is taken over, which is what makes the
@@ -177,8 +163,8 @@ export async function buildSamplePlan(req: SampleRequest): Promise<SampleOutcome
       n: req.n,
     });
     const base = {
-      file: axis.file,
-      path,
+      file: vetted.file,
+      path: vetted.path,
       contentDigest: digest,
       sourcesDigest: vetted.digest,
       of: sample.of,
