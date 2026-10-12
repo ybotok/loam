@@ -14,6 +14,11 @@ import type { FleetTree } from "../../core/repo/tree/walk.js";
 import type { OwnedRow, OwnersJoin } from "./campaign/owners.js";
 import { type ServiceView, type VerificationCell } from "./views.js";
 
+/**
+ * Fixed-width presence flags. `a` and `A` are deliberately the same letter in
+ * two cases: the arch spec and the API are the two things a reader most often
+ * mistakes for each other, and one is lowercase because it is optional.
+ */
 function serviceFlags(v: ServiceView): string {
   const s = v.entry;
   return [

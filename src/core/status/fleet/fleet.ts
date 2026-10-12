@@ -44,9 +44,9 @@ import type { DocsDir } from "../../kernel/ids/dirs.js";
  */
 export async function fleetStatus(
   docsDir: DocsDir,
-  opts: { service?: string; bound?: string; context?: FleetContext } = {},
+  opts: { service?: string; bound?: string; context: FleetContext },
 ): Promise<FleetStatusReport> {
-  const context = opts.context ?? new FleetContext();
+  const { context } = opts;
   const interrupted = await readInterruptedCommit(docsDir);
   const narrowed = opts.service;
   const all = await listServices(docsDir, context);

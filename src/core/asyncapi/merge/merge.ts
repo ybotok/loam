@@ -18,22 +18,22 @@
  * writing through one would rewrite every other node that aliases it.
  */
 import { isDeepStrictEqual } from "node:util";
-import { isMap, parseDocument } from "yaml";
-import { classifyBaselineDigests } from "../../openapi/digest.js";
-import { asyncapiSlots, slotDigest, type AsyncapiSection } from "../digest.js";
+import { isMap } from "yaml";
+import { classifyBaselineDigests, withoutFeatureKeysDeep } from "../../openapi/digest.js";
+import { asyncapiSlots, slotDigest, slotKey, slotsByKey, type AsyncapiSection } from "../digest.js";
 import { danglingRefs } from "../depth.js";
 import { messageName } from "../read.js";
 import { readBaselineRecord } from "../../openapi/baseline/record.js";
 import { asyncapiSurfaces } from "../baseline/surfaces.js";
-import { errorMessage, AsyncapiMergeError } from "./error.js";
+import { resolveTree, writeTree } from "../../openapi/contract-tree.js";
+import { asyncapiRefusal } from "./error.js";
 import { mergeAsyncapiComponents } from "./components.js";
 import {
   deleteSlot,
-  refuseAmbiguousSlotKeys,
+  readEventTree,
   sectionAstPath,
   setSlotValue,
   slotLabel,
-  withoutFeatureMarkers,
   writableSection,
 } from "./markers.js";
 
@@ -56,6 +56,15 @@ export interface AsyncapiMergeResult {
   text: string | null;
   /** Living slots overwritten with different content. */
   modified: AsyncapiSlotOutcome[];
+  /**
+   * The message name each overwritten `components.messages` slot carries in
+   * the LIVING contract, keyed by its `modified` label — the join token
+   * consumers name today (`Consumes:` lines, `consumes` edges), which
+   * `loam archive` asks the fleet's consumer scan with to say who the
+   * overwrite lands on. Channels and operations are absent: nothing joins to
+   * them by name.
+   */
+  modifiedMessageNames: ReadonlyMap<string, string>;
   /** Living slots deleted by `x-loam-remove: true` markers. */
   removed: AsyncapiSlotOutcome[];
   /**
@@ -108,23 +117,9 @@ export function mergeAsyncapiSlots(
   featureText: string,
   service: string,
 ): AsyncapiMergeResult {
-  const feature = parseDocument(featureText);
-  if (feature.errors.length > 0) {
-    throw new AsyncapiMergeError("feature", service, feature.errors[0]!.message);
-  }
-  // Two pairs whose keys stringify identically (404 and "404") would make
-  // the resolved walk and the string-matched writers disagree about which
-  // node a slot names — refused on either side, before any verdict is taken.
-  refuseAmbiguousSlotKeys(feature, "feature", service);
-  let featPlain: unknown;
-  try {
-    // Resolve aliases once with the document's own anchor context. Calling an
-    // individual AST node's toJSON() loses that context and can silently turn
-    // an aliased slot into the wrong value.
-    featPlain = feature.toJS() ?? {};
-  } catch (error) {
-    throw new AsyncapiMergeError("feature", service, errorMessage(error));
-  }
+  // Ambiguous slot keys refused on either side, before any verdict is taken,
+  // and aliases resolved once with the document's own anchor context.
+  const { plain: featPlain } = readEventTree(featureText, "feature", service);
   const featSlots = asyncapiSlots(featPlain);
   // "Is there anything to merge?" is a question about the WHOLE delta, and it
   // was asked of the three slot sections alone — an absence test standing in
@@ -138,18 +133,8 @@ export function mergeAsyncapiSlots(
   // there was no writer outside the slot loop to fall through to.
   if (featSlots.length === 0 && asyncapiSurfaces(featPlain).length === 0) return noop();
 
-  const living = parseDocument(livingText);
-  if (living.errors.length > 0) {
-    throw new AsyncapiMergeError("living", service, living.errors[0]!.message);
-  }
-  refuseAmbiguousSlotKeys(living, "living", service);
-  let livingPlain: unknown;
-  try {
-    livingPlain = living.toJS() ?? {};
-  } catch (error) {
-    throw new AsyncapiMergeError("living", service, errorMessage(error));
-  }
-  const livingBySlot = new Map(asyncapiSlots(livingPlain).map((slot) => [`${slot.section}\0${slot.key}`, slot]));
+  const { doc: living, plain: livingPlain } = readEventTree(livingText, "living", service);
+  const livingBySlot = slotsByKey(asyncapiSlots(livingPlain));
   // Read ONCE here, not per surface: `problems` are deliberately ignored — a
   // malformed record is the gate's diagnosis (`asyncapi.baseline-invalid`) and
   // a parser never prints, so what reaches the surface merge is whatever read
@@ -157,13 +142,14 @@ export function mergeAsyncapiSlots(
   const { record } = readBaselineRecord(featPlain);
 
   const modified: AsyncapiSlotOutcome[] = [];
+  const modifiedMessageNames = new Map<string, string>();
   const removed: AsyncapiSlotOutcome[] = [];
   const quoted: AsyncapiSlotOutcome[] = [];
   const baselineStale: AsyncapiSlotOutcome[] = [];
   const touched = new Set<AsyncapiSection>();
   let edited = false;
   for (const slot of featSlots) {
-    const before = livingBySlot.get(`${slot.section}\0${slot.key}`);
+    const before = livingBySlot.get(slotKey(slot));
     const name = slot.section === "components.messages" ? messageName(slot.node, slot.key) : undefined;
     const at = { section: slot.section, label: slotLabel(slot.section, slot.key, name) };
     if (slot.remove) {
@@ -187,8 +173,8 @@ export function mergeAsyncapiSlots(
       slot.digest,
       before === undefined ? undefined : slotDigest(before.node),
     );
-    // A QUOTE is not a merge input. The author wrote this slot down because
-    // the document is complete, not because they changed it, so the living
+    // A QUOTE is not a merge input. The author wrote this slot down as a
+    // restatement, not because they changed it, so the living
     // contract keeps whatever it holds — including a change that landed after
     // this delta was written. Mechanical, not a judgement: `--approve` does
     // not turn it back on.
@@ -197,12 +183,20 @@ export function mergeAsyncapiSlots(
       continue;
     }
     if (verdict === "stale") baselineStale.push(at);
-    const publish = withoutFeatureMarkers(slot.node);
+    // The slot's PUBLISHABLE value: every feature-only key removed, at any
+    // depth — the top-level pin, a nested pin or marker on an inline channel
+    // message, and anything an author buried deeper. What the merge writes
+    // and what the create branch keeps; a removal-marker slot is never
+    // published at all (the merge deletes its target, the strip drops it).
+    const publish = withoutFeatureKeysDeep(slot.node);
     // An unpinned restatement equal to the living slot has nothing to write —
     // the component closure's rule, kept here so a never-rebased delta that
     // merely restates the contract does not churn its bytes.
     if (before !== undefined && isDeepStrictEqual(before.node, publish)) continue;
-    if (before !== undefined) modified.push(at);
+    if (before !== undefined) {
+      modified.push(at);
+      if (slot.section === "components.messages") modifiedMessageNames.set(at.label, messageName(before.node, slot.key));
+    }
     writableSection(living, livingPlain, sectionAstPath(slot.section), service);
     // Without the strip the living contract would grow a pin to a version of
     // itself — and, on this axis, a marker nested on an inline channel
@@ -240,19 +234,14 @@ export function mergeAsyncapiSlots(
   // byte-identity under an all-quote delta is the whole point of the pin.
   if (!edited) {
     return {
-      text: null, modified, removed, quoted, baselineStale,
+      text: null, modified, modifiedMessageNames, removed, quoted, baselineStale,
       componentsModified, componentsQuoted, componentsStale, unresolved: [],
     };
   }
 
-  let mergedPlain: unknown;
-  let text: string;
-  try {
-    mergedPlain = living.toJS() ?? {};
-    text = living.toString();
-  } catch (error) {
-    throw new AsyncapiMergeError("living", service, errorMessage(error));
-  }
+  const fail = asyncapiRefusal("living", service);
+  const mergedPlain = resolveTree(living, fail);
+  const text = writeTree(living, fail);
   // The ref sweep grades what the MERGE would leave dangling: a merged slot
   // pointing at something neither document defines, or a removal that took a
   // target the living document still references. Refs already dangling in the
@@ -262,7 +251,7 @@ export function mergeAsyncapiSlots(
   const preexisting = new Set(danglingRefs(livingPlain));
   const unresolved = danglingRefs(mergedPlain).filter((ref) => !preexisting.has(ref));
   return {
-    text, modified, removed, quoted, baselineStale,
+    text, modified, modifiedMessageNames, removed, quoted, baselineStale,
     componentsModified, componentsQuoted, componentsStale, unresolved,
   };
 }
@@ -274,7 +263,7 @@ export function mergeAsyncapiSlots(
  */
 function noop(): AsyncapiMergeResult {
   return {
-    text: null, modified: [], removed: [], quoted: [], baselineStale: [],
+    text: null, modified: [], modifiedMessageNames: new Map(), removed: [], quoted: [], baselineStale: [],
     componentsModified: [], componentsQuoted: [], componentsStale: [], unresolved: [],
   };
 }

@@ -19,12 +19,13 @@
  * ties the result to a repository, which is why the brief argues for it instead
  * of merely listing it.
  */
-import { existsSync, statSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { PathableService } from "../kernel/ids/service.js";
 import { landscapePath, type ServicePaths } from "../repo/paths.js";
 import { locateServicePaths } from "../repo/service-target.js";
+import { entryIs } from "../repo/tree/fs.js";
 import { VALIDATE_CHECKS, type BriefCheck } from "./checks.js";
 import { UNCHECKED } from "./unchecked.js";
 import { landscapeContext, type LandscapeContext } from "./landscape.js";
@@ -312,19 +313,10 @@ export async function serviceBrief(
 async function hasEntry(dir: string, ext: string): Promise<boolean> {
   if (!existsSync(dir)) return false;
   const entries = await readdir(dir, { withFileTypes: true });
-  // `statSync` for the symlink case: a Dirent never follows one, so `isFile()`
-  // is false for a symlinked ADR and the directory reads as empty (repo.ts's
-  // `entryIs` is the same rule for `services/` and `features/`).
-  return entries.some((e) => {
-    if (!e.name.endsWith(ext)) return false;
-    if (e.isFile()) return true;
-    if (!e.isSymbolicLink()) return false;
-    try {
-      return statSync(join(dir, e.name)).isFile();
-    } catch {
-      return false;
-    }
-  });
+  // `entryIs` for the symlink case: a Dirent never follows one, so `isFile()`
+  // is false for a symlinked ADR and the directory would read as empty — the
+  // same rule `services/` and `features/` are enumerated by.
+  return entries.some((e) => e.name.endsWith(ext) && entryIs(dir, e, "file"));
 }
 
 /**

@@ -10,7 +10,7 @@
  */
 import { existsSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { asRecord } from "../../kernel/records.js";
+import { asRecord, isStringArray } from "../../kernel/records.js";
 import { compareIds } from "../../repo/entries.js";
 import { inspectSpecFile } from "./shape.js";
 import {
@@ -27,15 +27,20 @@ import {
 import { schemaSpecPolicy } from "./config.js";
 import {
   isSymbolicLink,
-  isStringArray,
   portable,
   sourceInventoryPath,
-  walkFiles,
+  walkTree,
   yamlRecord,
 } from "./walk.js";
 import { addCounts, issue } from "./shape.js";
 import { type Ingest } from "./workspace.js";
 
+/**
+ * A calendar date, optionally with a time. OpenSpec's template writes the plain
+ * date, but a timestamp is still a date — and rejecting it blocked every change
+ * and every capability in the workspace over one field nobody reads, fixable
+ * only by editing the source migration promises not to touch.
+ */
 const CHANGE_CREATED_RE = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
 
 export async function inspectChangeMetadata(
@@ -148,9 +153,9 @@ export async function inventoryChanges(ingest: Ingest, tree: ChangeTree): Promis
   const changes: OpenSpecChange[] = [];
   for (const id of ids) {
     const dir = join(base, id);
-    const allArtifacts = await walkFiles(dir);
+    const allArtifacts = (await walkTree(dir)).files;
     const specRoot = join(dir, "specs");
-    const allSpecs = await walkFiles(specRoot);
+    const allSpecs = (await walkTree(specRoot)).files;
     const specFiles = allSpecs.filter((path) => basename(path) === "spec.md");
     const metadata = await inspectChangeMetadata(scoped, dir, scope, fallbackSchema);
     const counts: OpenSpecCounts = { specFiles: 0, requirements: 0, scenarios: 0 };

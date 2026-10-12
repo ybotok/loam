@@ -10,15 +10,11 @@
  * the grades; this owns which inputs they are handed, which is the part that has
  * twice been got wrong and is worth stating in one place.
  *
- * A sub-package of `fleet/` for `map/isolation.ts`'s reason, and with its rule:
- * it imports NOTHING from `fleet/` itself — a child reaching back into its
- * parent while the parent calls the child is the package cycle
- * `scripts/package-graph.mjs` refuses — so everything it needs arrives in one
- * record the caller fills.
+ * A sub-package of `fleet/` for `./isolation.ts`'s reason, and with its rule:
+ * it imports NOTHING from `fleet/` itself, so everything it needs arrives in
+ * one record the caller fills.
  */
-import { readCapabilityVocabulary } from "../../../../core/capabilities/capabilities.js";
 import { capabilityRequirementIndex, gradableCapabilityIds } from "../../../../core/capabilities/findings.js";
-import { parseRequirements, readRequirementsDocument } from "../../../../core/document/parse.js";
 import { FleetContext } from "../../../../core/fleet-context.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
 import type { Elem, Rel } from "../../../../core/c4/likec4.js";
@@ -43,7 +39,7 @@ export interface FleetUseCases {
   /** The enumerated fleet, and the resolver every other edge join in the target uses. */
   services: ReadonlySet<string>;
   resolve: (id: string) => string;
-  fleet?: FleetContext;
+  fleet: FleetContext;
 }
 
 /**
@@ -64,14 +60,8 @@ export interface FleetUseCases {
  */
 export async function fleetUseCaseFindings(input: FleetUseCases): Promise<Finding[]> {
   const { docsDir, fleet } = input;
-  const vocabulary =
-    fleet === undefined ? await readCapabilityVocabulary(docsDir) : await fleet.capabilities(docsDir);
-  const capabilityReqs = await capabilityRequirementIndex(
-    vocabulary,
-    fleet === undefined
-      ? async (p) => parseRequirements(await readRequirementsDocument(p))
-      : (p) => fleet.readRequirements(p),
-  );
+  const vocabulary = await fleet.capabilities(docsDir);
+  const capabilityReqs = await capabilityRequirementIndex(vocabulary, (p) => fleet.readRequirements(p));
   return useCaseFindings({
     views: input.views,
     elements: input.elements,

@@ -24,7 +24,7 @@ import {
 } from "../../core/agent/scaffold.js";
 import { AGENT_TOOLS } from "../../core/agent/tools/registry.js";
 import { initExample } from "./example.js";
-import { firstHour } from "./first-hour.js";
+import { firstHourLines } from "./first-hour.js";
 import { MCP_CONFIG_FILENAME, mcpConfigPath, mcpServerSnippet, writeMcpConfig } from "./mcp.js";
 import { isDocsRepo, resolveAgentProfile, resolveTools, storedDocsDir } from "./options.js";
 
@@ -371,26 +371,20 @@ export function registerInit(program: Command): void {
         for (const line of mcpServerSnippet(cwd, opts.mcpAuthor === true)) console.log(`               ${line}`);
       }
 
-      // Printed ONLY for the single-repo trial composition: one run that both
-      // created the docs repo and left a service bound (the binding may
-      // predate the run — the config spread above carries an existing
-      // loam.json's `service` forward). `loam status` is NOT mute here — its
-      // first-hour ladder (core/status/fleet/next.ts) already answers
-      // `next.adopt-bound` in exactly this state — but status has to be run
-      // to say so, and no status rung ever names `loam vouch`, the one step
-      // of this loop that is a person's; init's output is already on screen,
-      // so it prints the whole hour once. A join stays silent on purpose: a
-      // joined fleet has other repositories already through this loop, and
-      // `loam status` in its docs repo is the working guide there. The --json
-      // path returned above, so the envelope is byte-identical to before
-      // this block existed.
-      if (!joining && config.service !== undefined) {
-        const steps = firstHour(config.service);
-        const width = Math.max(...steps.map(([command]) => command.length));
-        console.log("  next — the first hour:");
-        for (const [command, why] of steps) {
-          console.log(`    ${command.padEnd(width)}   # ${why}`);
-        }
-      }
+      // Printed ONLY when this run created the docs repo. With a service bound
+      // (the binding may predate the run — the config spread above carries an
+      // existing loam.json's `service` forward) it is the single-repo trial's
+      // hour. `loam status` is NOT mute here — its first-hour ladder
+      // (core/status/fleet/next.ts) already answers `next.adopt-bound` in
+      // exactly this state — but status has to be run to say so, and no status
+      // rung ever names `loam vouch`, the one step of this loop that is a
+      // person's; init's output is already on screen, so it prints the whole
+      // hour once. With none bound it is the docs repo's own hour (map, bind,
+      // adopt — first-hour.ts says why that used to be silence). A join stays
+      // silent on purpose: a joined fleet has other repositories already
+      // through this loop, and `loam status` in its docs repo is the working
+      // guide there. The --json path returned above, so the envelope is
+      // byte-identical to before this block existed: neither variant has a key.
+      if (!joining) for (const line of firstHourLines(config.service)) console.log(line);
     });
 }

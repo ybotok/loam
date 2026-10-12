@@ -6,8 +6,8 @@
  * feature document's readability (`asyncapi.invalid` suspends the rest, the
  * unreadableApis discipline), the baseline pins and removal-marker exactness
  * (./grades.ts, slot-keyed), the removal↔REMOVED-requirement justification
- * join, and the merge simulation (./merged.ts) the cross-axis checks grade
- * against. What it cannot answer alone — who still consumes a message, what
+ * join, and the merge simulation (../retired/merged.ts) the cross-axis
+ * checks grade against. What it cannot answer alone — who still consumes a message, what
  * other features are adding — lives in ./lookups.ts, and the cross-axis
  * grading of edges and requirement lines in ./events.ts.
  *
@@ -23,20 +23,19 @@
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { parse } from "yaml";
-import { NotUtf8DocumentError } from "../../kernel/document-bytes.js";
 import { type PathableService } from "../../kernel/ids/service.js";
 import type { Issue } from "../../vocabulary/issue.js";
 import { featureSpecPaths, SPEC_AXES } from "../../repo/paths.js";
 import { locateServicePaths } from "../../repo/service-target.js";
 import { parseRequirements } from "../../document/parse.js";
-import { asyncapiSlots, type AsyncapiSlot } from "../../asyncapi/digest.js";
 import { readAsyncapi } from "../../asyncapi/read.js";
 import type { AsyncapiDoc } from "../../asyncapi/model.js";
 import type { FleetContext } from "../../fleet-context.js";
 import type { DocsDir, FeatureDir } from "../../kernel/ids/dirs.js";
 import { gradeBaselines, gradeMarkers } from "./grades.js";
-import { mergedAsyncapiDoc } from "./merged.js";
+import { messageRetirements } from "../retired/retirement.js";
+import { eventArrivals, type EventArrivals } from "../retired/revival/arrivals.js";
+import { readEventPair } from "../retired/event-pair.js";
 
 /** The three facts this walk needs about the feature it is reading. */
 export interface EventDeltaScope {
@@ -58,8 +57,8 @@ export interface DeclaredEvents {
   featureDocs: Map<PathableService, AsyncapiDoc>;
   /**
    * Per touched service: the living contract as the MERGE would leave it
-   * (./merged.ts) — present where a feature delta sits over a readable
-   * living contract and the simulation had an answer. What `declares()` and
+   * (../retired/merged.ts) — present where a feature delta sits over a
+   * readable living contract and the simulation had an answer. What `declares()` and
    * the consumer gate's wire half read, so the gate grades the post-archive
    * contract rather than the union of two documents one of which is leaving.
    */
@@ -87,6 +86,15 @@ export interface DeclaredEvents {
   links: Map<PathableService, EventLink[]>;
   /** Services whose FEATURE asyncapi.yaml exists but does not parse — every event check suspends for them. */
   unreadable: Set<string>;
+  /**
+   * Per touched service: the slots the delta declares that the living
+   * contract lacks, and the message names the contract the archive would
+   * write declares where the living one does not — new, or a revival of what
+   * an archived feature retired or moved away, which the living contract
+   * alone cannot tell apart. ./events.ts asks the retired index (../retired/)
+   * only when one of these is non-empty.
+   */
+  revivalCandidates: Map<PathableService, EventArrivals>;
 }
 
 /**
@@ -121,16 +129,6 @@ export async function deltaEventLines(
   return { removed, links };
 }
 
-/** Read a document's text, answering undefined for bytes that do not decode — ../declared.ts's guard. */
-async function readOr(p: string, context?: FleetContext): Promise<string | undefined> {
-  try {
-    return context === undefined ? await readFile(p, "utf8") : await context.readText(p);
-  } catch (err) {
-    if (err instanceof NotUtf8DocumentError) return undefined;
-    throw err;
-  }
-}
-
 export async function declaredEvents(
   scope: EventDeltaScope,
   svcNames: PathableService[],
@@ -144,6 +142,7 @@ export async function declaredEvents(
   const stoppedSending = new Map<string, string[]>();
   const links = new Map<PathableService, EventLink[]>();
   const unreadable = new Set<string>();
+  const revivalCandidates = new Map<PathableService, EventArrivals>();
   for (const svc of svcNames) {
     const featPath = featureSpecPaths(featureDir, svc).asyncapi;
     const { removed: justifiedMsgs, links: svcLinks } = await deltaEventLines(scope, svc, context);
@@ -192,56 +191,31 @@ export async function declaredEvents(
     }
     featureDocs.set(svc, featDoc);
 
-    const featText = await readOr(featPath, context);
-    // Parsed ONCE and kept: the slot walk and the surface half of the baseline
-    // grade read the same resolved tree, and a second `parse` of the same
-    // bytes is a second chance for the two halves to disagree about what the
-    // delta declares.
-    const featPlain: unknown = featText === undefined ? {} : parse(featText);
-    const featSlots = asyncapiSlots(featPlain);
-    // The living side of every slot judgement. Absent is a real answer —
-    // everything the delta spells is new, and a baseline only means
-    // something for a slot that already exists. Unreadable is NOT an
-    // answer: grading pins or markers against an empty parse would call
-    // every restatement new and every marker stale, so both checks stand
-    // down and the (later) merge refuses the unreadable side by name.
-    const livingText = !existsSync(livingPath) || livingDoc.unreadable ? undefined : await readOr(livingPath, context);
-    const livingPlain: unknown = livingText === undefined ? {} : parse(livingText);
-    const livingSlots = new Map<string, AsyncapiSlot>(
-      asyncapiSlots(livingPlain).map((s) => [`${s.section}\0${s.key}`, s]),
-    );
+    // Both sides' texts, trees and slots, read the one way rebase's
+    // standalone revival read reads them too (../retired/event-pair.ts owns
+    // the guards: absent living is an answer, unreadable living is not).
+    const read = await readEventPair({ featPath, featDoc, livingPath, livingDoc, service: svc }, context);
+    const { featSlots, livingText } = read;
+    revivalCandidates.set(svc, eventArrivals(read));
 
     if (livingText !== undefined) {
-      gradeBaselines({ featSlots, livingSlots, featPlain, livingPlain, svc, featureId }, issues);
-      gradeMarkers({ featDoc, livingDoc, featSlots, livingSlots }, svc, issues);
-      if (featText !== undefined) {
-        const merged = mergedAsyncapiDoc({ livingText, livingDoc, featureText: featText, service: svc });
-        if (merged !== undefined) {
-          mergedDocs.set(svc, merged);
-          stoppedSending.set(svc, livingDoc.sent.filter((m) => !merged.sent.includes(m)));
-        }
+      gradeBaselines({ ...read, svc, featureId }, issues);
+      gradeMarkers(read, svc, issues);
+      // The pair's one simulation — the revival candidates above have already
+      // asked it, comparing it with the living contract.
+      const merged = read.merged()?.doc;
+      if (merged !== undefined) {
+        mergedDocs.set(svc, merged);
+        stoppedSending.set(svc, livingDoc.sent.filter((m) => !merged.sent.includes(m)));
       }
     }
 
-    // A relocation — same message name, marker on the old key, declaration
-    // at a new one — retires nothing. "Is this message going away" asks the
-    // NET set; "did the author write a marker" asks the raw one,
-    // ../declared.ts's distinction verbatim. Two raw sets, because the two
-    // marker shapes carry different debts: a message-slot marker must be
-    // justified by a REMOVED requirement, while a channel-slot removal needs
-    // exactness only (requirements join on message names, never channel
-    // keys — SCHEMA.md) and its living inline interior leaves with it.
-    const markerNames = new Set(
-      featDoc.messages.filter((m) => m.remove === true && m.slot.startsWith("components.messages.")).map((m) => m.name),
-    );
-    const channelRemovals = featSlots.filter((s) => s.section === "channels" && s.remove).map((s) => s.key);
-    const inlineRetired = new Set(
-      livingDoc.messages
-        .filter((m) => channelRemovals.some((ck) => m.slot.startsWith(`channels.${ck}.messages.`)))
-        .map((m) => m.name),
-    );
-    const redeclared = new Set(featDoc.messages.filter((m) => m.remove !== true).map((m) => m.name));
-    const net = new Set([...markerNames, ...inlineRetired].filter((name) => !redeclared.has(name)));
+    // The raw marker sets and the NET one (minus relocations) —
+    // ../retired/retirement.ts owns the rule and says why each set exists;
+    // the retired index reads every archived feature through the same
+    // function, against that feature's snapshot pre-image instead of the
+    // living contract on disk.
+    const { markerNames, inlineRetired, redeclared, net } = messageRetirements(featDoc, featSlots, livingDoc);
     netRemoved.set(svc, net);
 
     for (const name of markerNames) {
@@ -269,5 +243,5 @@ export async function declaredEvents(
       });
     }
   }
-  return { featureDocs, mergedDocs, netRemoved, stoppedSending, links, unreadable };
+  return { featureDocs, mergedDocs, netRemoved, stoppedSending, links, unreadable, revivalCandidates };
 }

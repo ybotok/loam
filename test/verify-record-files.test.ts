@@ -218,6 +218,52 @@ describe("a record file a merge left conflict markers in", () => {
     expect(view.error.message).toContain("branch you merged into");
     expect(view.error.message).not.toContain("delete it and record");
   });
+
+  /*
+   * `verify` refused the file and `status`, `gate` and `tasks` reported it, but
+   * `validate` — the PR gate a docs repo runs — said nothing: the only target
+   * raising `evidence.record-unreadable` was the service one, which runs from
+   * a service repo. The feature target now raises it from the docs repo too,
+   * at the same severity, so `valid` and archive are untouched and `--strict`
+   * is the lever.
+   */
+  it("is named by validate from the docs repo — on the feature target, under --all and --feature alike", async () => {
+    const p = await project();
+    const splitRepo = await serviceRepo(p, SPLIT, "split-work");
+    expect((await record(p, splitRepo, SPLIT)).code).toBe(0);
+    const validate = async (...mode: string[]): Promise<{ code: number; json: Record<string, any> }> => {
+      const res = await runLoam(p.workDir, "validate", ...mode, "--json");
+      return { code: res.code, json: JSON.parse(res.stdout) as Record<string, any> };
+    };
+    const recordFinding = (json: Record<string, any>): Record<string, any> | undefined =>
+      (json.targets as Array<Record<string, any>>)
+        .find((t) => t.kind === "feature" && t.id === FEAT)
+        ?.findings.find((f: Record<string, any>) => f.code === "evidence.record-unreadable");
+    const modes = [["--all"], ["--feature", FEAT]];
+    const clean = await Promise.all(modes.map((mode) => validate(...mode)));
+    for (const { json } of clean) expect(recordFinding(json)).toBeUndefined();
+
+    // What a merge of the same service recorded on two branches leaves.
+    const ours = await p.read(serviceRecord(SPLIT));
+    await p.write(serviceRecord(SPLIT), `<<<<<<< HEAD\n${ours}=======\n${ours}>>>>>>> other\n`);
+    for (const [i, mode] of modes.entries()) {
+      const { code, json } = await validate(...mode);
+      const finding = recordFinding(json);
+      expect(finding, `${mode.join(" ")}: ${JSON.stringify(json.targets)}`).toBeDefined();
+      expect(finding!.severity).toBe("warn");
+      expect(finding!.message).toContain(serviceRecord(SPLIT));
+      expect(finding!.message).toContain("git conflict markers");
+      expect(finding!.message).toContain("holds no other service's word");
+      expect(finding!.locations).toEqual([{ path: serviceRecord(SPLIT), role: "primary" }]);
+      expect(json.fixes["evidence.record-unreadable"]).toBeDefined();
+      // A warning, and only that: one more than the clean record drew, with
+      // `valid` and the exit code what they were — `--strict` is the lever.
+      expect(json.summary.warnings).toBe(clean[i]!.json.summary.warnings + 1);
+      expect(json.summary.errors).toBe(clean[i]!.json.summary.errors);
+      expect(json.valid).toBe(clean[i]!.json.valid);
+      expect(code).toBe(clean[i]!.code);
+    }
+  });
 });
 
 /* ------------------------------------------------------------------ */

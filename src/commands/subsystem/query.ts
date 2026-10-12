@@ -17,7 +17,7 @@ import { emitJson, fail, repoPath } from "../../core/envelope/json.js";
 import { gitRenameHops, gitRenamePairingAmbiguous } from "../../core/provenance/gitq/moves.js";
 import { servicePathsAt } from "../../core/repo/paths.js";
 import { listFleetTree } from "../../core/repo/repo.js";
-import { findInTree, nearestTreeNames, servicesUnder, treeNames } from "../../core/repo/tree/find.js";
+import { closeNamesHint, findInTree, servicesUnder, treeNames } from "../../core/repo/tree/find.js";
 import { SUBSYSTEM_MARKER } from "../../core/repo/tree/marker.js";
 import type { SubsystemEntry } from "../../core/repo/tree/walk.js";
 
@@ -57,12 +57,10 @@ export async function runHistory(docsDir: DocsDir, name: string, json: boolean):
   const tree = await listFleetTree(docsDir);
   const hit = findInTree(tree, name);
   if (hit === null) {
-    const close = nearestTreeNames(name, treeNames(tree));
     fail(
       json,
       "unknown-target",
-      `No service or subsystem '${name}' in the tree.` +
-        (close.length > 0 ? ` Close names: ${close.join(", ")}.` : ""),
+      `No service or subsystem '${name}' in the tree.` + closeNamesHint(name, treeNames(tree), ""),
     );
     return;
   }

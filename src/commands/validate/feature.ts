@@ -12,8 +12,7 @@
  * new architecture — is `./arch-coverage.js`.
  */
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { loadFile, type Elem, type LoadedDoc, type Rel } from "../../core/c4/likec4.js";
+import { type Elem, type LoadedDoc, type Rel } from "../../core/c4/likec4.js";
 import { elementService } from "../../core/c4/resolve/service.js";
 import { type PathableService } from "../../core/kernel/ids/service.js";
 import { type FeatureEntry } from "../../core/repo/entries.js";
@@ -22,12 +21,6 @@ import { enumeratedServiceIds } from "../../core/repo/service-target.js";
 import { docsRepoState } from "../../core/repo/state.js";
 import { featureSpecServices, listServices } from "../../core/repo/repo.js";
 import { type Finding, type TargetReport } from "../../core/vocabulary/report.js";
-import { parseRequirements } from "../../core/document/parse.js";
-import {
-  assertionlessFindings,
-  examplesFindings,
-  steplessFindings,
-} from "../../core/document/scenarios.js";
 import { type Requirement } from "../../core/document/spec.js";
 import { featureCoherence } from "../../core/coherence/coherence.js";
 import {
@@ -37,20 +30,20 @@ import {
 import { issueFinding } from "../../core/vocabulary/issue.js";
 import { featureProvenance } from "../../core/provenance/findings.js";
 import { documentConflictFinding } from "../../core/conflict-markers.js";
-import { featureCapabilityDeltas } from "../../core/capabilities/delta/tree.js";
 import { docMissingFindings } from "../../core/capabilities/findings.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { errorText } from "../../core/c4/likec4.js";
-import { coverageFinding, repeatedListLineFindings } from "./checks/requirements.js";
+import { coverageFinding, repeatedListLineFindings, scenarioShapeFindings } from "./checks/requirements.js";
 import { deltaArchCoverage } from "./arch-coverage.js";
 import { featureLinkFindings } from "./links/corpus.js";
+import { featureRecordFindings } from "./service/evidence-pins.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 export async function validateFeature(
   docsDir: DocsDir,
   feature: FeatureEntry,
-  preloadedLand?: LoadedDoc | null,
-  fleet?: FleetContext,
+  preloadedLand: LoadedDoc | null | undefined,
+  fleet: FleetContext,
 ): Promise<TargetReport> {
   const findings: Finding[] = [];
   const featureDir = feature.dir;
@@ -66,7 +59,7 @@ export async function validateFeature(
   let deltaDoc: LoadedDoc | undefined;
   const deltaPath = featurePaths(featureDir).delta;
   if (existsSync(deltaPath)) {
-    const res = fleet === undefined ? await loadFile(deltaPath) : await fleet.loadLikeC4(deltaPath);
+    const res = await fleet.loadLikeC4(deltaPath);
     deltaDoc = res;
     if (res.errors.length > 0) {
       findings.push({
@@ -89,6 +82,18 @@ export async function validateFeature(
   }
 
   findings.push(...(await featureProvenance(featureDir, featureId)));
+
+  // The verification record, graded for READABILITY only — never for what it
+  // concludes. A conflict-marked or hand-broken `verification.yaml` /
+  // `verification/<svc>.yaml` was refused by `verify`, reported by `status`,
+  // `gate` and `tasks`, and invisible here: `validate --all` from the docs repo
+  // (and so the PR gate) stayed green over a record nobody can read, because
+  // the only target raising this code was the service one, which runs from a
+  // service repo. Same code and severity as that target
+  // (`./service/evidence-pins.ts`) — a warn, so `valid` and `loam archive` are
+  // untouched (verify never gates archive) and `--strict` is the lever. The
+  // verdict itself stays `verify`'s and `status`'s to state.
+  findings.push(...(await featureRecordFindings(docsDir, feature)));
 
   // Who this feature is allowed to address. `specs/<svc>/` is what the archive
   // materialises `services/<svc>/` from, and nothing used to ask whether that
@@ -140,9 +145,9 @@ export async function validateFeature(
   for (const svc of featureServices) {
     const p = featureSpecPaths(featureDir, svc);
     if (existsSync(p.spec)) {
-      const raw = fleet === undefined ? await readFile(p.spec, "utf8") : await fleet.readText(p.spec);
+      const raw = await fleet.readText(p.spec);
       scenarioText += "\n" + raw.toLowerCase();
-      const reqs = fleet === undefined ? parseRequirements(raw) : await fleet.readRequirements(p.spec);
+      const reqs = await fleet.readRequirements(p.spec);
       // Both document-level breaches carry into the living spec through the
       // merge, so a delta is graded for them exactly as a living document is:
       // conflict markers merge as prose under someone's requirement, and a
@@ -151,24 +156,20 @@ export async function validateFeature(
       const conflict = documentConflictFinding(`${svc}: spec.md`, svc, raw);
       if (conflict !== null) findings.push(conflict);
       findings.push({ ...coverageFinding(`${svc}: requirements`, reqs), subject: svc });
-      findings.push(...steplessFindings(`${svc}: requirements`, svc, reqs));
-      findings.push(...assertionlessFindings(`${svc}: requirements`, svc, reqs));
-      findings.push(...examplesFindings(`${svc}: requirements`, svc, reqs));
+      findings.push(...scenarioShapeFindings(`${svc}: requirements`, svc, reqs));
       // The keep-last quirk loses lines in a delta exactly as in a living spec
       // — and a delta's lost Operations: line then merges into the living one.
       findings.push(...repeatedListLineFindings(reqs, `${svc}: spec.md`, svc));
     }
     if (existsSync(p.archSpec)) {
-      const raw = fleet === undefined ? await readFile(p.archSpec, "utf8") : await fleet.readText(p.archSpec);
+      const raw = await fleet.readText(p.archSpec);
       scenarioText += "\n" + raw.toLowerCase();
-      const reqs = fleet === undefined ? parseRequirements(raw) : await fleet.readRequirements(p.archSpec);
+      const reqs = await fleet.readRequirements(p.archSpec);
       archDeltas.push({ service: svc, reqs });
       const conflict = documentConflictFinding(`${svc}: arch.spec.md`, svc, raw);
       if (conflict !== null) findings.push(conflict);
       findings.push({ ...coverageFinding(`${svc}: arch requirements`, reqs), subject: svc });
-      findings.push(...steplessFindings(`${svc}: arch requirements`, svc, reqs));
-      findings.push(...assertionlessFindings(`${svc}: arch requirements`, svc, reqs));
-      findings.push(...examplesFindings(`${svc}: arch requirements`, svc, reqs));
+      findings.push(...scenarioShapeFindings(`${svc}: arch requirements`, svc, reqs));
       findings.push(...repeatedListLineFindings(reqs, `${svc}: arch.spec.md`, svc));
     }
   }
@@ -181,8 +182,7 @@ export async function validateFeature(
   // feature is archived, nothing walks the delta again, and the living
   // capability documents are only conflict-scanned while some feature still
   // carries a delta for them.
-  const capabilityDeltas =
-    fleet === undefined ? await featureCapabilityDeltas(featureDir) : await fleet.featureCapabilityDeltas(featureDir);
+  const capabilityDeltas = await fleet.featureCapabilityDeltas(featureDir);
   // The half-created directory, on the FEATURE side. The living tree has warned
   // about `capabilities/<id>/` with no document since the axis landed; the same
   // `mkdir` inside `features/<FEAT>/capabilities/` earned nothing, and it is the
@@ -193,7 +193,7 @@ export async function validateFeature(
   // message spelling `features/FEAT-1/` names a path nobody can open.
   findings.push(...docMissingFindings(capabilityDeltas, feature.dirName));
   for (const doc of capabilityDeltas.docs) {
-    const raw = fleet === undefined ? await readFile(doc.spec, "utf8") : await fleet.readText(doc.spec);
+    const raw = await fleet.readText(doc.spec);
     const conflict = documentConflictFinding(`capability ${doc.id}: spec.md`, doc.id, raw);
     if (conflict !== null) findings.push(conflict);
   }

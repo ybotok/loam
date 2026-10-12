@@ -18,8 +18,7 @@
  * new command.
  */
 import type { Command } from "commander";
-import { loadConfig } from "../../core/envelope/config.js";
-import { emitJson, fail, reportNoConfig } from "../../core/envelope/json.js";
+import { configOrRefuse, emitJson, fail } from "../../core/envelope/json.js";
 import { InvalidIdError, assertServiceId } from "../../core/kernel/ids/service.js";
 import { livingServices } from "../../core/projection/arch-slice.js";
 import { nearestIds } from "../../core/repo/entries.js";
@@ -43,12 +42,8 @@ export function registerTasks(program: Command): void {
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (featureId: string, opts: TasksOptions) => {
       const json = opts.json === true;
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const config = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
 
       // The id grammar first, and on the RAW argument, exactly as `loam delta`
       // does: `--service ../../etc` reaches `featureSpecPaths` and reads from

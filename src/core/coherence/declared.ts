@@ -15,7 +15,7 @@
  * are both at their limits and the walk already holds the parsed documents.
  */
 import { existsSync } from "node:fs";
-import { NotUtf8DocumentError } from "../kernel/document-bytes.js";
+import { readOr } from "../openapi/contract-text.js";
 import { readFile } from "node:fs/promises";
 import { type PathableService } from "../kernel/ids/service.js";
 import type { Issue } from "../vocabulary/issue.js";
@@ -32,6 +32,8 @@ import { capabilityUnknownIssues } from "../capabilities/findings.js";
 import type { Requirement } from "../document/spec.js";
 import { openapiBaselineIssues } from "../openapi/baseline/gate.js";
 import { readOpenapi } from "../openapi/doc.js";
+import { operationRetirements } from "./retired/retirement.js";
+import { operationArrivals, type Arrival } from "./retired/revival/arrivals.js";
 import type { FleetContext } from "../fleet-context.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
@@ -47,7 +49,7 @@ export interface Declared {
   allMarkerIds: Map<string, Set<string>>;
   /** Per service: does the feature contract carry a marker with no operationId? */
   anonymousMarkers: Map<string, boolean>;
-  /** The operationIds genuinely NEW to their service across the whole feature. */
+  /** The operationIds the living contract of their service does not hold, across the whole feature — new, or revived (see `revivalCandidates`). */
   featureApiOps: Set<string>;
   /**
    * Services whose FEATURE openapi.yaml exists but does not parse. Every check
@@ -57,6 +59,14 @@ export interface Declared {
    * but at the broken file.
    */
   unreadableApis: Set<string>;
+  /**
+   * Per service: every (operationId, address) the contract the archive would
+   * write has and the living one lacks — an addition, or a revival of what an
+   * archived feature retired or moved away, which the living contract alone
+   * cannot tell apart. coherence.ts asks the retired index (./retired/) only
+   * when one of these lists is non-empty.
+   */
+  revivalCandidates: Map<PathableService, Arrival[]>;
 }
 
 /** The three facts this walk needs about the feature it is reading. */
@@ -83,6 +93,7 @@ export async function declaredByService(
     const anonymousMarkers = new Map<string, boolean>();
     const featureApiOps = new Set<string>();
     const unreadableApis = new Set<string>();
+    const revivalCandidates = new Map<PathableService, Arrival[]>();
     // The capability gate's vocabulary, once per call. Absent or invalid stays
     // SILENT here — capability.invalid is validate --all's one finding about a
     // broken file, and an absent file means the fleet never opted in — so with
@@ -162,8 +173,12 @@ export async function declaredByService(
         issues.push(...capabilityUnknownIssues(archReqs, archTarget, capabilityVocab));
         issues.push(...realizesUnknownIssues(archReqs, archTarget, await capabilityReqs()));
       }
-      // Only operations genuinely NEW to this service count as feature-added: authors
-      // restate the full living API in the delta file (it is a complete document, not a patch).
+      // Only operations the living contract does not hold count as feature-added:
+      // a delta may restate living operations it does not change (a quote), and
+      // a quote adds nothing. "Not in living" is not quite "new", though — an
+      // operation an archived feature RETIRED is absent too, and adding it back
+      // is `openapi.op-revived`'s question (./retired/revival/revived.ts), asked of the
+      // `revivalCandidates` collected below.
       const featDoc = await readOpenapi(paths.openapi, context);
       // A feature contract that EXISTS but does not read is a broken document,
       // not an empty one — the living-side `openapi.invalid` discipline
@@ -185,15 +200,10 @@ export async function declaredByService(
       }
       const featOps = featDoc.ops;
       const removals = featOps.filter((op) => op.remove);
-      // A relocation — same operationId, removal marker on the old slot, upsert
-      // on the new one — retires nothing. Every rule that asks "is this operation
-      // going away" must therefore ask the NET set (markers this feature does not
-      // redefine), while "did the author write a marker at all" asks the raw one.
-      // Conflating them made moving an endpoint fail three checks at once for a
-      // change that removes nothing.
-      const redefined = new Set(featOps.filter((op) => !op.remove).map((op) => op.id));
-      const markerIds = new Set(removals.map((op) => op.id));
-      const netRemoved = new Set([...markerIds].filter((id) => !redefined.has(id)));
+      // The raw marker set and the NET one (markers minus relocations) —
+      // ./retired/retirement.ts owns the rule and says why the two differ; the
+      // retired index reads every archived feature through the same function.
+      const { markerIds, net: netRemoved } = operationRetirements(featOps);
       removingOps.set(svc, netRemoved);
       allMarkerIds.set(svc, markerIds);
       anonymousMarkers.set(svc, featDoc.anonymousRemovals.length > 0);
@@ -211,8 +221,11 @@ export async function declaredByService(
         });
       }
 
-      const livingDoc = await readOpenapi((await locateServicePaths(docsDir, svc, context)).openapi, context);
+      const livingOpenapiPath = (await locateServicePaths(docsDir, svc, context)).openapi;
+      const livingDoc = await readOpenapi(livingOpenapiPath, context);
       const livingOps = livingDoc.ops;
+      const sides = { featPath: paths.openapi, featDoc, livingPath: livingOpenapiPath, livingDoc, service: svc };
+      revivalCandidates.set(svc, await operationArrivals(sides, context));
       for (const id of livingDoc.duplicateIds) {
         const slots = livingOps.filter((op) => op.id === id).map((op) => `${op.method} ${op.path}`);
         issues.push({
@@ -228,25 +241,14 @@ export async function declaredByService(
       // read when there is one, mirroring the readRequirements pattern above;
       // the gate itself never touches the filesystem.
       if (existsSync(paths.openapi)) {
-        const livingOpenapiPath = (await locateServicePaths(docsDir, svc, context)).openapi;
-        // `context.readText` DECODES and THROWS on non-UTF-8 bytes, where the
-        // no-context `readFile` substitutes U+FFFD and lets `readOpenapi`
-        // flag the document unreadable. Uncaught, one service's UTF-16 living
-        // contract took down the whole feature target under validate's
-        // context while archive's no-context path sailed past — the exact
+        // `readOr` (../openapi/contract-text.ts, which says why): `context.readText`
+        // throws on non-UTF-8 bytes where the no-context `readFile` lets
+        // `readOpenapi` flag the document unreadable — the exact
         // context/no-context divergence doc.ts documents as paid for once.
         // Either text failing to decode gets the same answer the gate gives
         // an unreadable parse: that side's surface checks are skipped.
-        const readOr = async (p: string): Promise<string | undefined> => {
-          try {
-            return context === undefined ? await readFile(p, "utf8") : await context.readText(p);
-          } catch (err) {
-            if (err instanceof NotUtf8DocumentError) return undefined;
-            throw err;
-          }
-        };
-        const featureText = await readOr(paths.openapi);
-        const livingText = !existsSync(livingOpenapiPath) ? undefined : await readOr(livingOpenapiPath);
+        const featureText = await readOr(paths.openapi, context);
+        const livingText = !existsSync(livingOpenapiPath) ? undefined : await readOr(livingOpenapiPath, context);
         if (featureText !== undefined) {
           issues.push(
             ...openapiBaselineIssues({ featDoc, livingDoc, featureText, livingText, service: svc, featureId }),
@@ -317,5 +319,7 @@ export async function declaredByService(
         });
       }
     }
-  return { reqOps, removedReqOps, removingOps, allMarkerIds, anonymousMarkers, featureApiOps, unreadableApis };
+  return {
+    reqOps, removedReqOps, removingOps, allMarkerIds, anonymousMarkers, featureApiOps, unreadableApis, revivalCandidates,
+  };
 }

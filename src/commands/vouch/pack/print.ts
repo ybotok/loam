@@ -10,30 +10,19 @@
  * failure); only refusals exit 1.
  */
 import { emitJson, fail } from "../../../core/envelope/json.js";
-import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
-import type { PathableService } from "../../../core/kernel/ids/service.js";
 import type { LandscapeEdge } from "../../../core/vocabulary/maturity.js";
 import { plural } from "../../policy/format.js";
-import type { PackAxis, PackReport } from "./contract.js";
+import type { PackAxis, PackReport, PackRequest } from "./contract.js";
 import type { PackSample } from "./sections.js";
 import { buildPack } from "./pack.js";
 
-export interface RunPackRequest {
-  docsDir: DocsDir;
-  service: PathableService;
-  repoDir: string;
+/** The pack's own request (`--sample <n>` included), plus the one rendering choice the command adds. */
+export interface RunPackRequest extends PackRequest {
   json: boolean;
-  /** `--sample <n>`: print the reading list for a SAMPLED vouch rather than the whole one. */
-  sample?: number;
 }
 
 export async function runPack(req: RunPackRequest): Promise<void> {
-  const outcome = await buildPack({
-    docsDir: req.docsDir,
-    service: req.service,
-    repoDir: req.repoDir,
-    ...(req.sample === undefined ? {} : { sample: req.sample }),
-  });
+  const outcome = await buildPack(req);
   if (!outcome.ok) return fail(req.json, outcome.code, outcome.message);
   if (req.json) {
     emitJson(packPayload(outcome.report));

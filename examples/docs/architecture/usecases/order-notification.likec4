@@ -1,8 +1,10 @@
 // A fleet use case: the ordered hops that fulfil one business capability.
 //
 // This file is the whole shape of the axis. A `dynamic view` tagged
-// `#cap-<slug>` opts in to grading; an untagged one is somebody's hand-drawn
-// diagram and loam never says a word about it. The slug is the capability id
+// `#cap-<slug>` opts in to grading — so does one tagged only `#req-` or only
+// `#suite-<name>`, the suite a journey runs with (`loam list suites`); an
+// untagged one is somebody's hand-drawn diagram and loam never says a word
+// about it. The slug is the capability id
 // from architecture/capabilities.yaml with every `/` flattened to `-`, because
 // a LikeC4 tag name cannot carry a slash — `identity/tokens` would be
 // `#cap-identity-tokens`.
@@ -49,6 +51,8 @@ views {
   dynamic view uc_order_notification {
     #cap-order-notifications
     #req-NOTIFY-ONCE
+    #suite-smoke
+    #suite-notifications
     title 'Order notification'
     description 'A placed order reaches the customer as exactly one confirmation'
 

@@ -3,9 +3,13 @@
  * entry the vocabulary does not declare, a vocabulary nobody can read, a
  * declared capability no living requirement realizes, a directory that declares
  * nothing, and the two rules an authored capability document itself must keep.
- * Values only — core never prints — and the join rule shaped twice (Finding for
- * validate, Issue for coherence), both spelled with literal codes so
- * test/codes-drift.test.ts can collect them.
+ * Values only — core never prints — and the join rule written ONCE, as the
+ * Issue coherence gates on, which validate files as a Finding unchanged (an
+ * Issue is assignable to a Finding), with a literal code so
+ * test/codes-drift.test.ts can collect it. It used to be shaped twice, a
+ * Finding twin and an Issue twin with byte-identical bodies; one function over
+ * one message builder is what keeps the finding an author reads at the service
+ * target and the refusal they hit at `loam archive` from drifting apart.
  *
  * The opt-in rule lives here, and it deliberately DIVERGES from `Requires:`.
  * There the LINE is the opt-in: a `Requires:` entry against a missing
@@ -97,28 +101,14 @@ function unknownMessage(where: string, u: UnknownEntry): string {
 }
 
 /**
- * `capability.unknown` as validate sees it — an ERROR, the same grade as
- * `Requires:` and for its reason: an invented capability reads exactly like a
- * real one in the requirement and in every rollup built over it.
- */
-export function capabilityUnknownFindings(
-  reqs: Requirement[],
-  target: CapabilityTarget,
-  vocab: CapabilityVocabulary,
-): Finding[] {
-  return unknownEntries(reqs, vocab).map((u) => ({
-    severity: "error" as const,
-    code: "capability.unknown",
-    subject: target.subject,
-    message: unknownMessage(target.where, u),
-  }));
-}
-
-/**
- * The same rule shaped as coherence Issues, for a feature's delta documents: a
- * delta requirement naming an undeclared capability would merge a join that
- * resolves to nothing, so it gates `loam archive` like other errors and stays
- * `--approve`-overridable. The one new archive gate of this axis.
+ * `capability.unknown` — an ERROR, the same grade as `Requires:` and for its
+ * reason: an invented capability reads exactly like a real one in the
+ * requirement and in every rollup built over it. Validate files it as a
+ * Finding at the service target. For a feature's delta documents it is a
+ * coherence Issue: a delta requirement naming an undeclared capability would
+ * merge a join that resolves to nothing, so it gates `loam archive` like other
+ * errors and stays `--approve`-overridable. The one new archive gate of this
+ * axis.
  */
 export function capabilityUnknownIssues(
   reqs: Requirement[],
@@ -307,8 +297,9 @@ const INTERNAL_JOINS = [
  * it to grade the same requirements inside a feature's own capability delta and
  * file them as archive Issues. A parameter rather than a second function because
  * these messages are what a reader acts on, and two copies drift. The return type
- * states severity and code exactly for that caller: the Finding→Issue conversion
- * needs no cast, and a fourth grade added here cannot silently stop gating.
+ * states severity and code exactly for that caller: the Finding→Issue hand-off is
+ * a plain assignment — no cast, no copy — and a fourth grade added here cannot
+ * silently stop gating.
  */
 type DocGrade = Finding & { severity: "error"; code: CapabilityDocCode };
 

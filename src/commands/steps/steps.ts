@@ -17,9 +17,8 @@ import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { relative } from "node:path";
-import { loadConfig } from "../../core/envelope/config.js";
 import { decodeDocument, NotUtf8DocumentError } from "../../core/kernel/document-bytes.js";
-import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../../core/envelope/json.js";
+import { configOrRefuse, emitJson, fail, NO_SERVICE_MESSAGE } from "../../core/envelope/json.js";
 import { SPEC_AXES } from "../../core/repo/paths.js";
 import { locateServicePaths, resolveServiceTarget } from "../../core/repo/service-target.js";
 import { parseRequirements } from "../../core/document/parse.js";
@@ -52,12 +51,8 @@ export function registerSteps(program: Command): void {
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (opts: StepsOptions) => {
       const json = opts.json === true;
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const config = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
       const named = opts.service ?? config.service;
       if (named === undefined) return fail(json, "invalid-option", NO_SERVICE_MESSAGE);
       // The enumeration's own id, not the string the caller typed: only one of

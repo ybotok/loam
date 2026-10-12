@@ -21,14 +21,12 @@
  * as platform — this warning only names a shape that is usually wrong.
  */
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { type Elem, type LoadedDoc } from "../../../core/c4/likec4.js";
 import { type DeclaredService, type RawServiceId } from "../../../core/kernel/ids/service.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
 import { type ServiceEntry } from "../../../core/repo/entries.js";
 import { permissionsPath, servicePathsAt } from "../../../core/repo/paths.js";
 import { readVocabulary } from "../../../core/permissions/permissions.js";
-import { readCapabilityVocabulary } from "../../../core/capabilities/capabilities.js";
 import {
   capabilityDocFindings,
   capabilityRequirementIndex,
@@ -41,8 +39,6 @@ import { useCaseRequirementClaims } from "../../../core/usecases/capability.js";
 import type { ParsedView } from "../../../core/c4/parsed/dynamic-views.js";
 import { capabilityRollup, usedCapabilities } from "../../../core/capabilities/rollup.js";
 import { requirementUnrealizedFindings } from "../../../core/capabilities/realizes/findings.js";
-import { parseRequirements } from "../../../core/document/parse.js";
-import { type Requirement } from "../../../core/document/spec.js";
 import { FleetContext } from "../../../core/fleet-context.js";
 import { EXTERNAL_TAG, PLATFORM_TAG } from "../../../core/vocabulary/maturity.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
@@ -126,7 +122,7 @@ export function fleetShapeFindings(shape: FleetShape): Finding[] {
 export async function permissionFindings(
   docsDir: DocsDir,
   services: ServiceEntry[],
-  fleet: FleetContext | undefined,
+  fleet: FleetContext,
 ): Promise<Finding[]> {
   const vocabulary = await readVocabulary(permissionsPath(docsDir));
   if (!vocabulary.present) return [];
@@ -146,13 +142,13 @@ export async function permissionFindings(
   for (const entry of services) {
     const paths = servicePathsAt(entry.dir);
     for (const path of [paths.spec, paths.archSpec]) {
-      // Existence first, and for BOTH readers: arch.spec.md is optional (most
+      // Existence first, and for BOTH documents: arch.spec.md is optional (most
       // of a legacy fleet has none) and spec.md is missing on a half-adopted
       // service. `FleetContext.readRequirements` throws ENOENT, which surfaces
       // as `repository-unavailable` and takes the whole `--all` run down — an
       // absent optional artifact must never be able to do that.
       if (!existsSync(path)) continue;
-      const reqs = fleet === undefined ? await readRequirementsAt(path) : await fleet.readRequirements(path);
+      const reqs = await fleet.readRequirements(path);
       for (const r of reqs) {
         if (r.kind !== "REMOVED") for (const p of r.requires) used.add(p);
       }
@@ -168,12 +164,6 @@ export async function permissionFindings(
       details: unenforced,
     },
   ];
-}
-
-/** The uncached read, for the `--service` path where no fleet context exists. */
-async function readRequirementsAt(path: string): Promise<Requirement[]> {
-  if (!existsSync(path)) return [];
-  return parseRequirements(await readFile(path, "utf8"));
 }
 
 /**
@@ -207,12 +197,12 @@ async function readRequirementsAt(path: string): Promise<Requirement[]> {
 export async function capabilityFleetFindings(
   docsDir: DocsDir,
   services: ServiceEntry[],
-  fleet: FleetContext | undefined,
+  fleet: FleetContext,
   flows: readonly ParsedView[] | null,
 ): Promise<Finding[]> {
-  const vocab = fleet === undefined ? await readCapabilityVocabulary(docsDir) : await fleet.capabilities(docsDir);
+  const vocab = await fleet.capabilities(docsDir);
   if (!vocab.present) return [];
-  const read = fleet === undefined ? readRequirementsAt : (p: string) => fleet.readRequirements(p);
+  const read = (p: string) => fleet.readRequirements(p);
   const authored: Finding[] = docMissingFindings(vocab.tree);
   for (const doc of vocab.tree.docs) authored.push(...capabilityDocFindings(await read(doc.spec), doc.id));
 

@@ -9,8 +9,9 @@
  */
 import { createHash } from "node:crypto";
 import { lstat, readFile, readdir, stat } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { isPathInside } from "../../kernel/path-safety.js";
 import { asRecord } from "../../kernel/records.js";
 import { compareIds } from "../../repo/entries.js";
 
@@ -28,10 +29,7 @@ export function portable(root: string, path: string): string {
 
 /** Stable inventory namespace: planning-root relative, with one explicit external prefix. */
 export function sourceInventoryPath(root: string, absolute: string): string {
-  const rel = relative(root, absolute);
-  if (rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel))) {
-    return rel.split(sep).join("/");
-  }
+  if (isPathInside(root, absolute)) return portable(root, absolute);
   return `@workspace/${portable(dirname(root), absolute)}`;
 }
 
@@ -44,7 +42,7 @@ export async function subdirs(path: string): Promise<string[]> {
 }
 
 /**
- * Exactly what `subdirs` drops. walkFiles does not drop it, so a change behind a
+ * Exactly what `subdirs` drops. walkTree does not drop it, so a change behind a
  * dot-directory was never enumerated as a change while its files were still
  * classified, counted and given a disposition slot — a decision recorded as
  * selected for an artifact nothing migrates.
@@ -57,26 +55,18 @@ export async function hiddenSubdirs(path: string): Promise<string[]> {
     .sort(compareIds);
 }
 
-export async function walkFiles(path: string): Promise<string[]> {
-  if (!await isDirectory(path)) return [];
+/**
+ * Every regular file and every symbolic link under `path`, sorted and
+ * depth-first, skipping `.git`. Links are inventoried, never followed into
+ * unbound source trees. One walk serves both answers because a link's Dirent
+ * is neither a directory nor a file, so recording links separately leaves the
+ * file set and the set of directories descended exactly what two walks gave.
+ * A `Dirent` reports a link as a link, never as what it points at, so a link
+ * to a directory is recorded and never descended: the walk cannot leave the
+ * tree through one.
+ */
+export async function walkTree(path: string): Promise<{ files: string[]; links: string[] }> {
   const files: string[] = [];
-  const walk = async (dir: string): Promise<void> => {
-    const entries = (await readdir(dir, { withFileTypes: true }))
-      .filter((entry) => entry.name !== ".git")
-      .sort((a, b) => compareIds(a.name, b.name));
-    for (const entry of entries) {
-      const absolute = join(dir, entry.name);
-      if (entry.isDirectory()) await walk(absolute);
-      else if (entry.isFile()) files.push(absolute);
-    }
-  };
-  await walk(path);
-  return files;
-}
-
-/** Inventory symbolic links without following them into unbound source trees. */
-export async function walkSymlinks(path: string): Promise<string[]> {
-  if (!await isDirectory(path)) return [];
   const links: string[] = [];
   const walk = async (dir: string): Promise<void> => {
     const entries = (await readdir(dir, { withFileTypes: true }))
@@ -86,10 +76,11 @@ export async function walkSymlinks(path: string): Promise<string[]> {
       const absolute = join(dir, entry.name);
       if (entry.isSymbolicLink()) links.push(absolute);
       else if (entry.isDirectory()) await walk(absolute);
+      else if (entry.isFile()) files.push(absolute);
     }
   };
-  await walk(path);
-  return links;
+  if (await isDirectory(path)) await walk(path);
+  return { files, links };
 }
 
 export async function isSymbolicLink(path: string): Promise<boolean> {
@@ -98,15 +89,6 @@ export async function isSymbolicLink(path: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-/**
- * `Array.isArray` narrows an `unknown` to `any[]`, which is how a checked
- * element type went on being asserted back in a line later. Deciding both
- * halves in one predicate makes the narrowing carry the check.
- */
-export function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
 export async function yamlRecord(path: string): Promise<Record<string, unknown>> {

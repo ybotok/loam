@@ -85,6 +85,14 @@ specification {
   // cannot carry flattened to `-`. Declared here for the same reason — one
   // specification block serves the whole `architecture/` project.
   tag req-NOTIFY-ONCE
+  // The SUITES a flow runs with — `#suite-<name>` on the view, many-to-many, so
+  // the one journey below sits in both. Declared here, like every tag, so a
+  // mistyped suite is a parse error rather than a second, empty suite.
+  // `loam list suites` answers which services each one needs up: the union of
+  // its journeys' participants, plus the ones no services/ directory stands for
+  // (the customer who drives it, the #external topic in the middle).
+  tag suite-smoke
+  tag suite-notifications
   // An ARCHITECTURAL OBLIGATION, declared in architecture/obligations.yaml and
   // applied HERE, on the objects it holds for. The decision itself is
   // architecture/adrs/0001-transactional-outbox.md; this tag is the architect

@@ -19,6 +19,12 @@
  * run that has not happened yet), so an MCP-only host that could not reach
  * them could not fetch the protocol its own generated skill points at.
  *
+ * `adopt` is here for the same reason one step later: it writes nothing — it
+ * emits the brief an agent then writes a baseline from — and the loam-adopt
+ * protocol an MCP-only host fetches through `loam_instructions` opens by
+ * running it. Without the tool that host could read the protocol and never
+ * receive the brief the protocol is about.
+ *
  * Every table entry mirrors a real registration in `src/commands/` — same
  * positionals, same flags, same spellings — so the contract an MCP client
  * sees is the CLI contract, not a second one. `--json` is appended by
@@ -146,9 +152,10 @@ export const MCP_TOOLS: readonly McpTool[] = [
     command: "list",
     description:
       "List the services and features in the docs repo. " +
-      "CLI equivalent: loam list [section] [--archived] [--needs-work] [--review-order] [--subsystem <name>] [--owners <path>] --json",
+      "CLI equivalent: loam list [section] [name] [--archived] [--needs-work] [--review-order] [--subsystem <name>] [--owners <path>] --json",
     positionals: [
-      { property: "section", required: false, variadic: false, description: "services | features | capabilities (default: services + features)" },
+      { property: "section", required: false, variadic: false, description: "services | features | capabilities | glossary | suites (default: services + features)" },
+      { property: "name", required: false, variadic: false, description: "suites only: the one suite to show" },
     ],
     flags: [
       { property: "archived", flag: "--archived", kind: "boolean", description: "include archived features" },
@@ -262,6 +269,19 @@ export const MCP_TOOLS: readonly McpTool[] = [
     ],
   },
   {
+    name: "loam_adopt",
+    command: "adopt",
+    description:
+      "Brief an agent to write one service's baseline docs from its code, and say what will be checked — writes nothing. " +
+      "CLI equivalent: loam adopt [--service <id>] [--subsystem <name>] [--targets] --json",
+    positionals: [],
+    flags: [
+      { ...SERVICE_FLAG, description: "service to adopt (defaults to the configured service)" },
+      { property: "subsystem", flag: "--subsystem", kind: "string", description: "brief a NEW service's baseline into this subsystem instead of the services/ root" },
+      { property: "targets", flag: "--targets", kind: "boolean", description: "only what varies by service; a `full` field names the run that carries the walk, the checks and the unchecked list" },
+    ],
+  },
+  {
     name: "loam_gate",
     command: "gate",
     description:
@@ -355,35 +375,11 @@ export function toolByName(
   return tools.find((tool) => tool.name === name);
 }
 
-/** The MCP inputSchema for one tool: a closed object, so a typo'd argument refuses instead of vanishing. */
-export function toInputSchema(tool: McpTool): Record<string, unknown> {
-  const properties: Record<string, unknown> = {};
-  for (const positional of tool.positionals) {
-    properties[positional.property] = positional.variadic
-      ? { type: "array", items: { type: "string" }, description: positional.description }
-      : { type: "string", description: positional.description };
-  }
-  for (const flag of tool.flags) {
-    properties[flag.property] =
-      flag.kind === "boolean"
-        ? { type: "boolean", description: flag.description }
-        : flag.kind === "strings"
-          ? { type: "array", items: { type: "string" }, description: flag.description }
-          : { type: "string", description: flag.description };
-  }
-  const required = [
-    ...tool.positionals.filter((p) => p.required).map((p) => p.property),
-    ...tool.flags.filter((f) => f.required === true).map((f) => f.property),
-  ];
-  return {
-    type: "object",
-    properties,
-    ...(required.length > 0 ? { required } : {}),
-    additionalProperties: false,
-  };
-}
-
 // How a tool call's JSON arguments become an argv — including the refusal of
 // any string a shell-less argv would still read as a flag — lives in
 // `./argv.ts`: the table above says WHAT the tools are, that module says how
-// a call crosses into the CLI's own parsing.
+// a call crosses into the CLI's own parsing. The inputSchema each tool is
+// advertised with (`toInputSchema`) lives there too: it DECLARES the argument
+// contract `toArgv` ENFORCES — the closed object, the required set, the order
+// the positionals are read in — and the two halves change together or a
+// client validates against one rule and is refused by another.

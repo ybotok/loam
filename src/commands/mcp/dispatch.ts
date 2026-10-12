@@ -37,6 +37,7 @@ import { registerExplore } from "../explore.js";
 import { registerDependencies } from "../dependencies.js";
 import { registerDoctor } from "../doctor.js";
 import { registerContext } from "../context/context.js";
+import { registerAdopt } from "../adopt/adopt.js";
 import { registerGate } from "../gate/gate.js";
 import { registerExplain } from "../explain/explain.js";
 import { registerInstructions } from "../instructions.js";
@@ -45,12 +46,9 @@ import { registerNew } from "../new/new.js";
 import { registerRebase } from "../rebase/rebase.js";
 import { registerGherkin } from "../gherkin/gherkin.js";
 import { registerArchive } from "../archive/archive.js";
-
-export interface DispatchResult {
-  readonly stdout: string;
-  readonly stderr: string;
-  readonly code: number;
-}
+import type { ToolRunOutcome } from "../../core/mcp/protocol.js";
+import type { ToolRunner } from "./serve.js";
+import { MCP_TOOLS, type McpTool } from "../../core/mcp/tools.js";
 
 /** Console sinks for one dispatch — a value, not module state, so calls cannot share buffers. */
 export interface Sinks {
@@ -107,14 +105,84 @@ export function captureConsole(sinks: Sinks): () => void {
 /** Commander output codes whose printed output is the point, not a usage failure. */
 const PASS_THROUGH = new Set(["commander.help", "commander.helpDisplayed", "commander.version"]);
 
+/** One command's registration onto a program — the shape every `registerX` export has. */
+type Registrar = (program: Command) => void;
+
 /**
- * The scoped program, output routed into `sinks`. configureOutput and
- * exitOverride are set BEFORE the register calls on purpose: commander copies
- * inherited settings onto a subcommand when it is created, so settings applied
- * after registration would leave every subcommand writing to the real stdout —
- * which for an MCP server is the protocol stream.
+ * Every command a tool table may name, keyed by the `command` its tool carries.
+ * A LOOKUP, not a roster: which of these a call's program registers is decided
+ * by the active tool table alone (`toolRunner`), so the authoring writers —
+ * new, rebase, gherkin, archive — exist in it only when `--author` put their
+ * tools in the table, and the table the read-only hints describe is the one
+ * place that gate is written.
+ *
+ * `instructions` and `steps` read no config at all, and are in MCP_TOOLS
+ * because an agent meets them BEFORE the repository is wired: every generated
+ * skill's first line points at `loam instructions <workflow>`. They are why
+ * registration follows the table. This list and MCP_TOOLS used to be two
+ * copies of one roster, and nothing counted them against each other until a
+ * tool advertised in `tools/list` and absent here answered a `tools/call` with
+ * `unknown command 'instructions'` — an envelope that reads as the caller's
+ * mistake. `test/mcp-serve.test.ts` calls every advertised tool, and checks
+ * this lookup against both tables directly.
  */
-function readProgram(sinks: Sinks, authoring = false): Command {
+const REGISTRARS = new Map<string, Registrar>([
+  ["validate", registerValidate],
+  ["status", registerStatus],
+  ["list", registerList],
+  ["show", registerShow],
+  ["delta", registerDelta],
+  ["tasks", registerTasks],
+  ["diff", registerDiff],
+  ["explore", registerExplore],
+  ["dependencies", registerDependencies],
+  ["doctor", registerDoctor],
+  ["context", registerContext],
+  ["adopt", registerAdopt],
+  ["gate", registerGate],
+  ["explain", registerExplain],
+  ["instructions", registerInstructions],
+  ["steps", registerSteps],
+  ["new", registerNew],
+  ["rebase", registerRebase],
+  ["gherkin", registerGherkin],
+  ["archive", registerArchive],
+]);
+
+/**
+ * Resolve every command `tools` name to its registrar, or throw naming each
+ * one that has none. This is the server's STARTUP check, and it runs once per
+ * table: `toolRunner` calls it before the first frame is read, so a tool
+ * advertised with no registrar — the roster drift above, arriving again —
+ * stops `loam mcp` at launch, through cli.ts's catch like any other throw,
+ * before a client has been promised anything. It used to run inside every call's program build, where one
+ * missing entry turned EVERY `tools/call` into an `internal` envelope naming
+ * it, the tools that were wired correctly included: a call's outcome
+ * depended on a tool it never named.
+ */
+export function resolveRegistrars(tools: readonly McpTool[]): readonly Registrar[] {
+  const resolved: Registrar[] = [];
+  const missing: string[] = [];
+  for (const command of new Set(tools.map((tool) => tool.command))) {
+    const register = REGISTRARS.get(command);
+    if (register === undefined) missing.push(`'${command}'`);
+    else resolved.push(register);
+  }
+  if (missing.length > 0) {
+    throw new Error(`loam mcp: no command registered for MCP tool command ${missing.join(", ")} — add it to REGISTRARS in src/commands/mcp/dispatch.ts`);
+  }
+  return resolved;
+}
+
+/**
+ * The scoped program, output routed into `sinks`, holding exactly the commands
+ * the resolved table names. configureOutput and exitOverride are set BEFORE the
+ * register calls on purpose: commander copies inherited settings onto a
+ * subcommand when it is created, so settings applied after registration would
+ * leave every subcommand writing to the real stdout — which for an MCP server
+ * is the protocol stream.
+ */
+function readProgram(sinks: Sinks, registrars: readonly Registrar[]): Command {
   const program = new Command();
   program.name("loam");
   program.exitOverride();
@@ -122,36 +190,20 @@ function readProgram(sinks: Sinks, authoring = false): Command {
     writeOut: (text) => sinks.stdout.push(text),
     writeErr: (text) => sinks.stderr.push(text),
   });
-  registerValidate(program);
-  registerStatus(program);
-  registerList(program);
-  registerShow(program);
-  registerDelta(program);
-  registerTasks(program);
-  registerDiff(program);
-  registerExplore(program);
-  registerDependencies(program);
-  registerDoctor(program);
-  registerContext(program);
-  registerGate(program);
-  registerExplain(program);
-  // The two that read no config at all. They are here for the same reason they
-  // are in MCP_TOOLS: an agent meets `instructions` and `steps` BEFORE the
-  // repository is wired, and every generated skill's first line points at
-  // `loam instructions <workflow>`. This list and MCP_TOOLS are two copies of
-  // one roster, and nothing counted them against each other until a tool
-  // advertised in `tools/list` and absent here answered a `tools/call` with
-  // `unknown command 'instructions'` — an envelope that reads as the caller's
-  // mistake. `test/mcp-serve.test.ts` now calls every advertised tool.
-  registerInstructions(program);
-  registerSteps(program);
-  if (authoring) {
-    registerNew(program);
-    registerRebase(program);
-    registerGherkin(program);
-    registerArchive(program);
-  }
+  for (const register of registrars) register(program);
   return program;
+}
+
+/**
+ * The runner `loam mcp` serves `tools` with. Throws HERE, at construction, when
+ * the table names a command with no registrar (`resolveRegistrars`); the
+ * runner it returns never throws, and builds each call's program from the
+ * registrars resolved once — so no call can fail for the sake of a tool it
+ * did not name.
+ */
+export function toolRunner(tools: readonly McpTool[] = MCP_TOOLS): ToolRunner {
+  const registrars = resolveRegistrars(tools);
+  return (argv) => runToolArgv(argv, registrars);
 }
 
 /**
@@ -160,16 +212,13 @@ function readProgram(sinks: Sinks, authoring = false): Command {
  * thing affected — one bad call must never take the server down, and a
  * memoised rejection cannot exist because nothing here outlives the call.
  */
-export async function runToolArgv(
-  argv: readonly string[],
-  authoring = false,
-): Promise<DispatchResult> {
+async function runToolArgv(argv: readonly string[], registrars: readonly Registrar[]): Promise<ToolRunOutcome> {
   const sinks: Sinks = { stdout: [], stderr: [] };
   const previousExitCode = process.exitCode;
   const restoreConsole = captureConsole(sinks);
   process.exitCode = undefined;
   try {
-    await readProgram(sinks, authoring).parseAsync(["node", "loam", ...argv]);
+    await readProgram(sinks, registrars).parseAsync(["node", "loam", ...argv]);
   } catch (err) {
     if (err instanceof CommanderError) {
       if (PASS_THROUGH.has(err.code)) {

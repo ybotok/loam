@@ -10,12 +10,10 @@
  * and refusing to let one unreadable file take a whole target down with it.
  */
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { pathCaseIndex } from "../../../core/links/case.js";
 import { featureDocuments, fleetDocuments, serviceDocuments } from "../../../core/links/corpus.js";
 import { unresolvedLinkFindings, type LinkScope } from "../../../core/links/findings.js";
 import { featureGlossaryOverlay } from "../../../core/glossary/delta.js";
-import { decodeDocument } from "../../../core/kernel/document-bytes.js";
 import { type ServicePaths } from "../../../core/repo/paths.js";
 import { repoPath } from "../../../core/envelope/json.js";
 import { FleetContext } from "../../../core/fleet-context.js";
@@ -27,7 +25,7 @@ export interface LinkCheck {
   docsDir: DocsDir;
   /** The service or feature the report is about; absent at fleet scope. */
   subject?: string;
-  fleet?: FleetContext;
+  fleet: FleetContext;
   /** Paths an in-flight feature will create — `LinkScope.overlay` says why. */
   overlay?: ReadonlySet<string>;
 }
@@ -86,8 +84,7 @@ async function documentFindings(paths: string[], check: LinkCheck): Promise<Find
     if (!existsSync(path)) continue;
     let text: string;
     try {
-      text =
-        check.fleet === undefined ? decodeDocument(await readFile(path), path) : await check.fleet.readText(path);
+      text = await check.fleet.readText(path);
     } catch (err) {
       findings.push({
         severity: "error",

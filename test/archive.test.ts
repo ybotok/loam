@@ -937,7 +937,7 @@ describe("openapi merge", () => {
   });
 
   it("a living openapi with no components key gets a components block appended and still parses", async () => {
-    // The twin of the test above, one section over: `setComponentValue` falls
+    // The twin of the test above, one section over: `setKeyed` falls
     // through to `setIn`, which has to create `components:` AND its `schemas:`
     // child on a document that has neither. LIVING_OPENAPI has no components
     // section at all, so this is the first write into both levels. (A delta
@@ -3591,6 +3591,25 @@ describe("overwriting an existing living operation (openapi.op-modified)", () =>
       const warn = json.warnings.find((w: { code: string }) => w.code === "openapi.op-modified");
       expect(warn).toMatchObject({ severity: "warn", subject: "payment-service" });
       expect(warn.message).toContain("authorizePayment");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("names who the overwrite lands on — the living fleet's consumers, through loam diff's own scan", async () => {
+    // LANDSCAPE draws checkout-web calling authorizePayment. The warning used
+    // to say "overwrites wholesale" and stop there, leaving the reader to go
+    // and find who depends on the operation; the scan `loam diff` runs for
+    // diff.op-modified answers it over the fleet as it stands before the merge.
+    const p = await makeProject(redeclareFixture(REDECLARE_OPENAPI));
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-4", "--dry-run", "--json");
+      expect(res.code).toBe(0);
+      const warn = JSON.parse(res.out).warnings.find((w: { code: string }) => w.code === "openapi.op-modified");
+      expect(warn.message).toContain("1 current consumer(s) still name it");
+      expect(warn.details).toEqual(['edge checkout-web → payment-service ("Calls authorizePayment")']);
+      const human = await runLoam(p.workDir, "archive", "FEAT-4", "--dry-run");
+      expect(human.out).toContain('edge checkout-web → payment-service ("Calls authorizePayment")');
     } finally {
       await p.destroy();
     }

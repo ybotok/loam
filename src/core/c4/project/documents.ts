@@ -27,7 +27,7 @@
  * (`./architecture.ts` holds the one join).
  */
 import { readdir } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 
 /**
  * Every `.likec4` file under `dir`, recursively, minus `skip`, in a stable
@@ -42,20 +42,53 @@ import { join, resolve } from "node:path";
  */
 export async function architectureDocuments(dir: string, skip: string[] = []): Promise<string[]> {
   const excluded = new Set(skip.map((path) => resolve(path)));
+  return likec4DocumentsUnder(dir, { keeps: (path) => !excluded.has(resolve(path)) });
+}
+
+/**
+ * `architectureDocuments(dir)`, each beside its path inside `dir`,
+ * `/`-separated — the id a feature-local document axis keys on (a feature's
+ * `usecases/` flows, its `deployment/` topology), spelled once for both.
+ */
+export async function relativeDocuments(dir: string): Promise<{ rel: string; path: string }[]> {
+  const base = resolve(dir);
+  return (await architectureDocuments(dir)).map((path) => ({ rel: relative(base, path).split(/[\\/]/).join("/"), path }));
+}
+
+/** What one walk leaves out: directories it never enters (by name), documents it never collects (by path). */
+export interface DocumentWalk {
+  enters?: (name: string) => boolean;
+  keeps?: (path: string) => boolean;
+}
+
+/**
+ * The walk under `architectureDocuments` and the renderer root project's
+ * enumeration (`commands/validate/fleet/views/root-documents.ts`): every
+ * `.likec4` under `dir`, recursively, absolute and sorted for the reason
+ * above. A directory that cannot be read contributes nothing, never a throw —
+ * for the missing-`architecture/` reason above, and because the root walk
+ * runs inside `validate --all` over a whole fleet, where the one behaviour it
+ * may never have is failing the run it was added to.
+ */
+export async function likec4DocumentsUnder(dir: string, walk: DocumentWalk): Promise<string[]> {
   const found: string[] = [];
-  const walk = async (at: string): Promise<void> => {
+  const visit = async (at: string): Promise<void> => {
     let entries;
     try {
       entries = await readdir(at, { withFileTypes: true });
     } catch {
+      // Absent or unreadable: nothing to load from here (see above).
       return;
     }
     for (const entry of entries) {
       const path = join(at, entry.name);
-      if (entry.isDirectory()) await walk(path);
-      else if (entry.name.endsWith(".likec4") && !excluded.has(resolve(path))) found.push(path);
+      if (entry.isDirectory()) {
+        if (walk.enters?.(entry.name) ?? true) await visit(path);
+      } else if (entry.name.endsWith(".likec4") && (walk.keeps?.(path) ?? true)) {
+        found.push(path);
+      }
     }
   };
-  await walk(resolve(dir));
+  await visit(resolve(dir));
   return found.sort();
 }

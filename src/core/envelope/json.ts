@@ -21,6 +21,7 @@
  * where a key mirrors a frontmatter field verbatim; camelCase everywhere else.
  */
 import { relative } from "node:path";
+import { loadConfig, type LoamConfig } from "./config.js";
 import { LOAM_VERSION } from "./version.js";
 
 /**
@@ -286,6 +287,24 @@ export function fail(json: boolean, code: ErrorCode, message: string): void {
   process.exitCode = 1;
 }
 
+/**
+ * A refusal or failure with its stable `--json` code attached, for the commands
+ * whose refusals are THROWN — from a plan phase or a rollback path several
+ * calls below the one handler that prints — rather than returned. The handler
+ * `fail`s with `code`, so a merge that could not be computed reports as a merge
+ * failure rather than as `internal`. What anything ELSE that escapes means is
+ * each handler's to say. One class, because archive, unarchive and
+ * migrate-openspec had each written this same one.
+ */
+export class CodedFailure extends Error {
+  constructor(
+    readonly code: ErrorCode,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 /** The message every command prints when there is no loam.json. */
 const NO_CONFIG_MESSAGE = "No loam.json found. Run `loam init --docs <dir>` first.";
 
@@ -316,4 +335,22 @@ export function reportNoConfig(json: boolean, load: { kind: "absent" } | { kind:
     return;
   }
   fail(json, "no-config", NO_CONFIG_MESSAGE);
+}
+
+/**
+ * The config a command action stands on, or null once `reportNoConfig` has
+ * refused — the caller's whole answer to null is `return`. Every command that
+ * needs a wired repo opens with this question, and it was spelled as the same
+ * six lines in each of them; one spelling is what keeps the absent/invalid
+ * split above from being forgotten in a twenty-fourth. `init` and `doctor` do
+ * not come through here: a missing or broken config is their subject, not a
+ * reason to stop.
+ */
+export async function configOrRefuse(json: boolean): Promise<LoamConfig | null> {
+  const loaded = await loadConfig();
+  if (loaded.kind !== "loaded") {
+    reportNoConfig(json, loaded);
+    return null;
+  }
+  return loaded.config;
 }

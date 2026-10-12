@@ -10,20 +10,11 @@
 import { readFile } from "node:fs/promises";
 import { parse as parseYaml } from "yaml";
 import { serviceIdProblem } from "../../../core/kernel/ids/service.js";
-import { asRecord, dictionary } from "../../../core/kernel/records.js";
+import { asRecord, dictionary, isStringArray } from "../../../core/kernel/records.js";
 import { type OpenSpecMapping } from "../../../core/openspec/model/mapping.js";
 import { message } from "../../../core/staging/commit.js";
 import { OpenSpecCommandError } from "./error.js";
 import { decodeSource } from "./read.js";
-
-/**
- * `Array.isArray` narrows an `unknown` to `any[]`, so the element check below it
- * proved nothing to tsc and the elements had to be asserted back to `string` at
- * the point of use. One predicate makes the narrowing carry the check.
- */
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
-}
 
 function stringList(value: unknown, label: string): string[] {
   if (typeof value === "string") return value.trim() === "" ? [] : [value.trim()];

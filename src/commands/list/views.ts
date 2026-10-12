@@ -17,15 +17,10 @@ import {
 } from "../../core/vocabulary/maturity.js";
 import { type FeatureEntry, type ServiceEntry } from "../../core/repo/entries.js";
 import { landscapePath, servicePathsAt } from "../../core/repo/paths.js";
-import { featureChecklist } from "../../core/verify/checklist.js";
-import { answering, readVerificationState } from "../../core/verify/read/file.js";
+import type { FleetContext } from "../../core/fleet-context.js";
+import { verificationState } from "../../core/status/verification.js";
 import { type AnsweredBy } from "../../core/verify/answers.js";
-import {
-  confirmedProvenance,
-  tallyRecord,
-  type VerificationVerdict,
-  verificationVerdict,
-} from "../../core/verify/record.js";
+import { type VerificationVerdict } from "../../core/verify/record.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 export interface ServiceView extends MaturityInput {
@@ -100,10 +95,7 @@ export async function serviceViews(
   });
 }
 
-/* ------------------------------------------------------------------ */
-/* JSON                                                                */
-/* ------------------------------------------------------------------ */
-
+/** What the features table says about verification without N `loam verify` runs. */
 export interface VerificationCell {
   state: "recorded" | "stale";
   /** The day the record was written. */
@@ -131,55 +123,38 @@ export interface VerificationCell {
 }
 
 /**
- * The verification column. Reading the record is cheap but no longer one file
- * read — a directory listing and one small read per attesting service, plus the
+ * The verification column: `status`'s own record state (`verificationState`),
+ * projected onto the cell — the record read, the files added up against the
+ * checklist just derived, the archived record read as frozen history — so
+ * `list`, `status` and `gate` compute one cell, for the reasons that function
+ * records. Reading the record is cheap but no longer one file read — a
+ * directory listing and one small read per attesting service, plus the
  * one-file `verification.yaml` — and the checklist is derived only when there
  * is a record to judge: on a fleet-sized repo most features have none, and
  * deriving N checklists to print N dashes is the cost that would get this
- * column dropped.
+ * column dropped. `fleet` is the invocation's read index, so each derivation's
+ * enumerations and delta parse are memo hits rather than a walk per feature.
  *
- * An archived feature's record is frozen history (see `core/verify/record.ts`): archive
- * merged the feature's operations into the living openapi, so a re-derived
- * checklist can only mismatch — the record is reported as recorded, never
- * judged stale.
- *
- * An in-flight record kept as per-service files is added up again against the
- * checklist just derived (`answering`), so the files that answered the
- * question being asked now are the ones that count — the cell `status` and
- * `gate` compute, for the reason `core/verify/read/union.ts` gives. A record
- * that cannot be read is one dash like an absent one: this column shows one
- * glyph either way. That includes a record whose summary contradicts its own
- * claims (`verify.record-miscounted`), so no count from it is printed as fact —
- * reading it as absent is the safe half of the truth, and `status` and
- * `verify`, which can say why, report it as unreadable instead.
+ * A record that cannot be read is one dash like an absent one: this column
+ * shows one glyph either way. That includes a record whose summary
+ * contradicts its own claims (`verify.record-miscounted`), so no count from it
+ * is printed as fact — reading it as absent is the safe half of the truth, and
+ * `status` and `verify`, which can say why, report it as unreadable instead.
  */
 export async function featureVerification(
   docsDir: DocsDir,
   f: FeatureEntry,
+  fleet: FleetContext,
 ): Promise<VerificationCell | null> {
-  const read = await readVerificationState(f.dir);
-  if (read.state !== "ok") return null;
-  const live = f.archived ? null : (await featureChecklist(docsDir, f.dir, f.id)).digest;
-  const v = live === null ? read.verification : (answering(read.files, live) ?? read.verification);
-  const stale = live !== null && live !== v.checklist;
-  const tally = tallyRecord(v);
+  const { state: s } = await verificationState(docsDir, f, { fleet });
+  if (s.state === "absent" || s.state === "unreadable" || s.recorded === null) return null;
   return {
-    state: stale ? "stale" : "recorded",
-    recorded: v.recorded,
-    verdict: verificationVerdict(tally, stale),
-    confirmed: tally.confirmed,
-    claims: tally.claims,
-    attested: tally.attested,
-    answered: confirmedProvenance(v.claims),
+    state: s.state,
+    recorded: s.recorded,
+    verdict: s.verdict,
+    confirmed: s.confirmed,
+    claims: s.claims,
+    attested: s.attested,
+    answered: s.answered,
   };
 }
-
-/* ------------------------------------------------------------------ */
-/* Text                                                                */
-/* ------------------------------------------------------------------ */
-
-/**
- * Fixed-width presence flags. `a` and `A` are deliberately the same letter in
- * two cases: the arch spec and the API are the two things a reader most often
- * mistakes for each other, and one is lowercase because it is optional.
- */

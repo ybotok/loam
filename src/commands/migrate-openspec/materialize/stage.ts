@@ -19,10 +19,11 @@ import { findConfigPath, parseConfig } from "../../../core/envelope/config.js";
 import { docsDirOf, type DocsDir } from "../../../core/kernel/ids/dirs.js";
 import { CAPABILITY_LINE_RE, requirementIdProblems, type Requirement } from "../../../core/document/spec.js";
 import { decodeDocument } from "../../../core/kernel/document-bytes.js";
+import { isPathInside } from "../../../core/kernel/path-safety.js";
 import { type OpenSpecInventory } from "../../../core/openspec/model/model.js";
 import { type PlannedWrite } from "../../../core/staging/writes.js";
 import { OpenSpecCommandError } from "../openspec/error.js";
-import { canonicalForCreate, contains } from "../openspec/paths.js";
+import { canonicalForCreate } from "../openspec/paths.js";
 
 /**
  * The other half of "never writes into … live loam docs". Overlap with the
@@ -40,7 +41,7 @@ async function assertOutsideLoamDocs(stage: string): Promise<void> {
   const governing = findConfigPath(canonicalStage);
   if (governing !== null) {
     const docsDir = await governingDocsDir(governing);
-    if (docsDir === null || contains(docsDir, canonicalStage)) {
+    if (docsDir === null || isPathInside(docsDir, canonicalStage)) {
       throw new OpenSpecCommandError(
         "invalid-option",
         `Refusing to stage a migration inside the live loam docs ${docsDir ?? `governed by ${governing}`}: ${stage}. Migrate into a standalone directory and cut over after review.`,
@@ -82,7 +83,7 @@ async function governingDocsDir(path: string): Promise<DocsDir | null> {
 export async function assertEmptyNonOverlappingStage(inventory: OpenSpecInventory, stage: string): Promise<void> {
   const canonicalStage = await canonicalForCreate(stage);
   const canonicalSource = await realpath(inventory.inputRoot);
-  if (contains(canonicalSource, canonicalStage) || contains(canonicalStage, canonicalSource)) {
+  if (isPathInside(canonicalSource, canonicalStage) || isPathInside(canonicalStage, canonicalSource)) {
     throw new OpenSpecCommandError(
       "invalid-option",
       `Staging directory must not overlap the OpenSpec source workspace: ${stage}`,

@@ -49,12 +49,12 @@
  * preview, which is the one thing both refusals rest on.
  */
 import { existsSync } from "node:fs";
-import { basename, join, relative, resolve } from "node:path";
+import { basename, join } from "node:path";
 import { architectureDir } from "../c4/project/architecture.js";
 import { stageMergedProject } from "../c4/project/staged.js";
 import { type LoadedDoc } from "../c4/likec4.js";
 import type { ExtendingModel } from "../c4/splice/contract.js";
-import { architectureDocuments } from "../c4/project/documents.js";
+import { relativeDocuments } from "../c4/project/documents.js";
 import { featureDeploymentDir } from "../repo/authored/paths.js";
 import { reservedArchitectureName } from "../repo/paths.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
@@ -81,10 +81,7 @@ export interface FeatureDeployment {
  * directory's existence is the whole per-feature opt-in.
  */
 export async function featureDeployments(featureDir: FeatureDir): Promise<FeatureDeployment[]> {
-  const dir = featureDeploymentDir(featureDir);
-  const paths = await architectureDocuments(dir);
-  const base = resolve(dir);
-  return paths.map((path) => ({ rel: relative(base, path).split(/[\\/]/).join("/"), path }));
+  return relativeDocuments(featureDeploymentDir(featureDir));
 }
 
 /**

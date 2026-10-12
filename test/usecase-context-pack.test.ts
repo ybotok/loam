@@ -118,9 +118,10 @@ const UC_FLOW = `views {
 
 /**
  * The same two hops under `#req-CHK-ONCE` and NO `#cap-` tag. Derived from
- * `UC_FLOW` so the hops cannot drift, and read over a landscape that still
- * declares `cap-checkout` — the byte gate is therefore open under either
- * spelling of it, and what the case below measures is the opt-in predicate.
+ * `UC_FLOW` so the hops cannot drift. The byte gate opens on the flow's own
+ * `#req-` reference (it reads `#` references, so the landscape's `tag
+ * cap-checkout` declaration would not open it), and `test/usecase-blast-radius`
+ * pins that half; what the case below measures is the opt-in predicate.
  */
 const REQ_ONLY_FLOW = UC_FLOW.replace("#cap-checkout", "#req-CHK-ONCE");
 

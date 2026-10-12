@@ -32,9 +32,13 @@ Ask: could a caller distinguish this case by the payload instead? If yes, do tha
    (`src/core/envelope/json.ts`); findings carry `code` on the `Finding`/`Issue`.
 
 3. **Document it in the agent surface.** `test/codes-drift.test.ts` requires every stable code to
-   appear in `AGENTS_MD` and/or the slash-command bodies in `src/core/agent.ts`. This is not
-   optional and it is not cosmetic: an undocumented code is a branch nobody was told about. Add it
-   to the table where its siblings live.
+   appear, backticked, in `AGENTS_MD` (the `ORIENTATION` literal in `src/core/agent/agents-md.ts`)
+   or in a page `loam instructions` prints (`PROTOCOLS`: the workflow protocols and reference pages
+   under `src/core/agent/workflows/`, the `loam-codes` page among them, assembled from the sections
+   under `src/core/agent/agents-md/`). This is not optional and it is not cosmetic: an undocumented
+   code is a branch nobody was told about. Add it to the list or table where its siblings live —
+   usually the `loam-codes` command map, and the `/loam-check` table in
+   `src/core/agent/workflows/check.ts` when `loam explain` should answer it.
 
    Note the drift test's known blind spot — codes passed as a *positional argument* to a helper
    (the `issue(target, scope, code, path, message)` form in `src/core/openspec-inventory.ts`) are
@@ -76,11 +80,13 @@ Then, in this order.
    a code nothing can emit. Nothing catches this for you: `test/codes-drift.test.ts` grades
    emitted → documented and never the reverse. Removing a row also lowers the parsed row count, so
    check `test/explain.test.ts`'s count floor still clears.
-3. **Remove it from the generated agent surface.** The `AGENTS_MD` sections in
-   `src/core/agent/agents-md/` enumerate the codes each command emits — `command-map.ts` carries the
-   `loam validate` lists. Then run `npm run meta:agents`: `meta/docs/AGENTS.md` is checked in, and
-   `agents.stale` grades the version STAMP, so a same-version edit leaves that file wrong while
-   every check reports the repo healthy.
+3. **Remove it from the generated agent surface.** The sections in `src/core/agent/agents-md/`
+   enumerate the codes each command emits — `command-map.ts` carries the `loam validate` lists —
+   and they are the `loam-codes` page `loam instructions` prints, not part of AGENTS.md. If
+   `AGENTS_MD`'s `ORIENTATION` literal (`src/core/agent/agents-md.ts`) names the code too, remove it
+   there and run `npm run meta:agents`: `meta/docs/AGENTS.md` is checked in, and `agents.stale`
+   grades the version STAMP, so a same-version edit leaves that file wrong while every check
+   reports the repo healthy.
 4. **Correct the comments that named it — never delete them.** "This used to fire and no longer
    does, and here is why" is the sentence a future reader needs most; a deleted comment is how the
    next person re-derives the whole argument. The retirement left a corrected sentence in each of

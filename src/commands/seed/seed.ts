@@ -19,8 +19,7 @@ import { errorText, loadSource } from "../../core/c4/likec4.js";
 import { readFleetFile, type SeedFileProblem } from "../../core/c4/seed/fleet-file.js";
 import { sealLandscape } from "../../core/c4/seed/stamp.js";
 import { renderLandscape } from "../../core/c4/seed/template.js";
-import { loadConfig } from "../../core/envelope/config.js";
-import { emitJson, emitJsonError, fail, repoPath, reportNoConfig } from "../../core/envelope/json.js";
+import { configOrRefuse, emitJson, emitJsonError, fail, repoPath } from "../../core/envelope/json.js";
 import { NotUtf8Error, readUtf8 } from "../../core/staging/writes.js";
 import { sayRecovered } from "../policy/format.js";
 import { docsRepoReady, reportDocsRepoError } from "../policy/gate.js";
@@ -44,12 +43,9 @@ export function registerSeed(program: Command): void {
       const json = opts.json === true;
       const fromArg = opts.from ?? "fleet.yaml";
 
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const { docsDir } = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
+      const { docsDir } = config;
       // `services`, not `docs`: every id in fleet.yaml becomes a
       // services/<id>/ directory, and the under-lock preflight enumerates the
       // tree — a run without the directory that IS the fleet is guessing.

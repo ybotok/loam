@@ -14,7 +14,7 @@ import { openspecRequirements } from "../../../core/openspec/scan/shape.js";
 import { type Requirement } from "../../../core/document/spec.js";
 import { ownValue } from "../../../core/kernel/records.js";
 import { type OpenSpecMapping } from "../../../core/openspec/model/mapping.js";
-import { isOpenSpecArtifactDisposition, type OpenSpecInventory } from "../../../core/openspec/model/model.js";
+import { isOpenSpecArtifactDisposition, type OpenSpecInventory, type OpenSpecRenamedUsage } from "../../../core/openspec/model/model.js";
 import { planWrite, type PlannedWrite } from "../../../core/staging/writes.js";
 import { selectedServices } from "../openspec/decisions.js";
 import { OpenSpecCommandError } from "../openspec/error.js";
@@ -28,6 +28,32 @@ import {
   type AuthoredArtifactCopy,
 } from "./feature.js";
 import { assertMaterializedRequirementIds, requirementWithCapability } from "./stage.js";
+
+/** A RENAMED pair whose two headings and settled identity are all known — the only kind that materializes. */
+type SettledRename = OpenSpecRenamedUsage & { from: string; to: string; requirementId: string };
+
+function isSettled(rename: OpenSpecRenamedUsage): rename is SettledRename {
+  return rename.from !== null && rename.to !== null && rename.requirementId !== null;
+}
+
+/**
+ * A settled rename staged as the MODIFIED requirement it becomes: the new
+ * heading under the settled id, annotated once with the living requirement it
+ * renames. One construction for both places a rename materializes — over the
+ * delta's own MODIFIED body (already that kind, so the `kind` here changes
+ * nothing), and over the living requirement when the delta restates none.
+ */
+function renamedAsModified(base: Requirement, rename: SettledRename): Requirement {
+  const annotation = `OpenSpec-Living-Source: ${rename.capability} :: ${rename.from}`;
+  return {
+    ...base,
+    kind: "MODIFIED",
+    id: rename.requirementId,
+    name: rename.to,
+    text: base.text.includes(annotation) ? base.text : [...base.text, "", annotation],
+    section: "## MODIFIED Requirements",
+  };
+}
 
 export async function materializeActiveChanges(
   inventory: OpenSpecInventory,
@@ -160,7 +186,7 @@ export async function materializeActiveChanges(
         const rename = matchingRenames[0];
         let requirement = parsed;
         let routingName = parsed.name;
-        if (rename !== undefined && rename.from !== null && rename.to !== null && rename.requirementId !== null) {
+        if (rename !== undefined && isSettled(rename)) {
           if (parsed.kind !== "MODIFIED") {
             throw new OpenSpecCommandError(
               "invalid-option",
@@ -173,14 +199,7 @@ export async function materializeActiveChanges(
               `Active change '${change.id}' MODIFIED requirement '${parsed.name}' has Requirement-ID '${parsed.id}', but its RENAMED source resolves to '${rename.requirementId}'.`,
             );
           }
-          const annotation = `OpenSpec-Living-Source: ${rename.capability} :: ${rename.from}`;
-          requirement = {
-            ...parsed,
-            id: rename.requirementId,
-            name: rename.to,
-            text: parsed.text.includes(annotation) ? parsed.text : [...parsed.text, "", annotation],
-            section: "## MODIFIED Requirements",
-          };
+          requirement = renamedAsModified(parsed, rename);
           routingName = rename.from;
           materializedRenameKeys.add(rename.key);
         }
@@ -195,20 +214,11 @@ export async function materializeActiveChanges(
     }
     for (const rename of changeRenames) {
       if (materializedRenameKeys.has(rename.key)) continue;
-      if (rename.from === null || rename.to === null || rename.requirementId === null) continue;
+      if (!isSettled(rename)) continue;
       const source = (livingByCapability.get(rename.capability) ?? [])
         .filter((requirement) => requirement.name === rename.from)[0];
       if (source === undefined) continue; // readiness prevents this on --apply
-      const annotation = `OpenSpec-Living-Source: ${rename.capability} :: ${rename.from}`;
-      const text = source.text.includes(annotation) ? source.text : [...source.text, "", annotation];
-      const modified: Requirement = {
-        ...source,
-        kind: "MODIFIED",
-        id: rename.requirementId,
-        name: rename.to,
-        text,
-        section: "## MODIFIED Requirements",
-      };
+      const modified = renamedAsModified(source, rename);
       for (const service of selectedServices(mapping, rename.capability, rename.from)) {
         addDelta(service, requirementWithCapability(modified, rename.capability), rename.path);
       }

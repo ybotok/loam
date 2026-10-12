@@ -1,0 +1,143 @@
+# An early-warning canary for OpenSpec compatibility, and never a gate: the
+# certified claim is the exact-commit sweeps in ci.yml's openspec-corpus job,
+# and no push or pull_request trigger exists here, so this workflow can never
+# post a status on a PR, enter branch protection as a required check, or block
+# a release — no release logic reads it. Those pinned sweeps refuse any commit
+# but their own, which keeps them exact and kept them silent while v1.10.0
+# through v1.14.1 shipped. This job asks the moving question instead: it
+# resolves the newest OpenSpec release tag with `git ls-remote` (no API token,
+# no rate-limited REST call), shallow-clones it, and runs the same sweep in
+# `--baseline latest` mode, which reports how the totals moved from the
+# certified pin rather than refusing a commit it was not pinned to. A red run
+# means upstream moved — its newest corpus no longer round-trips through the
+# migration's reader, or its workspace no longer audits — not that the
+# certified claim broke; the runbook is CONTRIBUTING.md's "The OpenSpec canary"
+# section. The parser-source diff is informational evidence in the step
+# summary, never pass/fail, and it is the step that matters most: the grammar
+# 1.13 added (a closing `#` run, `*`/`+` REMOVED and RENAMED bullets, repeated
+# delta sections) appears in no upstream spec file, so the sweep alone passes
+# straight over a grammar change and only the diff shows it. Weekly Thursday,
+# offset from ci.yml's Monday cron and the LikeC4 canary's Wednesday so no two
+# scheduled reds land in one inbox burst.
+name: openspec-canary
+
+on:
+  schedule:
+    - cron: "41 4 * * 4"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openspec-canary-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    # Naming bash explicitly is what turns on pipefail: the sweep is piped
+    # through tee into the step summary, and without it a failing sweep would
+    # exit with tee's status and leave the canary green.
+    shell: bash
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: loam
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: loam/package-lock.json
+      - run: npm ci
+        working-directory: loam
+      # The certified pin is read from OPENSPEC_BASELINES, the constant
+      # audit-openspec prints and the corpus gate's `release` pin reads, so this
+      # job cannot compare against a third spelling of it. Only plain vX.Y.Z
+      # tags count: a prerelease such as v1.6.0-beta.1 is not a release anybody
+      # migrates from.
+      - name: Resolve the newest OpenSpec release and the certified pin
+        id: versions
+        working-directory: loam
+        run: |
+          LATEST=$(git ls-remote --tags --refs https://github.com/Fission-AI/OpenSpec.git 'v*' \
+            | awk '{ sub("refs/tags/", "", $2); print $2 }' \
+            | { grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true; } | sort -V | tail -n 1)
+          if [ -z "$LATEST" ]; then
+            echo "::error title=No OpenSpec release resolved::git ls-remote returned no vX.Y.Z tag"
+            exit 1
+          fi
+          read -r PINNED_REF PINNED_COMMIT <<< "$(npx tsx -e 'import { OPENSPEC_BASELINES } from "./src/core/openspec/model/model.ts"; console.log(`${OPENSPEC_BASELINES.release.ref} ${OPENSPEC_BASELINES.release.commit}`)')"
+          # A here-string swallows the exit status of the command inside it, so
+          # a failed read of the constant is caught by its result instead.
+          if ! [[ "$PINNED_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=Certified pin unreadable::OPENSPEC_BASELINES.release did not yield a ref and a commit"
+            exit 1
+          fi
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+          echo "pinned-ref=$PINNED_REF" >> "$GITHUB_OUTPUT"
+          echo "pinned-commit=$PINNED_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "Certified OpenSpec pin: \`$PINNED_REF\` (\`$PINNED_COMMIT\`) — newest release: \`$LATEST\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$LATEST" = "$PINNED_REF" ]; then
+            echo "The newest release is the certified pin: the sweep below re-checks it exactly, and there is no parser diff to read." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      # Passed through env, never spliced into the script: a tag name is
+      # remote input, and the regex above is the only thing vouching for it.
+      - name: Shallow-clone the newest release
+        env:
+          LATEST: ${{ steps.versions.outputs.latest }}
+        run: git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$LATEST" https://github.com/Fission-AI/OpenSpec.git "$GITHUB_WORKSPACE/openspec-latest"
+      # Round trip must hold for every file — that is the one check meaning
+      # the same thing at any commit, and the only way this step goes red. The
+      # totals' drift from the pin is reported, never judged.
+      - name: Sweep the newest release corpus
+        working-directory: loam
+        run: npm run -s test:openspec-corpus -- --baseline latest "$GITHUB_WORKSPACE/openspec-latest" | tee -a "$GITHUB_STEP_SUMMARY"
+      # The audit's blockers never fail the canary — an upstream change still
+      # at the proposal stage is a routine blocker there. An audit that cannot
+      # COMPLETE does: that is loam no longer reading upstream's own workspace.
+      - name: Audit OpenSpec's own workspace at the newest release
+        working-directory: loam
+        run: |
+          npm run -s dev -- audit-openspec "$GITHUB_WORKSPACE/openspec-latest" --json > "$RUNNER_TEMP/audit.json"
+          {
+            echo "### audit-openspec on OpenSpec's own workspace"
+            jq -r '"- living: \(.living.capabilities | length) capabilities, \(.living.requirements) requirements, \(.living.scenarios) scenarios; mechanically readable: \(.readiness.living.compatible)",
+              "- changes: \(.changes.counts.active) active, \(.changes.counts.archived) archived; active deltas strand nothing: \(.readiness.active.compatible)",
+              "- archive diagnostics (never blocking): \(.archiveDiagnostics | length)",
+              (.unsupported[] | "- blocker `\(.code)` (\(.scope)): \(.path)")' "$RUNNER_TEMP/audit.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+      # Where OpenSpec's requirement grammar lives at the v1.14.1 pin: the
+      # readers (src/core/parsers/), the archive merge (src/core/specs-apply.ts)
+      # and the rules validate enforces (src/core/validation/). A path upstream
+      # moves away shows here as deleted, which is the same signal: re-read
+      # before moving the pin. Informational, so it warns and never fails.
+      - name: Diff upstream's parser sources against the certified pin
+        if: steps.versions.outputs.latest != steps.versions.outputs.pinned-ref
+        env:
+          LATEST: ${{ steps.versions.outputs.latest }}
+          PINNED_REF: ${{ steps.versions.outputs.pinned-ref }}
+          PINNED_COMMIT: ${{ steps.versions.outputs.pinned-commit }}
+        run: |
+          UPSTREAM="$GITHUB_WORKSPACE/openspec-latest"
+          git -C "$UPSTREAM" fetch --quiet --depth 1 origin "$PINNED_COMMIT"
+          CHANGED=$(git -C "$UPSTREAM" diff --stat "$PINNED_COMMIT" HEAD -- src/core/parsers src/core/specs-apply.ts src/core/validation)
+          {
+            echo "### OpenSpec parser sources, \`$PINNED_REF\` → \`$LATEST\`"
+            if [ -z "$CHANGED" ]; then
+              echo "No change to the readers, the archive merge or the validation rules since the certified pin."
+            else
+              echo '```'
+              echo "$CHANGED"
+              echo '```'
+              echo "Read these before moving the pin: the sweep above cannot see a grammar change upstream's own specs do not use."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$CHANGED" ]; then
+            echo "::warning title=OpenSpec parser sources moved::$PINNED_REF → $LATEST changed the requirement readers, archive merge or validation rules; see the step summary"
+          fi

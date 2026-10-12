@@ -232,7 +232,22 @@ pins this whole sequence against the shipped `examples/fleet.yaml`, so the recip
 the binary.
 
 From here, [WORKFLOW.md's day zero](WORKFLOW.md#day-zero-onboarding-a-fleet) is the rest: bind each
-service repo, adopt, grade, promote.
+service repo, adopt, grade, promote. Bind each one with the service profile:
+
+```bash
+# in each service checkout, beside the docs repo
+loam init --docs ../docs --service payment-service --agent-profile service
+loam doctor
+```
+
+Pass the profile explicitly. `--agent-profile` defaults to `full`, with `--service` or without it,
+and `full` writes all seven entry points into the checkout — `loam-feature` and `loam-ship` among
+them, the two workflows that author a feature and archive it into the living docs, which the `docs`
+profile gives to the docs repo. `service` writes the five that run beside the code: `loam-adopt`,
+`loam-implement`, `loam-check`, `loam-verify` and `loam-report`. Across a hundred service repos that
+is the difference between one place a cross-service change starts and a hundred places an agent
+can be told to start one. The people in those service repos need about a screen of this:
+[docs/SERVICE-TEAMS.md](https://github.com/ybotok/loam/blob/main/docs/SERVICE-TEAMS.md).
 
 ### Guard the fleet's edges on every PR
 
@@ -308,6 +323,140 @@ scope, so the one-letter `authorisePayment` above fails on the PR that introduce
 [WORKFLOW.md](WORKFLOW.md#what-actually-gates) has what each does and
 does not grade — including the oasdiff invocation for the byte-level OpenAPI breaking-change
 catalogue, which loam deliberately does not reimplement.
+
+### Check each service repo on its own pull requests
+
+The docs repo's job cannot see provenance. `sources` resolve only inside a service's own
+repository, so `sources.stale` — the code under a vouched spec moved — surfaces only in that
+service repo's CI ([SCHEMA.md](SCHEMA.md), "Operating at fleet scale"). Its committed `loam.json`
+reaches the docs repo through a relative `docsDir` such as `"../docs"`, so the job rebuilds the
+side-by-side layout a laptop has. `actions/checkout` refuses `path: ../docs` — it writes only
+beneath `GITHUB_WORKSPACE` — so check out **both** repositories as subdirectories of the workspace,
+siblings, and run loam from the service's:
+
+```yaml
+# .github/workflows/loam.yml — in each service repo
+name: loam
+on: pull_request
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    env:
+      LOAM: "@ybotok/loam@0.2.0-alpha.8"   # the docs repo's pin: move them together
+      SERVICE: payment-service              # this repo's "service" in its loam.json
+    steps:
+      # Both repositories as siblings under the workspace, the way a laptop holds
+      # them, so the committed "docsDir": "../docs" resolves unchanged.
+      - uses: actions/checkout@v4
+        with: { path: payment-service }
+      - uses: actions/checkout@v4
+        with:
+          repository: acme/docs                       # your docs repo
+          path: docs                                  # the last segment of docsDir
+          token: ${{ secrets.LOAM_DOCS_READ_TOKEN }}  # contents: read on the docs repo
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: loam validate --service
+        working-directory: payment-service
+        run: |
+          rc=0
+          npx -y "$LOAM" validate --service "$SERVICE" --json > "$RUNNER_TEMP/loam.json" || rc=$?
+          # one annotation per error and warning; a refusal (docs-missing, …) is one error
+          jq -r '
+            def esc: gsub("%"; "%25") | gsub("\r"; "%0D") | gsub("\n"; "%0A");
+            if .ok then
+              .targets[].findings[] | select(.severity != "ok")
+              | "::\(if .severity == "error" then "error" else "warning" end) title=\(.code)::\(.message | esc) (docs: \(.locations[0].path))"
+            else "::error title=\(.error.code)::\(.error.message | esc)" end
+          ' "$RUNNER_TEMP/loam.json"
+          # the same findings as a table on the run's summary page
+          jq -r '
+            if .ok then
+              "### loam validate --service \(.targets[0].id) — \(.summary.errors) error(s), \(.summary.warnings) warning(s)",
+              "", "| severity | code | finding |", "|---|---|---|",
+              (.targets[].findings[] | select(.severity != "ok")
+                | "| \(.severity) | `\(.code)` | \(.message | gsub("\\|"; "\\|") | gsub("\n"; " ")) |")
+            else "### loam refused: `\(.error.code)`", "", .error.message end
+          ' "$RUNNER_TEMP/loam.json" >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+```
+
+Run from a `payment-service` checkout beside `examples/docs`, in a repository with no
+`src/main/java/` — the source that service's specs name — the step exits 1 and prints:
+
+```text
+::warning title=spine.op-link-missing::payment-service: landscape edge checkout-web → payment-service ("Calls the payment API") has no operation link (metadata { op }) (docs: services/payment-service)
+::error title=sources.path-missing::payment-service: spec.md: 1 source(s) do not exist — src/main/java/ (docs: services/payment-service)
+::error title=sources.path-missing::payment-service: arch.spec.md: 1 source(s) do not exist — src/main/java/ (docs: services/payment-service)
+```
+
+The annotations carry no `file=`, on purpose: every location loam reports is a path in the docs
+repo, which is not the repository this pull request diffs, so GitHub could not place one on a line
+here. They land on the check run and its summary instead. A docs repo that is private needs a token
+that can read it — a fine-grained token or a GitHub App token with `contents: read` on that one
+repository — because the workflow's own `GITHUB_TOKEN` reads only the repository it runs in. Add
+`--strict` once the service is vouched and its warnings are ones you mean to keep at zero; before
+that, the warnings are the adoption still to do.
+
+The same layout answers the deploy question. In the deploy pipeline, check the docs repo out with
+`fetch-depth: 0` — `--since` is read from its git history — and ask whether this service may ship:
+
+```bash
+npx -y "$LOAM" gate --service "$SERVICE" --since "$DOCS_SHA_OF_LAST_DEPLOY"
+```
+
+`gate` executes nothing and writes nothing, and without `--strict` its warnings stay advisory;
+[WORKFLOW.md](WORKFLOW.md#what-actually-gates) says what each finding of it means for a pipeline.
+
+**Cloud agents in a service repo** need the same sibling on disk before they start: a lone clone
+of the service answers every docs-reading command with `docs-missing`. GitHub's Copilot coding
+agent and Codex cloud each start from the one repository the task names and run a setup step you
+own, so clone the docs repo there, into the committed `docsDir`. Copilot reads the job
+`copilot-setup-steps` from `.github/workflows/copilot-setup-steps.yml` on the default branch, and
+an
+[Agents secret](https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/customize-cloud-agent/configure-secrets-and-variables)
+reaches those steps as an environment variable:
+
+```yaml
+# .github/workflows/copilot-setup-steps.yml — in each service repo
+name: Copilot setup steps
+on: workflow_dispatch
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install -g @ybotok/loam@0.2.0-alpha.8
+      # "../docs" is outside the workspace, so git clone rather than actions/checkout;
+      # the second command takes the token back out of the clone's config
+      - run: |
+          git clone --depth 1 "https://x-access-token:${LOAM_DOCS_READ_TOKEN}@github.com/acme/docs.git" ../docs
+          git -C ../docs remote set-url origin https://github.com/acme/docs.git
+      - run: loam doctor
+```
+
+Codex cloud has no workflow file: the same commands go in the environment's setup script, with
+the token as an environment **secret** — Codex hands secrets to the setup script only and removes
+them before the agent phase, which is all a clone needs. Pin Node.js to 22 or newer in the
+environment's package versions, and spell the target from the repository root, because where the
+script starts is not documented:
+
+```bash
+npm install -g @ybotok/loam@0.2.0-alpha.8
+DOCS="$(git rev-parse --show-toplevel)/../docs"
+git clone --depth 1 "https://x-access-token:${LOAM_DOCS_READ_TOKEN}@github.com/acme/docs.git" "$DOCS"
+git -C "$DOCS" remote set-url origin https://github.com/acme/docs.git
+loam doctor
+```
+
+The clone is the agent's reading, not a second place it can deliver. A cloud agent opens its pull
+request against the repository it was started in, so anything it writes into the docs checkout —
+a verification record, a spec edit — stays in its sandbox. `loam-implement`'s own outputs, the
+generated Gherkin and the code, land in the service repo as usual; what belongs in the docs repo
+goes there through that repo's own pull request.
 
 ### Try loam on one governed system in five minutes
 
@@ -387,7 +536,7 @@ cannot hold.
 |---|---|---|
 | `loam init` | `--docs <dir>` `--service <id>` `--create` `--force` `--tools <ids>` `--agent-profile <full\|service\|docs>` `--example <dir>` `--no-commands` `--no-skills` `--mcp` `--mcp-author` | Bind this repository to the single shared docs repo: a committed local `loam.json`, plus command and Agent Skill pointers for detected AI tools. Profiles narrow the six lifecycle workflows to a repo's role; the support-only `loam-report` stays in every profile. Re-running init refreshes only unchanged loam-owned pointers; edited files are preserved. `--mcp` writes the read-only host entry, while `--mcp-author` opts into the bounded authoring tools. `--create` scaffolds the docs repo; `--example` copies the packaged example and stops |
 | `loam seed` | `--from <file>` | Template the fleet map and one `services/<id>/` directory per service from a tiny human-authored `fleet.yaml`. Mechanical, never a guess: a human stated every fact. Refuses once the landscape has been hand-edited |
-| `loam list [services\|features\|capabilities\|glossary]` | `--archived` `--needs-work` `--review-order` `--subsystem <name>` `--owners <path>` | What is in the docs repo, and what is missing from it. `capabilities` rolls up who realizes each promise; `glossary` rolls up each term with the documents that cite it |
+| `loam list [services\|features\|capabilities\|glossary\|suites]` | `--archived` `--needs-work` `--review-order` `--subsystem <name>` `--owners <path>` | What is in the docs repo, and what is missing from it. `capabilities` rolls up who realizes each promise; `glossary` rolls up each term with the documents that cite it; `suites` groups the use cases by `#suite-` tag and names the services each suite needs up (`loam list suites <name>` shows one) |
 | `loam status [<FEAT>]` | `--service <id>` | Where the work stands and what to do next, as a projection over the two gates. Each `next[]` row has an `execution` object that says whether it is runnable, where, and what input or edit is still needed. Derived every run; writes nothing |
 | `loam doctor` | — | Read-only preflight for runtime, config, docs-repo access, fleet roots, counts, and the current service binding. Blockers exit 1; incomplete optional bindings stay warnings |
 | `loam dependencies [<FEAT>]` | — | The active-feature dependency graph and same-identity conflicts, derived from requirement deltas and OpenAPI operationIds |
@@ -398,11 +547,11 @@ cannot hold.
 | `loam instructions [<workflow>] [args...]` | `--no-fix-tables` | Print one of the six workflow protocols, the separate `loam-report` support protocol, or one of the four reference pages `loam-codes`, `loam-spine`, `loam-authoring` and `loam-done-check`, version-matched to this binary. Workflow `$1`/`$2` placeholders are filled; support/reference pages take no arguments. Reads no config. `--no-fix-tables` collapses the per-code fix tables to a line each, keeping the paragraph that says which scope graded them: `loam-check`'s page, almost all of it fix tables, comes back in a few kilobytes, while a support/reference page holds no such table and comes back byte-identical |
 | `loam explain [<subject>]` | `--codes` | Explain a finding code, a refusal code, or a concept term. Most finding prose is parsed at runtime from the shipped fix tables, so it cannot drift from the binary; the `doctor.*`, `next.*`, `diff.*` and `gate.*` families, which no fix table grades, are answered from a registry written beside them. Every text-mode refusal prints `<code>  ·  loam explain <code>` on stderr and every non-`ok` finding line carries its code in parentheses, so the lookup is reachable without re-running under `--json`. Omit the subject to list the terms; `--codes` lists the whole vocabulary — every finding code and every refusal code it can answer, each row the same answer `explain <code> --json` gives for that one |
 | `loam open` | `--root <dir>` `--out <file>` `--force` | Write a `.code-workspace` joining the docs repo and every service checkout whose committed `loam.json` binds to it. Never overwrites without `--force` |
-| `loam mcp` | `--author` | Serve fifteen read tools, version-matched instruction resources and a declared envelope output schema over MCP. `--author` adds `new`, `rebase`, `gherkin` and an archive dry-run; it never exposes `vouch`, verification recording or a committing archive — [the MCP server](WORKFLOW.md#the-mcp-server) |
-| `loam new <FEAT>` | `--title <text>` `--touches <id>` `--new-service <id>` `--capability <id>` | Scaffold a feature: intent, C4 delta, a requirement delta per service named by `--touches`/`--new-service`, and a capability delta per promise named by `--capability` (all repeatable) |
+| `loam mcp` | `--author` | Serve sixteen read tools, version-matched instruction resources and a declared envelope output schema over MCP. `--author` adds `new`, `rebase`, `gherkin` and an archive dry-run; it never exposes `vouch`, verification recording or a committing archive — [the MCP server](WORKFLOW.md#the-mcp-server) |
+| `loam new <FEAT>` | `--title <text>` `--touches <id>` `--new-service <id>` `--capability <id>` `--modifies <Req-ID>` | Scaffold a feature: intent, C4 delta, a requirement delta per service named by `--touches`/`--new-service`, and a capability delta per promise named by `--capability` (all repeatable). `--modifies` copies a touched service's living requirement into an uncommented `## MODIFIED Requirements` block with its `Based-On:` pin already set, so a small change is new → edit → archive; when every touched service is rewritten that way and nothing is introduced, no `delta.likec4` is written |
 | `loam show <service\|FEAT>` | `--type <kind>` | Everything loam knows about one service or feature. A feature's JSON includes a semantic `review` pack: intent, exact architecture objects, API/event slices, dependencies, artifacts, verification, blockers and next actions. `--type` forces an ambiguous reading |
 | `loam subsystem <verb> [names...]` | `--into <name>` `--under <name>` `--title <text>` `--description <text>` `--owner <name>` | Manage the grouping tree under `services/` — a navigable tree no identity depends on. `new`/`rm`, `move … --into`, `rename`, `list`, `history`, `sync` |
-| `loam adopt` | `--service <id>` `--subsystem <name>` `--targets` | Brief an agent to write this service's baseline into the docs repo as `draft`: the target paths, the grammar of each, what the landscape already says — and, for an element no edge touches, the edges the service's own model.likec4 attests — and the checks that follow. Writes nothing. `--targets` narrows it to what varies by service — the walk, the 52 checks and the seventeen statements of what nothing checks are the same bytes everywhere, so a `full` field names the one run that carries them: 54,833 bytes to 20,062 on the example fleet's payment-service (measured 2026-09-04) |
+| `loam adopt` | `--service <id>` `--subsystem <name>` `--targets` | Brief an agent to write this service's baseline into the docs repo as `draft`: the target paths, the grammar of each, what the landscape already says — and, for an element no edge touches, the edges the service's own model.likec4 attests — and the checks that follow. Writes nothing. `--targets` narrows it to what varies by service — the walk, the 52 checks and the seventeen statements of what nothing checks are the same bytes everywhere, so a `full` field names the one run that carries them. Both sizes, for the example fleet's payment-service, are in the payload table of [docs/BENCHMARKS.md](https://github.com/ybotok/loam/blob/main/docs/BENCHMARKS.md#what-an-agent-is-handed--payload-sizes), which a test regenerates from the tree |
 | `loam delta <FEAT>` | `--service <id>` | Project a feature onto one service: the intent, its requirement deltas with every body and Given/When/Then line verbatim, the endpoints it adds or retires, and the edges around it. Doubles as a coding-agent task |
 | `loam tasks <FEAT>` | `--service <id>` `--next` | The same checklist `loam verify` grades, read forwards: one work unit per promise the feature makes, each carrying the step it waits on (`describe`, `generate`, `implement`, `attested`) and the fact that closes it — only a confirmed claim in a non-stale verification record retires one, and an attested scenario stays visible. Derived every run and writes nothing. `--service` is a pure lens that adds what this service is waiting on elsewhere; the frontier orders providers before consumers as advice, never a lock. The per-unit work packet, and `--next` is the single leaf packet an orchestrator hands a coding agent |
 | `loam gherkin [<FEAT>]` | `--service <id>` `--dry-run` | Emit spec scenarios as digest-stamped Gherkin `.feature` files into the service repo's `<gherkinDir>/loam/` |
@@ -436,7 +585,9 @@ repo it runs in, every `init` writes pointers for the six workflow bodies (`loam
 twenty-one targets**: as a command file you type — `/loam-check` for most, `/loam:check` where the
 tool namespaces by directory, `@loam-check` in Amazon Q's prompt library — and as an Agent Skill
 at `<tool-dir>/skills/loam-<x>/SKILL.md`, which the model loads by itself when the task matches. Two
-targets are skills only: Codex reads `.codex/skills/` and loads no custom command files, and
+targets are skills only: Codex loads no custom command files, and its target writes
+`.codex/skills/` — a root Codex still reads but no longer documents (its skills page names only
+`.agents/skills`; select `agents` too if you want the documented one) — and
 `agents` is not a tool at all but the vendor-neutral `.agents/skills/` root that Cursor, GitHub
 Copilot, Codex, Gemini CLI, Zed and Roo Code each document reading — one copy those six share
 instead of six copies of the same bytes. `--no-commands` and `--no-skills` each suppress one
@@ -476,8 +627,10 @@ the command cannot. Pointing at the binary is also what makes the protocol
 affordable to load: `loam instructions loam-check --no-fix-tables` prints the same page with its
 per-code fix tables collapsed to a line each — from a page that is almost all tables down to a few
 kilobytes — and `loam explain <code> --json` answers, one code at a time, whichever two or three of
-those rows a run actually reported. A copy frozen into the generated file would have charged the
-whole page every session, and gone stale doing it. `AGENTS.md` itself was the one generated file that argument did
+those rows a run actually reported. What each of those costs in bytes and tokens, page by page, is
+[docs/BENCHMARKS.md](https://github.com/ybotok/loam/blob/main/docs/BENCHMARKS.md)'s payload table,
+generated from the tree rather than typed. A copy frozen into the generated file would have charged
+the whole page every session, and gone stale doing it. `AGENTS.md` itself was the one generated file that argument did
 not reach — it was the process contract *and* the reference manual, and every session paid for all
 of it — so four **reference pages** now come out of the binary instead, printed by
 `loam instructions`: `loam-codes` (which codes each invocation can raise), `loam-spine` (every join
@@ -526,15 +679,21 @@ always preserved byte for byte, with the entry printed for manual merge.
 - [COMPARISON.md](COMPARISON.md) — where loam fits beside architecture-as-code tools, software and
   event catalogs, contract verification and diff engines, requirements traceability, and code-level
   architecture checks. Each is treated as a neighbouring specialist, not an opponent loam needs to
-  replace.
+  replace. One dated section sets out what the spec-driven change tools — OpenSpec, Spec Kit and
+  Kiro — each offer for a change that crosses repositories, what is still open upstream, and where
+  loam differs.
 - [MIGRATING-from-OpenSpec.md](MIGRATING-from-OpenSpec.md) — moving an OpenSpec repo onto loam: what
   maps, what is lost, what must be added.
 - [ROADMAP.md](ROADMAP.md) — the evidence-backed improvement plan, priorities, non-goals and exit
   criteria.
 - [CHANGELOG.md](CHANGELOG.md) — released beta.1–alpha.8 plus the changes on `main` under
   `[Unreleased]`.
+- [docs/SERVICE-TEAMS.md](https://github.com/ybotok/loam/blob/main/docs/SERVICE-TEAMS.md) — one
+  screen for a team whose repository is one service in the fleet: the commands, the slash
+  commands, what to know before vouching, and the codes they will actually meet.
 - [docs/BENCHMARKS.md](https://github.com/ybotok/loam/blob/main/docs/BENCHMARKS.md) — what a
-  fleet-sized run costs, with the method, the machine and the committed runs behind every number.
+  fleet-sized run costs, with the method, the machine and the committed runs behind every number,
+  and what each payload loam hands an agent weighs in bytes and tokens.
 
 ## Development
 
@@ -547,9 +706,9 @@ npm run arch:check          # package-level dependency graph stays acyclic
 npm test                   # vitest
 npm run test:coverage      # full src/**/*.ts coverage with enforced thresholds
 npm run test:package       # clean, pack, install the tarball, run its loam binary
-# optional, against the exact upstream checkout named in MIGRATING-from-OpenSpec.md (the
-# flag matters: --baseline defaults to canary, and the sweep refuses a checkout
-# at any other HEAD):
+# optional, against the exact upstream checkout named in MIGRATING-from-OpenSpec.md
+# (--baseline defaults to release, the certified pin; every pinned baseline refuses a
+# checkout at any other HEAD, and only --baseline latest sweeps an unpinned one):
 npm run test:openspec-corpus -- --baseline release /path/to/OpenSpec
 ```
 
@@ -567,7 +726,7 @@ authored-capability axes with the `Realizes:` join, use cases graded as `dynamic
 `architecture/obligations.yaml` architectural obligations checked through `#obl-` tags and
 `Covers:`. Known limits, each with its owner in [ROADMAP.md](ROADMAP.md): the scheduled CI
 `stability` job has still to be observed green. Speculative `render`, health composition and UI
-generation come later. Behind that status stand **182 test files** (counted 2026-10-10): the count is graded
+generation come later. Behind that status stand **185 test files** (counted 2026-10-11): the count is graded
 against a live readdir by `test/docs-facts.test.ts`, so this sentence fails the suite the moment it
 trails the tree.
 

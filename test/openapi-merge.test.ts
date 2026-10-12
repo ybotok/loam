@@ -36,6 +36,8 @@ paths:
     const result = mergeOpenapiPaths(LIVING, feature, "pets");
 
     expect(result.modified).toEqual(["'createPet' (post /pets)"]);
+    // The join key `loam archive` asks the consumer scan with, by label.
+    expect(result.modifiedOperationIds).toEqual(new Map([["'createPet' (post /pets)", "createPet"]]));
     expect(result.componentsModified).toEqual([]);
     expect(result.unresolved).toEqual([]);
     expect(result.text).not.toBeNull();
@@ -136,6 +138,7 @@ paths:
     expect(mergeOpenapiPaths(LIVING, "openapi: 3.1.0\ncomponents: {}\n", "pets")).toEqual({
       text: null,
       modified: [],
+      modifiedOperationIds: new Map(),
       pathItemModified: [],
       removed: [],
       quoted: [],
@@ -199,7 +202,7 @@ components:
   });
 
   it("grows a `components` section on a living contract that had none", () => {
-    // The components twin of the appended `paths:` block: `setComponentValue`
+    // The components twin of the appended `paths:` block: `setKeyed`
     // falls through to `setIn`, which has to create both levels, and the result
     // still has to parse.
     const noComponents = `openapi: 3.1.0

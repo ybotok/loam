@@ -42,6 +42,7 @@
 import { isUtf8 } from "node:buffer";
 import { createHash } from "node:crypto";
 import { inOrder } from "../kernel/concurrency.js";
+import { decodeDocument } from "../kernel/document-bytes.js";
 import { parseRequirements } from "../document/parse.js";
 import type { Requirement } from "../document/spec.js";
 import { openapiFromText, type Operation } from "../openapi/doc.js";
@@ -207,7 +208,12 @@ function classifyBaseDirs(paths: string[]): { dirs: BaseDir[]; ambiguous: Map<st
   return { dirs: accepted, ambiguous: collisions(accepted) };
 }
 
-function collisions(dirs: BaseDir[]): Map<string, string[]> {
+/**
+ * Ids claimed by more than one enumerated directory, with every claimant named
+ * — the base side's grouping and `./current-state.ts`'s, so the two sides of a
+ * diff refuse the same ambiguity the same way.
+ */
+export function collisions(dirs: readonly { id: string; dir: string }[]): Map<string, string[]> {
   const byId = new Map<string, string[]>();
   for (const d of dirs) byId.set(d.id, [...(byId.get(d.id) ?? []), d.dir]);
   return new Map([...byId].filter(([, claimants]) => claimants.length > 1));
@@ -231,20 +237,33 @@ function axisFrom<T>(raw: Fetched, parse: (path: string, bytes: Buffer) => AxisS
 }
 
 /**
- * The same refusal `readOpenapi`/`readAsyncapi`/`decodeDocument` make on the
- * living side: non-UTF-8 bytes would be silently rewritten as U+FFFD by
- * `toString`, and a document nobody wrote must not be graded.
+ * The same refusal `readOpenapi`/`readAsyncapi` make on the living side for a
+ * CONTRACT: non-UTF-8 bytes would be silently rewritten as U+FFFD by
+ * `toString`, and a document nobody wrote must not be graded. Contracts only:
+ * the spec axis decodes through `decodeDocument` instead (`specState`), because
+ * that is what its living side does, and each axis must refuse at the base
+ * exactly the bytes its living reader refuses.
  */
 function decodeBase(path: string, bytes: Buffer): { text: string } | { unreadable: AxisState<never> } {
   if (!isUtf8(bytes)) return { unreadable: { kind: "unreadable", path, error: "file is not valid UTF-8" } };
   return { text: bytes.toString("utf8") };
 }
 
+/**
+ * A spec-axis file decodes through `decodeDocument` — the rule the living side
+ * applies to the same file (`FleetContext.readText`) — not through
+ * `decodeBase`'s `isUtf8`-only test. The difference is the NUL test: UTF-16LE
+ * of ASCII saved WITHOUT a byte-order mark is a valid UTF-8 sequence, so
+ * `isUtf8` alone let it through here and it parsed as zero requirements while
+ * the working tree refused the identical bytes. The base then read as a
+ * readable EMPTY spec: an untouched file diffed as one-sided containment, and
+ * a branch that re-saved it as UTF-8 reported every requirement in it as
+ * added. `decodeDocument`'s `NotUtf8DocumentError` lands in the catch below
+ * and becomes the unreadable arm like any parse failure.
+ */
 function specState(path: string, bytes: Buffer): AxisState<Requirement[]> {
-  const decoded = decodeBase(path, bytes);
-  if ("unreadable" in decoded) return decoded.unreadable;
   try {
-    return { kind: "read", value: parseRequirements(decoded.text) };
+    return { kind: "read", value: parseRequirements(decodeDocument(bytes, path)) };
   } catch (e) {
     return { kind: "unreadable", path, error: e instanceof Error ? e.message : String(e) };
   }

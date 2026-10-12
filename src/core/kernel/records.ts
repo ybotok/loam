@@ -20,6 +20,18 @@ export function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 /**
+ * A list of strings. `Array.isArray` narrows an `unknown` to `any[]`, so an
+ * element check written below it proved nothing to tsc and the elements had to
+ * be asserted back to `string` at the point of use — how a checked element
+ * type went on being asserted back in a line later. Deciding both halves in
+ * one predicate makes the narrowing carry the check. (It was written twice,
+ * once in the OpenSpec scan and once in the migration's mapping reader.)
+ */
+export function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+/**
  * A map whose keys come from a document somebody else wrote.
  *
  * `Object.create(null)` rather than `{}` because a key read out of untrusted

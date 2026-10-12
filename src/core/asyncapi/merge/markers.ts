@@ -19,7 +19,7 @@
  * every section, and a strip that walked only the three sections shipped
  * both into a living contract, unseen even by validate's marker sweep.
  */
-import { isMap, isScalar, parseDocument, type Document, type Pair } from "yaml";
+import { isMap, isScalar, type Document, type Pair } from "yaml";
 // Every `isRecord` below asks one question of a resolved plain tree: is this a
 // node that can hold AsyncAPI keys — an object, not an array?
 import { isRecord } from "../../kernel/records.js";
@@ -29,22 +29,12 @@ import { isRecord } from "../../kernel/records.js";
 // rule (the openapi digest module's own failure mode).
 import { FEATURE_ONLY_KEYS, withoutFeatureKeysDeep } from "../../openapi/digest.js";
 import { ASYNCAPI_BASELINES_KEY, isSlotRemoval, type AsyncapiSection } from "../digest.js";
-import { errorMessage, AsyncapiMergeError, type AsyncapiMergeSource } from "./error.js";
+import { pairAt, setKeyed } from "../../openapi/merge/components.js";
+import { readTree, writeTree, type ContractTree } from "../../openapi/contract-tree.js";
+import { AsyncapiMergeError, asyncapiRefusal, type AsyncapiMergeSource } from "./error.js";
 
 /** The three slot sections, in document order — every whole-document walk here goes over them. */
 const SECTIONS: AsyncapiSection[] = ["channels", "operations", "components.messages"];
-
-/**
- * A slot's PUBLISHABLE value: every feature-only key removed, at any depth —
- * the top-level pin, a nested pin or marker on an inline channel message, and
- * anything an author buried deeper. What the merge writes and what the create
- * branch keeps; a removal-marker slot is never published at all (the merge
- * deletes its target, the strip drops it), so this is only ever asked of a
- * slot that survives.
- */
-export function withoutFeatureMarkers(node: unknown): unknown {
-  return withoutFeatureKeysDeep(node);
-}
 
 /**
  * The AST path of a section's own mapping — two levels deep for
@@ -55,11 +45,6 @@ export function withoutFeatureMarkers(node: unknown): unknown {
  */
 export function sectionAstPath(section: AsyncapiSection): string[] {
   return section === "components.messages" ? ["components", "messages"] : [section];
-}
-
-/** One mapping node's pair for a key, matched AS A STRING — `slotPair`'s find, reusable at any depth. */
-function pairAt(node: unknown, key: string): Pair | undefined {
-  return isMap(node) ? node.items.find((it) => isScalar(it.key) && String(it.key.value) === key) : undefined;
 }
 
 /** Delete one pair from a mapping node, string-key-matched. Returns whether a pair actually went. */
@@ -77,20 +62,18 @@ function deleteKeyIn(node: unknown, key: string): boolean {
  * with the string "404" misses it and APPENDS a second pair — the living
  * contract then declares the slot twice, forever, with the pre-merge copy
  * first in reading order. The openapi component write's lesson, applied to
- * every slot access on this axis: the merge's writers below go through it,
- * and so does the pin (./pin.ts), whose raw `getIn` used to grade every
- * non-string-keyed slot `unwritable` with an alias diagnosis nothing in the
- * document backed.
+ * every slot access on this axis: the merge's writers below go through the
+ * same string-matched find (`pairAt`, under `setKeyed`), and so does the pin
+ * (./pin.ts), whose raw `getIn` used to grade every non-string-keyed slot
+ * `unwritable` with an alias diagnosis nothing in the document backed.
  */
 export function slotPair(doc: Document, section: AsyncapiSection, key: string): Pair | undefined {
   return pairAt(doc.getIn(sectionAstPath(section)), key);
 }
 
-/** Write one slot's value, string-key-matched — the merge's one upsert door. */
+/** Write one slot's value through `setKeyed`, string-key-matched — the merge's one upsert door. */
 export function setSlotValue(doc: Document, section: AsyncapiSection, key: string, value: unknown): void {
-  const existing = slotPair(doc, section, key);
-  if (existing !== undefined) existing.value = doc.createNode(value);
-  else doc.setIn([...sectionAstPath(section), key], value);
+  setKeyed(doc, sectionAstPath(section), key, value);
 }
 
 /**
@@ -181,6 +164,18 @@ export function refuseAmbiguousSlotKeys(doc: Document, source: AsyncapiMergeSour
 }
 
 /**
+ * Read one side of an event contract the way every entry point that walks
+ * slots must — the shared `readTree`, with the ambiguous-key refusal above run
+ * on the AST before the aliases resolve. Two pairs whose keys stringify
+ * identically (404 and "404") would make the resolved walk and the
+ * string-matched writers disagree about which node a slot names, so it is
+ * refused on either side, before any verdict is taken.
+ */
+export function readEventTree(text: string, source: AsyncapiMergeSource, service: string): ContractTree {
+  return readTree(text, asyncapiRefusal(source, service), (doc) => refuseAmbiguousSlotKeys(doc, source, service));
+}
+
+/**
  * Remove feature-only markers — removal-marker slots, the pins on the slots
  * that survive, and both loam keys at every nested depth of the whole
  * document — before a feature contract is used to create a brand-new living
@@ -198,19 +193,9 @@ export function refuseAmbiguousSlotKeys(doc: Document, source: AsyncapiMergeSour
  * discipline, per section.
  */
 export function stripAsyncapiMarkers(featureText: string, service: string): string {
-  const feature = parseDocument(featureText);
-  if (feature.errors.length > 0) {
-    throw new AsyncapiMergeError("feature", service, feature.errors[0]!.message);
-  }
-  refuseAmbiguousSlotKeys(feature, "feature", service);
-  let plain: unknown;
-  try {
-    // Resolve aliases once with the document's own anchor context — an
-    // individual node's toJSON() loses it (the openapi merge's lesson).
-    plain = feature.toJS() ?? {};
-  } catch (error) {
-    throw new AsyncapiMergeError("feature", service, errorMessage(error));
-  }
+  // Aliases resolved once with the document's own anchor context — an
+  // individual node's toJSON() loses it (the openapi merge's lesson).
+  const { doc: feature, plain } = readEventTree(featureText, "feature", service);
 
   let stripped = false;
   for (const section of SECTIONS) {
@@ -273,11 +258,7 @@ export function stripAsyncapiMarkers(featureText: string, service: string): stri
   }
 
   if (!stripped) return featureText;
-  try {
-    return feature.toString();
-  } catch (error) {
-    throw new AsyncapiMergeError("feature", service, errorMessage(error));
-  }
+  return writeTree(feature, asyncapiRefusal("feature", service));
 }
 
 /**

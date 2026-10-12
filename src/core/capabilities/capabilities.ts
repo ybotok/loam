@@ -98,7 +98,7 @@ const EMPTY: CapabilityVocabulary = { present: false, byId: new Map(), tree: NO_
  * and a declaration whose body is not a mapping is treated as `{}` rather than
  * refusing the whole file over one leaf.
  */
-export async function readCapabilities(path: string): Promise<CapabilityVocabulary> {
+async function readCapabilities(path: string): Promise<CapabilityVocabulary> {
   if (!existsSync(path)) return EMPTY;
   let doc: unknown;
   try {
@@ -132,11 +132,11 @@ export async function readCapabilities(path: string): Promise<CapabilityVocabula
  * THE vocabulary — both sides read and merged, and the only shape a grader
  * should ever be handed.
  *
- * `readCapabilities` above stays exported for the one reader that genuinely
- * means the file alone (its own tests), but nothing that grades a fleet may use
- * it: a `Capability:` line naming an id the tree declares and the YAML does not
- * would resolve through the union and fail through the file, so a second
- * spelling of "the vocabulary" is a second answer to `capability.unknown`.
+ * `readCapabilities` above is the file alone, and it is private to this
+ * module because nothing that grades a fleet may use it: a `Capability:` line
+ * naming an id the tree declares and the YAML does not would resolve through
+ * the union and fail through the file, so a second spelling of "the
+ * vocabulary" is a second answer to `capability.unknown`.
  *
  * WHERE AN ID SITS ON BOTH SIDES THE YAML'S METADATA SURVIVES, and not by
  * precedence — the document has nothing to overwrite it with. `description` and

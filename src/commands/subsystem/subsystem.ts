@@ -14,8 +14,7 @@
  * that did not happen.
  */
 import type { Command } from "commander";
-import { loadConfig } from "../../core/envelope/config.js";
-import { fail, reportNoConfig } from "../../core/envelope/json.js";
+import { configOrRefuse, fail } from "../../core/envelope/json.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { docsRepoReady, reportDocsRepoError } from "../policy/gate.js";
 import { runNew, runRm } from "./edit.js";
@@ -90,12 +89,9 @@ export function registerSubsystem(program: Command): void {
         fail(json, "invalid-option", misuse);
         return;
       }
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const { docsDir } = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
+      const { docsDir } = config;
       // "services": every verb reads or rewrites the tree that IS the fleet,
       // so a docsDir with no services/ is a refusal, never an empty answer.
       if (!docsRepoReady(json, docsDir, "services")) return;

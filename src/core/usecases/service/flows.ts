@@ -55,12 +55,15 @@
  *     (`core/usecases/place.ts` records the rule) and an extending model's carry
  *     their docs-relative path, so the file is spelled here, where it is known,
  *     for both: `model.likec4`;
- *  2. siblings, no tagged view in the model, and no reserved prefix in any
- *     document (`mentionsTagPrefix`, the fleet's own byte gate) → nothing opted
- *     in, no workspace. An untagged `views.likec4` is somebody's hand-drawn
- *     diagram, never graded, exactly as an untagged fleet view is — and its
- *     parse errors are the renderer's business until a view opts the project
- *     in;
+ *  2. siblings, no tagged view in the model, and no reserved tag REFERENCED in
+ *     any document — a `#` then `cap-`, `req-` or `suite-` (`mentionsTagPrefix`,
+ *     the fleet's own byte gate) → nothing opted in, no workspace. An untagged
+ *     `views.likec4` is somebody's hand-drawn diagram, never graded, exactly as
+ *     an untagged fleet view is — and its parse errors are the renderer's
+ *     business until a view opts the project in. That includes one whose prose
+ *     names a prefix without the `#` (a title about an e2e-suite job): the gate
+ *     used to open on the bare substring, and such a sibling that did not parse
+ *     became `usecase.flow-invalid` over a diagram that opted nothing in;
  *  3. otherwise `loadProject` over model + siblings, the way the renderer reads
  *     them. `own` and the project's views are never merged: when siblings
  *     exist the project is the whole answer, which is what keeps one view from
@@ -130,8 +133,9 @@ export interface ServiceFlowRequest {
  * true }` is one `.length` check away from reporting a service as flow-free
  * when nobody could read it. `none` is the gate's answer — nothing opted in,
  * nothing was loaded — and it is distinct from `read` with no views (a project
- * that mentions a prefix in prose and declares no tagged view), because only
- * the second one cost a workspace.
+ * that writes a reserved tag reference only outside a view — in a comment, or
+ * on an element — and so declares no tagged view), because only the second one
+ * cost a workspace.
  */
 export type ServiceFlowScan =
   | { kind: "none" }

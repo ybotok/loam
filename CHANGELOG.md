@@ -10,6 +10,419 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Changed — `loam archive` refuses a delta that would bring back an operation another feature retired
+
+Two codes, both added to the `IssueCode` union, and one additive `--json` key were added.
+
+- **New `openapi.op-revived` (warn, gates archive).** A feature's `openapi.yaml` spells an
+  operation (by operationId) that its service's living contract no longer holds, and an ARCHIVED
+  feature retired it with an `x-loam-remove: true` marker — any archived feature, including one
+  whose directory carries the same feature id as the one being graded. Before this, the
+  quote read as an addition: a delta that had only quoted `createOrderV1` archived after the
+  feature retiring it and put it back into the living contract at exit 0, with the advisory
+  `api.op-unconsumed` the only finding. The message names the operation, the retiring feature(s)
+  and both remedies — delete the quote if it only restated the operation; archive with `--approve`
+  if the feature brings it back on purpose.
+- **New `asyncapi.slot-revived` (warn, gates archive)** — the same on the event axis: a `channels`
+  or `operations` slot by its key, or a message by its name, that an archived feature retired. A
+  channel-slot removal's inline messages are named from that feature's `.loam-before/` snapshot
+  pre-image, read only while it still hashes to the digest its manifest recorded.
+- **Both codes also cover an address an archived feature VACATED.** An archived feature that
+  relocated an operation (a marker on the old slot, the same operationId defined at a new one)
+  vacated the old address — and so did one that retired it there, once a later feature re-added it
+  somewhere else. A later delta quoting the operation at that address — unpinned — archived at
+  exit 0 and put the id back beside where it lives, one operationId at two slots (only the
+  advisory `openapi.duplicate-operationid` said so afterwards): the slot-keyed baseline gate saw
+  nothing living at the slot, and the id-keyed check saw the id living. That quote is now
+  `openapi.op-revived` too. Both codes are judged on the contract the archive would write: the
+  check runs the archive's own merge of the delta over the living contract and compares where each
+  operationId (each message name) stands there with where it stands now. One the merged contract
+  answers at two or more addresses — one of them new, and vacated by an archived feature — is the
+  finding; one the living contract still holds that it answers at exactly one address is not,
+  whether the delta moves it back with its own removal marker where it lives now or swaps another
+  operation in there (with or without an operationId — the merge replaces what stands at that
+  method and path). A removal marker standing where the id does not live deletes nothing, so it
+  no longer excuses the quote. The message says which archived feature moved the operation and
+  where to, or retired it there, and — apart from
+  that, since anything landed after can have moved it again — where it lives now; its remedy names
+  the address to drop: delete the quote, or, to move it back on purpose, add a removal marker
+  where it lives now — and where the delta already spells that address, so no marker can be
+  written there, archive with `--approve` instead. Where another operation lives at the quoted
+  address now (on the event axis, another message is declared at the quoted key), the message
+  names it and says archiving replaces it there — the merge writes one entry per address —
+  instead of calling the address one the living contract no longer has, and the move-back remedy
+  says to define it at another address (key) in the same delta if it is to stay: followed as it
+  read before, the remedy reached a clean gate and an archive that deleted the other operation
+  with nothing naming it. The retired-shape message names such an entry too. A quote of an
+  address an archived feature moved the operation away from is the finding even where the living
+  contract holds the operation nowhere (taken out of its new address by a hand edit, which leaves
+  no marker): the move is on the record, and the message reads as a retirement brought back,
+  naming the move. On the event axis the vacated addresses are `components.messages` keys (a
+  marker there) and the inline declarations a channel removal took; a delta that restates the
+  channel a name stands inline in with a `$ref`, or retires it, takes the name out of there and
+  is not graded. For an inline declaration the remedy names the channel (restate it with a
+  `$ref`, or retire it), never a marker nested on the inline message, which retires nothing. For
+  a `components.messages` key the remedy also names every channel (or operation) of the merged
+  contract still `$ref`-ing that key, to restate with the `$ref` pointed at the quoted key: told
+  only to retire the key, an author left the channel pointing at nothing, and its send stopped
+  sending the message — `asyncapi.remove-message-consumed`, which gates. `asyncapi.baseline-invalid`'s
+  move-back remedy says the same. A channel or operation slot is its key, so a "moved" one is a
+  retirement, as before. A message inline under a channel the delta brings back is reported by
+  the channel's finding alone only while the merged contract declares the name nowhere else; where
+  an archived feature re-declared it under `components` as it retired the channel, the inline
+  declaration is a finding of its own (one message name in two places) — it was skipped, and
+  `--approve` archived `asyncapi.duplicate-message`.
+- **Exit code: `loam archive` now exits 1 (`not-coherent`) on this shape** without `--approve`;
+  with `--approve` it merges as before, and the operation lands in `overridden[]` and the text
+  output's "archiving despite" list, naming what came back and whose retirement it reverses.
+  `loam validate --feature` and `--all` report both codes as warnings: exit unchanged, except
+  under `--strict`, which fails on any warning and so now exits 1 on this shape. `loam status`
+  counts them as gating like every warning that gates, and `loam show <FEAT> --json` reports
+  `review.readyToArchive: false` for such a feature until the quote is deleted (or the feature is
+  archived past it with `--approve`).
+- **`loam rebase` no longer calls a retired operation one "this feature is adding".** It pins
+  nothing for it either way, and now prints the same finding after its pin lines; the additive
+  `--json` key `revived[]` carries the findings (`severity`, `code`, `gates`, `subject`,
+  `message`). The operation's `pins[]` row still reads `unresolved`. The check runs over the
+  delta as rebase will write it, pins included, under `--dry-run` too: a quote pinned to its
+  own content is skipped by the merge, and repinned over another operation that now lives at an
+  address an archived feature moved it away from it becomes an edit that would put it back
+  there — that finding is in `revived[]` as well, and its `pins[]` row reads `repinned`. The
+  text output's revival banner no longer says "nothing was pinned" for such items.
+- **`openapi.baseline-invalid` and `asyncapi.baseline-invalid` reworded** for a pin whose living
+  operation or slot is gone: they used to say "drop the marker", which turned the quote into the
+  revival above. They now say to re-read the living contract and delete the quote unless the
+  feature deliberately brings it back. When the living contract still holds the operationId (or,
+  for a `components.messages` key, the message name) elsewhere, the message instead says a
+  parallel feature MOVED it there (or retired it here, and another re-added it there) and where it
+  lives now, and to make any change there — never to archive past the revival finding, which would
+  answer it at both addresses. The `/loam-check` rows and `loam explain` say the same. `loam
+  rebase`'s text says such items were retired by an archived feature "or moved to another address
+  by one".
+- **What it reads, and what it cannot see.** Only files under `features/archive/` — the archived
+  deltas' removal markers and each feature's `.loam-before/` snapshot; no git. A marker counts only
+  if the merge carried it out: the snapshot's pre-image must hold the marker's operationId at its
+  method and path (an event marker: its channel or operation key, or its message name at its
+  `components.messages` key), and a contract the archive created or never wrote lost nothing. A
+  marker archived past `openapi.remove-target-missing` / `-mismatch` (or the `asyncapi.*` twins)
+  under `--approve` deleted nothing, so a genuinely new operation it happened to name is not a
+  revival. A feature with no intact snapshot cannot be checked, and its markers count as written.
+  A removal made by hand-editing a living contract, or an archived feature deleted from disk,
+  leaves nothing to read, and a quote of such an operation still grades as an addition. A marker
+  with no `operationId` or one written at path level retired nothing when its feature archived, so
+  it is never named as the retirer.
+
+### Added — `#suite-<name>` tags and `loam list suites`: which services a test suite needs up
+
+No code was added. One reserved tag prefix, one list section and one positional argument were.
+
+- **A `dynamic view` may carry `#suite-<name>` tags** to say which test suites the journey runs in —
+  a separate prefix from `#cap-`, many-to-many (one view may carry several), each declared as
+  `tag suite-<name>` in the landscape's `specification` block like every LikeC4 tag, so a mistyped
+  suite is a parse error.
+- **A view carrying only `#suite-` tags is now a use case.** The one opt-in predicate takes three
+  prefixes (`cap-`, `req-`, `suite-`), and so does the byte scan that lets a fleet with no use cases
+  skip the LikeC4 load. Such a view's hops are graded by `loam validate` like any other use case's
+  (`usecase.step-unbacked`, `usecase.step-contested`, `usecase.step-unlinked` — at fleet scope, and
+  per service for a flow beside a service's model), and every reader that names use cases sees it:
+  `loam diff`'s removed-operation victims, `loam delta` and `loam status`'s use-case blast radius,
+  and the context packs. A view that already carried `#cap-` or `#req-` is unaffected, and an
+  untagged view is still never graded. On a fleet that had drawn `#suite-`-tagged views before this
+  release, those views can now earn findings.
+- **New section `loam list suites [<name>] [--json]`** — the answer to "which services must be up
+  for suite X". `[section]` accepts `suites`, and a new optional positional `[name]` narrows the
+  listing to one suite. Additive `--json` keys, emitted only with this section: `suites[]` (`name`,
+  `views[]` of `{id, file}`, `services[]` — enumerated service ids, sorted — and `unresolved[]` of
+  `{element, external}`: the participants that resolve to no service, `external` true when the
+  element or anything it is drawn inside carries `#external`, the walk stopping at the first
+  element bound to or titled for a service as `loam gate`'s partner reading does), `ungrouped[]` (`{id, file}` of every
+  use case carrying no `#suite-` tag, never narrowed by `[name]`), and `useCases` (`state`:
+  `absent` | `ok` | `unreadable`, beside `unreadable` and, when unreadable, `error`, spelled as
+  `loam list capabilities` spells them). Over an `architecture/` that does not parse the section
+  degrades instead of refusing, and `suites` / `ungrouped` are absent rather than `[]`. Only the
+  fleet map's use cases are listed. The text view prints one block per suite — its services, the
+  unresolved participants marked `!`, its use cases — then the use cases in no suite.
+- **Refusals use existing codes.** An unknown suite name is `unknown-target` with close names; a
+  `[name]` after any other section, and `--needs-work` with `suites`, are `invalid-option` (a name
+  after another section used to be commander's "too many arguments", also `invalid-option` under
+  `--json`). The campaign flags (`--subsystem`, `--owners`) refuse `suites` as they refuse every
+  section but `services`.
+- The MCP tool `loam_list` gains the matching optional `name` argument, and its `section`
+  description now lists `glossary` and `suites`. `name` without `section` is refused as invalid
+  params (`-32602`) rather than read as a section.
+- `examples/docs` tags its one use case `#suite-smoke` and `#suite-notifications`, so
+  `loam list suites` there answers checkout-web, notification-service and order-service, with
+  `customer` and the `#external` topic `kafka.orderEvents` named as unresolved.
+
+### Changed — the use-case byte scan opens on a `#` tag reference, not on a bare prefix
+
+No code, flag or payload key was added, changed or retired.
+
+- **loam starts LikeC4 for use cases only when a document references a reserved tag.** The scan in
+  front of every reader of the fleet's use cases, and of a service's own flows, used to open on the
+  bare text `cap-`, `req-` or `suite-` anywhere in a file. It now opens on `#cap-`, `#req-` or
+  `#suite-`, with only whitespace, line breaks or comments between the `#` and the name, as LikeC4
+  allows. That is the only way a view carries a tag, so no use case is missed.
+- **A broken `.likec4` beside a service's model that names a prefix only in prose no longer fails
+  the service.** In `0.2.0-alpha.8`, a file with no tagged view that mentioned `cap-` or `req-`
+  anywhere — a title, a comment — was loaded, and if it did not parse, `validate --service` (and
+  `--all`, per service) reported `usecase.flow-invalid`, an error, exit 1. This release's `suite-`
+  prefix would have added a third such substring (an id like `test-suite-runner`). Now the file is
+  skipped, like any untagged diagram.
+- **The same holds at fleet scope.** Suppose `architecture/` does not parse, carries no tagged view,
+  and only declares `tag cap-…` / `tag req-…` or names a prefix in prose. It now reads as declaring
+  no use case. `useCases.unreadable` is then `false` where it used to be `true` in
+  `loam status --json`, `loam delta --json` and `loam list capabilities --json`, and so is
+  `useCaseScan.unreadable` in `loam context --json`. `validate --all` still reports that map as
+  `landscape.invalid`.
+- A `#` followed by a reserved prefix still opens the scan wherever it is written, a comment
+  included.
+
+### Changed — `loam-feature` asks whether a feature is owed, and analyzes before it pins
+
+No code, flag or payload key was added, changed or retired. What changes is the protocol text an
+agent is handed, the `intent.md` a new feature starts from (and which of its text `intent.empty`
+counts), and what the documentation says a feature's contract delta holds.
+
+- **`loam instructions loam-feature` opens with a step 0.** A change that touches no requirement,
+  operation or fleet edge — a refactor, a dependency bump, a fix back to behaviour the living spec
+  already documents — needs no feature: a code PR, then `loam validate --service <id>` and
+  `loam vouch --pack --service <id>` in the service repo, and a person's vouch. WORKFLOW.md's "The
+  honestly-small change" now opens with the same lane.
+- **A new, ungraded step 4b, "Analyze before you pin", sits between authoring and `loam rebase`.**
+  The agent reads `loam show <FEAT> --json`, `loam context <service> --feature <FEAT> --json` and the
+  `explore` neighbours, then writes questions under `## Open questions` in `intent.md`: ambiguous
+  SHALLs, values, limits and windows two services state differently (and which side refuses),
+  `Realizes:` lines that do not deliver their capability, each edge's timeout, retry, partial
+  failure and compensation, and neighbours left out of `--touches`. A person answers by editing the
+  file. `loam-implement` sends an ambiguity it meets to the same section.
+- **`loam new` scaffolds an optional `## Open questions` heading in `intent.md`**, over a comment
+  only. **`intent.empty` now reads past that section:** questions an agent writes there are not the
+  feature's Why, so an intent whose only prose is open questions still gates the archive. The generated `loam-feature` command and skill pointers
+  list both new steps in their spine; an unedited pointer refreshes on the next `loam init`.
+- **A feature's `openapi.yaml` / `asyncapi.yaml` is documented as holding only what the feature
+  adds, changes or removes.** SCHEMA.md, WORKFLOW.md, the `loam-spine` and `loam-feature` pages,
+  the `spec.md` scaffold's comment and the example deltas taught "a complete document, not a
+  patch". The merge never needed one: it walks only the paths, methods and slots a delta spells, a
+  local `$ref` resolves into the living contract, and an add-only delta needs no `loam rebase`.
+  Each needless quote is one more pin and, once a parallel feature removes the quoted operation,
+  either a blocking `openapi.baseline-invalid` (pinned) or an archive that puts the retired operation
+  back (unpinned); `loam-check`'s fix for the first now says to delete the quote. The
+  `loam-spine` page also no longer says path-level keys and components go unpinned —
+  `x-loam-baselines` covers them.
+- **WORKFLOW.md gains "Build on the envelope":** a tracker export from `loam tasks <FEAT> --json`
+  keyed on unit ids (and what rewording re-keys one), a rollup of the per-service CI summaries
+  that reads a missing or old report as unknown, and `npx likec4 mcp` beside `loam mcp` on the same
+  docs repo.
+- **The `loam-codes` page points at AGENTS.md's "Reference pages — fetch when needed" section** —
+  it named a "The reference pages" section that does not exist — and lists `loam-report` among the
+  pages `loam instructions` prints.
+
+### Added — `loam new --modifies <Req-ID>`: a small change is new → edit → archive
+
+- **New repeatable flag `--modifies <Req-ID>` on `loam new`.** Each value names a living
+  requirement, by its `Requirement-ID:`, in a service the feature `--touches`. The scaffold copies
+  that requirement into the service's delta, uncommented, under `## MODIFIED Requirements`, with
+  its `Based-On:` pin already set. It is the same pin `loam rebase` writes, so a rebase right after
+  reports it `unchanged`, and the living text moving before archive is still `delta.baseline-stale`.
+  An `arch.spec.md` requirement lands in a scaffolded `specs/<svc>/arch.spec.md`. Before this, the
+  author copied the requirement by hand and ran `loam rebase` to pin it.
+- **When every touched service has a `--modifies` and no `--new-service` or `--capability` is
+  given, no `delta.likec4` is written.** A feature that only rewrites requirements changes no
+  architecture, and the scaffold already told authors to delete the file in that case. `created`
+  in `--json` simply omits it. Any other combination scaffolds `delta.likec4` as before.
+- **Refusals use existing codes.** An id that no touched service's living spec carries is
+  `unknown-target`. The message names the close ids in those specs, or the untouched service that
+  does carry the id (`add --touches <svc>`). A value that is not a Requirement-ID, or an id two
+  touched documents both carry, is `invalid-option`. A living spec loam cannot decode is
+  `merge-failed`, as `loam rebase` refuses it. Every refusal writes nothing.
+- The opt-in MCP author tool `loam_new` gains the matching `modifies` argument. No code or payload
+  key was added.
+
+### Added — `loam_adopt`: the adopt brief on the MCP server
+
+- **`loam mcp` serves a sixteenth read tool, `loam_adopt`**, mirroring `loam adopt [--service <id>]
+  [--subsystem <name>] [--targets] --json` (JSON arguments `service`, `subsystem`, `targets`). Its
+  result is the CLI's `adopt` envelope, verbatim. It is advertised `readOnlyHint: true` like every
+  base tool, because `adopt` writes nothing: it hands the agent the brief, and the agent writes the
+  baseline. Until now an MCP-only host could fetch the loam-adopt protocol through
+  `loam_instructions` and could not run its first step, `loam adopt --service <id> --json`. No
+  code, flag or payload key was added to the CLI; `tools/list` returns one more tool.
+
+### Changed — `loam init --create` with no service prints the docs repo's first hour
+
+- **A run that creates a docs repo and binds no service now ends with `next — the docs repo's first
+  hour:`**: `loam seed --from fleet.yaml` (or draw the map by hand), `loam init --docs <docs-repo>
+  --service <id> --agent-profile service` in each service's own repo, `loam adopt --service <id>
+  --json` there, and `loam status`. It used to print nothing after the scaffold list. These are
+  WORKFLOW.md's Day zero steps and the rungs `loam status` already names on an empty fleet. A run
+  that binds a service still prints the single-repo trial's hour, and a join still prints neither.
+  Human output only: no code, flag or payload key was added, and the `--json` envelope is unchanged
+  for both variants.
+
+### Changed — every service bind loam prints names `--agent-profile service`
+
+No code, flag or payload key was added, changed or retired. What changes is printed text and one
+`--json` value.
+
+- **The bind command now reads `loam init --docs <path> --service <id> --agent-profile service`**
+  in `loam status`'s `next.bind-service` step, its `loam explain` entry, the docs repo's first hour,
+  the generated AGENTS.md (`## The cycle`, step 0), and the `loam-adopt` and `loam-implement`
+  protocols. README, QUICKSTART and docs/SERVICE-TEAMS.md already told a fleet to bind each service
+  checkout this way, because `--agent-profile` defaults to `full`, and `full` writes `loam-feature`
+  and `loam-ship` into the service repo. But every bind command loam printed left the flag out, and
+  an agent runs the command loam prints. WORKFLOW.md's Day zero step 3 now spells it too.
+- **`next.bind-service`'s `command` in `status --json` `next[]` carries the new text.** Its
+  `execution` block still names the same two placeholders.
+- **Two binds keep their old form on purpose.**
+  - `loam-adopt` names the single-repo trial (`--create`, used only when the docs repo does not
+    exist yet) as the one bind that keeps the full profile.
+  - `doctor.service-unbound`'s fix is a re-run in a checkout that is already wired. An omitted
+    `--agent-profile` there keeps the profile that checkout recorded.
+
+### Changed — the OpenSpec compatibility pin moves to v1.14.1, and a weekly canary watches the newest release
+
+No code, CLI flag or payload key was added, changed or retired. The `audit-openspec` /
+`migrate-openspec` payload shape is unchanged, but the value it reports as the certified release moves.
+
+- **`audit-openspec` and `migrate-openspec` now report OpenSpec v1.14.1 as the certified release.**
+  The banner line and `baselines.release` under `--json` carry `1.14.1` / `v1.14.1` /
+  `87c3595ace6a2e22957f39ebe5b74c2f2316e0cb` (released 2026-10-05) instead of `1.9.0` / `2826b88`.
+  `baselines.mainCanary` is unchanged. The corpus gate's `--baseline release` is now the v1.14.1
+  corpus: 223 Markdown files, 765 requirements and 2475 scenarios, every file round-tripped. v1.9.0
+  stays as the new `--baseline previous` regression pin beside `legacy` (v1.7.0) and `canary`, and
+  the scheduled `ci.yml` matrix runs all four. The sweep found no parser gap. The grammar OpenSpec
+  1.13 added — a closing `#` run, `*`/`+` bullets on `REMOVED` and `RENAMED`, repeated delta
+  sections — was already read by the migration, and a new test pins the repeated sections.
+  `audit-openspec` and `migrate-openspec --apply`, run on OpenSpec's own v1.14.1 workspace, staged
+  all 251 living requirements and 747 scenarios across 36 services. The seven vendored fixtures stay
+  at v1.9.0, since v1.14.1 has no shape they lack. MIGRATING-from-OpenSpec.md's version matrix
+  records all of this.
+- **The corpus sweep reads each file through the migration's own reader.** That reader is the one
+  `audit-openspec` and `--apply` use: loam's parser plus the grammar only OpenSpec accepts. The
+  sweep used to read with loam's parser alone. Every pinned corpus gives the same totals either way.
+- **A new scheduled workflow, `.github/workflows/openspec-canary.yml`, watches the newest OpenSpec
+  release.** It runs weekly and on manual dispatch. It resolves the newest `vX.Y.Z` tag with
+  `git ls-remote` and sweeps it with the new `--baseline latest` mode of `npm run
+  test:openspec-corpus`. That mode reports how the totals moved from the certified pin instead of
+  refusing an unpinned commit, and still fails on a file that does not round-trip. The workflow also
+  audits OpenSpec's own workspace and diffs upstream's parser sources against the pin, in its step
+  summary. It has no push or pull-request trigger and blocks nothing; CONTRIBUTING.md's "The
+  OpenSpec canary" is the runbook. The README's note that `--baseline` defaults to `canary` was
+  wrong — it defaults to `release` — and now says so.
+
+### Added — documentation: running loam where service work runs, a CLI-only first ten minutes, and what loam costs an agent
+
+No code, flag, command or payload key was added, changed or retired; the binary is unchanged. The
+new paths are `docs/SERVICE-TEAMS.md` and `scripts/payload-sizes.ts`.
+
+- **README has a service-repo CI recipe** beside the docs repo's fleet-edges one. The workflow
+  checks out the service and the docs repo as sibling subdirectories of the workspace, so a
+  committed relative `docsDir` such as `../docs` resolves. It does not use `path: ../docs`, which
+  `actions/checkout` refuses. It runs `loam validate --service <id> --json` at the same pinned
+  version, and two `jq` programs turn the findings, or a refusal, into `::error` / `::warning`
+  annotations and a `$GITHUB_STEP_SUMMARY` table. A deploy pipeline can add
+  `loam gate --service <id> --since <ref>`. It is followed by setup for cloud agents in a service
+  repo: a `copilot-setup-steps.yml` and a Codex environment setup script, each cloning the docs
+  repo into the committed `docsDir` with a read token from a secret.
+- **README's day-zero binding passes `--agent-profile service`**, and says why: the profile
+  defaults to `full`, which puts `loam-feature` and `loam-ship` into every service checkout.
+  QUICKSTART's command for joining a shared docs repo passes it too.
+- **QUICKSTART opens with ten minutes of CLI only.** A two-service `fleet.yaml`, `loam seed`, one
+  provider `openapi.yaml` and one misspelled `op` on an edge give `spine.op-undefined`, with no
+  agent and no adoption. A requirements-only `loam new --touches … --touches …` then validates and
+  plans its archive before either service is adopted. Every output shown was produced by running
+  the commands. The single-project path moves to sections 3–6.
+- **`docs/SERVICE-TEAMS.md`, one screen for a team whose repository is one service in a fleet:**
+  four commands, five slash commands, what a person signs when they vouch, and the fifteen codes
+  they will actually meet. README, QUICKSTART and the Docs list link to it.
+- **COMPARISON.md names OpenSpec, Spec Kit and Kiro again, in one dated section.** "Spec-driven
+  change tools, as of October 2026" sets out what each offers for a change that crosses
+  repositories: OpenSpec Stores and worksets, `show --diff` and the Cloud Agent; Spec Kit's
+  contract-driven guide, `/speckit.converge` and MCP server; Kiro's Design-First specs and Kiro
+  Web. It records what is still open upstream (OpenSpec #725, Spec Kit #4583) and where loam
+  differs, including the two gaps it has against them. Each claim links its source. The rest of
+  the page stays an ecosystem map, and `test/docs-drift.test.ts` now allows the three names only
+  inside that dated section.
+- **`docs/BENCHMARKS.md` has a table of agent-facing payload sizes**, in bytes and ~tokens:
+  the generated `AGENTS.md`, `loam adopt --service <id> --json` with and without `--targets`,
+  every `loam instructions` page with and without `--no-fix-tables`, and `loam explain <code>
+  --json` across the whole vocabulary. `npx tsx scripts/payload-sizes.ts --write` generates it from
+  the tree, and `test/docs-facts.test.ts` regenerates it and fails when the committed table
+  differs. README's adopt row now points at that table instead of quoting a dated figure.
+  `test/docs-drift.test.ts` now also requires every exact `@ybotok/loam@<version>` in README to be
+  this checkout's version.
+
+### Changed — `loam archive`'s overwrite warnings name the current consumers
+
+No code or flag was added. Existing warnings now fill a payload key that was always empty.
+
+- **`openapi.op-modified` and `asyncapi.message-modified` now say who the overwrite affects.**
+  Each message ends with one of three phrases: `N current consumer(s) still name it`,
+  `whether current consumers name it could not be fully answered`, or
+  `no current consumer names it`. The warning's `details` (until now always `[]`) list the
+  consumers, in `archive --json` `warnings[]` and, when the contract merge is refused as
+  `not-coherent`, in the same warning's entry in `issues[]`:
+  - landscape edges;
+  - other services' living requirements;
+  - use-case hops;
+  - and last, any consumer whose documents could not be read, or any caller drawn without an
+    `op`.
+
+  The human plan prints the same lines under the warning. This is the scan `loam diff` runs for
+  `diff.op-modified` and `diff.message-modified`. Here it runs over the living fleet as it stands
+  before the merge, and only when one of these warnings fires. On the 120-service benchmark fleet
+  that costs about 130 ms. Severity is unchanged, and neither warning gates the archive. Whether a
+  change breaks a consumer is still not graded (`oasdiff breaking` / `asyncapi diff` do that).
+- `openapi.component-modified` and `asyncapi.component-modified` do not name consumers. A
+  component's consumers are the operations or messages whose `$ref` closure reaches it, and loam
+  has no index of those.
+
+### Fixed — an MCP tool argument is never read in another argument's slot
+
+No code, flag or payload key was added, changed or retired. Two MCP input schemas each gained one
+JSON Schema keyword, named below.
+
+- **A `tools/call` that supplies an optional positional argument while leaving out an earlier one is
+  refused as invalid params (`-32602`)**, naming the argument left out, as a missing required
+  argument already is. Positionals reach the command by position, so the later value used to be read
+  as the earlier one: `loam_instructions` with `args` and no `workflow` took the first arg as the
+  workflow name. An empty `args` still passes. The defect is present in `0.2.0-alpha.8`.
+- **The MCP tools' advertised input schemas now say that `name` needs `section` and a non-empty
+  `args` needs `workflow`**, the rule a tool call already enforces, so a client that validates a
+  call against `tools/list` is no longer refused `-32602` for a call the schema allowed.
+  `loam_list`'s schema gains `dependentRequired` (`name` → `section`); `loam_instructions`' gains
+  `dependentSchemas`, requiring `workflow` once `args` has a member, because an empty `args` still
+  passes. Both are standard JSON Schema keywords; no tool, argument or other schema key changed.
+
+### Fixed — `loam validate` reports an unreadable verification record from the docs repo
+
+No code, flag or payload key was added. An existing code fires in one more place.
+
+- **`evidence.record-unreadable` (warn) now fires on the feature target too**, under
+  `validate --feature <FEAT>`, `validate <FEAT>` and every active feature under `validate --all`, run
+  from anywhere. A `features/<FEAT>/verification.yaml` or `verification/<svc>.yaml` with git
+  conflict markers, broken YAML, a shape that is not a record, or a summary that contradicts its
+  claims used to pass `validate --all` in the docs repo with no finding. `verify` refused the file,
+  and `status`, `gate` and `tasks` reported it. Until now only the service target raised this code,
+  and only from the service's own repository. The finding names the file and gives the same repair
+  as the service-target finding. Its `locations` hold that file as `primary`. It is a warning, as
+  it is on the service target. `valid`, the exit code and `loam archive` are unchanged, and
+  `--strict` fails on it. In a service repository's `validate --all` the same file is reported
+  twice: once by the service target and once by the feature target.
+
+### Fixed — `loam diff` reads a spec saved as UTF-16 without a byte-order mark the same way on both sides
+
+No code, flag, path or payload key was added, changed or retired.
+
+- On disk, a `spec.md` or `arch.spec.md` saved as UTF-16 without a byte-order mark was refused as
+  unreadable. At the base ref, the same bytes were read as a readable spec with no requirements.
+  That happened because only the working-tree side checked for NUL characters. So an untouched file
+  was suspended on one side only, and a branch that re-saved the file as UTF-8 reported every
+  requirement in it as `diff.requirement-added`. The base side now applies the same decoding rule as
+  the working tree. Both sides report the file as unreadable, and the spec axis is suspended. The
+  contract axes are unchanged: their readers on both sides already applied the same rule.
+
 ### Fixed — a writer waiting on the lock no longer deletes the next writer's live lock
 
 No code, flag, path or payload key was added, changed or retired. What changes is that concurrent
@@ -52,6 +465,14 @@ unchanged.
 - README's spine-first section now says that under the `--base` gate a PR adding a service's
   `openapi.yaml` stays red until that service has a `model.likec4` — `service.no-model` is the
   ratchet working as designed.
+- **Each service target in scope reports a committed map that does not parse, even when the branch
+  left `architecture/` alone.** On such a branch the scoped run emits no `landscape` target, yet
+  each service in scope still said `spine.landscape-invalid … the parser output is reported once,
+  on the landscape target`, with empty `details`. So the parser output was reported nowhere. Each
+  service's `spine.landscape-invalid` now carries the parser output in `details` whenever the run
+  has no `landscape` target, as `validate --service` always has. A feature target does not report
+  the map, so a run whose only targets are features still says nothing about it. The defect
+  predates this release's `--base` changes and is present in `0.2.0-alpha.8`.
 
 ### Fixed — one LikeC4 typo no longer floods agent-facing output
 
@@ -116,6 +537,13 @@ No code, flag, path or payload key was added, changed or retired; only documenta
   truth; the drift test forbids the publication claim in README and in the CHANGELOG section of the
   checkout's own version. The `0.2.0-alpha.8` section below carries a dated note that it was never
   published.
+- The `0.2.0-alpha.3` section said `npm i @ybotok/loam@alpha` installs it. That release was tagged
+  and withdrawn before its publish step, which only the `0.2.0-alpha.4` section said. It now carries
+  the same kind of dated note.
+- README said Codex reads `.codex/skills/`. That is the folder the `codex` target writes, and Codex
+  still loads it, but Codex's skills documentation names only `.agents/skills`. README now says so
+  and points at the `agents` target for the documented root. The `codex` target's path is
+  unchanged.
 - README and WORKFLOW no longer quote byte sizes and code counts that had gone stale (the
   `loam-check` page, the AGENTS.md orientation, the finding-code total). A finding- or refusal-code
   count quoted on a shipped page is now graded against `loam explain --codes`.
@@ -1685,7 +2113,10 @@ now rewrites the bytes of every view beneath it.
 ## [0.2.0-alpha.3] - 2026-09-03
 
 The generated subsystem views, made readable — and the defect that hunt found underneath them.
-Still a prerelease on the `alpha` line: `npm i @ybotok/loam@alpha` installs it. Nothing below is
+Still a prerelease on the `alpha` line. **Not published (noted 2026-10-10):** the `v0.2.0-alpha.3`
+tag was cut, but it was withdrawn before its publish step — the `0.2.0-alpha.4` section above says
+so, and that release carries everything here — so `npm i @ybotok/loam@alpha` never installed this
+version, and `npm view @ybotok/loam dist-tags` is the record of what does. Nothing below is
 breaking, and one entry is a change every repo NOTICES: the generated file's bytes move, so the
 first `loam validate --all` after upgrading asks for one `loam subsystem sync`.
 

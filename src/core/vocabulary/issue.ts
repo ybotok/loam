@@ -12,6 +12,14 @@ export interface Issue {
   /** What the breach is about when that is narrower than the feature — usually a service. */
   subject?: string;
   message: string;
+  /**
+   * The evidence lines behind the message, when it has a list to show — the
+   * `details` every `Finding` already carries. `loam archive`'s overwrite
+   * warnings put the current consumers of the overwritten operation or
+   * message here, one per line, so the message stays one sentence however
+   * many there are.
+   */
+  details?: string[];
   locations?: FindingLocation[];
   /**
    * Does this issue stop `loam archive`? Severity and gating answer two
@@ -37,6 +45,7 @@ export function issueFinding(i: Issue): Finding {
     gates: gatesArchive(i),
     ...(i.subject === undefined ? {} : { subject: i.subject }),
     ...(i.locations === undefined ? {} : { locations: i.locations }),
+    ...(i.details === undefined ? {} : { details: i.details }),
     message: i.message,
   };
 }
@@ -144,6 +153,8 @@ export type IssueCode =
   | "asyncapi.baseline-missing"
   /** the living slot or component surface changed since this delta pinned it — merging would discard whoever landed in between */
   | "asyncapi.baseline-stale"
+  /** a `channels`/`operations` slot, or a message by name, that this feature declares, the living contract no longer has, and an ARCHIVED feature's removal retired — or a message declared at a `components.messages` key an archived feature moved it away from — the merge cannot tell a quote of a retired or moved slot from an addition, so archiving would put it back. A warning that GATES; `--approve` re-adds it on purpose */
+  | "asyncapi.slot-revived"
   /** a slot-removal marker addresses a (section, key) the living contract does not have */
   | "asyncapi.remove-target-missing"
   /** a message-removal marker's name differs from the living declaration at that key */
@@ -242,6 +253,8 @@ export type IssueCode =
   | "openapi.baseline-missing"
   /** the living operation, path-level key or component changed since this delta pinned it — merging would discard whoever landed in between */
   | "openapi.baseline-stale"
+  /** an operation this feature spells, the living contract no longer has, and an ARCHIVED feature's removal marker retired — or spells at an address an archived feature moved it away from — the merge cannot tell a quote of a retired or moved operation from an addition, so archiving would put it back (beside its new address, for a move). A warning that GATES; `--approve` re-adds it on purpose */
+  | "openapi.op-revived"
   /** the feature retires an operation the LIVING fleet still consumes — a landscape edge's `metadata { op }`, or another service's living requirement */
   | "openapi.remove-op-consumed"
   /** two requirements in the LIVING document share one heading — MODIFIED rewrites the first, REMOVED deletes both, so no delta applies predictably */

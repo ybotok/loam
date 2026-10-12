@@ -542,12 +542,14 @@ Realizes: checkout#CHK-ONCE
   });
 
   it("a broken document that never mentions the prefix stays READ — the cheap gate is sound, not a guess", async () => {
-    // A use case is a view carrying `#cap-<slug>` and LikeC4 refuses an
-    // undeclared tag, so a document set without those bytes declares no use case
-    // however badly it parses: `views: []` is the true answer and no LikeC4
-    // workspace is started. Its own landscape, because the shared one DECLARES
-    // the tags and so contains the prefix itself — the gate scans every
-    // `architecture/` document, not only the views.
+    // A use case is a view carrying `#cap-<slug>` (or `#req-`, `#suite-`), and
+    // LikeC4 spells every tag a view carries as a `#` reference, so a document
+    // set without those bytes declares no use case however badly it parses:
+    // `views: []` is the true answer and no LikeC4 workspace is started. Its own
+    // landscape, written when the gate still opened on a bare prefix and the
+    // shared one's `tag` declarations would have opened it; the gate reads only
+    // `#` references now, and it scans every `architecture/` document, not only
+    // the views.
     const p = await makeProject({
       "architecture/landscape.likec4":
         `specification {\n  element service\n}\n\nmodel {\n  web = service 'checkout-web' {\n    metadata { service 'checkout-web' }\n  }\n}\n`,

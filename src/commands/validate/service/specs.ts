@@ -16,21 +16,13 @@
  * on the business axis. One file, one rule.
  */
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { type Elem, type LoadedDoc, type Rel } from "../../../core/c4/likec4.js";
 import { type PathableService } from "../../../core/kernel/ids/service.js";
 import { type ServicePaths } from "../../../core/repo/paths.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
-import { parseRequirements } from "../../../core/document/parse.js";
-import {
-  assertionlessFindings,
-  examplesFindings,
-  steplessFindings,
-} from "../../../core/document/scenarios.js";
 import { type Requirement } from "../../../core/document/spec.js";
 import { type CoverageScope } from "../../../core/c4/arch.js";
 import { hasDeployment, type DeploymentModel } from "../../../core/c4/parsed/deployment.js";
-import { loadArchitecture } from "../../../core/c4/project/architecture.js";
 import { type DocsDir } from "../../../core/kernel/ids/dirs.js";
 import { readHealth } from "../../../core/vocabulary/health.js";
 import { documentConflictFinding } from "../../../core/conflict-markers.js";
@@ -43,6 +35,7 @@ import {
   duplicateRequirementFindings,
   repeatedListLineFindings,
   requirementIdFindings,
+  scenarioShapeFindings,
 } from "../checks/requirements.js";
 
 /** Both requirement documents, parsed once for every axis that joins through them. */
@@ -61,7 +54,7 @@ export interface ServiceSpecs {
 export async function readServiceSpecs(input: {
   service: PathableService;
   paths: ServicePaths;
-  fleet?: FleetContext;
+  fleet: FleetContext;
 }): Promise<ServiceSpecs> {
   const { service, paths, fleet } = input;
   const findings: Finding[] = [];
@@ -69,9 +62,8 @@ export async function readServiceSpecs(input: {
   // Requirement coverage.
   let reqs: Requirement[] = [];
   if (existsSync(paths.spec)) {
-    const specText =
-      fleet === undefined ? await readFile(paths.spec, "utf8") : await fleet.readText(paths.spec);
-    reqs = fleet === undefined ? parseRequirements(specText) : await fleet.readRequirements(paths.spec);
+    const specText = await fleet.readText(paths.spec);
+    reqs = await fleet.readRequirements(paths.spec);
     // Conflict markers first, because they say that nothing below this line is
     // anyone's text. An error, gating by the default rule and deliberately
     // without `gates`: that field is coherence's (issue.ts) and archive does
@@ -106,9 +98,7 @@ export async function readServiceSpecs(input: {
     // satisfies the count and tests nothing — cucumber runs it vacuously green
     // and `loam verify --results` can never confirm it — so a fleet gate that
     // called it covered was certifying the absence of a test.
-    findings.push(...steplessFindings(`${service}: requirements`, service, reqs));
-    findings.push(...assertionlessFindings(`${service}: requirements`, service, reqs));
-    findings.push(...examplesFindings(`${service}: requirements`, service, reqs));
+    findings.push(...scenarioShapeFindings(`${service}: requirements`, service, reqs));
     findings.push(...duplicateRequirementFindings(reqs, `${service}: spec.md`, service));
     findings.push(...requirementIdFindings(reqs, `${service}: spec.md`, service));
     findings.push(...repeatedListLineFindings(reqs, `${service}: spec.md`, service));
@@ -138,17 +128,8 @@ export async function readServiceSpecs(input: {
   // are business — the outbox requirement in a service's arch.spec.md is the
   // canonical place a `Publishes:` line belongs — so handing the event axis only
   // spec.md would silently ignore the lines most authors write.
-  const archText = existsSync(paths.archSpec)
-    ? fleet === undefined
-      ? await readFile(paths.archSpec, "utf8")
-      : await fleet.readText(paths.archSpec)
-    : null;
-  const archReqs =
-    archText === null
-      ? []
-      : fleet === undefined
-        ? parseRequirements(archText)
-        : await fleet.readRequirements(paths.archSpec);
+  const archText = existsSync(paths.archSpec) ? await fleet.readText(paths.archSpec) : null;
+  const archReqs = archText === null ? [] : await fleet.readRequirements(paths.archSpec);
 
   return { findings, reqs, livingReqs, archText, archReqs };
 }
@@ -185,7 +166,7 @@ export interface ArchAxis {
    * memoised parse the rest of the target already made rather than a second
    * workspace spun for one `node:` entry.
    */
-  fleet?: FleetContext;
+  fleet: FleetContext;
 }
 
 /**
@@ -210,15 +191,15 @@ async function topology(
   land: LoadedDoc | null,
   archReqs: Requirement[],
   docsDir: DocsDir,
-  fleet?: FleetContext,
+  fleet: FleetContext,
 ): Promise<DeploymentModel | undefined> {
   if (land?.deployment !== undefined && hasDeployment(land.deployment)) return land.deployment;
   const wanted = coversEntries(archReqs).some((e) => e.form === "node" || e.form === "node-edge");
   if (!wanted) return undefined;
-  // Through the index when there is one: `land` above is now that same project
-  // in every mode, so this fallback fires only for the caller that handed in
-  // nothing, and it must not be a second parse of documents already in the memo.
-  const project = fleet === undefined ? await loadArchitecture(docsDir) : await fleet.architecture(docsDir);
+  // Through the index, always: `land` above is now that same project in every
+  // mode, so this fallback fires only for the caller that handed in nothing,
+  // and it must not be a second parse of documents already in the memo.
+  const project = await fleet.architecture(docsDir);
   return project.errors.length === 0 ? project.deployment : undefined;
 }
 
@@ -285,9 +266,7 @@ export async function archAxisFindings(axis: ArchAxis): Promise<Finding[]> {
     const conflict = documentConflictFinding(`${service}: arch.spec.md`, service, archText);
     if (conflict !== null) findings.push(conflict);
     findings.push(coverageFinding(`${service}: arch requirements`, archReqs));
-    findings.push(...steplessFindings(`${service}: arch requirements`, service, archReqs));
-    findings.push(...assertionlessFindings(`${service}: arch requirements`, service, archReqs));
-    findings.push(...examplesFindings(`${service}: arch requirements`, service, archReqs));
+    findings.push(...scenarioShapeFindings(`${service}: arch requirements`, service, archReqs));
     findings.push(...duplicateRequirementFindings(archReqs, `${service}: arch.spec.md`, service));
     findings.push(...requirementIdFindings(archReqs, `${service}: arch.spec.md`, service));
     findings.push(...repeatedListLineFindings(archReqs, `${service}: arch.spec.md`, service));

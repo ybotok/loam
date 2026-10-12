@@ -17,9 +17,9 @@
  * sees an untagged view. Graded is narrower than LOADED, and the difference is
  * the reader's gate (`core/usecases/service/flows.ts`): an untagged sibling is
  * not even loaded while no view in the project opts in and no sibling mentions
- * either reserved prefix anywhere in its bytes — but once a view in
- * model.likec4 itself opts in, or a sibling mentions `req-` or `cap-` in a
- * comment or a title, every sibling is staged, and a project that does not
+ * a reserved prefix anywhere in its bytes — but once a view in
+ * model.likec4 itself opts in, or a sibling mentions `req-`, `cap-` or `suite-`
+ * in a comment or a title, every sibling is staged, and a project that does not
  * read is one `usecase.flow-invalid` whether or not any view in it opted in.
  *
  * A SIBLING THAT BREAKS THE PROJECT is ONE `usecase.flow-invalid` — reused,

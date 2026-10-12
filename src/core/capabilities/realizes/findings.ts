@@ -2,12 +2,13 @@
  * The `Realizes:` grades, both directions: an entry that resolves to nothing,
  * and a capability requirement nothing realizes.
  *
- * Values only — core never prints — and the join rule shaped twice (Finding for
- * validate, Issue for coherence) from ONE message builder, exactly as
- * `../findings.ts` does for `capability.unknown`. Two shapes over one sentence
- * is the only arrangement in which a finding an author reads at the service
- * target and the refusal they hit at `loam archive` cannot describe the same
- * breach differently.
+ * Values only — core never prints — and the join rule written ONCE, as the
+ * Issue coherence gates on, which validate files as a Finding unchanged,
+ * exactly as `../findings.ts` does for `capability.unknown`. One function over
+ * ONE message builder is the only arrangement in which a finding an author
+ * reads at the service target and the refusal they hit at `loam archive`
+ * cannot describe the same breach differently — the Finding and Issue twins
+ * it replaced had byte-identical bodies.
  *
  * WHY THE DELTA SIDE GATES ARCHIVE. A delta requirement whose `Realizes:` entry
  * resolves to nothing would merge a join pointing at a promise that does not
@@ -103,25 +104,12 @@ function unresolvedEntries(reqs: Requirement[], index: CapabilityRequirementInde
 }
 
 /**
- * `capability.realizes-unknown` as validate sees it — an ERROR, the grade its
- * two siblings already carry: a join that resolves to nothing reads exactly
- * like a working one in the requirement, in the rollup and in every answer
- * built over either.
+ * `capability.realizes-unknown` — an ERROR, the grade its two siblings already
+ * carry: a join that resolves to nothing reads exactly like a working one in
+ * the requirement, in the rollup and in every answer built over either. One
+ * function for validate's service target and a feature's delta documents —
+ * see the module comment.
  */
-export function realizesUnknownFindings(
-  reqs: Requirement[],
-  target: RealizesTargetDoc,
-  index: CapabilityRequirementIndex,
-): Finding[] {
-  return unresolvedEntries(reqs, index).map((u) => ({
-    severity: "error" as const,
-    code: "capability.realizes-unknown",
-    subject: target.subject,
-    message: unresolvedMessage(target.where, u.requirement, u.claim),
-  }));
-}
-
-/** The same rule shaped as coherence Issues, for a feature's delta documents — see the module comment. */
 export function realizesUnknownIssues(
   reqs: Requirement[],
   target: RealizesTargetDoc,

@@ -29,9 +29,11 @@ the code. \`loam validate\` grades form and joins, never depth: green means the
 files agree with each other, and the bar is what "done" is measured against — a
 thin baseline that validates is thin, not done.
 
-0. If there is no ./loam.json here, wire the repo first:
-   \`loam init --docs <path-to-docs-repo> --service $1\` (add \`--create\` ONLY if the
-   docs repo does not exist yet), then \`loam doctor\` — it resolves \`docsDir\`,
+0. If there is no ./loam.json here, wire the repo first with
+   \`loam init --docs <path-to-docs-repo> --service $1 --agent-profile service\`.
+   ONLY if the docs repo does not exist yet, this is the single-repo trial: run
+   \`loam init --docs <path-to-docs-repo> --create --service $1\` instead, and its one
+   checkout keeps the full profile. Then \`loam doctor\` — it resolves \`docsDir\`,
    checks the docs repo is one, and reports the service binding. Do not go on with
    \`docs-missing\`, \`services-missing\` or any \`doctor.*\` blocker standing.
    Every \`doctor\` finding carries a \`fix\` field spelling the exact command —

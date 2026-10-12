@@ -134,7 +134,9 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   codes service scope raises, graded here on the feature's own spec.md and
   arch.spec.md deltas, because every one of those breaches merges into the
   living document — \`spec.repeated-operations\`, \`spec.repeated-covers\`,
-  \`spec.merge-conflict\` and \`requirements.stepless-scenario\`. Then the
+  \`spec.merge-conflict\` and \`requirements.stepless-scenario\`. A feature
+  whose verification record will not read as one raises
+  \`evidence.record-unreadable\` (warn) here as well. Then the
   architecture spec axis (\`c4.uncovered\`, plus \`covers.unknown\` on the
   feature's arch.spec.md deltas), the delta-shape group:
   \`delta.unknown-section\`, \`delta.no-delta-sections\`,
@@ -142,9 +144,13 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   \`delta.added-duplicate\`, \`delta.added-near-duplicate\`, \`delta.modified-pending\`,
   \`delta.removed-pending\`, \`delta.added-conflict\`, \`delta.modified-conflict\`,
   \`delta.living-duplicate-requirement\`, and the API-removal group:
-  \`openapi.remove-marker-anonymous\`, \`openapi.remove-op-consumed\`.
+  \`openapi.remove-marker-anonymous\`, \`openapi.remove-op-consumed\`, and
+  \`openapi.op-revived\` (warn, gates archive: the delta spells an operation an
+  archived feature retired, or at an address one retired or moved it away
+  from while it lives on elsewhere, so the merge would put it back).
   The event axis is graded in feature scope too — the \`asyncapi.*\`
-  baseline/removal/conflict codes plus \`c4-event.*\` and \`spec-event.*\`.
+  baseline/removal/conflict codes, \`asyncapi.slot-revived\` (the same revival
+  on a channel, operation or message), plus \`c4-event.*\` and \`spec-event.*\`.
   Where a finding names another feature in flight (\`delta.*-pending\`,
   \`delta.added-conflict\`, \`delta.modified-conflict\`, \`spec-api.op-pending\`,
   \`c4-api.op-pending\`) the ORDER is the answer, and \`loam dependencies --json\`
@@ -226,7 +232,14 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   after you resolve a collision — it is the one mechanism standing between two
   features in flight and silently reverting each other's landed work. It refuses
   rather than inventing a pin, and re-pinning is not resolving: see
-  "The requirement baseline".
+  "The requirement baseline". An operation or event slot the delta spells that
+  an ARCHIVED feature retired is not pinned as new: rebase prints the
+  \`openapi.op-revived\` / \`asyncapi.slot-revived\` finding (and \`revived[]\` in
+  \`--json\`) and leaves the call — delete the quote, or re-add on purpose — to
+  you. It judges the delta as it will write it, pins included, so a quote its
+  own repin turns into an edit — repinned over whatever lives now at an
+  address an archived feature moved the entry away from — is in that list too,
+  under \`--dry-run\` as well.
 - \`loam dependencies [<FEAT>]\` derives the ordering of the features in flight
   from the artifacts themselves — requirement identities and OpenAPI
   operationIds, never from validator prose. It is the answer to every
@@ -264,12 +277,13 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
 - \`loam instructions [<page>] [args...]\` prints one of the six workflow
   protocols — \`loam-adopt\`, \`loam-feature\`, \`loam-implement\`, \`loam-check\`,
   \`loam-verify\`, \`loam-ship\` — with \`$1\`, \`$2\` filled in from the arguments you
-  pass, or one of the four reference pages — \`loam-codes\`, \`loam-spine\`,
-  \`loam-authoring\`, \`loam-done-check\` — which take no arguments. With no
-  argument at all it lists both sets. The pages ship inside the binary, so they
-  describe the loam you are about to run rather than the one that scaffolded the
-  repository; the command and skill files \`loam init\` writes are pointers at it,
-  and so is AGENTS.md's own "The reference pages" section. It reads no
+  pass, the \`loam-report\` support protocol, or one of the four reference pages —
+  \`loam-codes\`, \`loam-spine\`, \`loam-authoring\`, \`loam-done-check\` — which take
+  no arguments. With no argument at all it lists all three sets. The pages ship
+  inside the binary, so they describe the loam you are about to run rather than
+  the one that scaffolded the repository; the command and skill files
+  \`loam init\` writes are pointers at it, and so is AGENTS.md's own
+  "Reference pages — fetch when needed" section. It reads no
   \`loam.json\` and no docs repo, deliberately: \`loam-adopt\`'s own first step is
   to run \`loam init\` when there is no config, so it cannot be the step that
   requires one.

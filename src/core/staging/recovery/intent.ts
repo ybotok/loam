@@ -55,11 +55,8 @@ export interface CommitIntent {
 /**
  * Write the intent record and get it onto the disk before the first swap.
  *
- * fsync, not just write: the point of the record is to survive the crash that
- * interrupts the commit, and a record still sitting in the page cache when the
- * machine dies describes nothing. The directory entry is fsynced too where the
- * platform allows opening a directory — without that the file's bytes can be
- * durable while its name is not.
+ * fsync, not just write — through `writeDurable`, whose doc says why: the
+ * point of the record is to survive the crash that interrupts the commit.
  */
 export async function writeCommitIntent(
   docsDir: string,

@@ -24,7 +24,7 @@ import { gitDirtyPaths, gitStageRenames } from "../../core/provenance/gitq/moves
 import type { FeatureEntry } from "../../core/repo/entries.js";
 import { servicesDir, serviceViewsPath, subsystemPathUnder, subsystemViewsPath } from "../../core/repo/paths.js";
 import { listFeatures } from "../../core/repo/repo.js";
-import { findInTree, nearestTreeNames, treeNames, withinSubsystem } from "../../core/repo/tree/find.js";
+import { closeNamesHint, findInTree, treeNames, withinSubsystem } from "../../core/repo/tree/find.js";
 import type { FleetTree } from "../../core/repo/tree/walk.js";
 import { SNAPSHOT_COMPAT_VERSION, SNAPSHOT_MANIFEST, snapshotDir } from "../../core/staging/snapshot/manifest.js";
 import { commitWindow, reportViews, type SubsystemTxn, type ViewsActions } from "./txn/txn.js";
@@ -56,12 +56,11 @@ export async function runMove(docsDir: DocsDir, names: string[], into: string, j
     for (const name of names) {
       const hit = findInTree(tree, name);
       if (hit === null) {
-        const close = nearestTreeNames(name, treeNames(tree));
         fail(
           json,
           "unknown-target",
           `No service or subsystem '${name}' in the tree.` +
-            (close.length > 0 ? ` Close names: ${close.join(", ")}.` : " `loam subsystem list` shows what exists."),
+            closeNamesHint(name, treeNames(tree), " `loam subsystem list` shows what exists."),
         );
         return null;
       }
@@ -139,11 +138,10 @@ export async function runRename(docsDir: DocsDir, names: [string, string], json:
   await commitWindow(docsDir, json, async (tree): Promise<SubsystemTxn | null> => {
     const hit = findInTree(tree, from);
     if (hit === null) {
-      const close = nearestTreeNames(from, tree.subsystems.map((s) => s.name));
       fail(
         json,
         "unknown-target",
-        `No subsystem '${from}' in the tree.` + (close.length > 0 ? ` Close names: ${close.join(", ")}.` : ""),
+        `No subsystem '${from}' in the tree.` + closeNamesHint(from, tree.subsystems.map((s) => s.name), ""),
       );
       return null;
     }
@@ -203,12 +201,11 @@ function resolveTarget(tree: FleetTree, into: string, at: { docsDir: DocsDir; js
   if (into === ".") return { dir: servicesDir(at.docsDir), path: [] };
   const hit = findInTree(tree, into);
   if (hit === null) {
-    const close = nearestTreeNames(into, tree.subsystems.map((s) => s.name));
     fail(
       at.json,
       "unknown-target",
       `No subsystem '${into}' to move into.` +
-        (close.length > 0 ? ` Close names: ${close.join(", ")}.` : " `--into .` unfiles; `loam subsystem new` creates."),
+        closeNamesHint(into, tree.subsystems.map((s) => s.name), " `--into .` unfiles; `loam subsystem new` creates."),
     );
     return null;
   }

@@ -1,16 +1,14 @@
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
-import { loadConfig } from "../../core/envelope/config.js";
 import { NotUtf8DocumentError } from "../../core/kernel/document-bytes.js";
 import { InvalidIdError, assertServiceId } from "../../core/kernel/ids/service.js";
-import { emitJson, fail, repoPath, reportNoConfig } from "../../core/envelope/json.js";
+import { configOrRefuse, emitJson, fail, repoPath } from "../../core/envelope/json.js";
 import { compareIds } from "../../core/repo/entries.js";
 import { featureSpecPaths, SPEC_AXES } from "../../core/repo/paths.js";
 import { missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
 import { stageWrites } from "../../core/staging/commit.js";
-import { type CommitRecovery, InterruptedCommitError } from "../../core/staging/interrupted.js";
-import { acquireDocsLock, DocsBusyError } from "../../core/staging/lock.js";
-import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
+import { type CommitRecovery } from "../../core/staging/interrupted.js";
+import { openCommitWindow } from "../../core/staging/recovery/recover.js";
 import { commitStaged } from "../../core/staging/txn/transaction.js";
 import { type PlannedWrite } from "../../core/staging/writes.js";
 import { plural, sayRecovered } from "../policy/format.js";
@@ -24,6 +22,9 @@ import {
   type PinOutcome,
 } from "./plan.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
+import { issueFinding, type Issue } from "../../core/vocabulary/issue.js";
+import { retiredLookup } from "../../core/coherence/retired/archived.js";
+import { serviceRevivals } from "../../core/coherence/retired/revival/revived.js";
 import { rebaseLivingLocked } from "./living.js";
 
 /**
@@ -77,12 +78,8 @@ export function registerRebase(program: Command): void {
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (featureId: string | undefined, opts: RebaseOptions) => {
       const json = opts.json === true;
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const config = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
 
       // The id grammar on the RAW argument, before it reaches a path join —
       // one grammar for the whole tool (core/kernel/ids/service.ts).
@@ -100,25 +97,14 @@ export function registerRebase(program: Command): void {
       // replaced a millisecond later is precisely the false "I read this" the
       // pin exists to make impossible. One writer per docs repo, refusing
       // rather than queueing, exactly as archive takes it.
-      let release: () => Promise<void>;
+      //
+      // A journal in the repo means the LAST write never finished — reading
+      // living documents to compute pins over a half-commit would digest
+      // bytes no run ever produced. Recover (or refuse) first, under the
+      // same lock the commit will hold.
+      const opened = await openCommitWindow(config.docsDir, 0);
+      if (!opened.ok) return fail(json, opened.code, opened.message);
       try {
-        release = await acquireDocsLock(config.docsDir);
-      } catch (err) {
-        if (!(err instanceof DocsBusyError)) throw err;
-        return fail(json, "docs-busy", err.message);
-      }
-      try {
-        // A journal in the repo means the LAST write never finished — reading
-        // living documents to compute pins over a half-commit would digest
-        // bytes no run ever produced. Recover (or refuse) first, under the
-        // same lock the commit will hold.
-        let recovered: CommitRecovery | null;
-        try {
-          recovered = await recoverInterruptedCommit(config.docsDir);
-        } catch (err) {
-          if (!(err instanceof InterruptedCommitError)) throw err;
-          return fail(json, "commit-interrupted", err.message);
-        }
         if (opts.living === true) {
           await rebaseLivingLocked(config.docsDir, opts);
           return;
@@ -133,9 +119,9 @@ export function registerRebase(program: Command): void {
             "loam rebase needs a feature id — e.g. `loam rebase FEAT-101`. To pin the living corpus's `Realizes:` entries instead, run `loam rebase --living`.",
           );
         }
-        await rebaseLocked(config.docsDir, featureId, { ...opts, recovered });
+        await rebaseLocked(config.docsDir, featureId, { ...opts, recovered: opened.recovered });
       } finally {
-        await release();
+        await opened.release();
       }
     });
 }
@@ -180,6 +166,7 @@ async function rebaseLocked(
   const outcomes: PinOutcome[] = [];
   const capabilityOutcomes: CapabilityPinOutcome[] = [];
   const writes: PlannedWrite[] = [];
+  const revived: Issue[] = [];
   // The business corpus this feature changes. Skipped entirely under `--service`:
   // that flag means "restrict to one service", and a capability names none — so
   // pinning capability deltas under it would write files the caller narrowed the
@@ -222,6 +209,21 @@ async function rebaseLocked(
       const planned = await planCapabilityAxis(repo, doc.id, doc.spec);
       capabilityOutcomes.push(...planned.outcomes);
       if (planned.content !== null) writes.push({ path: doc.spec, content: planned.content });
+    }
+    // An operation or event slot the living docs do not hold reads `unresolved`
+    // above — "this feature is adding it". For one an ARCHIVED feature retired,
+    // that is the false sentence that put retired operations back: unpinned, the
+    // merge upserts it as an addition. Rebase pins nothing for it, so what it
+    // owes is the same finding the gate raises, said here before the archive
+    // refuses it, and the decision left to the human. Asked of the documents
+    // as this run leaves them (`planned`): a repin over whatever lives at an
+    // address now turns a quote the merge skipped into an edit it writes, and
+    // a revival that edit makes is this run's to report — the next validate
+    // reports it, and a dry run must say what the real one would leave.
+    const retired = retiredLookup(docsDir, repo.fleet);
+    const planned = new Map(writes.flatMap((w) => (typeof w.content === "string" ? [[w.path, w.content] as const] : [])));
+    for (const service of services) {
+      revived.push(...(await serviceRevivals({ docsDir, featureDir: feature.dir, service, retired, context: repo.fleet, planned })));
     }
   } catch (err) {
     if (!(err instanceof NotUtf8DocumentError)) throw err;
@@ -281,6 +283,11 @@ async function rebaseLocked(
       // something false to every consumer that already reads it.
       capabilities: capabilities.map((c) => c.id),
       capabilityPins: capabilityOutcomes,
+      // Additive: the `openapi.op-revived` / `asyncapi.slot-revived` findings
+      // for what this feature spells that an archived feature retired. Their
+      // `pins[]` rows still say `unresolved` — true, and published — and this
+      // key is what says those rows are not additions.
+      revived: revived.map(issueFinding),
       written: dryRun ? [] : writes.map((w) => repoPath(docsDir, w.path)),
       ...(opts.recovered === null ? {} : { recovered: opts.recovered }),
     });
@@ -291,6 +298,7 @@ async function rebaseLocked(
     console.log(
       `${id}: nothing to pin — a baseline only means something for a requirement, an operation, a path-level key, a component or an event slot that already exists in the living docs.`,
     );
+    sayRevived(revived);
     return;
   }
 
@@ -332,7 +340,27 @@ async function rebaseLocked(
   if (unresolved.length > 0) {
     console.log(
       `\n${plural(unresolved.length, "item")} could not be pinned because the living docs do not have them yet — ` +
-        `for a requirement, \`loam dependencies ${id}\` says which feature introduces it first; for an operation, this feature is adding it.`,
+        `for a requirement, \`loam dependencies ${id}\` says which feature introduces it first; for an operation, this feature is adding it` +
+        (revived.length === 0 ? "." : ", unless an archived feature retired it or moved it away — those are listed below, and they are not new."),
     );
   }
+  sayRevived(revived);
+}
+
+/**
+ * The revival findings, in the gate's own words. Printed rather than acted on:
+ * deleting a quote and re-adding a retired operation on purpose are both
+ * legitimate, and which one this is is the author's call. The sentence once
+ * said "nothing was pinned" for them — true of a retired entry, which has no
+ * living version, and false of a quote this run repinned over whatever lives
+ * at its address now, the very pin that made it a revival.
+ */
+function sayRevived(revived: readonly Issue[]): void {
+  if (revived.length === 0) return;
+  const one = revived.length === 1;
+  console.log(
+    `\n⚠ ${plural(revived.length, "item")} this feature spells ${one ? "was" : "were"} RETIRED by an archived feature, or moved to another address by one — ` +
+      `${one ? "it is" : "they are"} not new, pinned or not, and \`loam archive\` refuses ${one ? "it" : "them"} until you decide:`,
+  );
+  for (const issue of revived) console.log(`  ⚠ ${issue.message}`);
 }

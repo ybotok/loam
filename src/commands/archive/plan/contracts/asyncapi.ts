@@ -8,7 +8,7 @@
  */
 import { existsSync } from "node:fs";
 import { parse } from "yaml";
-import { repoPath } from "../../../../core/envelope/json.js";
+import { CodedFailure, repoPath } from "../../../../core/envelope/json.js";
 import { planWrite, readUtf8 } from "../../../../core/staging/writes.js";
 import { featureSpecPaths } from "../../../../core/repo/paths.js";
 import { locateServicePaths } from "../../../../core/repo/service-target.js";
@@ -18,8 +18,9 @@ import { asyncapiSurfaces } from "../../../../core/asyncapi/baseline/surfaces.js
 import { AsyncapiMergeError } from "../../../../core/asyncapi/merge/error.js";
 import { stripAsyncapiMarkers } from "../../../../core/asyncapi/merge/markers.js";
 import { mergeAsyncapiSlots, type AsyncapiMergeResult } from "../../../../core/asyncapi/merge/merge.js";
-import { ArchiveFailure } from "../refusal.js";
 import { type Gated, type Plan } from "../state.js";
+import { consumerClause, type ContractConsumers } from "./consumers.js";
+import { sayQuoted, sayStale, warnOverwrite } from "./verdict-lines.js";
 import type { FleetContext } from "../../../../core/fleet-context.js";
 import type { IssueCode } from "../../../../core/vocabulary/issue.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
@@ -31,13 +32,13 @@ function modifiedCode(section: AsyncapiSection): IssueCode {
 }
 
 export async function planAsyncapiContracts(
-  config: { docsDir: DocsDir; fleet?: FleetContext },
+  config: { docsDir: DocsDir; fleet: FleetContext; consumers: ContractConsumers },
   gated: Gated,
   plan: Plan,
   say: (line?: string) => void,
 ): Promise<void> {
   const { featureDir, deltaServices } = gated;
-  const { writes, planWarns, planGates, asyncapiRemovals } = plan;
+  const { writes, planGates, asyncapiRemovals } = plan;
   for (const svc of deltaServices) {
     const featAsyncapi = featureSpecPaths(featureDir, svc).asyncapi;
     if (!existsSync(featAsyncapi)) continue;
@@ -48,7 +49,7 @@ export async function planAsyncapiContracts(
     // loam cannot read is one it cannot merge, and that is the same answer as
     // any other merge it could not compute — nothing is written.
     if (featDoc.unreadable) {
-      throw new ArchiveFailure(
+      throw new CodedFailure(
         "merge-failed",
         `feature asyncapi ${repoPath(config.docsDir, featAsyncapi)} for ${svc} does not read as an AsyncAPI document (${featDoc.error ?? "not a YAML mapping"}) — the event axis cannot be merged; fix the file, or delete it if this feature has no contract delta`,
       );
@@ -117,55 +118,40 @@ export async function planAsyncapiContracts(
         say(`  asyncapi: ${svc} — merged${names.length > 0 ? ` (${names.join(", ")})` : ""}`);
       } else if (surfaces.length > 0) {
         // "The plan wrote less than my delta spells" is the sentence a reader
-        // cannot infer from an unchanged file — this file's own comment below
-        // names it for slots, and a components-only delta is the shape where
-        // silence is indistinguishable from the defect that made it merge
-        // nothing at all. Not a warning: every surface being a quote is
-        // correct authoring and the correct merge.
+        // cannot infer from an unchanged file — the quote line's own comment
+        // (./verdict-lines.ts) names it for slots, and a components-only
+        // delta is the shape where silence is indistinguishable from the
+        // defect that made it merge nothing at all. Not a warning: every
+        // surface being a quote is correct authoring and the correct merge.
         say(`  asyncapi: ${svc} — nothing to write: every one of the ${surfaces.length} component surface(s) this delta declares already stands as living has it`);
       }
       if (merge.removed.length > 0) {
         asyncapiRemovals.push({ service: svc, slots: merge.removed.map((slot) => slot.label) });
         for (const slot of merge.removed) say(`      - removes ${slot.label}`);
       }
-      // Said out loud, because "the plan wrote less than my delta spells" is
-      // the one thing a reader cannot infer from a merged file. Not a warning:
-      // quoting the contract around your change is correct authoring, and
-      // leaving the quote alone is the correct merge.
-      for (const slot of merge.quoted) {
-        say(`      · quotes ${slot.label} — unchanged since it was pinned, left as living has it`);
-      }
-      // The surface half's mirrors of the three lines around them. A component
-      // surface reaches the reader by exactly the same three sentences a slot
-      // does, because it is graded by exactly the same verdict.
-      for (const id of merge.componentsQuoted) {
-        say(`      · quotes components.${id} — unchanged since it was pinned, left as living has it`);
-      }
-      // Stale surfaces reaching the merge at all means --approve pushed past
-      // the gate's asyncapi.baseline-stale — the plan still names what it cost.
-      for (const slot of merge.baselineStale) {
-        say(`      ⚠ stale baseline on ${slot.label} — the living value moved since this delta was pinned; the overwrite is what --approve chose`);
-      }
-      for (const id of merge.componentsStale) {
-        say(`      ⚠ stale baseline on components.${id} — the living value moved since this delta was pinned; the overwrite is what --approve chose`);
-      }
+      // The quote and stale lines (./verdict-lines.ts says why each is said),
+      // the component surfaces' lines mirroring the slots' around them.
+      sayQuoted(say, merge.quoted.map((slot) => slot.label));
+      sayQuoted(say, merge.componentsQuoted.map((id) => `components.${id}`));
+      sayStale(say, merge.baselineStale.map((slot) => slot.label));
+      sayStale(say, merge.componentsStale.map((id) => `components.${id}`));
       for (const id of merge.componentsModified) {
-        planWarns.push({
-          severity: "warn",
-          code: "asyncapi.component-modified",
-          subject: svc,
+        warnOverwrite(plan, say, {
+          svc, code: "asyncapi.component-modified", label: `components.${id}`,
           message: `${svc}: the delta declares components.${id}, which the living AsyncAPI already has with different content — the merge overwrites the living component wholesale`,
         });
-        say(`      ⚠ overwrites components.${id} — the living definition differs`);
       }
       for (const slot of merge.modified) {
-        planWarns.push({
-          severity: "warn",
-          code: modifiedCode(slot.section),
-          subject: svc,
+        // A message is the one slot a consumer names (`Consumes:` lines,
+        // `consumes` edges), so only `asyncapi.message-modified` says who the
+        // overwrite lands on — the OpenAPI planner's sentence, through the
+        // same scan (./consumers.ts). Channels and operations join by nothing.
+        const name = merge.modifiedMessageNames.get(slot.label);
+        const named = name === undefined ? null : consumerClause(await config.consumers.message(svc, name));
+        warnOverwrite(plan, say, {
+          svc, code: modifiedCode(slot.section), label: slot.label, named,
           message: `${svc}: the delta redefines ${slot.label}, which the living AsyncAPI already has — the merge overwrites the living slot wholesale`,
         });
-        say(`      ⚠ overwrites ${slot.label} — the living definition differs`);
       }
       for (const ref of merge.unresolved) {
         planGates.push({
@@ -176,7 +162,7 @@ export async function planAsyncapiContracts(
         });
       }
     } catch (err) {
-      if (err instanceof AsyncapiMergeError) throw new ArchiveFailure("merge-failed", err.message);
+      if (err instanceof AsyncapiMergeError) throw new CodedFailure("merge-failed", err.message);
       throw err;
     }
   }

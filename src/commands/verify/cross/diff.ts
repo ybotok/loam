@@ -22,7 +22,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { emitJson, fail, repoPath } from "../../../core/envelope/json.js";
 import { isRecord } from "../../../core/kernel/records.js";
-import { checkAnswers, type Answer, type AnswerRefusal } from "../../../core/verify/answers.js";
+import { answerEntries, checkAnswers, type Answer, type AnswerRefusal } from "../../../core/verify/answers.js";
 import { type Checklist, type Claim } from "../../../core/verify/checklist.js";
 import { crossExamine, disjointNotice, type CrossAnswer } from "../../../core/verify/cross/diff.js";
 import { plural } from "../../policy/format.js";
@@ -66,11 +66,7 @@ interface DiffScope {
  */
 function offLensNote(scope: DiffScope, raw: unknown): string {
   if (scope.lens === undefined) return "";
-  const entries = Array.isArray(raw)
-    ? raw
-    : isRecord(raw) && Array.isArray(raw["answers"])
-      ? (raw["answers"] as unknown[])
-      : [];
+  const entries = answerEntries(raw) ?? [];
   const scoped = new Set(scope.scoped.map((c) => c.id));
   const onChecklist = new Set(scope.checklist.claims.map((c) => c.id));
   const foreign = [

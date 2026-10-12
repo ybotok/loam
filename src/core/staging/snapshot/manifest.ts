@@ -9,9 +9,12 @@
  * The layout below is pure naming and shape, and the readers that only need
  * to find a snapshot, or read what one recorded, import it from here.
  */
+import { isUtf8 } from "node:buffer";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { resolvePortableFileInsideLexically } from "../../kernel/path-safety.js";
 import { isRecord } from "../../kernel/records.js";
+import { sha256 } from "../writes.js";
 
 /** Where archive parks the pre-images, inside the feature directory so they travel with it — `./snapshot.ts`'s module doc says why. */
 export const SNAPSHOT_DIR = ".loam-before";
@@ -106,13 +109,110 @@ export function snapshotDir(featureDir: string): string {
  * question over bookkeeping.
  */
 export async function readSnapshotChecklist(featureDir: string): Promise<string | null> {
+  const manifest = await manifestRecord(featureDir);
+  if (manifest === null) return null;
+  const { checklist } = manifest;
+  return typeof checklist === "string" && checklist !== "" ? checklist : null;
+}
+
+/**
+ * What a snapshot says about one service artifact as this feature's merge found
+ * it. `held` is the pre-image itself. The other two are answers too, and the
+ * same one for the question the reader asks — what did the merge take OUT of
+ * the artifact: nothing. `created` is a row archive wrote for a file it
+ * created (there was nothing before it); `unwritten` is an intact manifest
+ * with no row for the artifact at all — archive records every file it writes,
+ * so the artifact is what the merge found. Only the EVENT merge leaves a
+ * contract unwritten: it returns no text when it changes nothing
+ * (asyncapi/merge/merge.ts, `text: null` — a delta whose every marker missed
+ * its target is exactly that). The OpenAPI merge returns text whenever the
+ * delta has a path entry, so its no-op is an ordinary row whose pre-image
+ * equals what it wrote — `held`, which answers the same question the same
+ * way: every marker misses against it again.
+ */
+export type SnapshotPreImage =
+  | { kind: "held"; text: string }
+  | { kind: "created" }
+  | { kind: "unwritten" };
+
+/**
+ * The bytes one service artifact held the moment this feature merged — the
+ * pre-image the snapshot parked under `files/` — or one of the two answers
+ * that say the merge took nothing out of it ({@link SnapshotPreImage}), or
+ * null when there is nothing to trust.
+ *
+ * Read for the questions only the pre-image can answer, both asked by the
+ * retired-operation revival check (core/coherence/retired/): what a merge TOOK
+ * that its delta never spelled — a channel-slot removal in an asyncapi delta is
+ * a bare marker, while the messages it retired with the channel are written in
+ * the living contract it merged into and nowhere else — and whether a removal
+ * marker took anything at all, since the merge deletes only what it finds at
+ * the marker's slot. Here, beside `readSnapshotChecklist`, for that reader's
+ * reason: the readers are read-only commands, and this module is the half of
+ * the snapshot they may import.
+ *
+ * The entry is found by `(service, artifact)` on a version-3 manifest — the
+ * key that survives a subsystem re-cut — and by the literal path's last two
+ * segments on a version-2 one, which recorded nothing else. Tolerant to the
+ * last byte, like the checklist reader: no manifest, a layout this loam would
+ * have to guess at, no row for the artifact while some row cannot be read (it
+ * might have been this one's, so absence cannot be concluded past it), a path
+ * that does not stay inside `files/`, a pre-image that no longer hashes to the digest
+ * the manifest recorded for it, or bytes that are not UTF-8 — every one is
+ * null, and the caller grades without it. An edited pre-image is refused
+ * rather than read for the reason `unarchive` refuses to restore one: its
+ * bytes are no longer what the merge saw.
+ */
+export async function readSnapshotPreImage(
+  featureDir: string,
+  key: { service: string; artifact: string },
+): Promise<SnapshotPreImage | null> {
+  const manifest = await manifestRecord(featureDir);
+  if (manifest === null || !Array.isArray(manifest.files)) return null;
+  if (manifest.version !== SNAPSHOT_VERSION && manifest.version !== SNAPSHOT_COMPAT_VERSION) return null;
+  // `Array.isArray` narrows to `any[]`; naming the element type keeps that
+  // `any` from spreading past the row being read (snapshot.ts's reason).
+  const rows: unknown[] = manifest.files;
+  const entry = rows.find((row) => isRecord(row) && entryIs(row, key));
+  if (entry === undefined) {
+    // Absence is an answer only when every row could be read: a row that is
+    // not a record with a path might have been this artifact's.
+    return rows.every((row) => isRecord(row) && typeof row.path === "string") ? { kind: "unwritten" } : null;
+  }
+  if (!isRecord(entry) || typeof entry.path !== "string") return null;
+  if (entry.existed === false && entry.before === null) return { kind: "created" };
+  if (typeof entry.before !== "string") return null;
+  let bytes: Buffer;
+  try {
+    // The manifest is data and this path is one we go and read: the lexical
+    // containment `unarchive` and the staleness check apply to the same field.
+    bytes = await readFile(
+      resolvePortableFileInsideLexically(join(snapshotDir(featureDir), "files"), entry.path, "snapshot pre-image"),
+    );
+  } catch {
+    return null;
+  }
+  if (sha256(bytes) !== entry.before || !isUtf8(bytes)) return null;
+  return { kind: "held", text: bytes.toString("utf8") };
+}
+
+/** Does this manifest row record `key`'s artifact? The version-3 key when it has one, the literal path otherwise. */
+function entryIs(row: Record<string, unknown>, key: { service: string; artifact: string }): boolean {
+  if (typeof row.service === "string" && typeof row.artifact === "string") {
+    return row.service === key.service && row.artifact === key.artifact;
+  }
+  if (typeof row.path !== "string") return false;
+  const parts = row.path.split("/");
+  return parts.length >= 3 && parts[0] === "services" && parts.at(-2) === key.service && parts.at(-1) === key.artifact;
+}
+
+/** The manifest as a record, or null — the one tolerant read behind both readers above. */
+async function manifestRecord(featureDir: string): Promise<Record<string, unknown> | null> {
   let manifest: unknown;
   try {
     manifest = JSON.parse(await readFile(join(snapshotDir(featureDir), SNAPSHOT_MANIFEST), "utf8"));
   } catch {
     return null;
   }
-  if (!isRecord(manifest)) return null;
-  const { checklist } = manifest;
-  return typeof checklist === "string" && checklist !== "" ? checklist : null;
+  return isRecord(manifest) ? manifest : null;
 }
