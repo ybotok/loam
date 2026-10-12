@@ -1243,7 +1243,24 @@ phantom path. The same feature must carry a `REMOVED` requirement whose `Operati
 that id. Coherence gates an absent path+method, an id mismatch, an unjustified marker, a removed
 requirement with no marker, and a new tagged C4 edge consuming the operation being removed.
 `serviceOperationIds` evaluates the feature as living upserts minus removals, so other same-feature
-checks see the post-archive contract. Archive deletes only the matching method, reports removals in
+checks see the post-archive contract.
+
+**An overwrite can remove an operation too, and is graded as one.** The merge writes per method and
+path, so a delta defining ANOTHER operationId where a living operation lives replaces it there — and
+when the contract the merge would write then defines the living one nowhere, it has left the
+contract with no marker for any of the checks above to read. Coherence asks the removal's own
+consumer question of it, on the merged contract: `openapi.remove-op-consumed` (error, `--approve`
+overrides, exactly as for a marker) while a living landscape edge's `metadata { op }` or another
+service's living `Operations:` line still names it — read as they stand, as for a removal: the
+landscape merge only ADDS edges, so no `delta.likec4` can take one away — or while the provider's
+own requirements, as this feature's merge would leave them, still do. That last scan is the
+overwrite's stand-in for the `REMOVED` requirement a marker owes: a requirement the feature
+`MODIFIES` to name the new operation, or `REMOVES`, no longer counts, and one of its own
+`ADDED`/`MODIFIED` requirements still naming the old id does. A new tagged edge onto the replaced
+operation is `c4-api.op-removing`. The fix is the delta's choice: define the replaced operation at
+another address in the same delta if it is to stay; for a rename, redraw the living edge and
+restate the governing requirement. An overwrite of an operation nothing names stays the advisory
+`api.op-unconsumed` it always was. Archive deletes only the matching method, reports removals in
 text and `openapiRemovals` JSON, never copies the marker into living OpenAPI, and deliberately does
 not garbage-collect components. A removal marker in a living `openapi.yaml` is
 `openapi.remove-marker-living` (error). The usual staged-write rollback and `unarchive` snapshot
@@ -2400,7 +2417,9 @@ requirement would land in the file twice — and `--approve` does not override i
 duplication is mechanical, not a judgment call; re-home the requirement first. A delta that
 redefines a path+method the living OpenAPI already has (`openapi.op-modified`, warning) merges
 anyway, but the plan says so — the overwrite is wholesale, and the living definition it replaces
-deserved an eye. An unparseable `delta.likec4` fails the archive at plan time regardless of
+deserved an eye. One that defines a different operationId there, leaving a consumed operation
+defined nowhere, never reaches the plan without `--approve`: the gate refuses it first
+(`openapi.remove-op-consumed`, the overwrite shape). An unparseable `delta.likec4` fails the archive at plan time regardless of
 `--approve`: the alternative was archiving with the architecture axis silently dropped, which is the
 data loss this tool exists to prevent.
 

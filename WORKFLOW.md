@@ -759,7 +759,12 @@ beside the methods, addresses no operation and retires nothing; archive refuses 
 (`openapi.remove-marker-path-level`) rather than publishing a meaningless key into the fleet's
 living contract. Validation refuses stale, mismatched, or unjustified markers; archive deletes the
 method without persisting the marker or garbage-collecting components, and reports the removals in
-both text and JSON. See [SCHEMA.md](SCHEMA.md) for the lifecycle contract.
+both text and JSON. See [SCHEMA.md](SCHEMA.md) for the lifecycle contract. A delta that defines
+another operationId where a living operation lives replaces it there, and when the merged contract
+then defines it nowhere the gate grades it like a retirement: `openapi.remove-op-consumed` while a
+landscape edge, another service's requirement, or the provider's own requirement as the merge would
+leave it still names the old id — so a rename redraws the edge and restates its requirement in the
+same change, or defines the old operation at another address if it is to stay.
 
 A retirement also stays retired. The archive gate reads the removal markers every feature under
 `features/archive/` left behind, and refuses a delta that spells an HTTP operation, a channel, an

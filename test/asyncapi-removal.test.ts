@@ -395,6 +395,47 @@ operations:
     expect(issue!.message).toContain("would no longer declare an action: send operation for 'payment.Legacy'");
     expect(issue!.message).toContain("billing-service");
   });
+
+  it("fires when the feature REDEFINES a slot under another identity — the overwrite carries no marker, and the wire half still sees it", async () => {
+    // The contract axis had this hole: a delta defining another operationId
+    // where a consumed operation lived replaced it with no marker for the
+    // removal gate to read (`openapi.remove-op-consumed` now asks it of the
+    // merged contract). The event axis cannot have it, and these pin why: the
+    // consumer question is asked of the simulated merge's SENT set, so an
+    // overwrite stops answering exactly as a retirement does — a message slot
+    // re-keyed to another name, or a send operation turned around.
+    const overwrites = [
+      `asyncapi: 3.0.0
+components:
+  messages:
+    Legacy:
+      name: payment.LegacyV2
+      payload:
+        type: object
+`,
+      `asyncapi: 3.0.0
+operations:
+  sendLegacy:
+    action: receive
+    channel:
+      $ref: '#/channels/legacyEvents'
+`,
+    ];
+    for (const overwrite of overwrites) {
+      const issues = await coherenceOf(
+        fixture({
+          "features/FEAT-40-retire-legacy/specs/payment-service/asyncapi.yaml": pinAsyncapiSlots(overwrite, LIVING_EVENTS, "payment-service").text!,
+          "features/FEAT-40-retire-legacy/specs/payment-service/spec.md": null,
+          "architecture/landscape.likec4": CONSUMES_LANDSCAPE,
+        }),
+      );
+      const [issue, ...rest] = only(issues, "asyncapi.remove-message-consumed");
+      expect(rest).toEqual([]);
+      expect(issue!.severity).toBe("error");
+      expect(issue!.message).toContain("would no longer declare an action: send operation for 'payment.Legacy'");
+      expect(issue!.message).toContain("billing-service");
+    }
+  });
 });
 
 describe("the merge's half: archive retires the slots", () => {

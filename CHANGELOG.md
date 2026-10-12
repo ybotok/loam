@@ -10,6 +10,31 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Changed — `loam archive` refuses an overwrite that takes a consumed operation out of the contract
+
+No code, flag or payload key was added: an existing code covers a second shape.
+
+- **`openapi.remove-op-consumed` (error, `--approve` overrides) now also fires for an overwrite.**
+  A feature's `openapi.yaml` defines another operationId at the method and path where a living
+  operation lives, and the contract the archive would write then defines the living one nowhere.
+  The merge replaces it there with no removal marker naming it, so before this only the advisory
+  `api.op-unconsumed` fired, the archive passed without `--approve`, and the next `validate`
+  reported `spine.op-undefined` / `spec-api.op-undefined`. The consumers are a removal's: living
+  landscape edges with `metadata { op }` and other services' living `Operations:` lines, read as
+  they stand. They also include the provider's own requirements as the merge would leave them —
+  one the feature MODIFIES to name the new operation, or REMOVES, no longer counts. The message
+  names what replaces the operation and where, and says to define it at another address in the
+  same delta if it is to stay.
+- **Exit code:** on this shape `loam archive` now exits 1 (`not-coherent`) without `--approve`,
+  and `loam validate --feature` exits 1. With `--approve` the archive merges as before and lists
+  the finding in `overridden[]`.
+- **`c4-api.op-removing`** now also fires for a new tagged edge onto an operation the delta
+  replaces that way.
+- An overwrite of an operation nothing names is unchanged: `api.op-unconsumed` stays advisory.
+  The event axis needed no change: `asyncapi.remove-message-consumed` already grades the simulated
+  merge's sent messages, so a channel, operation or message slot redefined under another identity
+  is caught like a retirement.
+
 ### Changed — `loam archive` refuses a delta that would bring back an operation another feature retired
 
 Two codes, both added to the `IssueCode` union, and one additive `--json` key were added.

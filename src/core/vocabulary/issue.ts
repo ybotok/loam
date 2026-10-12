@@ -134,7 +134,7 @@ export type IssueCode =
   | "c4-api.op-pending"
   /** E2's lifecycle shadow — a NEW tagged edge consumes an operation the living provider contract marks `deprecated: true`; advisory, never a gate */
   | "c4-api.op-deprecated"
-  /** a NEW tagged edge consumes an operation this same feature removes */
+  /** a NEW tagged edge consumes an operation this same feature removes — retires with a marker, or replaces at its method and path so the merge leaves it defined nowhere */
   | "c4-api.op-removing"
   /** an operation-removal marker addresses no living path+method */
   | "openapi.remove-target-missing"
@@ -255,7 +255,7 @@ export type IssueCode =
   | "openapi.baseline-stale"
   /** an operation this feature spells, the living contract no longer has, and an ARCHIVED feature's removal marker retired — or spells at an address an archived feature moved it away from — the merge cannot tell a quote of a retired or moved operation from an addition, so archiving would put it back (beside its new address, for a move). A warning that GATES; `--approve` re-adds it on purpose */
   | "openapi.op-revived"
-  /** the feature retires an operation the LIVING fleet still consumes — a landscape edge's `metadata { op }`, or another service's living requirement */
+  /** the feature takes out of the contract an operation the LIVING fleet still consumes — a landscape edge's `metadata { op }`, or another service's living requirement. Two shapes: a removal marker retires it, or the delta defines another operation at its method and path and the contract the merge would write defines it nowhere — the overwrite, which carries no marker, also counts the provider's own requirements the merge would leave naming it (the stand-in for the REMOVED requirement a marker owes) */
   | "openapi.remove-op-consumed"
   /** two requirements in the LIVING document share one heading — MODIFIED rewrites the first, REMOVED deletes both, so no delta applies predictably */
   | "delta.living-duplicate-requirement"

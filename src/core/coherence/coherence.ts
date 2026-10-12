@@ -177,7 +177,7 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
     ...(await authoringIssues({ featureDir, featureId, splicedEls: elements.filter(ridesWithTag), svcNames, context })),
   );
   const {
-    reqOps, removingOps, featureApiOps, unreadableApis, revivalCandidates,
+    reqOps, removingOps, featureApiOps, unreadableApis, revivalCandidates, displacedOps,
   } = await declaredByService(scope, svcNames, issues, context);
 
   // A revival: an operation the merged contract would answer that the living
@@ -194,7 +194,7 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
     issues.push(...revivedOperations(svc, arrived, await retired()));
   }
   const {
-    governedByLivingSpec, edgeConsumers, requirementConsumers, definedElsewhere,
+    governedByLivingSpec, edgeConsumers, requirementConsumers, governorsAfterMerge, definedElsewhere,
     deprecatedInLiving, undeprecatedByFeature,
   } = coherenceLookups(scope, context);
 
@@ -207,6 +207,30 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
         code: "openapi.remove-op-consumed",
         subject: svc,
         message: `${svc}: this feature retires '${op}', but the living fleet still consumes it — ${consumers.join("; ")}. Retire the consumer in the same feature (drop the edge from architecture/landscape.likec4, or the requirement that names it), or archive with --approve to break it deliberately.`,
+      });
+    }
+  }
+
+  // The same loss with no marker to read: another operation defined where a
+  // consumed one lives replaces it there, and once the contract the merge
+  // would write defines it nowhere it has left the contract exactly as a
+  // retirement does. One code, because the breach and its override are the
+  // removal's — only `api.op-unconsumed` (advisory) said anything before, and
+  // the archive passed without `--approve`. The consumers are the removal's
+  // own two scans, as they stand — the landscape merge only ADDS edges, so a
+  // delta.likec4 can never take one away — plus the provider's own
+  // requirements as the merge would leave them, the overwrite's stand-in for
+  // the REMOVED requirement a marker owes (lookups.ts says why).
+  for (const [svc, displaced] of displacedOps) {
+    for (const { id: op, at } of displaced) {
+      const consumers = [...(await edgeConsumers(svc, op)), ...(await requirementConsumers(svc, op)), ...(await governorsAfterMerge(svc, op))];
+      if (consumers.length === 0) continue;
+      const by = at.map(({ address, by: id }) => `${id === undefined ? "an operation with no operationId" : `'${id}'`} at ${address}`).join(" and ");
+      issues.push({
+        severity: "error",
+        code: "openapi.remove-op-consumed",
+        subject: svc,
+        message: `${svc}: this feature's openapi.yaml defines ${by}, where '${op}' lives now — the merge replaces it there and would leave '${op}' defined nowhere, but it is still consumed — ${consumers.join("; ")}. Define '${op}' at another address in this delta if it is to stay. To take it out on purpose, update every consumer in the same change — drop or redraw its edge in architecture/landscape.likec4, edit another service's living requirement that names it, MODIFY or REMOVE ${svc}'s own requirement in this feature's delta (restated to name the new operation, for a rename) — or archive with --approve to break it deliberately.`,
       });
     }
   }
@@ -264,7 +288,13 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
         : await serviceOperationIds(docsDir, pathable, featureDir, context);
     if (contractUnreadable) {
       // openapi.invalid (declared.ts) already gates; one breach, one finding.
-    } else if (pathable !== undefined && removingOps.get(pathable)?.has(r.op) === true) {
+    } else if (
+      pathable !== undefined &&
+      // An operation replaced at its address leaves as surely as a retired
+      // one; `available` below still lists it, because serviceOperationIds
+      // subtracts markers only, so without this a new edge onto it passed.
+      (removingOps.get(pathable)?.has(r.op) === true || displacedOps.get(pathable)?.some((d) => d.id === r.op) === true)
+    ) {
       issues.push({ severity: "error", code: "c4-api.op-removing", message: `${svcOf(r.source)} builds new consumption on '${r.op}', which this feature removes from ${target}` });
     } else if (!available.includes(r.op)) {
       const other = await definedElsewhere(target, r.op);

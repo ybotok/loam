@@ -9,7 +9,10 @@
  * FEATURE's own openapi delta: it lives here anyway because it is the second
  * half of the one question `deprecatedInLiving` opens — "is this op dying, and
  * is this feature the resurrection?" — and splitting the pair across modules
- * would leave each half's cache discipline unexplained by the other. A feature
+ * would leave each half's cache discipline unexplained by the other. A second,
+ * `governorsAfterMerge`, reads the feature's own spec.md delta, but only to
+ * fold it onto the living spec it asks about — the question is still the
+ * world's, as the merge would leave it. A feature
  * whose checks never need a lookup must not pay for it, which is why these are
  * closures over a cache rather than arguments computed up front.
  */
@@ -23,6 +26,7 @@ import { operations } from "../openapi/doc.js";
 import { enumeratedServiceIds, locateServicePaths } from "../repo/service-target.js";
 import { activeOpAdditions } from "./pending.js";
 import { parseRequirements } from "../document/parse.js";
+import { applyRequirementDelta } from "../document/apply.js";
 import { type Requirement } from "../document/spec.js";
 import type { FleetContext } from "../fleet-context.js";
 import { type DeltaScope } from "./declared.js";
@@ -32,6 +36,7 @@ export interface Lookups {
   governedByLivingSpec(service: PathableService, op: string): Promise<boolean>;
   edgeConsumers(service: string, op: string): Promise<string[]>;
   requirementConsumers(service: string, op: string): Promise<string[]>;
+  governorsAfterMerge(service: PathableService, op: string): Promise<string[]>;
   definedElsewhere(service: string, op: string): Promise<string | undefined>;
   deprecatedInLiving(service: PathableService, op: string): Promise<boolean>;
   undeprecatedByFeature(service: PathableService, op: string): Promise<boolean>;
@@ -118,6 +123,48 @@ export function coherenceLookups(scope: DeltaScope, context?: FleetContext): Loo
       return out;
     };
 
+    // --- an overwrite leaves the provider's OWN requirements behind ---
+    //
+    // `requirementConsumers` skips the provider on purpose: a removal marker
+    // must be justified by a REMOVED requirement naming the operation (the
+    // remove-marker-unjustified join in ./declared.ts), and the merge deletes
+    // that requirement with it. An overwrite carries no marker, so nothing
+    // asks for that — and a delta defining `fetchOrder` where `getOrder`
+    // lives left the provider's own `Operations: getOrder` standing, which
+    // the next `validate` reports as `spec-api.op-undefined` against the
+    // provider itself. So the overwrite asks the provider's requirements as
+    // the MERGE would leave them: the feature's own delta applied through the
+    // archive's function (`applyRequirementDelta`), so a requirement this
+    // feature MODIFIES to name the new operation, or REMOVES, is gone as
+    // written — that is how a rename restates the requirement that governs it
+    // — and one of its own ADDED/MODIFIED requirements still naming the old
+    // id is a governor too. A delta the merge would refuse to apply answers
+    // nothing: its identity errors already gate (`delta.*`), and nothing it
+    // says can land until they are fixed. spec.md only — `Operations:` lives
+    // there, the rule `requirementConsumers` scans by.
+    const governorsAfterMerge = async (service: PathableService, op: string): Promise<string[]> => {
+      const living = await livingRequirements(service);
+      const deltaPath = featureSpecPaths(featureDir, service).spec;
+      const delta = !existsSync(deltaPath)
+        ? []
+        : context === undefined
+          ? parseRequirements(await readFile(deltaPath, "utf8"))
+          : await context.readRequirements(deltaPath);
+      let merged: Requirement[];
+      try {
+        merged = applyRequirementDelta(living, delta);
+      } catch {
+        return [];
+      }
+      // Untouched requirements come back as the very objects that went in
+      // (apply.ts states the identity is load-bearing), which is what tells a
+      // living governor from one this feature wrote.
+      const untouched = new Set(living);
+      return merged
+        .filter((r) => r.operations.includes(op))
+        .map((r) => (untouched.has(r) ? `${service}'s living requirement '${r.name}'` : `this feature's ${service} delta requirement '${r.name}'`));
+    };
+
     // What OTHER features in flight define, per (service, op). Cross-service work
     // normally lands as feature A calling an op that in-flight feature B introduces;
     // that is an ordering dependency, not a broken contract, and the requirements
@@ -164,7 +211,7 @@ export function coherenceLookups(scope: DeltaScope, context?: FleetContext): Loo
       return set.has(op);
     };
   return {
-    governedByLivingSpec, edgeConsumers, requirementConsumers, definedElsewhere,
+    governedByLivingSpec, edgeConsumers, requirementConsumers, governorsAfterMerge, definedElsewhere,
     deprecatedInLiving, undeprecatedByFeature,
   };
 }

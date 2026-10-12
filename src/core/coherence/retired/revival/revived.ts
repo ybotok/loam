@@ -206,7 +206,7 @@ export async function serviceRevivals(request: ServiceRevivalRequest): Promise<I
     const featDoc = await readOpenapi(feature.openapi, context);
     const livingDoc = await readOpenapi(living.openapi, context);
     const sides = { featPath: feature.openapi, featDoc, livingPath: living.openapi, livingDoc, service, featText: planned?.get(feature.openapi) };
-    const ops = await operationArrivals(sides, context);
+    const ops = (await operationArrivals(sides, context)).operations;
     if (ops.length > 0) issues.push(...revivedOperations(service, ops, await retired()));
   }
 

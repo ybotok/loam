@@ -1,14 +1,16 @@
 /**
  * What a feature's own delta DECLARES, per service, indexed once.
  *
- * Seven indexes over the same four files (the delta spec.md, arch.spec.md,
+ * Nine indexes over the same four files (the delta spec.md, arch.spec.md,
  * openapi.yaml, and the living contract they are graded against), built in one
  * walk because every check downstream joins on the service id and would
  * otherwise re-read the delta per question. The distinctions here are the ones
  * the checks cannot make for themselves: an operation a REMOVED requirement
  * governs is being retired, so it neither claims the contract nor governs
  * anything after the merge; a removal marker that names an id also defined
- * elsewhere in the delta is a RELOCATION, not a retirement; and a marker with
+ * elsewhere in the delta is a RELOCATION, not a retirement; a living operation
+ * another one replaces at its address, with no marker naming it, leaves the
+ * contract all the same; and a marker with
  * no `operationId` at all is a shape only this walk can see. The capability
  * gate rides the same loop: both delta spec documents are graded against the
  * fleet vocabulary here, because coherence.ts and this package's file count
@@ -33,7 +35,7 @@ import type { Requirement } from "../document/spec.js";
 import { openapiBaselineIssues } from "../openapi/baseline/gate.js";
 import { readOpenapi } from "../openapi/doc.js";
 import { operationRetirements } from "./retired/retirement.js";
-import { operationArrivals, type Arrival } from "./retired/revival/arrivals.js";
+import { operationArrivals, type Arrival, type Displacement } from "./retired/revival/arrivals.js";
 import type { FleetContext } from "../fleet-context.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
@@ -67,6 +69,14 @@ export interface Declared {
    * when one of these lists is non-empty.
    */
   revivalCandidates: Map<PathableService, Arrival[]>;
+  /**
+   * Per service: every living operationId the contract the archive would
+   * write answers nowhere while no removal marker names it — replaced at its
+   * address by another operation (./retired/revival/arrivals.ts). The
+   * removal gate's consumers are asked of these too: the loss is the same,
+   * only the spelling differs.
+   */
+  displacedOps: Map<PathableService, Displacement[]>;
 }
 
 /** The three facts this walk needs about the feature it is reading. */
@@ -94,6 +104,7 @@ export async function declaredByService(
     const featureApiOps = new Set<string>();
     const unreadableApis = new Set<string>();
     const revivalCandidates = new Map<PathableService, Arrival[]>();
+    const displacedOps = new Map<PathableService, Displacement[]>();
     // The capability gate's vocabulary, once per call. Absent or invalid stays
     // SILENT here — capability.invalid is validate --all's one finding about a
     // broken file, and an absent file means the fleet never opted in — so with
@@ -225,7 +236,9 @@ export async function declaredByService(
       const livingDoc = await readOpenapi(livingOpenapiPath, context);
       const livingOps = livingDoc.ops;
       const sides = { featPath: paths.openapi, featDoc, livingPath: livingOpenapiPath, livingDoc, service: svc };
-      revivalCandidates.set(svc, await operationArrivals(sides, context));
+      const moved = await operationArrivals(sides, context);
+      revivalCandidates.set(svc, moved.operations);
+      if (moved.displaced.length > 0) displacedOps.set(svc, moved.displaced);
       for (const id of livingDoc.duplicateIds) {
         const slots = livingOps.filter((op) => op.id === id).map((op) => `${op.method} ${op.path}`);
         issues.push({
@@ -321,5 +334,6 @@ export async function declaredByService(
     }
   return {
     reqOps, removedReqOps, removingOps, allMarkerIds, anonymousMarkers, featureApiOps, unreadableApis, revivalCandidates,
+    displacedOps,
   };
 }
