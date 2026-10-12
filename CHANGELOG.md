@@ -10,6 +10,31 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Fixed — an operation with no `operationId` is a slot like any other
+
+No code, flag or payload key was added. The OpenAPI reader used to drop an operation written
+without an `operationId`. It now keeps it by its method and path, never by an id: requirements,
+edges and removal markers still cannot name it, and it gets no finding of its own. The checks that
+work by slot now see it:
+
+- **`openapi.op-revived` names it.** When a quote lands where such an operation lives, the message
+  says `<METHOD /path> now holds an operation with no operationId, and archiving this delta
+  replaces it there`. Its move-back remedy adds that, if that operation is to stay, the same delta
+  must define it at another address. The message no longer calls that address one "the living
+  contract no longer has". Followed as it used to read, the remedy led to an archive that deleted
+  the operation with nothing naming it.
+- **`loam rebase` and `loam validate` agree about a pin over it.** Rebase always pinned against
+  whatever stood at the slot, but validate refused that pin with `openapi.baseline-invalid` ("no
+  operation at that slot").
+- **Pins are now required at these slots.** An unpinned quote over such an operation counts into
+  `openapi.baseline-missing` (warn, gates archive), and so does an unpinned delta operation without
+  an `operationId` over a living one. Their pins are graded like any other (`-stale`, `-invalid`).
+  **Exit code:** `loam archive` now exits 1 (`not-coherent`) on either shape until `loam rebase`
+  pins it, or `--approve` merges unpinned.
+- **`openapi.remove-op-consumed`** also fires when the delta defines an operation with no
+  `operationId` where a consumed one lives. Before, a delta holding only such an operation upserted
+  over the consumed one with no finding of any kind.
+
 ### Changed — `loam archive` refuses an overwrite that takes a consumed operation out of the contract
 
 No code, flag or payload key was added: an existing code covers a second shape.

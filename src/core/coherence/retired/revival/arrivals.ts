@@ -55,6 +55,15 @@ export interface Arrival {
    */
   replaces?: string;
   /**
+   * Set where what the living contract answers at `at` is an operation
+   * written with NO operationId: the merge replaces it there all the same,
+   * and no id can name it, so `replaces` stays absent. The reader dropped
+   * such operations outright once, and the finding called their address one
+   * "the living contract no longer has" — the very defect `replaces` was
+   * added for, through the one door it left open.
+   */
+  replacesUnnamed?: true;
+  /**
    * Can this same delta take it out of every one of `besides`? A living
    * address the delta spells nothing at takes a removal marker; a declaration
    * inline under a channel is taken out by restating or retiring the channel
@@ -104,11 +113,17 @@ type Placed = readonly [id: string, at: string];
 const opsPlaced = (ops: readonly Operation[]): Placed[] => ops.filter((op) => !op.remove).map((op) => [op.id, operationAddress(op)]);
 const messagesPlaced = (all: readonly EventMessage[]): Placed[] => all.filter((m) => m.remove !== true).map((m) => [m.name, m.slot]);
 
-/** Every (identity, address) the merged contract has and the living one lacks, in the merged contract's order. */
+/**
+ * Every (identity, address) the merged contract has and the living one lacks,
+ * in the merged contract's order. `unnamed` holds the living addresses an
+ * entry with no identity stands at — an operation with no operationId; the
+ * event axis has none.
+ */
 function arrivals(
   living: readonly Placed[],
   merged: readonly Placed[],
   markable: (address: string, livesAt: readonly string[]) => boolean,
+  unnamed: ReadonlySet<string> = new Set(),
 ): Arrival[] {
   const where = (all: readonly Placed[], id: string): string[] => all.filter(([i]) => i === id).map(([, at]) => at);
   return merged.flatMap(([id, at]) => {
@@ -116,7 +131,8 @@ function arrivals(
     if (livesAt.includes(at)) return [];
     const besides = where(merged, id).filter((b) => b !== at);
     const replaces = living.find(([, address]) => address === at)?.[0];
-    return [{ id, at, livesAt, besides, markable: besides.every((b) => markable(b, livesAt)), ...(replaces === undefined ? {} : { replaces }) }];
+    const occupant = replaces !== undefined ? { replaces } : unnamed.has(at) ? { replacesUnnamed: true as const } : {};
+    return [{ id, at, livesAt, besides, markable: besides.every((b) => markable(b, livesAt)), ...occupant }];
   });
 }
 
@@ -128,26 +144,33 @@ function arrivals(
  * runs only when some definition in the delta is not living at its own
  * address already: nothing else the merge writes can be new, so a delta that
  * only restates what stands has nothing to compare and never pays for it.
- * The displacements ride the same run, and the same trigger is enough for
- * them: a named operation replacing a living one at its address is itself
- * a definition not living there.
+ * The displacements ride the same run, and need one more trigger: a named
+ * operation replacing a living one is itself a definition not living there,
+ * but one written with no operationId at a living operation's address is
+ * not, and it replaces that operation all the same.
  */
 export async function operationArrivals(sides: PairSides<OpenapiDoc>, context?: FleetContext): Promise<OperationArrivals> {
   const none: OperationArrivals = { operations: [], displaced: [] };
   const { featPath, featDoc, livingPath, livingDoc, service } = sides;
   if (featDoc.unreadable || livingDoc.unreadable) return none;
   const living = opsPlaced(livingDoc.ops);
-  if (arrivals(living, opsPlaced(featDoc.ops), () => true).length === 0) return none;
+  const named = new Set(living.map(([, at]) => at));
+  const overNamed = featDoc.anonymousOps.some((op) => named.has(operationAddress(op)));
+  if (arrivals(living, opsPlaced(featDoc.ops), () => true).length === 0 && !overNamed) return none;
   const featureText = sides.featText ?? (await readOr(featPath, context));
   const livingExists = existsSync(livingPath);
   const livingText = livingExists ? await readOr(livingPath, context) : undefined;
   if (featureText === undefined || (livingExists && livingText === undefined)) return none;
   const merged = mergedOpenapiDoc({ livingText, livingDoc, featureText, service });
   if (merged === undefined) return none;
-  const spelled = new Set([...featDoc.ops, ...featDoc.anonymousRemovals].map(operationAddress));
+  // Every address the delta spells — a removal marker, an operation, named
+  // or not — holds what the delta spells there, so no marker can stand
+  // beside it.
+  const spelled = new Set([...featDoc.ops, ...featDoc.anonymousRemovals, ...featDoc.anonymousOps].map(operationAddress));
   const placed = opsPlaced(merged.ops);
+  const unnamed = new Set(livingDoc.anonymousOps.map(operationAddress));
   return {
-    operations: arrivals(living, placed, (b, livesAt) => livesAt.includes(b) && !spelled.has(b)),
+    operations: arrivals(living, placed, (b, livesAt) => livesAt.includes(b) && !spelled.has(b), unnamed),
     displaced: displacements(living, placed, new Set(featDoc.ops.filter((op) => op.remove).map((op) => op.id))),
   };
 }

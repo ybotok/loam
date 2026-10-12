@@ -1535,7 +1535,12 @@ the source for tests.
   stripped on merge exactly like `Based-On:`. The digest is taken over the operation's *canonical*
   form (object keys sorted), which is the same comparison `isDeepStrictEqual` makes when the merge
   decides an operation "differs" — so a pin goes stale exactly when the merge would say something
-  moved, never over a reordered key. The pin is always the digest of the **living** operation, and
+  moved, never over a reordered key. The pin is keyed by the slot, method and path, on both sides,
+  so an operation written with no `operationId` — living or in the delta — is pinned, graded and
+  quoted exactly as a named one: `loam rebase` always pinned against whatever stood at the slot,
+  and the gate once read named operations alone, so it refused the pin rebase had just written as
+  one over "no operation at that slot" and never asked an unnamed quote for a pin. The pin is
+  always the digest of the **living** operation, and
   that one rule yields both merge verdicts by itself: an operation the author only quoted is
   byte-equal to living, so its pin equals its own content and **the merge skips it entirely**
   (reported as `· quotes …` in the plan, so the plan never silently writes less than the delta

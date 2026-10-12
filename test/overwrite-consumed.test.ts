@@ -407,6 +407,39 @@ paths:
     expect(await livingOps(p, "payment-service")).toEqual(["authorizePayment", "capturePayment", "checkHealth"]);
   });
 
+  it("an operation with NO operationId defined where a consumed one lives takes it out all the same — and owes a pin like any other", async () => {
+    // The reader dropped an operation with no operationId outright, so the
+    // merge simulation never ran for a delta holding only that, and the
+    // slot-keyed baseline gate never graded it: unpinned, it upserted over
+    // `capturePayment` at exit 0 with no finding of any kind.
+    const p = await project({
+      ...fleet(LANDSCAPE),
+      [`${FEAT}/specs/payment-service/openapi.yaml`]: `openapi: 3.1.0
+paths:
+  /payments/capture:
+    post:
+      summary: Capture, by the legacy gateway
+      responses: { "200": { description: captured } }
+`,
+    });
+    const before = findings((await runLoam(p.workDir, "validate", "--feature", "FEAT-60", "--json")).stdout);
+    const [consumed, ...more] = ofCode(before, "openapi.remove-op-consumed");
+    expect(more).toEqual([]);
+    expect(consumed!.message).toContain("defines an operation with no operationId at POST /payments/capture, where 'capturePayment' lives now");
+    expect(consumed!.message).toContain(`edge checkout-web → payment-service ("Calls capturePayment")`);
+    expect(ofCode(before, "openapi.baseline-missing")).toEqual([
+      expect.objectContaining({ message: expect.stringContaining("1 operation(s)") }),
+    ]);
+
+    const rebased = await runLoam(p.workDir, "rebase", "FEAT-60", "--json");
+    expect(rebased.code, rebased.out).toBe(0);
+    expect((JSON.parse(rebased.stdout) as { written: string[] }).written).toHaveLength(1);
+    const after = findings((await runLoam(p.workDir, "validate", "--feature", "FEAT-60", "--json")).stdout);
+    expect(ofCode(after, "openapi.baseline-missing")).toEqual([]);
+    expect(ofCode(after, "openapi.baseline-invalid")).toEqual([]);
+    expect(ofCode(after, "openapi.remove-op-consumed")).toHaveLength(1);
+  });
+
   it("a new tagged edge onto the operation the overwrite takes out is c4-api.op-removing, as onto a retired one", async () => {
     // The contract-existence check reads living upserts minus MARKERS, so it
     // still listed the replaced id and the edge passed — to be spliced into

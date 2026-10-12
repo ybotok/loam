@@ -494,6 +494,39 @@ paths:
       const doc = await readOpenapi(join(root, "openapi.yaml"));
       expect(doc.ops).toEqual([]);
       expect(doc.anonymousRemovals).toEqual([{ path: "/legacy", method: "post" }]);
+      expect(doc.anonymousOps).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps an operation with no operationId as a SLOT — digest and pin — and out of every id-keyed list", async () => {
+    // Dropped outright once: the slot-keyed gate then refused the pin rebase
+    // had just written over it, and the revival check called its address one
+    // the living contract no longer had.
+    const root = await makeTmpDir();
+    try {
+      await writeFiles(root, {
+        "openapi.yaml": `openapi: 3.1.0
+paths:
+  /legacy:
+    post:
+      summary: Legacy gateway
+      x-loam-based-on: 0123456789abcdef
+      responses: { "202": { description: accepted } }
+    get:
+      operationId: ""
+      responses: { "200": { description: ok } }
+`,
+      });
+      const doc = await readOpenapi(join(root, "openapi.yaml"));
+      expect(doc.ops).toEqual([]);
+      expect(doc.duplicateIds).toEqual([]);
+      expect(doc.anonymousRemovals).toEqual([]);
+      expect(doc.anonymousOps).toEqual([
+        { path: "/legacy", method: "post", digest: expect.stringMatching(/^[0-9a-f]{16}$/), basedOn: "0123456789abcdef" },
+        { path: "/legacy", method: "get", digest: expect.stringMatching(/^[0-9a-f]{16}$/) },
+      ]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -879,6 +912,7 @@ describe("readOpenapi — a broken contract is flagged, not read as empty", () =
         ops: [],
         duplicateIds: [],
         anonymousRemovals: [],
+        anonymousOps: [],
         pathLevelRemovals: [],
         unreadable: false,
         danglingRefs: [],

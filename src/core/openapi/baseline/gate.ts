@@ -49,13 +49,27 @@ export interface BaselineGateInput {
 export function openapiBaselineIssues(input: BaselineGateInput): Issue[] {
   const { featDoc, livingDoc, service, featureId } = input;
   const issues: Issue[] = [];
-  const livingBySlot = new Map(livingDoc.ops.map((op) => [`${op.method} ${op.path}`, op]));
-  let unpinned = 0;
-  for (const op of featDoc.ops) {
+  // Slot-keyed on BOTH sides, an operation with no operationId included: the
+  // merge replaces whatever stands at a method and path, and `loam rebase`
+  // pins against whatever stands there, named or not. Reading named
+  // operations alone, this gate refused as pinned over "no operation at that
+  // slot" the very pin rebase had just written over an unnamed one — the two
+  // could never agree — and an unpinned quote over it drew no
+  // `openapi.baseline-missing` at all.
+  const livingBySlot = new Map<string, { digest: string }>(
+    [...livingDoc.ops, ...livingDoc.anonymousOps].map((op) => [`${op.method} ${op.path}`, op]),
+  );
+  const restated: Array<{ id?: string; path: string; method: string; digest: string; basedOn?: string }> = [
     // A removal marker is not a restatement of anything; its own exactness
     // check (`openapi.remove-target-mismatch`) already guards the slot.
-    if (op.remove) continue;
+    ...featDoc.ops.filter((op) => !op.remove),
+    ...featDoc.anonymousOps,
+  ];
+  let unpinned = 0;
+  for (const op of restated) {
     const where = `${op.method.toUpperCase()} ${op.path}`;
+    // How the messages name it: the slot, and the operationId where it has one.
+    const named = op.id === undefined ? where : `${where} ('${op.id}')`;
     const livingOp = livingBySlot.get(`${op.method} ${op.path}`);
     if (op.basedOn !== undefined && !OPERATION_DIGEST_RE.test(op.basedOn)) {
       issues.push({
@@ -90,21 +104,21 @@ export function openapiBaselineIssues(input: BaselineGateInput): Issue[] {
       // this must not tell the author otherwise —
       // and for that delta a removal marker at the address cannot be written
       // beside the other operation, hence the second remedy.
-      const movedTo = livingDoc.ops.filter((l) => !l.remove && l.id === op.id).map((l) => `${l.method.toUpperCase()} ${l.path}`);
+      const movedTo = op.id === undefined ? [] : livingDoc.ops.filter((l) => !l.remove && l.id === op.id).map((l) => `${l.method.toUpperCase()} ${l.path}`);
       issues.push({
         severity: "error",
         code: "openapi.baseline-invalid",
         subject: service,
         message: movedTo.length > 0
           ? `${service}: ${where} ('${op.id}') carries ${OPENAPI_BASELINE_KEY}, but the living contract has no operation at that slot — '${op.id}' lives at ${movedTo.join(" and ")} now: a parallel feature moved it there (or retired it here, and another re-added it there). Re-read it there and delete this operation from the delta, making any change at its new address; archived while it still lives there, it would put '${op.id}' back at ${where} as well, one operationId at two addresses. To move it back on purpose, drop the pin and add a removal marker for '${op.id}' at ${movedTo.join(" and ")} to this delta, or define another operation there.`
-          : `${service}: ${where} ('${op.id}') carries ${OPENAPI_BASELINE_KEY}, but the living contract has no operation at that slot — the version it was pinned to is gone. If a parallel feature retired it, re-read the living contract and delete this operation from the delta, unless this feature deliberately brings it back (then drop the pin and archive with --approve past \`openapi.op-revived\`). A genuinely new operation has no living version to be based on and carries no pin.`,
+          : `${service}: ${named} carries ${OPENAPI_BASELINE_KEY}, but the living contract has no operation at that slot — the version it was pinned to is gone. If a parallel feature retired it, re-read the living contract and delete this operation from the delta, unless this feature deliberately brings it back (then drop the pin and archive with --approve past \`openapi.op-revived\`). A genuinely new operation has no living version to be based on and carries no pin.`,
       });
     } else if (verdict === "stale") {
       issues.push({
         severity: "error",
         code: "openapi.baseline-stale",
         subject: service,
-        message: `${service}: ${where} ('${op.id}') was written against living version ${op.basedOn}, but the living contract now holds ${livingOp!.digest} — somebody landed a change to it in between, and merging this would replace theirs outright. Re-read the living operation, fold in what you still mean, then run \`loam rebase ${featureId}\`.`,
+        message: `${service}: ${named} was written against living version ${op.basedOn}, but the living contract now holds ${livingOp!.digest} — somebody landed a change to it in between, and merging this would replace theirs outright. Re-read the living operation, fold in what you still mean, then run \`loam rebase ${featureId}\`.`,
       });
     } else if (verdict === "unpinned" && livingOp !== undefined) {
       // Counted, not listed. A delta over a thirty-operation service quotes
