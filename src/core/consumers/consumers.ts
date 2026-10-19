@@ -46,7 +46,7 @@
  * `diff.op-removed-consumed` (verification 2026-09-04, R3), and why a hop whose
  * two ends are the provider is never a victim.
  *
- * READ AFTER A FEATURE, OR AS IT STANDS. With `after`, every requirement is read
+ * READ AFTER A FEATURE, OR AS IT STANDS. With `afterFeature`, every requirement is read
  * as that feature's merge would leave it (`./after.ts` — a consumer the same
  * feature MODIFIES or REMOVES stops counting, and an unappliable delta fails
  * closed); without it, the living fleet as it stands, which is what the diff and
@@ -63,12 +63,12 @@
 import { type Rel } from "../c4/likec4.js";
 import { hopsConsuming, hopsExercising } from "../usecases/operations.js";
 import { FleetContext } from "../fleet-context.js";
-import type { DocsDir } from "../kernel/ids/dirs.js";
+import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 import type { Requirement } from "../document/spec.js";
 import type { ServiceState } from "./state.js";
 import type { ConsumerScan } from "./scan.js";
 import { livingFleet, livingMap } from "./current.js";
-import { afterMerge, type FeatureView, type MergedRequirement, type SpecAxis } from "./after.js";
+import { afterMerge, featureView, type MergedRequirement, type SpecAxis } from "./after.js";
 
 /** One consumer question's answer: the scan, plus what of the provider's own still names it. */
 export interface Consumers extends ConsumerScan {
@@ -96,7 +96,7 @@ export interface ConsumerRequest {
   /** The invocation's read index. Absent, the index reads through one of its own. */
   context?: FleetContext;
   /** The feature whose merge every requirement is read after (`./after.ts`). Absent: the living fleet as it stands. */
-  after?: FeatureView;
+  afterFeature?: FeatureDir;
 }
 
 /**
@@ -144,8 +144,9 @@ interface RequirementRule {
 }
 
 export function consumerIndex(request: ConsumerRequest): ConsumerIndex {
-  const { docsDir, after } = request;
+  const { docsDir } = request;
   const context = request.context ?? new FleetContext();
+  const after = request.afterFeature === undefined ? undefined : featureView({ docsDir, featureDir: request.afterFeature, context });
 
   /** One service's requirements on one axis as `after`'s merge would leave them, read once per index. */
   const merged = new Map<string, Promise<MergedRequirement[] | { unreadable: string }>>();

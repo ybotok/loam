@@ -532,6 +532,7 @@ model {
   loam.core.coherence -> loam.core.c4
   loam.core.coherence -> loam.core.capabilities
   loam.core.coherence -> loam.core.conflict_markers
+  loam.core.coherence -> loam.core.consumers
   loam.core.coherence -> loam.core.delta
   loam.core.coherence -> loam.core.document
   loam.core.coherence -> loam.core.envelope

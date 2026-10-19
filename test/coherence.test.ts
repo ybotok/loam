@@ -330,8 +330,12 @@ paths:
     const files = removalFiles();
     delete files[`${FEATURE_REL}/specs/payment-service/spec.md`];
     const issues = await coherenceOf(files);
-    expect(issues).toHaveLength(1);
-    expect(issues[0]).toMatchObject({ severity: "error", code: "openapi.remove-marker-unjustified" });
+    // Two findings, and the second is what the first cannot say: the
+    // requirement the merge would leave governing the retired operation —
+    // the one the missing REMOVED requirement would have taken with it.
+    expect(issues.map((i) => i.code).sort()).toEqual(["openapi.remove-marker-unjustified", "openapi.remove-op-consumed"]);
+    expect(issues.find((i) => i.code === "openapi.remove-marker-unjustified")).toMatchObject({ severity: "error" });
+    expect(issues.find((i) => i.code === "openapi.remove-op-consumed")!.message).toContain("payment-service's living requirement 'Legacy authorization'");
   });
 
   it("rejects a new tagged edge that consumes an operation removed by the same feature", async () => {

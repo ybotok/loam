@@ -141,7 +141,14 @@ async function readCurrentFleet(docsDir: DocsDir, context: FleetContext): Promis
 export interface LivingMap {
   /** Every relationship the project declares, or `null` when the map proves nothing — absent, or it does not parse. */
   relationships: readonly Rel[] | null;
-  /** Element → service, with the enumerated fleet riding in (the container lesson `serviceResolver`'s DESIGN row records). */
+  /**
+   * Element → service, with the enumerated fleet riding in — the resolver the
+   * spine and the step graders use. Without the fleet, an edge into a modelled
+   * container `payment.api` resolves to a service called "api" that has never
+   * existed, the join on the provider finds nothing, and the one check
+   * standing between a removal and its last consumer answers "nobody calls it"
+   * (DESIGN's serviceResolver-known row).
+   */
   resolve: (id: string) => string;
   useCases: UseCaseScan;
 }

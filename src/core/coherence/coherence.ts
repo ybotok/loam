@@ -14,6 +14,7 @@ import { declaredByService, type DeltaScope } from "./declared.js";
 import { retiredLookup } from "./retired/archived.js";
 import { revivedOperations } from "./retired/revival/revived.js";
 import { coherenceLookups } from "./lookups.js";
+import { consumerIndex } from "../consumers/consumers.js";
 import { eventCoherence } from "./events/events.js";
 import { authoringIssues } from "./authoring/scaffold.js";
 import { glossaryDeltaIssues } from "../glossary/delta.js";
@@ -193,20 +194,34 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
     if (arrived.length === 0) continue;
     issues.push(...revivedOperations(svc, arrived, await retired()));
   }
-  const {
-    governedByLivingSpec, edgeConsumers, requirementConsumers, governorsAfterMerge, definedElsewhere,
-    deprecatedInLiving, undeprecatedByFeature,
-  } = coherenceLookups(scope, context);
+  const { governedByLivingSpec, definedElsewhere, deprecatedInLiving, undeprecatedByFeature } = coherenceLookups(scope, context);
 
+  // --- taking an operation out of the contract while the fleet still calls it ---
+  // Exactness and justification never ask what matters to the other
+  // ninety-nine repos: is anybody still calling it? The merge deletes the
+  // operation while the edge, the requirement and the use-case hop naming it
+  // stay, so the next `validate --all` breaks a repository whose author was
+  // never in this feature. Asked of the ONE consumer index, read after this
+  // feature's merge (core/consumers/ says what it reads and what a feature can
+  // retire). `own` counts too: for a marker the REMOVED requirement leaves with
+  // the merge, so what remains is a second one, or an internal edge. One index
+  // for both shapes and the event axis, so the fleet is read once.
+  const consumers = consumerIndex({ docsDir, context, afterFeature: featureDir });
+  const still = async (svc: string, op: string): Promise<string[]> => {
+    const found = await consumers.opConsumers(svc, op);
+    return [...found.victims, ...found.own];
+  };
+  // The landscape merge only ADDS edges, so an edge is dropped or redrawn in the living map itself.
+  const route = `drop or redraw its edge in the architecture/ project, MODIFY or REMOVE the requirement that names it in this feature's specs/<service>/ delta`;
   for (const [svc, retiring] of removingOps) {
     for (const op of retiring) {
-      const consumers = [...(await edgeConsumers(svc, op)), ...(await requirementConsumers(svc, op))];
-      if (consumers.length === 0) continue;
+      const named = await still(svc, op);
+      if (named.length === 0) continue;
       issues.push({
         severity: "error",
         code: "openapi.remove-op-consumed",
         subject: svc,
-        message: `${svc}: this feature retires '${op}', but the living fleet still consumes it — ${consumers.join("; ")}. Retire the consumer in the same feature (drop the edge from architecture/landscape.likec4, or the requirement that names it), or archive with --approve to break it deliberately.`,
+        message: `${svc}: this feature retires '${op}', but the fleet would still consume it after this merge — ${named.join("; ")}. Retire each consumer in the same change (${route}), or archive with --approve to break it deliberately.`,
       });
     }
   }
@@ -216,21 +231,19 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
   // would write defines it nowhere it has left the contract exactly as a
   // retirement does. One code, because the breach and its override are the
   // removal's — only `api.op-unconsumed` (advisory) said anything before, and
-  // the archive passed without `--approve`. The consumers are the removal's
-  // own two scans, as they stand — the landscape merge only ADDS edges, so a
-  // delta.likec4 can never take one away — plus the provider's own
-  // requirements as the merge would leave them, the overwrite's stand-in for
-  // the REMOVED requirement a marker owes (lookups.ts says why).
+  // the archive passed without `--approve`. With no marker there is no REMOVED
+  // requirement either, so the provider's own requirement naming the old id
+  // stays unless this feature restates it — `own` is what catches it.
   for (const [svc, displaced] of displacedOps) {
     for (const { id: op, at } of displaced) {
-      const consumers = [...(await edgeConsumers(svc, op)), ...(await requirementConsumers(svc, op)), ...(await governorsAfterMerge(svc, op))];
-      if (consumers.length === 0) continue;
+      const named = await still(svc, op);
+      if (named.length === 0) continue;
       const by = at.map(({ address, by: id }) => `${id === undefined ? "an operation with no operationId" : `'${id}'`} at ${address}`).join(" and ");
       issues.push({
         severity: "error",
         code: "openapi.remove-op-consumed",
         subject: svc,
-        message: `${svc}: this feature's openapi.yaml defines ${by}, where '${op}' lives now — the merge replaces it there and would leave '${op}' defined nowhere, but it is still consumed — ${consumers.join("; ")}. Define '${op}' at another address in this delta if it is to stay. To take it out on purpose, update every consumer in the same change — drop or redraw its edge in architecture/landscape.likec4, edit another service's living requirement that names it, MODIFY or REMOVE ${svc}'s own requirement in this feature's delta (restated to name the new operation, for a rename) — or archive with --approve to break it deliberately.`,
+        message: `${svc}: this feature's openapi.yaml defines ${by}, where '${op}' lives now — the merge replaces it there and would leave '${op}' defined nowhere, but it is still consumed — ${named.join("; ")}. Define '${op}' at another address in this delta if it is to stay. To take it out on purpose, update every consumer in the same change — ${route} (${svc}'s own restated to name the new operation, for a rename) — or archive with --approve to break it deliberately.`,
       });
     }
   }

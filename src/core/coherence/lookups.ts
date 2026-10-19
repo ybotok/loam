@@ -2,31 +2,30 @@
  * The questions the coherence checks ask lazily, each behind a per-service or
  * per-repo cache.
  *
- * All but one reach outside the delta — into a living spec, the fleet map, or
- * another feature in flight — and those are expensive: the landscape is a full
- * LikeC4 workspace spin-up, and the cross-feature scan is a walk of every
- * active delta. The exception is `undeprecatedByFeature`, which reads the
- * FEATURE's own openapi delta: it lives here anyway because it is the second
- * half of the one question `deprecatedInLiving` opens — "is this op dying, and
- * is this feature the resurrection?" — and splitting the pair across modules
- * would leave each half's cache discipline unexplained by the other. A second,
- * `governorsAfterMerge`, reads the feature's own spec.md delta, but only to
- * fold it onto the living spec it asks about — the question is still the
- * world's, as the merge would leave it. A feature
- * whose checks never need a lookup must not pay for it, which is why these are
- * closures over a cache rather than arguments computed up front.
+ * All but one reach outside the delta — into a living spec, a living
+ * contract, or another feature in flight — and the cross-feature scan is a
+ * walk of every active delta. The exception is `undeprecatedByFeature`, which
+ * reads the FEATURE's own openapi delta: it lives here anyway because it is the
+ * second half of the one question `deprecatedInLiving` opens — "is this op
+ * dying, and is this feature the resurrection?" — and splitting the pair across
+ * modules would leave each half's cache discipline unexplained by the other. A
+ * feature whose checks never need a lookup must not pay for it, which is why
+ * these are closures over a cache rather than arguments computed up front.
+ *
+ * The one question that used to live here and does not — who still CONSUMES an
+ * operation the feature takes out (`edgeConsumers`, `requirementConsumers`,
+ * `governorsAfterMerge`) — is the consumer index's now (`core/consumers/`),
+ * because `loam diff` and the archive planner ask it too and the three copies
+ * had drifted apart in which documents they read.
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { loadFile, type LoadedDoc } from "../c4/likec4.js";
-import { serviceResolver } from "../c4/resolve/service.js";
 import { type PathableService } from "../kernel/ids/service.js";
-import { featureSpecPaths, landscapePath } from "../repo/paths.js";
+import { featureSpecPaths } from "../repo/paths.js";
 import { operations } from "../openapi/doc.js";
-import { enumeratedServiceIds, locateServicePaths } from "../repo/service-target.js";
+import { locateServicePaths } from "../repo/service-target.js";
 import { activeOpAdditions } from "./pending.js";
 import { parseRequirements } from "../document/parse.js";
-import { applyRequirementDelta } from "../document/apply.js";
 import { type Requirement } from "../document/spec.js";
 import type { FleetContext } from "../fleet-context.js";
 import { type DeltaScope } from "./declared.js";
@@ -34,9 +33,6 @@ import { type DeltaScope } from "./declared.js";
 /** What the checks may ask lazily — fleet questions, plus the deprecation pair. */
 export interface Lookups {
   governedByLivingSpec(service: PathableService, op: string): Promise<boolean>;
-  edgeConsumers(service: string, op: string): Promise<string[]>;
-  requirementConsumers(service: string, op: string): Promise<string[]>;
-  governorsAfterMerge(service: PathableService, op: string): Promise<string[]>;
   definedElsewhere(service: string, op: string): Promise<string | undefined>;
   deprecatedInLiving(service: PathableService, op: string): Promise<boolean>;
   undeprecatedByFeature(service: PathableService, op: string): Promise<boolean>;
@@ -60,109 +56,6 @@ export function coherenceLookups(scope: DeltaScope, context?: FleetContext): Loo
     };
     const governedByLivingSpec = async (service: PathableService, op: string): Promise<boolean> => {
       return (await livingRequirements(service)).some((r) => r.operations.includes(op));
-    };
-
-    // The enumerated fleet, read once and shared by both consumer scans below.
-    let serviceIds: PathableService[] | undefined;
-    const enumeratedServices = async (): Promise<PathableService[]> =>
-      (serviceIds ??= await enumeratedServiceIds(docsDir, context));
-
-    // --- retiring an operation the fleet still calls ---
-    //
-    // A removal marker is checked against the living CONTRACT (does the slot
-    // exist) and the feature's own requirements (is the retirement governed).
-    // Neither question asks the one that matters to the other ninety-nine repos:
-    // is anybody still calling it? The living landscape is the fleet's own answer
-    // — an edge with `metadata { op }` is a consumer somebody drew — and another
-    // service's living requirements naming the operation are a second. Both are
-    // gating: the merge deletes the operation from the contract while the edge
-    // and the requirement stay, so the very next `validate --all` reports a
-    // broken contract on a repository whose author was never in this feature.
-    //
-    // Lazy on purpose: the landscape is a full LikeC4 workspace spin-up and the
-    // requirement scan reads every service's living spec, and a feature that
-    // removes nothing must pay for neither.
-    //
-    // `core/consumers/consumers.ts` carries a second copy of this join (an index over
-    // an already-read fleet — these closures are scoped to a DeltaScope and
-    // cannot serve it). The victim strings and scan rules are kept in step by
-    // hand; changing either module owes the other the same change, and a THIRD
-    // copy forces the shared extraction (docs/DESIGN.md rule 13).
-    let livingLandscape: LoadedDoc | null | undefined;
-    const edgeConsumers = async (service: string, op: string): Promise<string[]> => {
-      if (livingLandscape === undefined) {
-        const path = landscapePath(docsDir);
-        livingLandscape = existsSync(path)
-          ? context === undefined
-            ? await loadFile(path)
-            : await context.loadLikeC4(path)
-          : null;
-      }
-      // An unreadable landscape proves nothing either way; `landscape.invalid`
-      // is validate's finding to make, and inventing a removal refusal out of a
-      // parse error would point the author at the wrong file.
-      if (livingLandscape === null || livingLandscape.errors.length > 0) return [];
-      // The enumerated fleet rides along so a landscape that models CONTAINERS
-      // stays visible: without it, an edge into `payment.api` resolves to a
-      // service called "api" that has never existed, the `=== service` join
-      // below finds nothing, and the one check standing between a removal and
-      // its last consumer answers "nobody calls it".
-      const resolve = serviceResolver(livingLandscape.elements, new Set(await enumeratedServices()));
-      return livingLandscape.relationships
-        .filter((r) => r.op === op && resolve(r.target) === service)
-        .map((r) => `edge ${resolve(r.source)} → ${resolve(r.target)}${r.title === undefined ? "" : ` ("${r.title}")`}`);
-    };
-    const requirementConsumers = async (service: string, op: string): Promise<string[]> => {
-      const others = (await enumeratedServices()).filter((id) => id !== service);
-      const out: string[] = [];
-      for (const other of others) {
-        for (const r of await livingRequirements(other)) {
-          if (r.operations.includes(op)) out.push(`${other}'s living requirement '${r.name}'`);
-        }
-      }
-      return out;
-    };
-
-    // --- an overwrite leaves the provider's OWN requirements behind ---
-    //
-    // `requirementConsumers` skips the provider on purpose: a removal marker
-    // must be justified by a REMOVED requirement naming the operation (the
-    // remove-marker-unjustified join in ./declared.ts), and the merge deletes
-    // that requirement with it. An overwrite carries no marker, so nothing
-    // asks for that — and a delta defining `fetchOrder` where `getOrder`
-    // lives left the provider's own `Operations: getOrder` standing, which
-    // the next `validate` reports as `spec-api.op-undefined` against the
-    // provider itself. So the overwrite asks the provider's requirements as
-    // the MERGE would leave them: the feature's own delta applied through the
-    // archive's function (`applyRequirementDelta`), so a requirement this
-    // feature MODIFIES to name the new operation, or REMOVES, is gone as
-    // written — that is how a rename restates the requirement that governs it
-    // — and one of its own ADDED/MODIFIED requirements still naming the old
-    // id is a governor too. A delta the merge would refuse to apply answers
-    // nothing: its identity errors already gate (`delta.*`), and nothing it
-    // says can land until they are fixed. spec.md only — `Operations:` lives
-    // there, the rule `requirementConsumers` scans by.
-    const governorsAfterMerge = async (service: PathableService, op: string): Promise<string[]> => {
-      const living = await livingRequirements(service);
-      const deltaPath = featureSpecPaths(featureDir, service).spec;
-      const delta = !existsSync(deltaPath)
-        ? []
-        : context === undefined
-          ? parseRequirements(await readFile(deltaPath, "utf8"))
-          : await context.readRequirements(deltaPath);
-      let merged: Requirement[];
-      try {
-        merged = applyRequirementDelta(living, delta);
-      } catch {
-        return [];
-      }
-      // Untouched requirements come back as the very objects that went in
-      // (apply.ts states the identity is load-bearing), which is what tells a
-      // living governor from one this feature wrote.
-      const untouched = new Set(living);
-      return merged
-        .filter((r) => r.operations.includes(op))
-        .map((r) => (untouched.has(r) ? `${service}'s living requirement '${r.name}'` : `this feature's ${service} delta requirement '${r.name}'`));
     };
 
     // What OTHER features in flight define, per (service, op). Cross-service work
@@ -210,8 +103,5 @@ export function coherenceLookups(scope: DeltaScope, context?: FleetContext): Loo
       }
       return set.has(op);
     };
-  return {
-    governedByLivingSpec, edgeConsumers, requirementConsumers, governorsAfterMerge, definedElsewhere,
-    deprecatedInLiving, undeprecatedByFeature,
-  };
+  return { governedByLivingSpec, definedElsewhere, deprecatedInLiving, undeprecatedByFeature };
 }
