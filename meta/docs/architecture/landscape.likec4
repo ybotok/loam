@@ -522,6 +522,12 @@ model {
   loam.core.c4 -> loam.core.envelope
   loam.core.c4 -> loam.core.kernel
   loam.core.c4 -> loam.core.repo
+  // For `EXTERNAL_TAG` alone, and from one leaf: `c4/resolve/external.ts` names
+  // the #external element that publishes a message, the answer validate's
+  // producer check and the consumer index must give alike. The tag constants
+  // live in the vocabulary because this package was full when they were
+  // extracted (`core/vocabulary/maturity.ts` says so).
+  loam.core.c4 -> loam.core.vocabulary
 
   loam.core.capabilities -> loam.core.c4
   loam.core.capabilities -> loam.core.document

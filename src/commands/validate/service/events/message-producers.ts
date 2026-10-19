@@ -11,7 +11,7 @@ import { type Finding } from "../../../../core/vocabulary/report.js";
 import { producersByMessage } from "../../../../core/asyncapi/producers.js";
 import { type AsyncapiDoc } from "../../../../core/asyncapi/model.js";
 import { FleetContext } from "../../../../core/fleet-context.js";
-import { externalProducerOf } from "../../checks/fleet-shape.js";
+import { externalProducerOf } from "../../../../core/c4/resolve/external.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
 
 /**
