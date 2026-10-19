@@ -25,19 +25,40 @@ export interface MaskedSource {
   literals: SourceLiteral[];
 }
 
+/**
+ * LikeC4's MARKDOWN string: `'''…'''` or `"""…"""`, closed by the first
+ * matching triple and read with no escapes (the grammar's `MarkdownString` is
+ * an until-token, not a quoted run). It is what a long `description` is
+ * written in, and the reason it is its own state rather than three ordinary
+ * quotes: read as `''` + `'…'` + `''`, the first apostrophe or odd quote in the
+ * prose — "it's" — ended the literal, every brace after it was CODE, and the
+ * rest of the document was read inside out. A map with one such description
+ * above its model had no model block at all as far as the splice map could
+ * tell, and archive refused a landscape LikeC4 parses cleanly.
+ */
+const MARKDOWN_QUOTES = ["'''", '"""'] as const;
+
 export function maskSource(text: string): MaskedSource {
   const out = text.split("");
   const literals: SourceLiteral[] = [];
-  type State = "code" | "squote" | "dquote" | "lineComment" | "blockComment";
+  type State = "code" | "squote" | "dquote" | "markdown" | "lineComment" | "blockComment";
   let state: State = "code";
   let litStart = -1;
   let lit = "";
+  let fence = "";
   for (let i = 0; i < text.length; i += 1) {
     const ch = text[i]!;
     const next = text[i + 1];
     switch (state) {
       case "code":
-        if (ch === "'" || ch === '"') {
+        fence = MARKDOWN_QUOTES.find((q) => text.startsWith(q, i)) ?? "";
+        if (fence !== "") {
+          state = "markdown";
+          litStart = i;
+          lit = "";
+          out[i] = out[i + 1] = out[i + 2] = " ";
+          i += 2;
+        } else if (ch === "'" || ch === '"') {
           state = ch === "'" ? "squote" : "dquote";
           litStart = i;
           lit = "";
@@ -61,6 +82,17 @@ export function maskSource(text: string): MaskedSource {
           literals.push({ start: litStart, end: i + 1, value: lit });
           state = "code";
           out[i] = " ";
+        } else {
+          lit += ch;
+          if (ch !== "\n") out[i] = " ";
+        }
+        break;
+      case "markdown":
+        if (text.startsWith(fence, i)) {
+          literals.push({ start: litStart, end: i + 3, value: lit });
+          state = "code";
+          out[i] = out[i + 1] = out[i + 2] = " ";
+          i += 2;
         } else {
           lit += ch;
           if (ch !== "\n") out[i] = " ";

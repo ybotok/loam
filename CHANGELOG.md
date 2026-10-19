@@ -10,6 +10,18 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Fixed — `loam archive` merges into a landscape written in any form LikeC4 parses
+
+No code, flag or `--json` key was added or changed. Each case below is a landscape (or a delta)
+that `loam validate --all` called valid and that `loam archive` refused with `merge-failed`, nothing
+written; each now merges.
+
+- **A markdown string (`'''…'''` or `"""…"""`) whose prose holds an apostrophe or an odd number
+  of quotes.** The splice map read the triple as three ordinary quotes, so the first `it's` in a
+  long `description` ended the string and the rest of the file was read inside out — a map with
+  one such description above its model had no model block at all, and archive refused with
+  `landscape.likec4 has no model block`.
+
 ### Changed — `loam archive` refuses a delta that would bring back an operation another feature retired
 
 Two codes, both added to the `IssueCode` union, and one additive `--json` key were added.
