@@ -105,12 +105,18 @@ warnings — and the three copies read different documents. They are one index n
     reported `diff.message-removed-consumed` (error) — while `spine.message-unproduced` accepts such
     a producer and the next `validate --all` was clean. Now the outside producer counts as a
     sender, read off the living `architecture/` project with validate's own rule: only while the
-    project parses, and not from an edge the feature's own C4 delta draws. `loam diff` reports
+    project parses, and not from an edge the feature's own C4 delta draws. The gate asks the rule
+    over the service directories as the merge leaves them, so an element the same feature makes a
+    service — a `specs/<id>/` directory for the id the element, or the element it is nested in,
+    resolves to, which the archive turns into `services/<id>/` — no longer counts, and the
+    retirement is refused, as the next `loam diff` and `validate --all` would read it; `loam diff`
+    asks over the directories as they stand. `loam diff` reports
     `diff.message-removed` (warn), "still sent by `<title>` (#external)", and a refusal for the
     provider's own documents, which it still does not excuse, names it the same way. With no sender
     left, the refusal now also says "nor does an #external element publish it", and its route
     reads "keep another service sending it (…) or an #external element publishing it (a publishes
-    edge from it in the living architecture/ project)". This predates the one index too.
+    edge from it in the living architecture/ project; one whose element this feature's
+    specs/<service>/ makes a service no longer counts)". This predates the one index too.
   - **`openapi.remove-marker-missing` is owed only while there is a living operation to retire**:
     not for an id the service's living contract does not define (a consumer's REMOVED requirement
     naming another service's operation), and not for one the delta already replaces at its method
@@ -140,8 +146,8 @@ warnings — and the three copies read different documents. They are one index n
   passed. Where a refusal was false or the consumer is retired in the same feature, each
   of those exits 0 for that shape unless something else gates. That includes a message retired from
   one sender while another service would still send it after the merge, or while an `#external`
-  element still publishes it, where only consumers were
-  named: `loam archive`, `loam validate --feature`, `loam validate <FEAT>` and `loam validate
+  element still publishes it and the feature does not make that element a service, where only
+  consumers were named: `loam archive`, `loam validate --feature`, `loam validate <FEAT>` and `loam validate
   --all` exited 1 and now exit 0, `loam status` no longer counts it as gating, and `loam show
   <FEAT> --json` no longer reports `review.readyToArchive: false` for it. `loam diff` reports
   `diff.op-removed` (warn) where its only victim was a same-id requirement, and

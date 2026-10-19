@@ -25,7 +25,10 @@
  * feature's flows are create-only, so no `delta.likec4` and no `usecases/`
  * document can take a living edge or hop away. Those are read as they stand —
  * the one way to drop or redraw a living edge is to edit the living map in the
- * same change, and that edit is then simply what the index reads.
+ * same change, and that edit is then simply what the index reads. What the
+ * merge CAN change about a living edge is the directory its source resolves
+ * to: every `specs/<svc>/` becomes a `services/<svc>/`, and an #external
+ * element resolving to one stops producing (`services` below).
  */
 import { existsSync } from "node:fs";
 import { applyRequirementDelta } from "../document/apply.js";
@@ -52,6 +55,15 @@ export interface FeatureView {
   delta(service: RawServiceId, axis: SpecAxis): Promise<Requirement[] | undefined>;
   /** Does `service`'s contract, as this merge leaves it, define `op`? `undefined` when the feature carries no contract delta for it — the living contract answers. */
   defines(service: RawServiceId, op: string): Promise<boolean | undefined>;
+  /**
+   * The service ids this merge leaves a `services/<id>/` directory for: every
+   * `specs/<id>/` the feature carries, which the archive materialises one from
+   * (the reason `unknownDeltaServices`, `core/coherence/living.ts`, refuses a
+   * stray one). All of them, the ones the gate refuses as unknown or ill-named
+   * included: a directory too many can only take an outside producer away,
+   * the closed direction, and such a feature does not archive anyway.
+   */
+  services(): Promise<readonly RawServiceId[]>;
 }
 
 /** The feature whose merge a view reads after. */
@@ -94,6 +106,7 @@ export function featureView(scope: FeatureScope): FeatureView {
       const ids = await pending;
       return ids === undefined ? undefined : ids.has(op);
     },
+    services: () => context.featureSpecServices(featureDir),
   };
 }
 

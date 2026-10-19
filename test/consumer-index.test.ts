@@ -1403,4 +1403,95 @@ components:
     expect(issue!.message).toContain("legacy-gateway (#external) would still send it");
     expect((await archive(p, "FEAT-60")).code).toBe(1);
   });
+
+  /*
+   * The same outside producer while the same feature makes it a SERVICE (the
+   * verification of D1, X2): a feature carrying `specs/legacy-gateway/` — its
+   * C4 delta introducing the service, so `delta.service-unknown` stays quiet —
+   * creates `services/legacy-gateway/` when it is archived, and from then on
+   * the #external element resolves to that directory, which outranks the tag
+   * (`externalProducerOf`'s guard). The gate asked the rule over the
+   * directories as they stood before the merge, so it passed the retirement at
+   * exit 0; after the archive `loam diff` reported
+   * `diff.message-removed-consumed` (exit 1) and `validate --all`
+   * `spine.message-unproduced` on checkout-web.
+   */
+  const ONBOARD_GATEWAY = {
+    [`${FEAT}/specs/legacy-gateway/spec.md`]: `# legacy-gateway — delta for FEAT-60\n\n## ADDED Requirements\n\n### Requirement: Gateway health\nThe service SHALL answer a health probe.\n\n#### Scenario: Probed\n- **Given** the gateway\n- **When** probed\n- **Then** it answers\n`,
+    [`${FEAT}/delta.likec4`]: `specification {\n  element softwareSystem\n  tag FEAT-60\n}\n\nmodel {\n  legacyGatewaySvc = softwareSystem 'legacy-gateway' {\n    #FEAT-60\n    metadata {\n      service 'legacy-gateway'\n    }\n  }\n}\n`,
+  };
+  /**
+   * legacy-gateway publishing out of a topic nested inside it: the topic
+   * resolves to its own title while no `services/legacy-gateway/` exists, and
+   * to legacy-gateway once one does — so the directories the merge leaves are
+   * not enough unless the resolver is rebuilt over them as well.
+   */
+  const NESTED_GATEWAY = "\n  legacyGateway = softwareSystem 'legacy-gateway' {\n    #external\n    events = softwareSystem 'legacy-events'\n  }\n";
+  function onboarding(gateway: string): Record<string, string> {
+    const files = { ...gatewayFleet(GATEWAY_PUBLISHES, gateway), ...ONBOARD_GATEWAY };
+    const map = "architecture/landscape.likec4";
+    if (gateway === NESTED_GATEWAY) files[map] = files[map]!.replace("legacyGateway -> checkoutWeb", "legacyGateway.events -> checkoutWeb");
+    return files;
+  }
+  /** `validate --all`'s `spine.message-unproduced` findings — what the next run says of the consumers. */
+  async function unproduced(p: Project): Promise<Finding[]> {
+    const all = await runLoam(p.workDir, "validate", "--all", "--json");
+    const findings = (JSON.parse(all.stdout) as { targets: Array<{ findings: Finding[] }> }).targets.flatMap((t) => t.findings);
+    return ofCode(findings, "spine.message-unproduced");
+  }
+
+  // The edge is named by the living map's resolver, so the nested topic's
+  // label is the topic's own until the directory exists; which label it
+  // carries is not what this pins.
+  it.each([
+    ["drawn as one element", GATEWAY],
+    ["publishing out of a topic nested inside it", NESTED_GATEWAY],
+  ])("an #external producer the same feature makes a service keeps nothing produced (%s): refused, as the next diff and validate read it", async (_label, gateway) => {
+    const p = await project(onboarding(gateway));
+    commitBase(p.docsDir);
+    const [issue, ...more] = ofCode(await featureFindings(p, "FEAT-60"), "asyncapi.remove-message-consumed");
+    expect(more).toEqual([]);
+    expect(issue!.details).toEqual([expect.stringMatching(/^edge legacy-\w+ → checkout-web \("Delivers legacy events"\)$/), GATEWAY_CONSUMERS[1]]);
+    expect(issue!.message).toContain("no readable contract would still send it after this merge");
+    expect(issue!.message).toContain("nor does an #external element publish it");
+    // …while the living map draws one, so the route says why it stops counting.
+    expect(issue!.message).toContain("one whose element this feature's specs/<service>/ makes a service no longer counts");
+    expect((await archive(p, "FEAT-60")).code).toBe(1);
+
+    const approved = await runLoam(p.workDir, "archive", "FEAT-60", "--approve", "--json");
+    expect(approved.code, approved.out).toBe(0);
+    const found = await diffFindings(p, "payment-service");
+    expect(ofCode(found, "diff.message-removed")).toEqual([]);
+    expect(ofCode(found, "diff.message-removed-consumed")).toHaveLength(1);
+    expect((await unproduced(p)).map((f) => f.subject)).toEqual(["checkout-web"]);
+  });
+
+  // The route that refusal names, followed: the onboarded service sends the
+  // message from its own contract, created in this feature's delta, so the
+  // consumers keep a producer after the merge and the retirement archives.
+  it("the onboarded service sending the message from its own new contract keeps it produced", async () => {
+    const p = await project({
+      ...onboarding(GATEWAY),
+      [`${FEAT}/specs/legacy-gateway/asyncapi.yaml`]: PAYMENT_EVENTS.replace("payment-service events", "legacy-gateway events"),
+    });
+    expect(ofCode(await featureFindings(p, "FEAT-60"), "asyncapi.remove-message-consumed")).toEqual([]);
+    const archived = await archive(p, "FEAT-60");
+    expect(archived.code, JSON.stringify(archived.issues)).toBe(0);
+    expect(await unproduced(p)).toEqual([]);
+  });
+
+  // Its control: the same onboarding retiring nothing. payment-service still
+  // sends the message, so the gate has nothing to refuse, the archive passes
+  // and the next run leaves no consumer unproduced — the refusal above is the
+  // retirement's, never the onboarding's.
+  it("the same onboarding without the retirement strands nobody: it archives, and no consumer is left unproduced", async () => {
+    const files = onboarding(GATEWAY);
+    delete files[`${FEAT}/specs/payment-service/asyncapi.yaml`];
+    delete files[`${FEAT}/specs/payment-service/spec.md`];
+    const p = await project(files);
+    expect(ofCode(await featureFindings(p, "FEAT-60"), "asyncapi.remove-message-consumed")).toEqual([]);
+    const archived = await archive(p, "FEAT-60");
+    expect(archived.code, JSON.stringify(archived.issues)).toBe(0);
+    expect(await unproduced(p)).toEqual([]);
+  });
 });

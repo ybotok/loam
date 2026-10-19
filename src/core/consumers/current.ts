@@ -33,6 +33,7 @@ import { repoPath } from "../envelope/json.js";
 import { landscapePath, servicePathsAt } from "../repo/paths.js";
 import { inOrder } from "../kernel/concurrency.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
+import type { RawServiceId } from "../kernel/ids/service.js";
 import type { FleetContext } from "../fleet-context.js";
 import { bytesDigest, collisions, type AxisState, type ServiceState } from "./state.js";
 
@@ -175,16 +176,29 @@ export interface LivingMap {
   resolve: (id: string) => string;
   useCases: UseCaseScan;
   /**
-   * The #external element whose `publishes` edge sends a message, or null —
-   * validate's own rule (`externalProducerOf`, `core/c4/resolve/external.ts`),
-   * asked of the same project with the same resolver and the same directory
-   * ids, so the gate and `loam diff` call a message produced exactly where
-   * `spine.message-unproduced` stays quiet. Null wherever the PROJECT does not
-   * parse, the fallback below included: validate grades the producer against
-   * the project or not at all, and an outside producer found on a map it
-   * would not accept would pass a removal its next run then reports.
+   * The rule naming the #external element whose `publishes` edge sends a
+   * message, or null — validate's own (`externalProducerOf`,
+   * `core/c4/resolve/external.ts`), asked of the same project with the same
+   * directory ids and a resolver built over them, so the gate and `loam diff`
+   * call a message produced exactly where `spine.message-unproduced` stays
+   * quiet. Null wherever the PROJECT does not parse, the fallback below
+   * included: validate grades the producer against the project or not at all,
+   * and an outside producer found on a map it would not accept would pass a
+   * removal its next run then reports.
+   *
+   * `materialised` is the service ids whose `services/<id>/` a feature's merge
+   * would create — empty for a reader of the fleet as it stands. They join the
+   * directory ids, and the resolver is REBUILT over the union, because the
+   * rule's guard (a `services/<id>/` directory outranks the tag) is asked of
+   * the directories the next `validate` will see: a feature carrying
+   * `specs/legacy-gateway/` creates that directory, the #external element
+   * titled `legacy-gateway` — or a topic nested inside it — then resolves to
+   * it, and the producer is gone. Asked over the directories as they stood,
+   * the gate passed a retirement from the message's only fleet sender, and
+   * after the archive `loam diff` reported `diff.message-removed-consumed` and
+   * `validate --all` `spine.message-unproduced` (the verification of D1, X2).
    */
-  externalProducer: (message: string) => string | null;
+  externalProducerRule: (materialised: readonly RawServiceId[]) => (message: string) => string | null;
 }
 
 /** What one invocation has read, per docs root: each half paid for at its first question. */
@@ -256,22 +270,29 @@ export function livingMap(docsDir: DocsDir, context: FleetContext): Promise<Livi
     // `commands/validate/service/service.ts`), read off the same memoised
     // enumeration. Directory names, so the producer rule's guard (a services/
     // directory outranks a tag) is handed what it demands.
-    const known = new Set((await context.listServices(docsDir)).map((entry) => entry.id));
-    const none = (): null => null;
+    const known: ReadonlySet<RawServiceId> = new Set((await context.listServices(docsDir)).map((entry) => entry.id));
+    const none = (): ((message: string) => null) => () => null;
     const mapPath = landscapePath(docsDir);
     if (!existsSync(mapPath)) {
-      return { relationships: null, resolve: (id) => id, useCases: await readUseCases({ docsDir, known }), externalProducer: none };
+      return { relationships: null, resolve: (id) => id, useCases: await readUseCases({ docsDir, known }), externalProducerRule: none };
     }
     const doc = await context.architecture(docsDir);
     const useCases = useCasesIn(doc, known);
     if (doc.errors.length === 0) {
       const resolve = serviceResolver(doc.elements, known);
-      const externalProducer = (message: string): string | null => externalProducerOf(message, doc, resolve, known);
-      return { relationships: doc.relationships, resolve, useCases, externalProducer };
+      const externalProducerRule = (materialised: readonly RawServiceId[]): ((message: string) => string | null) => {
+        // The living set and its resolver stand whenever the merge creates no
+        // directory the walk has not already found — `loam diff`'s read, and
+        // most features'.
+        const after = materialised.every((id) => known.has(id)) ? known : new Set([...known, ...materialised]);
+        const svcOf = after === known ? resolve : serviceResolver(doc.elements, after);
+        return (message) => externalProducerOf(message, doc, svcOf, after);
+      };
+      return { relationships: doc.relationships, resolve, useCases, externalProducerRule };
     }
     const alone = await context.loadLikeC4(mapPath);
     return alone.errors.length > 0
-      ? { relationships: null, resolve: (id) => id, useCases, externalProducer: none }
-      : { relationships: alone.relationships, resolve: serviceResolver(alone.elements, known), useCases, externalProducer: none };
+      ? { relationships: null, resolve: (id) => id, useCases, externalProducerRule: none }
+      : { relationships: alone.relationships, resolve: serviceResolver(alone.elements, known), useCases, externalProducerRule: none };
   })());
 }

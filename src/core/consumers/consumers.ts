@@ -60,7 +60,8 @@
  * feature MODIFIES or REMOVES stops counting, and an unappliable delta fails
  * closed); without it, the living fleet as it stands, which is what the diff and
  * the overwrite warnings ask. Edges and hops read the same either way: no
- * feature can take a living one away.
+ * feature can take a living one away — though it can create the directory an
+ * #external producer resolves to (`externalProducer` says what that changes).
  *
  * LAZY, AND PAID ONCE PER INVOCATION. The fleet's four documents per service and
  * the project load are behind the first question that needs them, and memoised
@@ -133,9 +134,13 @@ export interface ConsumerIndex {
    * senders alone refused a retirement from a message's only fleet sender
    * while an #external element still published it, and `loam diff` called the
    * archived removal `diff.message-removed-consumed`, though the next
-   * `validate --all` was clean (the verification of N1–N3, D1). The living map
-   * alone, after a feature as without one: the landscape merge only adds to
-   * the map, so no feature takes a living edge or tag away.
+   * `validate --all` was clean (the verification of N1–N3, D1). The living
+   * map's edge and tag, after a feature as without one: the landscape merge
+   * only adds to the map. But NOT the living directories after a feature: its
+   * merge creates `services/<id>/` from each `specs/<id>/`, and a directory
+   * the element resolves to outranks the tag, so a feature onboarding the
+   * outside system as a service takes its producer away
+   * (`LivingMap.externalProducerRule` in `./current.ts` says what that cost).
    */
   externalProducer(name: string): Promise<string | null>;
 }
@@ -377,7 +382,14 @@ export function consumerIndex(request: ConsumerRequest): ConsumerIndex {
     return [...services.keys()].sort().filter((id) => services.get(id)!.sent.includes(name));
   };
 
-  const externalProducer = async (name: string): Promise<string | null> => (await livingMap(docsDir, context)).externalProducer(name);
+  // One rule per index, built at its first question: over the directories
+  // `after`'s merge leaves, or the living ones — never on the shared map memo,
+  // which every feature `validate --all` grades reads through one context.
+  let outside: Promise<(name: string) => string | null> | undefined;
+  const externalProducer = async (name: string): Promise<string | null> => {
+    outside ??= (async () => (await livingMap(docsDir, context)).externalProducerRule((await after?.services()) ?? []))();
+    return (await outside)(name);
+  };
 
   return { opConsumers, messageConsumers, producers, externalProducer };
 }

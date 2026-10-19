@@ -90,8 +90,15 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
   // simulation leaves it (`declared.sentAfter`), or vouches for nothing; every
   // other service sends what its living contract does. Positive evidence only,
   // as `producers` is: an unreadable contract, or a merge that stood down,
-  // never keeps a message produced. The outside producer is the living map's,
-  // which the merge cannot take away (it only adds to the map); one this
+  // never keeps a message produced. The outside producer is the living map's
+  // edge and tag, which the landscape merge cannot take away (it only adds to
+  // the map), asked over the directories the merge leaves: each `specs/<svc>/`
+  // of this feature becomes a `services/<svc>/`, and a directory the #external
+  // element resolves to outranks its tag, so a feature onboarding the outside
+  // system as a service takes the producer away. Asked over the directories
+  // as they stood, the gate passed that retirement while the next `loam diff`
+  // reported `diff.message-removed-consumed` and `validate --all`
+  // `spine.message-unproduced` (the verification of D1, X2). One this
   // feature's own C4 delta would draw is not counted, so that shape errs
   // toward refusing — `--approve`, or draw the edge in the living map.
   const touched = new Set<string>([...declared.featureDocs.keys(), ...declared.unreadable]);
@@ -121,9 +128,13 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
   // The route a consumer's refusal gains: another sender keeps the message
   // produced, and one this feature adds counts (`declared.sentAfter`); so does
   // the #external element that publishes it, drawn in the living map — the one
-  // place `sendersAfter` reads an outside producer from.
+  // place `sendersAfter` reads an outside producer from — unless this feature
+  // makes it a service. The route says so: a feature onboarding the gateway is
+  // told no #external element publishes the message while its living map
+  // draws one doing exactly that, and the way out is the first route, the new
+  // service's own send operation in its specs/<service>/ delta.
   const anotherSender =
-    "keep another service sending it (an action: send operation in its asyncapi.yaml, living or in this feature's specs/<service>/ delta) or an #external element publishing it (a publishes edge from it in the living architecture/ project)";
+    "keep another service sending it (an action: send operation in its asyncapi.yaml, living or in this feature's specs/<service>/ delta) or an #external element publishing it (a publishes edge from it in the living architecture/ project; one whose element this feature's specs/<service>/ makes a service no longer counts)";
 
   // Retiring a message the fleet still consumes — openapi.remove-op-consumed's
   // twin, and like it a question neither exactness nor justification asks:

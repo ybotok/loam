@@ -1453,10 +1453,16 @@ The senders are read after the merge too: a service this feature carries an even
 what the merged contract would (the delta itself, where it creates the contract), and vouches for
 nothing where the merge cannot be simulated, so a feature retiring the message from every sender
 is still refused; an unreadable contract never vouches. The outside producer is read off the
-living `architecture/` project with validate's own rule, and only while that project parses; the
-merge only adds to the map, so no feature takes it away, and a `publishes` edge from an `#external`
-element that only the feature's own C4 delta draws does not count — draw it in the living map, or
-archive with `--approve`. Another sender does not excuse the
+living `architecture/` project with validate's own rule, and only while that project parses. The
+landscape merge only adds to the map, so no feature takes its edge or tag away — but the rule also
+asks that no `services/<id>/` directory stand for the element, and the merge creates one from each
+`specs/<id>/` the feature carries. So the rule is asked over the directories as the merge leaves
+them: a feature that onboards the outside system as a service (`specs/legacy-gateway/`, its element
+titled or bound `legacy-gateway`, or a topic nested inside it) takes the producer away, and a
+retirement in it is refused unless something else still sends the message — the new service's own
+contract, in its `specs/legacy-gateway/` delta, for one. A `publishes` edge
+from an `#external` element that only the feature's own C4 delta draws does not count either —
+draw it in the living map, or archive with `--approve`. Another sender does not excuse the
 provider's own `Publishes:` lines and `publishes` edges — those are graded against its own
 contract, whoever else sends the message — nor its own unreadable spec files; another service's
 unreadable spec file, or an id two directories claim, refuses only while nothing would send. The lag argument
