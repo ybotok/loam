@@ -73,8 +73,9 @@ warnings — and the three copies read different documents. They are one index n
   - **`openapi.remove-marker-missing` is owed only while there is a living operation to retire**:
     not for an id the service's living contract does not define (a consumer's REMOVED requirement
     naming another service's operation), and not for one the delta already replaces at its method
-    and path (no marker could be written there). The overwrite's "REMOVE the requirement" route can
-    now be followed; its message says a REMOVED requirement owes no marker there.
+    and path (no marker could be written there). A living `openapi.yaml` that does not parse proves
+    neither, so the marker is still owed there, as before. The overwrite's "REMOVE the requirement"
+    route can now be followed; its message says a REMOVED requirement owes no marker there.
     `asyncapi.remove-marker-missing` likewise skips a message the merge already takes out.
 - **`details[]`** (additive) on `openapi.remove-op-consumed` and `asyncapi.remove-message-consumed`:
   the consumers, one per line, in the order `loam diff` lists the victims of the same removal.

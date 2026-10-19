@@ -333,9 +333,14 @@ export async function declaredByService(
         // 2026-10-12, finding 4). And an id the service's living contract does
         // not define is not this service's to mark at all: a REMOVED consumer
         // requirement naming ANOTHER service's operation was told to retire it
-        // from its own contract. An unreadable living contract proves nothing
-        // either way; `openapi.invalid` is validate's finding.
-        if (replaced.has(op) || living === null || (living !== undefined && !living.has(op))) continue;
+        // from its own contract. Both exemptions are facts about a contract
+        // loam READ: a living openapi.yaml that does not parse proves neither,
+        // so the marker stays owed — the closed direction, and the answer this
+        // check gave before either exemption existed. Skipping it there let a
+        // REMOVED requirement with no marker pass at exit 0 (the contract
+        // review, finding 3); `openapi.invalid` is still validate's finding
+        // about the file itself.
+        if (replaced.has(op) || (living !== undefined && living !== null && !living.has(op))) continue;
         // Distinguish "no marker at all" from "a marker is there but loam cannot
         // read which operation it names" — the first asks the author to write the
         // marker, the second to write the operationId, and telling somebody who

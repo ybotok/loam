@@ -1247,7 +1247,8 @@ removal anything would still consume after the merge (`openapi.remove-op-consume
 requirement owes a marker only while there is a living operation for it to retire: not for an id
 the service's living contract does not define (a consumer's `REMOVED` requirement naming another
 service's operation), and not for one this delta already replaces at its address (the overwrite
-below — no marker could be written there, since the replacement holds the slot).
+below — no marker could be written there, since the replacement holds the slot). A living
+contract that does not parse proves neither exemption, so the marker stays owed.
 `serviceOperationIds` evaluates the feature as living upserts minus removals, so other same-feature
 checks see the post-archive contract.
 

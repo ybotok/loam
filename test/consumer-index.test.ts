@@ -885,6 +885,24 @@ Operations: capturePayment
     expect(ofCode(found, "openapi.remove-op-consumed")).toEqual([]);
   });
 
+  // The contract review's third finding: the two exemptions above are facts
+  // about a contract loam READ — an id it does not define, an address the
+  // delta already holds. A living openapi.yaml that does not parse is neither:
+  // it proves no exemption, so the marker stays owed, as it was before either
+  // exemption existed. Skipping it let a REMOVED requirement with no marker
+  // pass `validate --feature` at exit 0.
+  it("a REMOVED requirement still owes its marker when the living contract does not parse", async () => {
+    const p = await project({
+      ...fleet({ "services/payment-service/openapi.yaml": "openapi: 3.1.0\npaths: [unclosed\n" }),
+      ...INTENT,
+      [`${FEAT}/specs/payment-service/spec.md`]: RETIRE_CAPTURE[`${FEAT}/specs/payment-service/spec.md`]!,
+    });
+    expect(ofCode(await featureFindings(p, "FEAT-60"), "openapi.remove-marker-missing")).toEqual([
+      expect.objectContaining({ subject: "payment-service", message: expect.stringContaining("REMOVED requirement governs 'capturePayment'") }),
+    ]);
+    expect((await archive(p, "FEAT-60")).code).toBe(1);
+  });
+
   // The event twin: re-keying the slot takes `payment.Legacy` out with no
   // marker and leaves no key a marker could stand on, so REMOVING the
   // requirement that publishes it — the route asyncapi.remove-message-consumed
