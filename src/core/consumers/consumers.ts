@@ -115,6 +115,14 @@ export interface ConsumerIndex {
    * while the gate refused for it and the next `validate --all` reported
    * `spine.message-unproduced` there. The rule that check grades by
    * (`commands/validate/service/events/message-producers.ts`).
+   *
+   * Always the fleet as it stands, even with `afterFeature`: no requirement
+   * merge decides who sends, and the contract merge that does is the coherence
+   * gate's to simulate. The message gate reads this as the living half of its
+   * after-the-merge senders and replaces every service its feature carries an
+   * event delta for (`core/coherence/events/events.ts`) — read alone, it would
+   * pass a feature retiring a message from both of its senders, each one on the
+   * other's living contract.
    */
   producers(name: string): Promise<string[]>;
 }

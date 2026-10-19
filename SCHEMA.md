@@ -1443,7 +1443,17 @@ construction), a use-case hop backed by such an edge — or whose provider's own
 merge would leave behind, or its own `publishes` edge (the spine grades that edge on its source,
 `spine.message-undefined`; drop or redraw it in the living map), which covers a message slot re-keyed to another name or a send operation
 turned around as surely as a marker: read after the merge, as on the HTTP axis, and a `REMOVED`
-requirement owes no marker for a message the merge already takes out. The lag argument
+requirement owes no marker for a message the merge already takes out. **A consumer counts only
+while no service would still send the message after the merge**: the join is fleet-global, and a
+consumer with another producer is not stranded — `spine.message-unproduced` grades a consumer by
+exactly that, and `loam diff` reports such a removal as `diff.message-removed`, "still sent by …".
+The senders are read after the merge too: a service this feature carries an event delta for sends
+what the merged contract would (the delta itself, where it creates the contract), and vouches for
+nothing where the merge cannot be simulated, so a feature retiring the message from every sender
+is still refused; an unreadable contract never vouches. Another sender does not excuse the
+provider's own `Publishes:` lines and `publishes` edges — those are graded against its own
+contract, whoever else sends the message — nor its own unreadable spec files; another service's
+unreadable spec file, or an id two directories claim, refuses only while nothing would send. The lag argument
 survives as an **operational warning**, not a veto: passing the gate proves the *documents* agree
 nobody consumes the message — it does not prove no consumer is still reading the topic with lag, so
 sequence the runtime retirement accordingly.

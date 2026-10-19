@@ -1169,4 +1169,140 @@ Consumes: payment.Legacy
       expect.objectContaining({ message: "message 'payment.Legacy' was removed since base; still sent by checkout-web" }),
     ]);
   });
+
+  /*
+   * The gate's half of that control (the verification of the consumer fixes,
+   * N2, older than the one index): the gate counted every consumer of the
+   * message "whoever its producer is", so it refused payment-service's
+   * retirement over order-service's own `consumes` edge and told the author
+   * to drop it — while `loam diff` called the same removal a warning ("still
+   * sent by order-service") and the next `validate --all` was clean, since
+   * checkout-web still has a producer. A consumer is stranded only when NO
+   * service would send the message after the merge, and the gate asks that of
+   * the merge, not of the living fleet: a feature retiring the message from
+   * both senders must not let each pass on the other's living contract.
+   */
+  const ORDER_EVENTS = PAYMENT_EVENTS.replace("payment-service events", "order-service events");
+  const ORDER_SPEC = PAYMENT_SPEC_PUBLISHING.replace(PAYMENT_SPEC, checkoutSpec().replace(/checkout-web/g, "order-service"));
+  /** One service's own C4 model — what `validate --all` asks of every service before it calls the fleet clean. */
+  const serviceModel = (id: string, variable: string): string =>
+    `specification {\n  element softwareSystem\n  element container\n}\n\nmodel {\n  ${variable} = softwareSystem '${id}' {\n    api = container 'api'\n  }\n}\n\nviews {\n  view of ${variable} {\n    include *\n  }\n}\n`;
+  /** Both senders, and checkout-web consuming over order-service's edge and its own `Consumes:` line. */
+  function twoSenders(extra: Record<string, string | null> = {}): Record<string, string> {
+    const files: Record<string, string | null> = {
+      "services/payment-service/model.likec4": serviceModel("payment-service", "paymentService"),
+      "services/order-service/model.likec4": serviceModel("order-service", "orderService"),
+      "services/checkout-web/model.likec4": serviceModel("checkout-web", "checkoutWeb"),
+      ...fleet({
+        "architecture/landscape.likec4": LANDSCAPE.replace(
+          "\n}\n\nviews {",
+          "\n  orderService = softwareSystem 'order-service' {\n    metadata { service 'order-service' }\n  }\n" +
+            "  orderService -> checkoutWeb 'Delivers legacy events' {\n    metadata { consumes 'payment.Legacy' }\n  }\n}\n\nviews {",
+        ),
+        "services/payment-service/spec.md": PAYMENT_SPEC_PUBLISHING,
+        "services/payment-service/asyncapi.yaml": PAYMENT_EVENTS,
+        "services/order-service/spec.md": ORDER_SPEC,
+        "services/order-service/asyncapi.yaml": ORDER_EVENTS,
+        "services/checkout-web/spec.md": checkoutSpec(CHECKOUT_CONSUMES),
+        "services/checkout-web/asyncapi.yaml": CHECKOUT_RECEIVES,
+      }),
+      ...INTENT,
+      ...extra,
+    };
+    return Object.fromEntries(Object.entries(files).filter((e): e is [string, string] => e[1] !== null));
+  }
+  /** The whole retirement of `payment.Legacy` from one sender: every slot, and the REMOVED requirement that justifies it. */
+  const retireFrom = (svc: string, living: string): Record<string, string> => ({
+    [`${FEAT}/specs/${svc}/asyncapi.yaml`]: `asyncapi: 3.0.0
+channels:
+  legacyEvents:
+    x-loam-remove: true
+operations:
+  sendLegacy:
+    x-loam-remove: true
+components:
+  messages:
+    Legacy:
+      name: payment.Legacy
+      x-loam-remove: true
+`,
+    [`${FEAT}/specs/${svc}/spec.md`]: `# ${svc} — delta for FEAT-60\n\n## REMOVED Requirements\n\n### Requirement: Legacy events\nBased-On: ${pinFor(living, "Legacy events")}\n\nPublishes: payment.Legacy\n`,
+  });
+  const CONSUMERS = [
+    `edge order-service → checkout-web ("Delivers legacy events")`,
+    "checkout-web's living requirement 'Book legacy payments'",
+  ];
+
+  it("a message another service still sends after the merge strands no consumer: no refusal, the archive passes, and the fleet stays green", async () => {
+    const p = await project(twoSenders(retireFrom("payment-service", PAYMENT_SPEC_PUBLISHING)));
+    // A realistic fleet has run `loam subsystem sync`: its GENERATED views
+    // files are part of the docs repo, and their absence is its own finding.
+    await runLoam(p.workDir, "subsystem", "sync");
+    expect(ofCode(await featureFindings(p, "FEAT-60"), "asyncapi.remove-message-consumed")).toEqual([]);
+    const archived = await archive(p, "FEAT-60");
+    expect(archived.code, JSON.stringify(archived.issues)).toBe(0);
+    const all = await runLoam(p.workDir, "validate", "--all", "--json");
+    const errors = (JSON.parse(all.stdout) as { targets: Array<{ findings: Finding[] }> }).targets
+      .flatMap((t) => t.findings)
+      .filter((f) => f.severity === "error");
+    expect(errors).toEqual([]);
+  });
+
+  it("a feature retiring the message from both senders is refused for each — the senders are read after its merge", async () => {
+    const p = await project(twoSenders({
+      ...retireFrom("payment-service", PAYMENT_SPEC_PUBLISHING),
+      ...retireFrom("order-service", ORDER_SPEC),
+    }));
+    const refusals = ofCode(await featureFindings(p, "FEAT-60"), "asyncapi.remove-message-consumed");
+    expect(refusals.map((f) => [f.subject, f.details])).toEqual([
+      ["order-service", CONSUMERS],
+      ["payment-service", CONSUMERS],
+    ]);
+    expect((await archive(p, "FEAT-60")).code).toBe(1);
+  });
+
+  it("the one sender's retirement is refused as before, naming the route through another sender", async () => {
+    const p = await project(twoSenders({
+      ...retireFrom("payment-service", PAYMENT_SPEC_PUBLISHING),
+      "services/order-service/asyncapi.yaml": null,
+      "services/order-service/spec.md": checkoutSpec().replace(/checkout-web/g, "order-service"),
+    }));
+    const [issue, ...more] = ofCode(await featureFindings(p, "FEAT-60"), "asyncapi.remove-message-consumed");
+    expect(more).toEqual([]);
+    expect(issue!.details).toEqual(CONSUMERS);
+    expect(issue!.message).toContain("no readable contract would still send it after this merge");
+    expect(issue!.message).toContain("keep another service sending it");
+    expect((await archive(p, "FEAT-60")).code).toBe(1);
+  });
+
+  // The route that refusal names, followed: production moves to order-service
+  // in the same feature, whose delta CREATES its event contract. The sender is
+  // read off the merge (the create branch's document), so the consumers keep
+  // a producer and the retirement passes.
+  it("a sender this feature adds keeps the message produced", async () => {
+    const p = await project(twoSenders({
+      ...retireFrom("payment-service", PAYMENT_SPEC_PUBLISHING),
+      "services/order-service/asyncapi.yaml": null,
+      "services/order-service/spec.md": checkoutSpec().replace(/checkout-web/g, "order-service"),
+      [`${FEAT}/specs/order-service/asyncapi.yaml`]: ORDER_EVENTS,
+    }));
+    expect(ofCode(await featureFindings(p, "FEAT-60"), "asyncapi.remove-message-consumed")).toEqual([]);
+    const archived = await archive(p, "FEAT-60");
+    expect(archived.code, JSON.stringify(archived.issues)).toBe(0);
+  });
+
+  // What a second sender does NOT excuse: the provider's own documents are
+  // graded against the provider's own contract — its `Publishes:` line strands
+  // as `spec-event.message-undefined` whoever else sends the message — so the
+  // refusal names them, and only them.
+  it("a second sender does not excuse the provider's own Publishes: line", async () => {
+    const p = await project(twoSenders({
+      [`${FEAT}/specs/payment-service/asyncapi.yaml`]: "asyncapi: 3.0.0\noperations:\n  sendLegacy:\n    x-loam-remove: true\n",
+    }));
+    const [issue, ...more] = ofCode(await featureFindings(p, "FEAT-60"), "asyncapi.remove-message-consumed");
+    expect(more).toEqual([]);
+    expect(issue!.details).toEqual(["payment-service's living requirement 'Legacy events'"]);
+    expect(issue!.message).toContain("order-service would still send it");
+    expect((await archive(p, "FEAT-60")).code).toBe(1);
+  });
 });

@@ -78,6 +78,17 @@ export interface DeclaredEvents {
    */
   stoppedSending: Map<string, string[]>;
   /**
+   * Per touched service whose feature asyncapi.yaml reads: the names its
+   * contract would SEND once the archive writes it — the merged contract over a
+   * readable living one, and the create branch's document where none exists
+   * (a feature may move production to a service with no contract yet). Absent
+   * where the simulation stands down: an unreadable living contract, or a pair
+   * the merge refuses. What the consumer gate asks for the senders that keep a
+   * message produced after this merge (./events.ts), so a service absent here
+   * that this feature carries a delta for vouches for nothing.
+   */
+  sentAfter: Map<PathableService, readonly string[]>;
+  /**
    * Per service in the walk: the delta's non-REMOVED `Publishes:`/`Consumes:`
    * lines — read once HERE and graded in ./events.ts, the indexed-in-one-walk
    * rule this record exists for (the same lines used to be re-read and
@@ -140,6 +151,7 @@ export async function declaredEvents(
   const mergedDocs = new Map<PathableService, AsyncapiDoc>();
   const netRemoved = new Map<string, Set<string>>();
   const stoppedSending = new Map<string, string[]>();
+  const sentAfter = new Map<PathableService, readonly string[]>();
   const links = new Map<PathableService, EventLink[]>();
   const unreadable = new Set<string>();
   const revivalCandidates = new Map<PathableService, EventArrivals>();
@@ -197,6 +209,10 @@ export async function declaredEvents(
     const read = await readEventPair({ featPath, featDoc, livingPath, livingDoc, service: svc }, context);
     const { featSlots, livingText } = read;
     revivalCandidates.set(svc, eventArrivals(read));
+    // The pair's one simulation, which the revival candidates above have
+    // already asked: absent living included, where it is the create branch.
+    const sends = read.merged()?.doc.sent;
+    if (sends !== undefined) sentAfter.set(svc, sends);
 
     if (livingText !== undefined) {
       gradeBaselines({ ...read, svc, featureId }, issues);
@@ -251,5 +267,5 @@ export async function declaredEvents(
       });
     }
   }
-  return { featureDocs, mergedDocs, netRemoved, stoppedSending, links, unreadable, revivalCandidates };
+  return { featureDocs, mergedDocs, netRemoved, stoppedSending, sentAfter, links, unreadable, revivalCandidates };
 }

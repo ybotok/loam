@@ -63,11 +63,52 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
   // marker, but nothing asks a re-key or a turned-around operation for one.
   // A consumer document nobody could read or place refuses too, as on the
   // contract axis (../consumed/refusal.ts).
-  const still = async (svc: string, message: string): Promise<StillNamed> => stillNamed(await consumers.messageConsumers(svc, message));
+  //
+  // But a CONSUMER is stranded only when no service would send the message
+  // after this merge — the rule `spine.message-unproduced` grades a consumer
+  // by, and the one `loam diff` asks first (`producers`, core/diff/semantic.ts).
+  // Counting every consumer "whoever its producer is" refused a retirement from
+  // one of two senders over the other sender's own consumes edge, and told the
+  // author to drop it, while `loam diff` called the same removal a warning
+  // ("still sent by …") and the next `validate --all` was clean (the
+  // verification of the consumer fixes, N2). The provider's OWN documents are
+  // another matter: the spine and validate grade them against the provider's
+  // own contract, so they strand whoever else sends the message, and `own`
+  // still refuses beside a surviving sender.
+  //
+  // The senders are asked of the MERGE, never of the living fleet alone:
+  // `producers` reads the fleet as it stands, so a feature retiring the message
+  // from both senders would let each one pass on the other's living contract.
+  // A service this feature carries an event delta for sends what the
+  // simulation leaves it (`declared.sentAfter`), or vouches for nothing; every
+  // other service sends what its living contract does. Positive evidence only,
+  // as `producers` is: an unreadable contract, or a merge that stood down,
+  // never keeps a message produced.
+  const touched = new Set<string>([...declared.featureDocs.keys(), ...declared.unreadable]);
+  const sendersAfter = async (svc: string, message: string): Promise<string[]> => {
+    const living = (await consumers.producers(message)).filter((id) => !touched.has(id));
+    const merged = [...declared.sentAfter].filter(([, sent]) => sent.includes(message)).map(([id]) => id);
+    return [...new Set([...living, ...merged])].filter((id) => id !== svc).sort();
+  };
+  const still = async (svc: string, message: string): Promise<{ found: StillNamed; senders: string[] }> => {
+    const answer = await consumers.messageConsumers(svc, message);
+    const senders = await sendersAfter(svc, message);
+    return { senders, found: stillNamed(senders.length === 0 ? answer : { ...answer, victims: [], suspended: [] }) };
+  };
   // The landscape merge only ADDS edges, so an edge is dropped in the living map
   // itself — a consumer's consumes edge, or the provider's own publishes edge,
   // which the spine grades on its source (`own`, core/consumers/consumers.ts).
   const route = `drop its consumes edge, or drop or redraw its publishes edge, in the architecture/ project, MODIFY or REMOVE the requirement whose Consumes:/Publishes: line names it in this feature's specs/<service>/ delta`;
+  // With a sender left only the provider's own documents are named, so the
+  // remedy is theirs alone — telling the author to drop a consumer's edge
+  // there is the false route this gate used to give.
+  const ownRoute = (svc: string): string =>
+    `drop or redraw its publishes edge in the architecture/ project, or MODIFY or REMOVE the requirement whose Publishes: line names it in this feature's specs/${svc}/ delta`;
+  const ownOnly = (svc: string, senders: string[]): string =>
+    `${senders.join(", ")} would still send it after this merge, so its consumers keep a producer, but ${svc}'s own documents would still name it`;
+  // The route a consumer's refusal gains: another sender keeps the message
+  // produced, and one this feature adds counts (`declared.sentAfter`).
+  const anotherSender = "keep another service sending it (an action: send operation in its asyncapi.yaml, living or in this feature's specs/<service>/ delta)";
 
   // Retiring a message the fleet still consumes — openapi.remove-op-consumed's
   // twin, and like it a question neither exactness nor justification asks:
@@ -76,8 +117,9 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
   // repository whose author was never in this feature.
   for (const [svc, net] of declared.netRemoved) {
     for (const message of net) {
-      const found = await still(svc, message);
+      const { found, senders } = await still(svc, message);
       if (nothingStill(found)) continue;
+      const lost = `this feature retires message '${message}'`;
       issues.push({
         severity: "error",
         code: "asyncapi.remove-message-consumed",
@@ -85,9 +127,12 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
         details: refusalDetails(found),
         message: refusalMessage(found, {
           subject: svc,
-          lost: `this feature retires message '${message}'`,
+          lost,
           verb: "name",
-          named: (list) => `${svc}: this feature retires message '${message}', but the fleet would still name it after this merge — ${list}. Retire each in the same change (${route}), or archive with --approve to break it deliberately.`,
+          named: (list) =>
+            senders.length === 0
+              ? `${svc}: ${lost}, and no readable contract would still send it after this merge, but the fleet would still name it — ${list}. Retire each in the same change (${route}), ${anotherSender}, or archive with --approve to break it deliberately.`
+              : `${svc}: ${lost}; ${ownOnly(svc, senders)} — ${list}. Retire each in the same change (${ownRoute(svc)}), or archive with --approve to break it deliberately.`,
         }),
       });
     }
@@ -103,7 +148,7 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
     const net = declared.netRemoved.get(svc);
     for (const message of stopped) {
       if (net?.has(message) === true) continue;
-      const found = await still(svc, message);
+      const { found, senders } = await still(svc, message);
       if (nothingStill(found)) continue;
       const lost = `after this feature's merge, ${svc}'s asyncapi.yaml would no longer declare an action: send operation for '${message}'`;
       issues.push({
@@ -115,7 +160,10 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
           subject: svc,
           lost,
           verb: "name",
-          named: (list) => `${svc}: ${lost}, but the fleet would still name it — ${list}. Keep an operation sending it, retire each in the same change (${route}), or archive with --approve to break it deliberately.`,
+          named: (list) =>
+            senders.length === 0
+              ? `${svc}: ${lost}, and no other readable contract would send it either, but the fleet would still name it — ${list}. Keep an operation sending it, ${anotherSender}, retire each in the same change (${route}), or archive with --approve to break it deliberately.`
+              : `${svc}: ${lost}; ${ownOnly(svc, senders)} — ${list}. Keep an operation sending it, retire each in the same change (${ownRoute(svc)}), or archive with --approve to break it deliberately.`,
         }),
       });
     }

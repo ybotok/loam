@@ -81,6 +81,23 @@ warnings — and the three copies read different documents. They are one index n
   - **Read after the feature's merge**: a consumer requirement the same feature MODIFIES to drop
     the id, or REMOVES, no longer counts — another service's included, which is the remedy the
     refusal itself names.
+  - **A message another service would still send after the merge strands no consumer.**
+    `asyncapi.remove-message-consumed` counted every `consumes` edge, `Consumes:` line and use-case
+    hop of a message whoever sent it, so retiring it from one of two senders was refused over the
+    other sender's consumers. Its remedy said to drop that sender's own `consumes` edge. Meanwhile
+    `loam diff` reported the same removal as `diff.message-removed` (warn), "still sent by …", and
+    the next `validate --all` was clean. Now a consumer refuses only while no service would send the
+    message after this feature's merge. The senders are read as the merge leaves them: a service
+    the feature carries an event delta for sends what its merged contract would (the delta itself
+    where it creates that contract), so moving production to another service in the same feature
+    passes, and a feature that retires the message from every sender is still refused. An unreadable contract never counts as
+    a sender. Beside another sender, the provider's own `Publishes:` lines, its own `publishes`
+    edges and its own unreadable spec files still refuse; another service's unreadable spec file,
+    or an id two directories claim, does not. This predates the one index: the gate behaved the
+    same before it. The message is reworded to say which case applies. With no sender left it reads
+    "no readable contract would still send it after this merge" and adds the route "keep another
+    service sending it". With a sender left it names the senders, lists only the provider's own
+    documents, and gives only their remedy.
   - **`openapi.remove-marker-missing` is owed only while there is a living operation to retire**:
     not for an id the service's living contract does not define (a consumer's REMOVED requirement
     naming another service's operation), and not for one the delta already replaces at its method
@@ -108,7 +125,11 @@ warnings — and the three copies read different documents. They are one index n
   archive` and `loam validate --feature` exit 1 for the removal whatever those documents say —
   before, 0 unless a copy the gate could read named it — until the document reads or `--approve` is
   passed. Where a refusal was false or the consumer is retired in the same feature, each
-  of those exits 0 for that shape unless something else gates, and `loam diff` reports
+  of those exits 0 for that shape unless something else gates. That includes a message retired from
+  one sender while another service would still send it after the merge, where only consumers were
+  named: `loam archive`, `loam validate --feature`, `loam validate <FEAT>` and `loam validate
+  --all` exited 1 and now exit 0, `loam status` no longer counts it as gating, and `loam show
+  <FEAT> --json` no longer reports `review.readyToArchive: false` for it. `loam diff` reports
   `diff.op-removed` (warn) where its only victim was a same-id requirement. `--approve` overrides
   every one of these refusals as before. `--strict` changes nothing here beyond that: every finding
   in this entry is an error, or is unchanged.

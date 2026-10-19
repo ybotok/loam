@@ -163,7 +163,7 @@ export type IssueCode =
   | "asyncapi.remove-marker-missing"
   /** a message-removal marker no REMOVED requirement's Publishes:/Consumes: line justifies — message slots only; channel and operation slots need exactness alone */
   | "asyncapi.remove-marker-unjustified"
-  /** the feature retires a message, or stops sending it, while the fleet would still name it after the merge — the consumer index's consumes-edges, other services' `Consumes:` lines and use-case hops, plus the provider's own `Publishes:` lines (core/consumers/) */
+  /** the feature retires a message, or stops sending it, while the fleet would still name it after the merge — the consumer index's consumes-edges, other services' `Consumes:` lines and use-case hops while no service would still send it after the merge, plus the provider's own `Publishes:` lines and `publishes` edges whoever else sends it (core/consumers/) */
   | "asyncapi.remove-message-consumed"
   /** another feature in flight adds or edits the same (service, message) — whichever archives second replaces the other's declaration wholesale */
   | "asyncapi.message-conflict"
