@@ -1,10 +1,11 @@
 /**
  * The diff computation: join the base fleet (`./base-state.ts`) against the
- * working tree (`./current-state.ts`) and say, per service, what changed in
+ * working tree (`core/consumers/current.ts`) and say, per service, what changed in
  * FLEET-MEANINGFUL terms — requirements by identity and digest, operations
  * and messages by their join tokens and their `$ref`-closure digests,
  * cross-service joins by tuple — with the authored consumers of every
- * removal, deprecation and modification named (`./victims.ts`).
+ * removal, deprecation and modification named (`core/consumers/consumers.ts`),
+ * and the cross-service joins that appeared or went away (`./joins.ts`).
  *
  * Two disciplines rule every branch here. Removal is graded against who still
  * depends on it: a removal nobody names is a warning, a removal the fleet
@@ -22,9 +23,12 @@
  */
 import { requirementDigest, type Requirement } from "../document/spec.js";
 import type { Severity, Finding } from "../vocabulary/report.js";
-import type { AxisState, BaseFleet, ServiceState } from "./base-state.js";
-import type { CurrentFleet } from "./current-state.js";
-import { consumerJoinChanges, consumerStance, type VictimIndex } from "./victims.js";
+import type { BaseFleet } from "./base-state.js";
+import type { AxisState, ServiceState } from "../consumers/state.js";
+import type { CurrentFleet } from "../consumers/current.js";
+import { consumerStance } from "../consumers/scan.js";
+import type { VictimIndex } from "../consumers/consumers.js";
+import { consumerJoinChanges } from "./joins.js";
 
 /**
  * The stable finding codes `loam diff` emits. Codes are the machine contract;
@@ -130,7 +134,7 @@ const emptyState = (id: string): ServiceState => ({ id, dir: "", spec: ABSENT, a
  *
  * Not the spec axes, and that is the victims scan's doing, not an oversight:
  * an unreadable spec.md or arch.spec.md is also the document ANOTHER
- * service's removal could not be checked against (`victims.ts`'s
+ * service's removal could not be checked against (`core/consumers/consumers.ts`'s
  * `scanRequirements`), and its `unreadable[]` entry here is what carries that
  * suspension to exit 1 (`opsDiff`'s removal branch says so). No scan reads a
  * contract it could not parse as evidence of anything — `declarers` takes
@@ -286,7 +290,7 @@ async function messagesDiff(sink: ServiceDiff, pair: { base: ServiceState; curre
   }
 }
 
-/** The graded join changes (`victims.ts`) as findings on each PROVIDER — the service whose surface the join lands on. */
+/** The graded join changes (`./joins.ts`) as findings on each PROVIDER — the service whose surface the join lands on. */
 function consumerFindings(input: { base: BaseFleet; current: CurrentFleet }): Map<string, Finding[]> {
   const changes = consumerJoinChanges({
     base: input.base.services,

@@ -99,6 +99,7 @@ model {
       capabilities = container 'src/core/capabilities/'
       coherence = container 'src/core/coherence/'
       conflict_markers = container 'src/core/conflict-markers.ts'
+      consumers = container 'src/core/consumers/'
       delta = container 'src/core/delta/'
       dependencies = container 'src/core/dependencies/'
       diff = container 'src/core/diff/'
@@ -234,7 +235,7 @@ model {
   loam.commands.archive -> loam.core.asyncapi
   loam.commands.archive -> loam.core.c4
   loam.commands.archive -> loam.core.coherence
-  loam.commands.archive -> loam.core.diff
+  loam.commands.archive -> loam.core.consumers
   loam.commands.archive -> loam.core.document
   loam.commands.archive -> loam.core.envelope
   loam.commands.archive -> loam.core.fleet_context
@@ -271,6 +272,7 @@ model {
   loam.commands.dependencies -> loam.core.repo
 
   loam.commands.diff -> loam.commands.policy
+  loam.commands.diff -> loam.core.consumers
   loam.commands.diff -> loam.core.diff
   loam.commands.diff -> loam.core.envelope
   loam.commands.diff -> loam.core.fleet_context
@@ -540,6 +542,16 @@ model {
   loam.core.coherence -> loam.core.staging
   loam.core.coherence -> loam.core.usecases
 
+  // The one consumer index — who still calls an operation, still consumes a
+  // message — that `loam diff`, the coherence gate and the archive planner all
+  // read. Its own package because each of those three had kept a copy, and
+  // the copies had drifted in which documents they read.
+  loam.core.consumers -> loam.core.c4
+  loam.core.consumers -> loam.core.envelope
+  loam.core.consumers -> loam.core.kernel
+  loam.core.consumers -> loam.core.repo
+  loam.core.consumers -> loam.core.usecases
+
   loam.core.delta -> loam.core.capabilities
   // Which of the fleet's models EXTEND the map, so the merge preview a feature's
   // flows are graded against routes a nested addition exactly as `loam archive`
@@ -558,6 +570,7 @@ model {
   loam.core.dependencies -> loam.core.repo
 
   loam.core.diff -> loam.core.asyncapi
+  loam.core.diff -> loam.core.consumers
   loam.core.diff -> loam.core.c4
   loam.core.diff -> loam.core.document
   loam.core.diff -> loam.core.envelope
@@ -565,7 +578,6 @@ model {
   loam.core.diff -> loam.core.openapi
   loam.core.diff -> loam.core.provenance
   loam.core.diff -> loam.core.repo
-  loam.core.diff -> loam.core.usecases
 
   loam.core.docs -> loam.core.agent
   loam.core.docs -> loam.core.repo

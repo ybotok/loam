@@ -24,8 +24,8 @@ import { baseOrRefuse, docsRepoReady, reportDocsRepoError, reportRepositoryUnava
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { readBaseFleet } from "../../core/diff/base-state.js";
-import { readCurrentFleet } from "../../core/diff/current-state.js";
-import { victimIndex } from "../../core/diff/victims.js";
+import { readCurrentFleet } from "../../core/consumers/current.js";
+import { victimIndex } from "../../core/consumers/consumers.js";
 import { computeDiff, type FleetDiff } from "../../core/diff/semantic.js";
 import { printDiff } from "./print.js";
 

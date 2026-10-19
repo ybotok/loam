@@ -1,8 +1,14 @@
 /**
- * The working-tree side of `loam diff`: the fleet as it stands on disk, read
- * through the invocation's `FleetContext` into the SAME `ServiceState` shape
- * `./base-state.ts` builds from git — one shape, so `./semantic.ts` joins the
- * two sides without caring which one came from the object store.
+ * The living fleet as it stands on disk, read through the invocation's
+ * `FleetContext` into the SAME `ServiceState` shape `core/diff/base-state.ts`
+ * builds from git — one shape, so `core/diff/semantic.ts` joins the two sides
+ * without caring which one came from the object store.
+ *
+ * It was `loam diff`'s working-tree side (`core/diff/current-state.ts`) and
+ * still is; it moved here because the consumer index (`./consumers.ts`) reads
+ * the same fleet for every caller — the diff, the coherence gate and the
+ * archive planner — and a reader that only the diff could import was why the
+ * gate kept a copy of its own.
  *
  * Containment discipline, per subject and per axis: an artifact that EXISTS
  * but cannot be read (non-UTF-8 spec bytes, a directory sitting where a file
@@ -23,7 +29,7 @@ import { servicePathsAt } from "../repo/paths.js";
 import { inOrder } from "../kernel/concurrency.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 import type { FleetContext } from "../fleet-context.js";
-import { bytesDigest, collisions, type AxisState, type ServiceState } from "./base-state.js";
+import { bytesDigest, collisions, type AxisState, type ServiceState } from "./state.js";
 
 export interface CurrentFleet {
   /** By service id, in the enumeration's (sorted-walk) order. Ids the `ambiguous` map claims are excluded. */

@@ -4,7 +4,7 @@
  * names, so "the merge overwrites the living operation wholesale" says whom
  * that lands on instead of leaving the reader to go and find out.
  *
- * NOT A NEW JOIN. This is `loam diff`'s victim index (core/diff/victims.ts)
+ * NOT A NEW JOIN. This is `loam diff`'s victim index (core/consumers/consumers.ts)
  * asked over the living fleet as it stands before the merge — the same
  * landscape edges, the same living requirements, the same use-case hops, the
  * same suspensions for a consumer nobody could read or a caller drawn with no
@@ -29,8 +29,9 @@
  * digest, not its members), and building that reverse index for a warning is
  * the heavy new structure this reuse was allowed only without.
  */
-import { readCurrentFleet } from "../../../../core/diff/current-state.js";
-import { consumerStance, victimIndex, type ConsumerScan, type VictimIndex } from "../../../../core/diff/victims.js";
+import { readCurrentFleet } from "../../../../core/consumers/current.js";
+import { victimIndex, type VictimIndex } from "../../../../core/consumers/consumers.js";
+import { consumerStance, type ConsumerScan } from "../../../../core/consumers/scan.js";
 import { FleetContext } from "../../../../core/fleet-context.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
 

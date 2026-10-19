@@ -343,7 +343,7 @@ describe("loam diff — the use case a removal breaks", () => {
   });
 
   it("an architecture/ that does not parse invents neither a victim nor a doubt", async () => {
-    // `core/diff/victims.ts`'s standing doctrine for the landscape, applied to
+    // `core/consumers/consumers.ts`'s standing doctrine for the landscape, applied to
     // the use-case axis: an unreadable fleet map proves nothing either way.
     // Inventing victims out of a parse error would point the reviewer at a file
     // their change never touched, and inventing SUSPENSIONS out of it would

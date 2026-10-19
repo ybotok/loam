@@ -7,8 +7,8 @@
  * requirement is a heading in somebody else's spec, while "step 4 of Checkout
  * stops working" is the fact a human weighs a pull request against. This module
  * is the join that produces that sentence, and it produces NOTHING ELSE — no
- * finding, no code, no severity. `core/diff/victims.ts` folds its answers into
- * the `details[]` of the two codes that already exist.
+ * finding, no code, no severity. `core/consumers/consumers.ts` folds its
+ * answers into the `details[]` of the two codes that already exist.
  *
  * ## Attributed is a victim; contested is a suspension
  *
@@ -47,8 +47,8 @@ import type { UseCaseScan } from "./fleet.js";
  * What one contract removal does to the fleet's use cases.
  *
  * Two lists rather than `victims`/`suspended` — the vocabulary
- * `core/diff/victims.ts` uses — because this module answers about FLOWS and that
- * one answers about consumers. The caller does the folding, and naming the two
+ * `core/consumers/consumers.ts` uses — because this module answers about FLOWS
+ * and that one answers about consumers. The caller does the folding, and naming the two
  * differently is what stops a reader taking this for a second implementation of
  * `ConsumerScan` (it is not: it never scans a document, and it cannot be
  * unreadable — the scan it runs over was already graded).
@@ -79,8 +79,8 @@ function hops(scan: Extract<UseCaseScan, { kind: "read" }>): Array<{ view: Parse
  * The flows one removed operation breaks, and the ones loam cannot answer for.
  *
  * An `unreadable` scan contributes NOTHING — neither break nor suspension — and
- * that is `core/diff/victims.ts`'s own landscape doctrine applied one axis over:
- * an unreadable fleet map proves nothing either way, `landscape.invalid` is
+ * that is `core/consumers/consumers.ts`'s own landscape doctrine applied one
+ * axis over: an unreadable fleet map proves nothing either way, `landscape.invalid` is
  * validate's finding to make, and inventing doubt out of a parse error would
  * point the reviewer at a file their change never touched. The caller reports
  * the hole; this join stays quiet about it.

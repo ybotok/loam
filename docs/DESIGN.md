@@ -81,8 +81,8 @@ parsed. If a second reader of the same claims appears, that is the seam to move.
 | L4 | `c4/` `gherkin/` `glossary/` `openapi/` `openspec/` `provenance/` `workspace/` | Read and write one artifact family. Not "cheap": `c4/likec4.ts` is the most expensive module in the repo and sits here |
 | L5 | `asyncapi/` `brief/` `capabilities/` `deployment/` `doctor/` `links/` | One artifact family that needs another one first |
 | L6 | `explain/` `projection/` `usecases/` | One flow, projected onto the model |
-| L7 | `delta/` `dependencies/` `diff/` `explore/` `mcp/` `pack/` `verify/` | One feature, and the whole-fleet reads |
-| L8 | `coherence/` | Cross-artifact rules producing `Issue[]` / `Finding[]` |
+| L7 | `consumers/` `delta/` `dependencies/` `explore/` `mcp/` `pack/` `verify/` | One feature, and the whole-fleet reads |
+| L8 | `coherence/` `diff/` | Cross-artifact rules producing `Issue[]` / `Finding[]` |
 | L9 | `status/` | Aggregate answers for a feature or a fleet |
 | L10 | `gate/` | The deploy-time query over everything above |
 
@@ -136,9 +136,10 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/links/` | the corpus of authored documents loam reads links out of, and whether each link resolves | envelope, glossary, kernel, repo |
 | `core/projection/` | one feature projected onto one service — the API, event and C4 slices `loam delta` and `loam context` share | asyncapi, c4, kernel, openapi, repo |
 | `core/usecases/` | the fleet's declared use cases and the join from a flow's steps onto the model, with `delta/` beneath for the flows one FEATURE brings, `service/` beneath for the flows one SERVICE keeps beside its model, and `suites/` beneath for the journeys grouped by `#suite-` tag and the participant union a test stand is provisioned from (the one subpackage its parent imports, so it imports nothing of the parent's but types) | c4, capabilities, kernel, repo, vocabulary |
+| `core/consumers/` | the one consumer index — who in the living fleet still calls an operation or consumes a message (edges, requirements, use-case hops), over the fleet read in `loam diff`'s `ServiceState` shape | c4, envelope, kernel, repo, usecases |
 | `core/coherence/` | do the three axes agree; `retired/` beneath reads what archived features took out of the living contracts | asyncapi, c4, capabilities, conflict-markers, delta, deployment, document, envelope, glossary, kernel, openapi, repo, staging, usecases |
 | `core/dependencies/` | who calls whom, and the fan-in over it | c4, fleet-context, kernel, openapi, repo |
-| `core/diff/` | the base-ref read of the docs repo (git show/ls-tree) and the semantic branch diff `loam diff` reports | asyncapi, c4, document, envelope, kernel, openapi, provenance, repo, usecases |
+| `core/diff/` | the base-ref read of the docs repo (git show/ls-tree) and the semantic branch diff `loam diff` reports | asyncapi, c4, consumers, document, envelope, kernel, openapi, provenance, repo |
 | `core/explore/` | the read-only survey `loam explore` prints before a feature exists | c4, capabilities, fleet-context, repo, usecases, vocabulary |
 | `core/mcp/` | the MCP facade's pure half: stdio framing, JSON-RPC routing and resources, the read-only plus opt-in authoring tool tables, output schema and argv boundary | agent, envelope, explain, kernel |
 | `core/pack/` | the context pack — one service's whole docs slice as one deterministic briefing | c4, capabilities, document, envelope, fleet-context, kernel, permissions, projection, provenance, repo, usecases, vocabulary |

@@ -83,7 +83,7 @@ export function coherenceLookups(scope: DeltaScope, context?: FleetContext): Loo
     // requirement scan reads every service's living spec, and a feature that
     // removes nothing must pay for neither.
     //
-    // `core/diff/victims.ts` carries a second copy of this join (an index over
+    // `core/consumers/consumers.ts` carries a second copy of this join (an index over
     // an already-read fleet — these closures are scoped to a DeltaScope and
     // cannot serve it). The victim strings and scan rules are kept in step by
     // hand; changing either module owes the other the same change, and a THIRD

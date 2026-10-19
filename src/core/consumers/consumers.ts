@@ -4,6 +4,10 @@
  * the contract" into "and these named consumers break", and "an operation's
  * shape moved" into "and these are the consumers to check it against".
  *
+ * (Moved from `core/diff/victims.ts` with the fleet reader it is built over,
+ * `./current.ts`, so the coherence gate and the archive planner can import it
+ * without importing `loam diff`.)
+ *
  * THREE SOURCES answer that, and only the first two are copies of anything.
  *
  * The first two are deliberately a SECOND copy of the consumer join the
@@ -64,35 +68,10 @@ import { hopsConsuming, hopsExercising } from "../usecases/operations.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 import type { FleetContext } from "../fleet-context.js";
 import type { Requirement } from "../document/spec.js";
-import type { ServiceState } from "./base-state.js";
+import type { ServiceState } from "./state.js";
+import type { ConsumerScan } from "./scan.js";
 
-/**
- * One consumer scan's answer, honest about its own coverage. `victims` is
- * positive evidence; `suspended` names the consumers whose relevant document
- * could not be read (or whose identity is ambiguous), because a scan that
- * skipped a file loam REFUSED to read must never let the caller assert
- * "nobody names it" — the fail-open shape this type exists to forbid.
- */
-export interface ConsumerScan {
-  victims: string[];
-  suspended: string[];
-}
-
-/**
- * Three honest phrasings of one consumer scan — never a confident negative
- * over a scan that skipped something it could not check. Beside the type it
- * phrases rather than inside `./semantic.ts`, because `loam diff` is no longer
- * its only reader: `loam archive`'s overwrite warnings ask the same scan of
- * the same fleet, and one sentence for one answer is what lets a reader meet
- * one vocabulary in both.
- */
-export function consumerStance(scan: ConsumerScan): string {
-  return scan.victims.length > 0 ? `${scan.victims.length} current consumer(s) still name it`
-    : scan.suspended.length > 0 ? "whether current consumers name it could not be fully answered"
-    : "no current consumer names it";
-}
-
-/** The current-state consumer questions `semantic.ts` asks per removal, deprecation and modification. */
+/** The current-state consumer questions `core/diff/semantic.ts` asks per removal, deprecation and modification. */
 export interface VictimIndex {
   /** Current consumers of `provider`'s operation `op`: landscape edges into the provider, then other services' living requirements, then the use-case hops the model attributes to it (contested hops, and inbound edges drawn with no op, ride as suspensions). */
   opConsumers(provider: string, op: string): Promise<ConsumerScan>;
@@ -100,14 +79,6 @@ export interface VictimIndex {
   messageConsumers(provider: string, name: string): Promise<ConsumerScan>;
   /** Current services whose asyncapi declares `name` — positive evidence only; a message still declared elsewhere is not orphaned by one producer dropping it. */
   declarers(name: string): string[];
-}
-
-/** The requirements one current service contributes to a scan, per axis rule. */
-function reqsOf(state: ServiceState, axes: readonly ("spec" | "archSpec")[]): Requirement[] {
-  return axes.flatMap((axis) => {
-    const a = state[axis];
-    return a.kind === "read" ? a.value : [];
-  });
 }
 
 const EDGE = (resolve: (id: string) => string, r: Rel): string =>
@@ -126,7 +97,7 @@ export function victimIndex(snap: {
   docsDir: DocsDir;
   context: FleetContext;
   current: ReadonlyMap<string, ServiceState>;
-  /** Ids the working tree claims twice (current-state.ts) — their documents cannot be scanned, so they ride as suspended consumers. */
+  /** Ids the working tree claims twice (./current.ts) — their documents cannot be scanned, so they ride as suspended consumers. */
   ambiguous: ReadonlyMap<string, string[]>;
 }): VictimIndex {
   // Lazy on purpose, the coherence lookups' own discipline: the landscape is
@@ -261,107 +232,4 @@ export function victimIndex(snap: {
     });
 
   return { opConsumers, messageConsumers, declarers };
-}
-
-/**
- * One cross-service join: `consumer`'s living requirements name a `token` that
- * `provider`'s contract defines. The same "who depends on what" question the
- * index above answers per removal, asked here of a WHOLE state — base or
- * current — so `semantic.ts` can report joins that appeared or went away.
- */
-export interface ConsumerTuple {
-  kind: "op" | "message";
-  consumer: string;
-  provider: string;
-  token: string;
-}
-
-/** The map key a tuple is joined on between the two states. */
-function tupleKey(t: ConsumerTuple): string {
-  return `${t.kind}\0${t.consumer}\0${t.provider}\0${t.token}`;
-}
-
-/**
- * Every cross-service join one state holds, keyed for the base/current join.
- * Axis rules mirror the two consumer scans above: `Operations:` from spec.md
- * only, `Consumes:` from both spec axes. Unreadable axes simply contribute
- * nothing here — `semantic.ts` guards the GRADING so a join is never called
- * added or removed off a side nobody could read.
- */
-export function consumerTuples(states: ReadonlyMap<string, ServiceState>): Map<string, ConsumerTuple> {
-  const providersOf = (pick: (s: ServiceState) => string[]): Map<string, string[]> => {
-    const map = new Map<string, string[]>();
-    for (const id of [...states.keys()].sort()) {
-      for (const token of pick(states.get(id)!)) map.set(token, [...(map.get(token) ?? []), id]);
-    }
-    return map;
-  };
-  const opProviders = providersOf((s) => (s.openapi.kind === "read" ? s.openapi.value.map((op) => op.id) : []));
-  const msgProviders = providersOf((s) => (s.asyncapi.kind === "read" ? s.asyncapi.value.map((m) => m.name) : []));
-  const out = new Map<string, ConsumerTuple>();
-  const add = (t: ConsumerTuple): void => {
-    out.set(tupleKey(t), t);
-  };
-  for (const consumer of [...states.keys()].sort()) {
-    const state = states.get(consumer)!;
-    for (const r of reqsOf(state, ["spec"])) {
-      for (const op of r.operations) {
-        for (const p of opProviders.get(op) ?? []) if (p !== consumer) add({ kind: "op", consumer, provider: p, token: op });
-      }
-    }
-    for (const r of reqsOf(state, ["spec", "archSpec"])) {
-      for (const name of r.consumes) {
-        for (const p of msgProviders.get(name) ?? []) if (p !== consumer) add({ kind: "message", consumer, provider: p, token: name });
-      }
-    }
-  }
-  return out;
-}
-
-/** May a tuple be graded off this side? Absence answers; unreadable does not; an ambiguous base identity answers nothing. */
-function tupleVisible(states: ReadonlyMap<string, ServiceState>, ambiguous: ReadonlySet<string>, t: ConsumerTuple): boolean {
-  if (ambiguous.has(t.consumer) || ambiguous.has(t.provider)) return false;
-  const readable = (id: string, axes: ("spec" | "archSpec" | "openapi" | "asyncapi")[]): boolean => {
-    const state = states.get(id);
-    return state === undefined || axes.every((axis) => state[axis].kind !== "unreadable");
-  };
-  return (
-    readable(t.consumer, t.kind === "op" ? ["spec"] : ["spec", "archSpec"]) &&
-    readable(t.provider, [t.kind === "op" ? "openapi" : "asyncapi"])
-  );
-}
-
-/** One graded cross-service join change between the two states. */
-export interface ConsumerChange {
-  t: ConsumerTuple;
-  change: "added" | "removed";
-}
-
-/**
- * The joins that appeared or went away between base and current, sorted for
- * deterministic output (provider, kind, token, consumer). The visibility
- * guard is the containment rule: a join is never called "added" off a base
- * side nobody could read, nor "removed" off an unreadable working file — the
- * suspended axis already carries that fact.
- */
-export function consumerJoinChanges(input: {
-  base: ReadonlyMap<string, ServiceState>;
-  baseAmbiguous: ReadonlySet<string>;
-  current: ReadonlyMap<string, ServiceState>;
-  currentAmbiguous: ReadonlySet<string>;
-}): ConsumerChange[] {
-  const baseTuples = consumerTuples(input.base);
-  const currentTuples = consumerTuples(input.current);
-  const graded: ConsumerChange[] = [];
-  for (const [key, t] of currentTuples) {
-    if (!baseTuples.has(key) && tupleVisible(input.base, input.baseAmbiguous, t)) graded.push({ t, change: "added" });
-  }
-  for (const [key, t] of baseTuples) {
-    if (!currentTuples.has(key) && tupleVisible(input.current, input.currentAmbiguous, t)) graded.push({ t, change: "removed" });
-  }
-  return graded.sort((a, b) => {
-    const ka = `${a.t.provider}\0${a.t.kind}\0${a.t.token}\0${a.t.consumer}\0${a.change}`;
-    const kb = `${b.t.provider}\0${b.t.kind}\0${b.t.token}\0${b.t.consumer}\0${b.change}`;
-    return ka < kb ? -1 : 1;
-  });
 }
