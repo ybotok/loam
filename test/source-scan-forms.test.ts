@@ -92,3 +92,59 @@ model {
     expect(literals.map((l) => l.value)).toEqual(["one", "two"]);
   });
 });
+
+describe("every top-level model block is read, and only those", () => {
+  it("a second (and third) model block below the views is part of the model", async () => {
+    const src = `${SPEC}
+model {
+  alpha = softwareSystem 'alpha-service'
+}
+
+views {
+  view index { include * }
+}
+
+model {
+  zulu = softwareSystem 'zulu-service' {
+    api = container 'api'
+  }
+  alpha -> zulu.api 'calls'
+}
+
+model {
+  beta = softwareSystem 'beta-service'
+  beta -> api 'by its unique leaf, across blocks'
+}
+`;
+    const { parsed, scanned } = await readings(src);
+    expect(scanned).toEqual(parsed);
+    expect(scanModel(src)!.blocks).toHaveLength(3);
+    expect(scanModel(src)!.elements.map((e) => [e.id, e.block])).toEqual([
+      ["alpha", 0],
+      ["zulu", 1],
+      ["zulu.api", 1],
+      ["beta", 2],
+    ]);
+  });
+
+  it("a specification kind NAMED model, above the real block, is not the model", async () => {
+    // The bare first match took `element model {` for the model block and saw
+    // no declaration at all.
+    const src = `specification {
+  element softwareSystem
+  element model {
+    style {
+      color red
+    }
+  }
+}
+
+model {
+  alpha = softwareSystem 'alpha-service'
+  model beta 'beta-service'
+}
+`;
+    const { parsed, scanned } = await readings(src);
+    expect(scanned).toEqual(parsed);
+  });
+});

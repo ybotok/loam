@@ -1,6 +1,6 @@
 import { type Elem } from "../likec4.js";
 import { elementService, serviceOf } from "../resolve/service.js";
-import type { ScannedElement, ScannedModel } from "../source-scan.js";
+import type { ScannedBlock, ScannedElement, ScannedModel } from "../source-scan.js";
 import { relSortKey } from "./identity/edges.js";
 
 /* ------------------------------------------------------------------ */
@@ -35,10 +35,35 @@ import { relSortKey } from "./identity/edges.js";
  *    neighborhood it falls to the trailing region, cluster-head-key-sorted
  *    the same insertion-sort way, after the trailing elements.
  *
+ * A landscape may hold SEVERAL top-level `model { }` blocks, and LikeC4 reads
+ * them as one model. Placement keeps every rule above and adds one: an
+ * ANCHORED addition lands in its anchor's block (after the neighbor, clamped
+ * to that block's closing brace), and an UNANCHORED one — the trailing-region
+ * walks — lands in `HOME_BLOCK`, never crossing a block boundary. A same-service
+ * run and a relationship cluster are contiguous statements of ONE block: the
+ * views or the specification between two blocks are not a neighborhood.
+ *
  * LikeC4 reference resolution is not order-dependent, so a relationship
  * placed before an element it names still parses; the in-memory parse net in
  * landscape-merge.ts's planLandscapeMerge stays as the backstop regardless.
  */
+
+/**
+ * The block an addition with no anchor lands in: the document's FIRST
+ * `model { }` block.
+ *
+ * First, because it is the block every unanchored addition already landed in
+ * before the scan could see a second one — the scan stopped at the first
+ * match — so a single-block map places byte-identically, and a map that grew
+ * a second block keeps receiving new services where its older ones went. It
+ * is also invariant under every addition this merge can make (an archive never
+ * creates or reorders a block), which is what order-independence needs of it:
+ * a block chosen by size or content would move as the archives landed, and the
+ * same two features would compose to different bytes by archive order. The
+ * service-model splice (`./model/merge.ts`) uses the same block for the same
+ * reasons.
+ */
+export const HOME_BLOCK = 0;
 export interface Spot {
   /** Offset into the living text: a line start, or a point inside a shared line. */
   at: number;
@@ -57,11 +82,13 @@ export interface TopStmt {
   services: string[];
   start: number;
   end: number;
+  /** The `model { }` block it is written in, as `ScannedModel.blocks` indexes it. */
+  block: number;
 }
 
 /**
  * The living model as placement reads it: the text being spliced into, its
- * top-level statement layout, and the model block's closing brace. One value
+ * top-level statement layout, and the model blocks' braces. One value
  * because every spot is computed against all three at the same instant — a
  * layout paired with text a splice has since moved would place against a
  * document that no longer exists (see `modelRegion` in landscape-merge.ts's
@@ -70,7 +97,13 @@ export interface TopStmt {
 export interface ModelRegion {
   text: string;
   stmts: TopStmt[];
-  close: number;
+  /** Every top-level `model { }` block, by the index `TopStmt.block` names. */
+  blocks: readonly ScannedBlock[];
+}
+
+/** The statements of one block, in document order — what a trailing walk may step over. */
+function inBlock(stmts: TopStmt[], block: number): TopStmt[] {
+  return stmts.filter((s) => s.block === block);
 }
 
 /** The model's top-level statements in document order, joined to the parsed elements for services. */
@@ -89,6 +122,7 @@ export function topStatements(scan: ScannedModel, els: Elem[]): TopStmt[] {
     services: [bound.get(e.id) ?? e.id],
     start: e.start,
     end: e.end,
+    block: e.block,
   }));
   for (const r of scan.rels) {
     // A rel declared inside an element's body is not a top-level statement —
@@ -106,6 +140,7 @@ export function topStatements(scan: ScannedModel, els: Elem[]): TopStmt[] {
       services: [serviceOf(els, r.source), serviceOf(els, r.target)],
       start: r.start,
       end: r.end,
+      block: r.block,
     });
   }
   return stmts.sort((a, b) => a.start - b.start);
@@ -127,12 +162,14 @@ export function topStatements(scan: ScannedModel, els: Elem[]): TopStmt[] {
  * exact regime the scheme guarantees.
  */
 export function elementSpot(region: ModelRegion, id: string, service: string): Spot {
-  const { text, stmts, close } = region;
+  const { text, blocks } = region;
   let anchor: TopStmt | undefined;
-  for (const s of stmts) {
+  for (const s of region.stmts) {
     if (s.kind === "element" && s.services.includes(service)) anchor = s;
   }
-  if (anchor !== undefined) return spotAfter(text, close, anchor.end);
+  if (anchor !== undefined) return spotAfter(text, blocks[anchor.block]!.close, anchor.end);
+  const stmts = inBlock(region.stmts, HOME_BLOCK);
+  const close = blocks[HOME_BLOCK]!.close;
   let i = stmts.length - 1;
   let before: TopStmt | undefined;
   while (i >= 0 && stmts[i]!.kind === "rel") {
@@ -169,6 +206,12 @@ function relClusterHeads(stmts: TopStmt[]): number[] {
   let services: Set<string> | null = null;
   for (let i = 0; i < stmts.length; i += 1) {
     const s = stmts[i]!;
+    // A block boundary ends a cluster exactly as an element does: the first
+    // edge of the next block is not contiguous with the last of this one.
+    if (i > 0 && stmts[i - 1]!.block !== s.block) {
+      head = -1;
+      services = null;
+    }
     if (s.kind !== "rel") {
       head = -1;
       services = null;
@@ -186,7 +229,26 @@ function relClusterHeads(stmts: TopStmt[]): number[] {
 }
 
 export function relSpot(region: ModelRegion, sourceService: string, key: string): Spot {
-  const { text, stmts, close } = region;
+  const anchored = anchoredRelSpot(region, sourceService, key);
+  if (anchored !== null) return anchored;
+  const { text, blocks } = region;
+  const stmts = inBlock(region.stmts, HOME_BLOCK);
+  const close = blocks[HOME_BLOCK]!.close;
+  const heads = relClusterHeads(stmts);
+  let i = stmts.length - 1;
+  let before: TopStmt | undefined;
+  while (i >= 0 && stmts[i]!.kind === "rel") {
+    const j = heads[i]!;
+    if (!(stmts[j]!.key > key)) break;
+    before = stmts[j];
+    i = j - 1;
+  }
+  return before !== undefined ? beforeSpot(text, before) : closeSpot(text, close);
+}
+
+/** After the last relationship touching the source's service, in that relationship's block — null when none does. */
+function anchoredRelSpot(region: ModelRegion, sourceService: string, key: string): Spot | null {
+  const { text, stmts, blocks } = region;
   const heads = relClusterHeads(stmts);
   let anchorAt = -1;
   for (let i = 0; i < stmts.length; i += 1) {
@@ -205,17 +267,9 @@ export function relSpot(region: ModelRegion, sourceService: string, key: string)
       if (s.kind !== "rel" || heads[j] !== heads[anchorAt] || s.key >= key) break;
       last = s;
     }
-    return spotAfter(text, close, last.end);
+    return spotAfter(text, blocks[last.block]!.close, last.end);
   }
-  let i = stmts.length - 1;
-  let before: TopStmt | undefined;
-  while (i >= 0 && stmts[i]!.kind === "rel") {
-    const j = heads[i]!;
-    if (!(stmts[j]!.key > key)) break;
-    before = stmts[j];
-    i = j - 1;
-  }
-  return before !== undefined ? beforeSpot(text, before) : closeSpot(text, close);
+  return null;
 }
 
 /**

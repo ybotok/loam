@@ -16,7 +16,10 @@
  * already declares that container — and a model with no `extend` block for the
  * fqn gains one at the end of its `model { }` block, as a model with no `model
  * { }` block at all gains that. A relationship lands after the last top-level
- * relationship of that block, or last in it.
+ * relationship of that block, or last in it. A model written in SEVERAL
+ * `model { }` blocks is read whole — a parent's `extend` frame is found in
+ * whichever block holds it — and "its block" for everything else is
+ * `HOME_BLOCK`, the first, for the reasons `../placement.ts` gives the map.
  *
  * WHAT THIS DOES NOT DO IS PROVE THE RESULT. The landscape merge parses its own
  * output because a landscape is a self-contained document; an extending model
@@ -30,7 +33,7 @@ import { scanModel, type ScannedModel, type ScannedRel } from "../../source-scan
 import { matchLineEndings, spliceSource } from "../authored-source.js";
 import { LandscapeSpliceError, type ModelAdditions } from "../contract.js";
 import { relStatementKey } from "../identity/edges.js";
-import { closeSpot, nestedInsert, spotAfter } from "../placement.js";
+import { closeSpot, HOME_BLOCK, nestedInsert, spotAfter } from "../placement.js";
 
 export interface ModelMergeRequest {
   /** One model's share of the merge, as `planLandscapeMerge` routed it. */
@@ -101,12 +104,17 @@ export function spliceModel(req: ModelMergeRequest): string {
       );
     }
     if (rides(s.start, s.end)) continue;
-    const base = blockIndent(content, live.close);
+    const { close } = live.blocks[HOME_BLOCK]!;
+    const base = blockIndent(content, close);
     // Top-level in the model block: an edge written inside an `extend` block is
     // that block's, and anchoring after it would splice into someone's body.
-    const top = live.rels.filter((x) => !live.elements.some((el) => x.start > el.start && x.start < el.end));
+    // And in the HOME block: the anchor's own close is what `spotAfter` clamps
+    // to, and an edge last in a later block would otherwise pull this one there.
+    const top = live.rels.filter(
+      (x) => x.block === HOME_BLOCK && !live.elements.some((el) => x.start > el.start && x.start < el.end),
+    );
     const anchor = top.at(-1);
-    const spot = anchor === undefined ? closeSpot(content, live.close) : spotAfter(content, live.close, anchor.end);
+    const spot = anchor === undefined ? closeSpot(content, close) : spotAfter(content, close, anchor.end);
     const block = spliceSource(deltaText, s, { featureId, indent: `${base}  ` });
     applyAt(spot.at, spot.bare ? `\n${block}\n` : `${block}\n`);
   }
@@ -146,9 +154,10 @@ function elementInsert(req: ElementInsert): [number, string] {
     const nested = nestedInsert(content, declared, block(`${declared.indent}  `));
     return [nested.at, nested.insert];
   }
-  const base = blockIndent(content, live.close);
+  const { close } = live.blocks[HOME_BLOCK]!;
+  const base = blockIndent(content, close);
   const body = `${base}  extend ${parent} {\n${block(`${base}    `)}\n${base}  }`;
-  const spot = closeSpot(content, live.close);
+  const spot = closeSpot(content, close);
   return [spot.at, spot.bare ? `\n${body}\n` : `${body}\n`];
 }
 

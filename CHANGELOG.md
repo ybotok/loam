@@ -16,6 +16,18 @@ No code, flag or `--json` key was added or changed. Each case below is a landsca
 that `loam validate --all` called valid and that `loam archive` refused with `merge-failed`, nothing
 written; each now merges.
 
+- **A landscape with more than one top-level `model { }` block.** The splice map read only the
+  first block, so every declaration in a later one was invisible and archive refused with
+  "declares '<id>' in a form placement cannot locate — most often two declarations sharing one
+  line" about a declaration on a line of its own. Every block is read now. An addition anchored to
+  a living element — nested in it, joining its service's neighborhood, or joining its source's
+  edges — lands in that element's block; an unanchored one lands in the first block's trailing
+  region, where it landed before. A one-block map is placed byte for byte as before, and archive
+  order still does not change the bytes. The same reading fixes three neighbours: a delta written
+  in two `model { }` blocks (its second-block additions were "cannot locate … in delta.likec4"), a
+  service `model.likec4` whose `extend <fqn> { }` frame sits in a later block (the merge minted a
+  second frame in the first block, or re-added a container the model already declares there), and
+  `loam validate --all --base`, which did not grade a call edge the branch edited in a later block.
 - **A markdown string (`'''…'''` or `"""…"""`) whose prose holds an apostrophe or an odd number
   of quotes.** The splice map read the triple as three ordinary quotes, so the first `it's` in a
   long `description` ended the string and the rest of the file was read inside out — a map with

@@ -223,7 +223,7 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
   // Built fresh at every use, never captured: `content` and `stmts` are rebound
   // by each rescan, and a region assembled before a splice describes a document
   // that no longer exists.
-  const modelRegion = (): ModelRegion => ({ text: content, stmts, close: requireModel().close });
+  const modelRegion = (): ModelRegion => ({ text: content, stmts, blocks: requireModel().blocks });
   const applyAt = (at: number, insert: string): void => {
     content = content.slice(0, at) + insert + content.slice(at);
     rescan();
