@@ -124,10 +124,18 @@ export function topStatements(scan: ScannedModel, els: Elem[]): TopStmt[] {
     end: e.end,
     block: e.block,
   }));
+  // Every top-level FRAME a statement can sit inside: the elements, and the
+  // `extend` frames, which hold edges as well as children.
+  const frames = scan.elements.filter((e) => e.extend === true || !e.id.includes("."));
   for (const r of scan.rels) {
     // A rel declared inside an element's body is not a top-level statement —
-    // anchoring after it would splice into the parent's block.
-    if (topEls.some((e) => r.start > e.start && r.start < e.end)) continue;
+    // anchoring after it would splice into the parent's block. Inside an
+    // `extend` frame it is worse than misplaced: the frame is a SCOPE, so an
+    // edge spliced in after it re-resolves there, and the delta's `zulu ->
+    // beta` landed inside `extend alpha { beta = … }` as an edge into
+    // `alpha.beta` — a merge that parses, written at exit 0 (probed
+    // 2026-10-20). Only the extend frames' edges are new to this filter.
+    if (frames.some((e) => r.start > e.start && r.start < e.end)) continue;
     stmts.push({
       kind: "rel",
       id: "",

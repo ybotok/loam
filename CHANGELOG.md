@@ -36,6 +36,11 @@ written; each now merges.
   a bodyless element: an addition anchored after it landed between the head and its body and took
   that body — description, children, `metadata { service }` binding — for its own, in a merge that
   parsed and was written (exit 0). The body stays with its element now.
+- **An `extend <fqn> { }` frame written in the landscape itself, with an edge inside it.** An
+  edge the feature added, anchored to the frame's edge, was spliced INSIDE the frame — a scope, so
+  its names re-resolved there: the delta's `zulu -> beta` landed in `extend alpha { beta = … }` as
+  an edge into alpha's own `beta` container, in a merge that parsed and was written (exit 0). It
+  lands outside the frame now. Elements inside such a frame were already read correctly.
 - **A hyphenated id (`entity-service = …`) and a dot-kind edge (`a .async b`).** LikeC4's
   identifiers may carry hyphens and a declared relationship kind may be written as `.kind`; the
   splice map read neither, so such an element was "in a form placement cannot locate" and such an

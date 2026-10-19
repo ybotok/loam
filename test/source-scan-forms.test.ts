@@ -199,6 +199,51 @@ model {
   });
 });
 
+describe("an `extend` frame written in the landscape itself", () => {
+  const spec = "specification {\n  element softwareSystem\n  element container\n  tag FEAT-9\n}\n";
+  const land = `${spec}
+model {
+  alpha = softwareSystem 'alpha-service'
+  beta = softwareSystem 'beta-service'
+  zulu = softwareSystem 'zulu-service'
+  extend alpha {
+    beta = container 'Beta adapter'
+    beta -> zulu 'feeds'
+  }
+}
+`;
+
+  it("its children and edges are read under the frame's scope, as LikeC4 reads them", async () => {
+    const { parsed, scanned } = await readings(land);
+    expect(scanned).toEqual(parsed);
+  });
+
+  it("an edge anchored to the frame's edges lands OUTSIDE it, so its names keep their meaning", async () => {
+    // Inside `extend alpha { }` the delta's `beta` would resolve to `alpha.beta`.
+    const deltaText = `${spec}
+model {
+  beta = softwareSystem 'beta-service'
+  zulu = softwareSystem 'zulu-service'
+  zulu -> beta 'calls beta' {
+    #FEAT-9
+  }
+}
+`;
+    const delta = await loadSource(deltaText);
+    const plan = await planLandscapeMerge({
+      landscapeText: land,
+      deltaText,
+      deltaElements: delta.elements,
+      newEls: [],
+      newRels: delta.relationships,
+      featureId: "FEAT-9",
+    });
+    const merged = await loadSource(plan.content!);
+    expect(merged.errors).toEqual([]);
+    expect(merged.relationships.map((r) => `${r.source}->${r.target}`).sort()).toEqual(["alpha.beta->zulu", "zulu->beta"]);
+  });
+});
+
 describe("every top-level model block is read, and only those", () => {
   it("a second (and third) model block below the views is part of the model", async () => {
     const src = `${SPEC}
