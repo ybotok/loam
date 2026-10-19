@@ -210,6 +210,62 @@ model {
   });
 });
 
+describe("a bare carriage return is a line break, as LikeC4's `NL` (`[\\r\\n]+`) is", () => {
+  // Ended at `\n` alone, a statement head ran on over a bare `\r`: the
+  // property above a parent's sourceless edge became that edge's SOURCE —
+  // `link -> zulu`, `description -> zulu` — so the counts agreed, nothing
+  // refused, and `validate --all --base` matched no parsed edge to grade
+  // (probed on main at 171555d). A line comment ran on over it the same way
+  // and hid the declaration after it.
+  const ZULU = "  zulu = softwareSystem 'zulu-service'\n";
+  const EDGE = "    -> zulu 'calls' { metadata { op 'cancelOrdr' } }\n";
+  it.each([
+    ["a link, then the parent's sourceless edge", `    link https://wiki.example.com/alpha\r${EDGE}`],
+    ["a description, then the parent's sourceless edge", `    description 'x'\r${EDGE}`],
+    ["a technology, then the parent's sourceless edge", `    technology 'TS'\r${EDGE}`],
+    ["a line comment, then a child", "    // the alpha box\r    api = container 'API'\n"],
+    ["a child, then the parent's sourceless edge", `    api = container 'API'\r${EDGE}`],
+  ])("%s", async (_form, inner) => {
+    const src = `${SPEC}\nmodel {\n  alpha = softwareSystem 'alpha-service' {\n${inner}  }\n${ZULU}}\n`;
+    const { parsed, scanned } = await readings(src);
+    expect(scanned).toEqual(parsed);
+  });
+
+  it.each([
+    ["two elements", "  alpha = softwareSystem 'alpha-service'\r  apple = softwareSystem 'apple-service'\n"],
+    ["two `kind name` elements", "  softwareSystem alpha 'alpha-service'\r  softwareSystem apple 'apple-service'\n"],
+    ["two edges", "  alpha = softwareSystem 'alpha-service'\n  alpha -> zulu 'calls'\r  zulu -> alpha 'back'\n"],
+    ["an edge's line comment, then an edge", "  alpha = softwareSystem 'alpha-service'\n  alpha -> zulu 'calls' // why\r  zulu -> alpha 'back'\n"],
+  ])("between %s at the top level", async (_form, body) => {
+    const { parsed, scanned } = await readings(`${SPEC}\nmodel {\n${body}${ZULU}}\n`);
+    expect(scanned).toEqual(parsed);
+  });
+
+  it("a CRLF map reads exactly as its LF twin — the head ends at the `\\r` now, and nothing reads it differently", async () => {
+    const lf = `${SPEC}
+model {
+  alpha = softwareSystem 'alpha-service' { // the alpha
+    link https://wiki.example.com/alpha
+    description 'x'
+    api = container 'API'
+    -> zulu 'calls' {
+      metadata { op 'cancelOrdr' }
+    }
+  }
+${ZULU}  alpha -> zulu 'second' // why
+}
+`;
+    const crlf = lf.replace(/\n/g, "\r\n");
+    const { parsed, scanned } = await readings(crlf);
+    expect(scanned).toEqual(parsed);
+    const strip = (s: ReturnType<typeof scanModel>): unknown => ({
+      elements: s!.elements.map((e) => [e.id, e.title ?? null, e.bodyOpen === -1]),
+      rels: s!.rels.map((r) => [r.source, r.target, r.title ?? null, r.op ?? null]),
+    });
+    expect(strip(scanModel(crlf))).toEqual(strip(scanModel(lf)));
+  });
+});
+
 describe("identifiers and edge forms the grammar allows", () => {
   it("a hyphenated id, declared in both forms and named by edges, is the element LikeC4 sees", async () => {
     const { parsed, scanned } = await readings(`${SPEC}

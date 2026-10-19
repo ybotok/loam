@@ -316,6 +316,30 @@ describe("loam validate --all --base — a call edge the branch edited is graded
     }
   });
 
+  it("a misspelt op on an edge written after a `link` and a bare carriage return fails too — LikeC4's line break is the scan's", async () => {
+    // LikeC4's `NL` is `[\r\n]+`; the statement head ended at `\n` alone, so
+    // `link https://…` ran on over the bare `\r` and the edge after it was
+    // scanned as `link -> marketplace.orderService` — the counts agreed, the
+    // key matched no parsed edge, and `cancelOrdr` was graded nowhere: exit 0,
+    // `valid: true` (probed on main at 171555d).
+    const p = await exampleFleet();
+    try {
+      const map = "architecture/landscape.likec4";
+      const anchor = "      metadata {\n        service 'checkout-web'\n      }\n";
+      const before = await p.read(map);
+      expect(before).toContain(anchor);
+      commitBase(p.docsDir);
+      const edge = "      -> marketplace.orderService 'Calls cancelOrder' {\n        metadata { op 'cancelOrdr' }\n      }\n";
+      await p.write(map, before.replace(anchor, `${anchor}      link https://wiki.example.com/checkout-web\r${edge}`));
+      const { code, payload } = await validateJson(p, "--all", "--base", "main");
+      expect(code).toBe(1);
+      const spine = raised(payload).filter((f) => f.code === "spine.op-undefined");
+      expect(spine.map((f) => f.message).join("\n")).toContain("cancelOrdr");
+    } finally {
+      await p.destroy();
+    }
+  });
+
   // The splice map read `op` with `\b`, which takes a hyphen for a word
   // boundary: a key or tag CONTAINING `op` was the key, the scanned edge
   // carried that key's literal for its op, matched no parsed edge, and the

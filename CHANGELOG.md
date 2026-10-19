@@ -62,6 +62,12 @@ written; each now merges.
   and archive refused with "cannot locate the '<a> -> <b>' relationship in delta.likec4". A key is
   read whole now, and `op`, `publishes` and `consumes` only from `metadata { }`, which is where
   LikeC4 reads them. The same misreading hid such an edge from `validate --all --base` (below).
+- **A bare carriage return (`\r` with no `\n`) between two statements.** LikeC4 breaks a line at
+  `\r` as well as `\n`, and the splice map broke only at `\n`. A statement therefore ran on over
+  a bare `\r` into the next one, and a `// comment` ran on over it and hid the next declaration.
+  Two elements, two edges or a property and a child on either side of a bare `\r` were refused as
+  "in a form placement cannot locate". A bare `\r` ends the statement and the comment now. A CRLF
+  map reads exactly as before.
 
 What the splice map still cannot locate is still refused (`merge-failed`, nothing written), and
 the message no longer guesses. It used to say "most often two declarations sharing one line"
@@ -70,9 +76,10 @@ declaration (a relationship by its endpoints, where it used to give only a count
 LikeC4 parsed it on, then the cause the text shows: "it shares that line with '<other>'" only when
 other code precedes it on that line (its own kind keyword, or an edge's own source, is not other
 code); "the splice map read it as part of '<other>', which starts at line
-<n>" when the scan ran a statement on past a line break LikeC4 makes (a bare carriage return); and
-otherwise that the splice map read nothing there, with the rewrite to make and a request to report
-the shape. Wording only; the code is unchanged.
+<n>" when the scan ran a statement on past a line break LikeC4 makes (a bare carriage return was
+the one such break until the splice map learnt to break there too, above); and otherwise that the
+splice map read nothing there, with the rewrite to make and a request to report the shape. Wording
+only; the code is unchanged.
 
 ### Changed — `loam archive` refuses a delta that would bring back an operation another feature retired
 
@@ -525,6 +532,12 @@ unchanged.
   the description below it. The edge it read matched no edge in the parsed map, so the branch's
   misspelt `cancelOrdr` was graded nowhere: exit 0 and `valid: true`, where the unscoped run
   reports `spine.op-undefined`. A key is read whole now, and the op only from `metadata { }`.
+- **An edge written after a bare carriage return is graded on its own source.** After a `link`,
+  `description` or `technology` property ending in a bare `\r`, the parent's sourceless
+  `-> target` edge was read as an edge FROM `link` (or `description`, or `technology`), and an edge
+  after a `// comment` ending in a bare `\r` was not read at all. Either way the branch's op on that
+  edge was graded nowhere, with the same exit 0. LikeC4 breaks a line at a bare `\r`, and the
+  reading does too now.
 - **The landscape re-grades a fleet-wide vocabulary only when the file that carries it changed.**
   `permissions.*` rides a scoped run only when `architecture/permissions.yaml` changed,
   `capability.*` only when `architecture/capabilities.yaml` or `capabilities/` did,

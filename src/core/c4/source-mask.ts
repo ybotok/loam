@@ -157,7 +157,11 @@ export function maskSource(text: string): MaskedSource {
         }
         break;
       case "lineComment":
-        if (ch === "\n") state = "code";
+        // LikeC4's line comment is `//[^\n\r]*`: a bare `\r` ends it. Masked to
+        // the `\n`, `a -> b // why` with a bare `\r` before the next edge hid
+        // that edge — `validate --all --base` never graded its op, and archive
+        // refused the map on a relationship count.
+        if (ch === "\n" || ch === "\r") state = "code";
         else out[i] = " ";
         break;
       case "blockComment":
@@ -251,12 +255,21 @@ export interface StatementHead {
  * properties. Read as bare names they ran on into the next line, and whatever
  * was declared there — a child, the parent's sourceless edge — was read into
  * the property and lost (2e490dd blanked the URI and recorded nothing).
+ *
+ * A line ends at a carriage return as well as a line feed: LikeC4's `NL` is
+ * `[\r\n]+`, so a bare `\r` is a line break to it. Ended at `\n` alone, the
+ * head of `link https://…`, `description 'x'` or `technology 'TS'` ran on over
+ * a bare `\r` into the parent's sourceless edge, which was read as an edge
+ * FROM `link` (`description`, `technology`): the counts still agreed, nothing
+ * refused, and `validate --all --base` graded the branch's misspelt op nowhere
+ * (probed on main at 171555d). A CRLF line ends at its `\r` now rather than
+ * its `\n`, which nothing reads differently — `nextToken` steps over both.
  */
 export function statementHead(masked: MaskedSource, from: number, close: number): StatementHead {
   const { code } = masked;
   let j = from;
   for (;;) {
-    while (j < close && code[j] !== "\n" && code[j] !== "{" && code[j] !== "}") j += 1;
+    while (j < close && code[j] !== "\n" && code[j] !== "\r" && code[j] !== "{" && code[j] !== "}") j += 1;
     if (j >= close) return { end: close, opener: -1 };
     if (code[j] === "{") return { end: j, opener: j };
     if (code[j] === "}") return { end: j, opener: -1 };

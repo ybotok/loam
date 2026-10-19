@@ -128,9 +128,11 @@ interface Placer {
 
 /**
  * Reads a position against the text and the scan. Lines are split the way LSP
- * counts them — `\r\n`, `\r` or `\n` — which is not how the scan splits them,
- * and that difference is itself a cause this can name: a bare carriage return
- * is a line break to LikeC4 and none to the splice map.
+ * counts them — `\r\n`, `\r` or `\n` — because that is the count LikeC4's
+ * positions are in. A bare carriage return used to be the one break the scan
+ * did not make, and so the cause the "read it as part of" words were written
+ * for; `statementHead` breaks there too now, and the words stay for whatever
+ * run-on the scan has next.
  */
 function placer(text: string, scan: ScannedModel): Placer {
   const starts = [0];
@@ -186,7 +188,7 @@ export function unlocatedReason(file: string, gap: Unlocated | null): string {
   if (read !== undefined) {
     return (
       `${what}${where} in a form placement cannot locate: the splice map read it as part of ${read.name}, which starts at ` +
-      `line ${read.line} — it ran that statement on past a line break LikeC4 makes (a bare carriage return is one) — ${remedy}`
+      `line ${read.line} — it ran that statement on past a line break LikeC4 makes — ${remedy}`
     );
   }
   return `${what}${where} in a form placement cannot locate, and the splice map read no statement there — ${remedy}`;
