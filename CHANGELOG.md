@@ -28,6 +28,14 @@ written; each now merges.
   service `model.likec4` whose `extend <fqn> { }` frame sits in a later block (the merge minted a
   second frame in the first block, or re-added a container the model already declares there), and
   `loam validate --all --base`, which did not grade a call edge the branch edited in a later block.
+- **A declaration split across lines.** LikeC4's newlines are hidden tokens, so `name =` with its
+  kind on the next line, a bare name above `= kind`, a kind above the name it declares, a title on
+  the next line, a `/* … */` comment spanning a line break, an edge broken around its arrow, and an
+  edge's `#tag` on the next line are all one statement — and the splice map, reading one line per
+  statement, could not see them. Worse, `name = kind 'title'` with its `{` on the NEXT line read as
+  a bodyless element: an addition anchored after it landed between the head and its body and took
+  that body — description, children, `metadata { service }` binding — for its own, in a merge that
+  parsed and was written (exit 0). The body stays with its element now.
 - **A markdown string (`'''…'''` or `"""…"""`) whose prose holds an apostrophe or an odd number
   of quotes.** The splice map read the triple as three ordinary quotes, so the first `it's` in a
   long `description` ended the string and the rest of the file was read inside out — a map with

@@ -8,7 +8,7 @@
  * declaration physically is. A key only one of them reads is a key the merge
  * silently drops, which is why `metadata` handling is spelled out in both.
  */
-import { maskSource, matchBrace, topLevelBlocks, type SourceLiteral } from "./source-mask.js";
+import { maskSource, matchBrace, statementHead, topLevelBlocks, type SourceLiteral } from "./source-mask.js";
 
 export interface ScannedElement {
   /** Full dotted id — `parent.child` for a nested declaration. */
@@ -106,7 +106,8 @@ export interface ScannedModel {
  * LikeC4 has already parsed, so the scan can trust balanced braces.
  */
 export function scanModel(text: string): ScannedModel | null {
-  const { code, literals } = maskSource(text);
+  const masked = maskSource(text);
+  const { code, literals } = masked;
   // EVERY top-level `model { }` block, and only those (`topLevelBlocks`): a
   // document may hold any number, and LikeC4 reads them as one model. The
   // scan used to stop at the FIRST match, so every declaration in a later
@@ -195,22 +196,10 @@ export function scanModel(text: string): ScannedModel | null {
       }
 
       // A statement's head: up to its own `{`, the end of the line, or the
-      // enclosing block's `}` on the same line — whichever comes first.
+      // enclosing block's `}` on the same line — whichever comes first, unless
+      // LikeC4 reads on past the newline (`statementHead` says when it does).
       const stmtStart = i;
-      let headEnd = close;
-      let opener = -1;
-      for (let j = i; j < close; j += 1) {
-        const c = code[j]!;
-        if (c === "\n" || c === "}") {
-          headEnd = j;
-          break;
-        }
-        if (c === "{") {
-          opener = j;
-          headEnd = j;
-          break;
-        }
-      }
+      const { end: headEnd, opener } = statementHead(masked, i, close);
       const head = code.slice(stmtStart, headEnd);
       const parentId = stack.length > 0 ? stack[stack.length - 1]!.id : "";
 

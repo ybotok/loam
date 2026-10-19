@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 import { loadSource } from "../src/core/c4/likec4.js";
 import { maskSource } from "../src/core/c4/source-mask.js";
 import { scanModel } from "../src/core/c4/source-scan.js";
+import { planLandscapeMerge } from "../src/core/c4/splice/landscape-merge.js";
 
 const SPEC = `specification {
   element softwareSystem
@@ -90,6 +91,79 @@ model {
   it("the literal ends at the FIRST closing triple, as the grammar's until-token does", () => {
     const { literals } = maskSource(`x '''one''' y '''two'''`);
     expect(literals.map((l) => l.value)).toEqual(["one", "two"]);
+  });
+});
+
+describe("a statement split across lines is read as LikeC4 reads it — its newlines are hidden tokens", () => {
+  const ZULU = "  zulu = softwareSystem 'zulu-service'\n";
+  it.each([
+    ["the body's `{` on the next line", "  alpha = softwareSystem 'alpha-service'\n  {\n    api = container 'api'\n  }\n"],
+    ["a newline after `=`", "  alpha =\n    softwareSystem 'alpha-service'\n"],
+    ["a bare name above its `= kind`", "  alpha\n    = softwareSystem 'alpha-service'\n"],
+    ["a kind above the name it declares", "  softwareSystem\n    alpha 'alpha-service'\n"],
+    ["the title on the next line", "  alpha = softwareSystem\n    'alpha-service'\n"],
+    ["a block comment spanning the line break", "  alpha = /* the\n  payments box */ softwareSystem 'alpha-service'\n"],
+    ["an edge broken after its arrow", "  alpha = softwareSystem 'alpha-service'\n  alpha ->\n    zulu 'calls'\n"],
+    ["an edge whose arrow starts the next line", "  alpha = softwareSystem 'alpha-service'\n  alpha\n    -> zulu 'calls'\n"],
+    ["an edge's tag on the next line", "  alpha = softwareSystem 'alpha-service'\n  alpha -> zulu 'calls'\n    #t\n"],
+  ])("%s", async (_form, body) => {
+    const { parsed, scanned } = await readings(`${SPEC}\nmodel {\n${body}${ZULU}}\n`);
+    expect(scanned).toEqual(parsed);
+  });
+
+  it("an arrow starting the line after a COMPLETE head is its own sourceless edge, not a continuation", async () => {
+    // `-> zulu` here is the parent's edge, exactly as LikeC4 reads it: reading
+    // it into `c`'s head would invent an edge from `alpha.c` that nobody drew.
+    const { parsed, scanned } = await readings(`${SPEC}
+model {
+  alpha = softwareSystem 'alpha-service' {
+    c = container 'c'
+    -> zulu 'calls'
+  }
+${ZULU}}
+`);
+    expect(scanned).toEqual(parsed);
+    expect(scanned[1]).toEqual([JSON.stringify(["alpha", "zulu", "calls", []])]);
+  });
+
+  it("a neighbour spliced after a head whose `{` is on the next line does not take that body", async () => {
+    // The line-bounded head read `entityService` as bodyless, so the new
+    // element anchored to its service landed between the head and its `{` —
+    // and took the description and the binding for its own. Legal LikeC4, so
+    // the merge's parse net passed it (probed on main at 171555d).
+    const spec = "specification {\n  element softwareSystem\n  tag FEAT-9\n}\n";
+    const land = `${spec}
+model {
+  entityService = softwareSystem 'Entity Service'
+  {
+    description 'Holds entities'
+    metadata { service 'entity-service' }
+  }
+}
+`;
+    const deltaText = `${spec}
+model {
+  entityApi = softwareSystem 'entity-service' {
+    #FEAT-9
+  }
+}
+`;
+    const delta = await loadSource(deltaText);
+    const plan = await planLandscapeMerge({
+      landscapeText: land,
+      deltaText,
+      deltaElements: delta.elements,
+      newEls: delta.elements,
+      newRels: [],
+      featureId: "FEAT-9",
+    });
+    const merged = await loadSource(plan.content!);
+    expect(merged.errors).toEqual([]);
+    expect(merged.elements.find((e) => e.id === "entityService")).toMatchObject({
+      description: "Holds entities",
+      service: "entity-service",
+    });
+    expect(merged.elements.find((e) => e.id === "entityApi")?.description).toBeUndefined();
   });
 });
 

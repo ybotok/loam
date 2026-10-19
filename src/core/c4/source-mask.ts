@@ -7,6 +7,11 @@
  * needs both, and needs them to agree — a mask that misses a literal makes
  * `matchBrace` close a block inside a string, and the merge writes into the
  * middle of somebody's description.
+ *
+ * `statementHead` is the one reading of GRAMMAR here — where a statement's
+ * head ends, a question about tokens rather than declarations — and it sits
+ * beside the mask because it reads nothing but the masked bytes and the
+ * literal list; which declaration the head is stays the scanner's to say.
  */
 export interface SourceLiteral {
   start: number;
@@ -152,6 +157,94 @@ export function* topLevelBlocks(code: string, re: RegExp): Generator<{ match: Re
     const close = matchBrace(code, open);
     yield { match, body: code.slice(open + 1, close === -1 ? code.length : close) };
   }
+}
+
+/** A statement's head in MASKED code: where it ends, and the `{` opening its body (-1 when it has none). */
+export interface StatementHead {
+  end: number;
+  opener: number;
+}
+
+/**
+ * The head of the statement starting at `from`, inside a block that closes at
+ * `close`: up to its own `{`, the enclosing block's `}`, or the end of its
+ * line — unless LikeC4 reads on.
+ *
+ * It does read on, because its newlines are HIDDEN tokens (`NL` in the
+ * grammar): a declaration may be split across lines anywhere a space could
+ * go. A line-bounded head made each split form either invisible — so archive
+ * refused a valid map — or, worse, MISREAD: `name = kind 'title'` with its `{`
+ * on the next line read as a bodyless element, and a neighbour spliced in after
+ * that line took the body for its own, a re-parse that passes over a merge
+ * that moved another element's description and children (probed 2026-10-20).
+ * The next line continues the statement when its first token can only belong
+ * to it:
+ *
+ *  - a `{` — a body opens nothing else;
+ *  - a string — no LikeC4 statement starts with one, so it is this one's
+ *    title, description or technology;
+ *  - a `#tag` — a relationship's tags may follow it on the next line, and an
+ *    element's tags live inside its body, never after its head;
+ *  - anything at all, when the head so far cannot end a statement: it ends in
+ *    `=` or `->`, or it is one bare name (`entityService` above `= kind`, a
+ *    kind above the name it declares).
+ *
+ * A line starting `->` after a COMPLETE head is a statement of its own — the
+ * sourceless edge from the enclosing element — which is why an arrow at the
+ * start of a line continues only a bare name.
+ */
+export function statementHead(masked: MaskedSource, from: number, close: number): StatementHead {
+  const { code } = masked;
+  let j = from;
+  for (;;) {
+    while (j < close && code[j] !== "\n" && code[j] !== "{" && code[j] !== "}") j += 1;
+    if (j >= close) return { end: close, opener: -1 };
+    if (code[j] === "{") return { end: j, opener: j };
+    if (code[j] === "}") return { end: j, opener: -1 };
+    const next = nextToken(masked, j, close);
+    if (next === -1 || !readsOn(masked, { from, end: j }, next)) return { end: j, opener: -1 };
+    j = next;
+  }
+}
+
+/** The first token after `at`: a literal's start, or a non-blank character of code; -1 at the block's close. */
+function nextToken(masked: MaskedSource, at: number, close: number): number {
+  for (let k = at; k < close; k += 1) {
+    if (literalAt(masked.literals, k) !== undefined || !/\s/.test(masked.code[k]!)) return k;
+  }
+  return -1;
+}
+
+/** Whether the token at `next` belongs to the statement whose head so far spans `[from, end)`. */
+function readsOn(masked: MaskedSource, head: { from: number; end: number }, next: number): boolean {
+  const { code, literals } = masked;
+  if (literalAt(literals, next) !== undefined) return true;
+  if (code[next] === "{" || code[next] === "#") return true;
+  if (code[next] === "}") return false;
+  const sofar = code.slice(head.from, head.end).trim();
+  if (/(?:=|->)$/.test(sofar)) return true;
+  // Masked, `description 'x'` reads as the one word `description`: a head
+  // holding a literal is never a bare name.
+  const literal = firstLiteralFrom(literals, head.from);
+  return (literal === undefined || literal.start >= head.end) && /^[A-Za-z_][\w.-]*$/.test(sofar);
+}
+
+/** The literal starting exactly at `at`, if one does. */
+function literalAt(literals: readonly SourceLiteral[], at: number): SourceLiteral | undefined {
+  const l = firstLiteralFrom(literals, at);
+  return l?.start === at ? l : undefined;
+}
+
+/** The first literal starting at or after `at` — `maskSource` records them in order, so a binary search. */
+function firstLiteralFrom(literals: readonly SourceLiteral[], at: number): SourceLiteral | undefined {
+  let lo = 0;
+  let hi = literals.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (literals[mid]!.start < at) lo = mid + 1;
+    else hi = mid;
+  }
+  return literals[lo];
 }
 
 /** An element declaration located in source, under the id the computed model gives it. */
