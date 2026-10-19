@@ -232,9 +232,17 @@ export async function declaredEvents(
       // and satisfied by ANY marker taking it out, relocation included: a
       // message-slot marker naming it, or a channel-slot removal whose
       // living inline interior declares it (the SCHEMA-sanctioned way to
-      // retire an inline declaration).
+      // retire an inline declaration). And owed only while the MERGE would
+      // still declare it: a slot re-keyed to another name takes the message
+      // out with no marker, and none could be written there — the key holds
+      // the re-keyed declaration — so the route `asyncapi.remove-message-
+      // consumed` names (REMOVE the requirement whose Publishes: line names
+      // it) ended in this error, `openapi.remove-marker-missing`'s deadlock
+      // one axis over.
       if (markerNames.has(m) || inlineRetired.has(m)) continue;
       if (livingDoc.unreadable || !livingDoc.messages.some((msg) => msg.name === m)) continue;
+      const after = mergedDocs.get(svc);
+      if (after !== undefined && !after.messages.some((msg) => msg.name === m)) continue;
       issues.push({
         severity: "error",
         code: "asyncapi.remove-marker-missing",

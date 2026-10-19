@@ -243,7 +243,7 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
         severity: "error",
         code: "openapi.remove-op-consumed",
         subject: svc,
-        message: `${svc}: this feature's openapi.yaml defines ${by}, where '${op}' lives now — the merge replaces it there and would leave '${op}' defined nowhere, but it is still consumed — ${named.join("; ")}. Define '${op}' at another address in this delta if it is to stay. To take it out on purpose, update every consumer in the same change — ${route} (${svc}'s own restated to name the new operation, for a rename) — or archive with --approve to break it deliberately.`,
+        message: `${svc}: this feature's openapi.yaml defines ${by}, where '${op}' lives now — the merge replaces it there and would leave '${op}' defined nowhere, but it is still consumed — ${named.join("; ")}. Define '${op}' at another address in this delta if it is to stay. To take it out on purpose, update every consumer in the same change — ${route} (${svc}'s own restated to name the new operation, for a rename; a REMOVED one owes no x-loam-remove marker, since the overwrite already takes '${op}' out) — or archive with --approve to break it deliberately.`,
       });
     }
   }

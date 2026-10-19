@@ -223,7 +223,10 @@ Operations: authorizePayment
 
   it("a REMOVED requirement must explicitly remove every operation it governed", async () => {
     // the requirement being removed has to exist to be removable — otherwise the
-    // delta-shape check fires first and this rule is never reached
+    // delta-shape check fires first and this rule is never reached. And the
+    // operation it governed has to exist in the living contract: a marker is
+    // owed only while there is a living operation for it to retire, so a
+    // service with no openapi.yaml owes none (declared.ts says why).
     const livingSplit = `# payment-split-service
 
 ## Requirements
@@ -240,6 +243,13 @@ Operations: legacyOp
 `;
     const issues = await coherenceOf({
       "services/payment-split-service/spec.md": livingSplit,
+      "services/payment-split-service/openapi.yaml": `openapi: 3.1.0
+paths:
+  /legacy:
+    post:
+      operationId: legacyOp
+      responses: { "200": { description: ok } }
+`,
       [`${FEATURE_REL}/specs/payment-split-service/spec.md`]: `# delta for FEAT-1
 
 ## REMOVED Requirements

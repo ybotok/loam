@@ -609,3 +609,92 @@ components:
     expect((await archive(p, "FEAT-60")).code).toBe(1);
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* The routes the refusals name are followable                         */
+/* ------------------------------------------------------------------ */
+
+describe("the REMOVE route a refusal names can be followed", () => {
+  // Review finding 4: the overwrite's message says to REMOVE the provider's
+  // requirement governing the old id, and a REMOVED requirement carries the
+  // Operations: line it governed — which demanded an x-loam-remove marker
+  // (`openapi.remove-marker-missing`) that could not be written, because the
+  // replacement already holds the slot.
+  it("an overwrite whose governing requirement is REMOVED owes no removal marker, and archives", async () => {
+    const p = await project({
+      ...fleet(),
+      ...INTENT,
+      ...SETTLE_OVER_CAPTURE,
+      [`${FEAT}/specs/payment-service/spec.md`]: RETIRE_CAPTURE[`${FEAT}/specs/payment-service/spec.md`]!,
+    });
+    const found = await featureFindings(p, "FEAT-60");
+    expect(ofCode(found, "openapi.remove-marker-missing")).toEqual([]);
+    expect(ofCode(found, "openapi.remove-op-consumed")).toEqual([]);
+    const archived = await archive(p, "FEAT-60");
+    expect(archived.code, JSON.stringify(archived.issues)).toBe(0);
+  });
+
+  // The same route one service over: retiring checkout-web's requirement that
+  // names payment-service's operation, Operations: line kept as SCHEMA has a
+  // REMOVED requirement carry it, demanded a marker in checkout-web's own
+  // contract for an operation checkout-web never defined.
+  it("a consumer's REMOVED requirement naming another service's operation owes that service no marker", async () => {
+    const living = checkoutSpec(CAPTURE_AT_CHECKOUT);
+    const p = await project({
+      ...fleet({ "services/checkout-web/spec.md": living }),
+      ...INTENT,
+      ...RETIRE_CAPTURE,
+      [`${FEAT}/specs/checkout-web/spec.md`]: `# checkout-web — delta for FEAT-60
+
+## REMOVED Requirements
+
+### Requirement: Capture at checkout
+Based-On: ${pinFor(living, "Capture at checkout")}
+
+Operations: capturePayment
+`,
+    });
+    const found = await featureFindings(p, "FEAT-60");
+    expect(ofCode(found, "openapi.remove-marker-missing")).toEqual([]);
+    expect(ofCode(found, "openapi.remove-op-consumed")).toEqual([]);
+  });
+
+  // The event twin: re-keying the slot takes `payment.Legacy` out with no
+  // marker and leaves no key a marker could stand on, so REMOVING the
+  // requirement that publishes it — the route asyncapi.remove-message-consumed
+  // names — drew asyncapi.remove-marker-missing instead.
+  it("a re-keyed message whose publishing requirement is REMOVED owes no removal marker, and archives", async () => {
+    const p = await project({
+      ...fleet({
+        "services/payment-service/spec.md": PAYMENT_SPEC_PUBLISHING,
+        "services/payment-service/asyncapi.yaml": PAYMENT_EVENTS,
+      }),
+      ...INTENT,
+      [`${FEAT}/specs/payment-service/asyncapi.yaml`]: pinAsyncapi(
+        `asyncapi: 3.0.0
+components:
+  messages:
+    Legacy:
+      name: payment.LegacyV2
+      payload:
+        type: object
+`,
+        PAYMENT_EVENTS,
+      ),
+      [`${FEAT}/specs/payment-service/spec.md`]: `# payment-service — delta for FEAT-60
+
+## REMOVED Requirements
+
+### Requirement: Legacy events
+Based-On: ${pinFor(PAYMENT_SPEC_PUBLISHING, "Legacy events")}
+
+Publishes: payment.Legacy
+`,
+    });
+    const found = await featureFindings(p, "FEAT-60");
+    expect(ofCode(found, "asyncapi.remove-marker-missing")).toEqual([]);
+    expect(ofCode(found, "asyncapi.remove-message-consumed")).toEqual([]);
+    const archived = await archive(p, "FEAT-60");
+    expect(archived.code, JSON.stringify(archived.issues)).toBe(0);
+  });
+});
