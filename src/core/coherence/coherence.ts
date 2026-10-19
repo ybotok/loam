@@ -393,7 +393,7 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
   // feature's asyncapi deltas (pins, markers, justification), the tagged
   // edges' publishes/consumes metadata, and the requirement deltas'
   // Publishes:/Consumes: lines (./events/events.ts owns the walk).
-  issues.push(...(await eventCoherence({ scope, svcNames, taggedRels, svcOf, context, retired })));
+  issues.push(...(await eventCoherence({ scope, svcNames, taggedRels, svcOf, context, retired, consumers })));
 
   return issues;
 }

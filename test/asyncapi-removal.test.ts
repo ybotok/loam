@@ -205,8 +205,18 @@ describe("a relocation is not a removal", () => {
     // Same message name, marker on the old key, declaration at a new one:
     // the message only changes address, so it needs no REMOVED requirement
     // and nothing here fires — declared.ts's netRemoved distinction on the
-    // event axis.
+    // event axis. The channel is restated with its `$ref` pointed at the new
+    // key, as a whole relocation must be: left pointing at the retired key,
+    // the send operation stops sending the message, and the provider's own
+    // `Publishes:` line is then stranded — `asyncapi.remove-message-consumed`,
+    // rightly, since the consumer index counts the provider's own lines.
     const relocation = `asyncapi: 3.0.0
+channels:
+  legacyEvents:
+    address: payment.legacy.v1
+    messages:
+      Legacy:
+        $ref: '#/components/messages/LegacyV2'
 components:
   messages:
     Legacy:

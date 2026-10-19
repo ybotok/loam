@@ -52,7 +52,7 @@ export interface ServiceState {
   /** Docs-relative directory with forward slashes, e.g. `services/billing/payment-service`. */
   dir: string;
   spec: AxisState<Requirement[]>;
-  /** Read on both sides for the `Consumes:` join — the outbox requirement lives here as often as in spec.md (core/coherence/events/lookups.ts's lesson). */
+  /** Read on both sides for every requirement join — the outbox requirement lives here as often as in spec.md (`./consumers.ts`'s `REQUIREMENT_AXES`). */
   archSpec: AxisState<Requirement[]>;
   /** Operations with `x-loam-remove` markers filtered out: a marker is bookkeeping, never a callable operation. */
   openapi: AxisState<Operation[]>;

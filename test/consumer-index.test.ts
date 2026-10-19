@@ -15,7 +15,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
 import type { Finding } from "../src/core/vocabulary/report.js";
-import { makeProject, pinFor, pinOpenapi, runLoam, type Project } from "./helpers/harness.js";
+import { makeProject, pinAsyncapi, pinFor, pinOpenapi, runLoam, type Project } from "./helpers/harness.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -513,5 +513,81 @@ The UI SHALL hand the confirmed order to payment-service, which settles it.
     // The control: the same removal with checkout-web's requirement left alone.
     const kept = await project({ ...fleet({ "services/checkout-web/spec.md": living }), ...INTENT, ...RETIRE_CAPTURE });
     expect((await consumedIssue(kept))!.message).toContain("checkout-web's living requirement 'Capture at checkout'");
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* The message gate: asyncapi.remove-message-consumed                  */
+/* ------------------------------------------------------------------ */
+
+/** payment-service's spec with the requirement that publishes the legacy event. */
+const PAYMENT_SPEC_PUBLISHING = `${PAYMENT_SPEC}
+### Requirement: Legacy events
+The service SHALL publish the legacy payment event.
+
+Publishes: payment.Legacy
+
+#### Scenario: Legacy event leaves
+- **Given** a payment
+- **When** it settles
+- **Then** payment.Legacy is published
+`;
+
+const PAYMENT_EVENTS = `asyncapi: 3.0.0
+info:
+  title: payment-service events
+  version: "1.0"
+channels:
+  legacyEvents:
+    address: payment.legacy.v1
+    messages:
+      Legacy:
+        $ref: '#/components/messages/Legacy'
+operations:
+  sendLegacy:
+    action: send
+    channel:
+      $ref: '#/channels/legacyEvents'
+components:
+  messages:
+    Legacy:
+      name: payment.Legacy
+      payload:
+        type: object
+        properties:
+          paymentId:
+            type: string
+`;
+
+describe("asyncapi.remove-message-consumed reads the one index", () => {
+  // Review finding 3, the event twin of the overwrite's own-requirement scan:
+  // the feature re-keys the message slot, so the merged contract no longer
+  // sends `payment.Legacy`, and nothing else consumes it — no finding, archive
+  // at exit 0, and the next `validate --all` reported
+  // `spec-event.message-undefined` on payment-service's own Publishes: line.
+  it("the provider's own Publishes: line the merge leaves behind a re-keyed message is named", async () => {
+    const p = await project({
+      ...fleet({
+        "services/payment-service/spec.md": PAYMENT_SPEC_PUBLISHING,
+        "services/payment-service/asyncapi.yaml": PAYMENT_EVENTS,
+      }),
+      ...INTENT,
+      [`${FEAT}/specs/payment-service/asyncapi.yaml`]: pinAsyncapi(
+        `asyncapi: 3.0.0
+components:
+  messages:
+    Legacy:
+      name: payment.LegacyV2
+      payload:
+        type: object
+`,
+        PAYMENT_EVENTS,
+      ),
+    });
+    const [issue, ...more] = ofCode(await featureFindings(p, "FEAT-60"), "asyncapi.remove-message-consumed");
+    expect(more).toEqual([]);
+    expect(issue!.message).toContain("would no longer declare an action: send operation for 'payment.Legacy'");
+    expect(issue!.message).toContain("still name it — payment-service's living requirement 'Legacy events'.");
+    expect((await archive(p, "FEAT-60")).code).toBe(1);
   });
 });

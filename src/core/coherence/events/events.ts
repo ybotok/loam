@@ -7,7 +7,8 @@
  * delta facts it already holds (tagged relationships and the element
  * resolver): ./declared.ts walks the feature's own contracts and grades
  * what one service's pair of documents can settle; ./lookups.ts answers the
- * fleet questions lazily; this module joins the three axes — the exact
+ * in-flight question lazily, and the consumer index (core/consumers/) who
+ * still consumes a message; this module joins the three axes — the exact
  * shape coherence.ts gives the operation join, on the message name.
  *
  * A package of its own rather than lines in coherence.ts because that file
@@ -27,6 +28,7 @@ import { declaredEvents, type EventDeltaScope } from "./declared.js";
 import { eventLookups } from "./lookups.js";
 import type { RetiredLookup } from "../retired/archived.js";
 import { revivedEvents } from "../retired/revival/revived.js";
+import type { ConsumerIndex } from "../../consumers/consumers.js";
 
 /** What featureCoherence hands the event axis — the delta facts it already computed. */
 export interface EventCoherenceRequest {
@@ -40,13 +42,30 @@ export interface EventCoherenceRequest {
   context?: FleetContext;
   /** The retired index, shared with the contract axis so one call walks `features/archive/` once at most. */
   retired: RetiredLookup;
+  /** The consumer index, read after this feature's merge — shared with the contract axis so the fleet is read once. */
+  consumers: ConsumerIndex;
 }
 
 export async function eventCoherence(request: EventCoherenceRequest): Promise<Issue[]> {
-  const { scope, svcNames, taggedRels, svcOf, context } = request;
+  const { scope, svcNames, taggedRels, svcOf, context, consumers } = request;
   const issues: Issue[] = [];
   const declared = await declaredEvents(scope, svcNames, issues, context);
   const lookups = eventLookups({ docsDir: scope.docsDir, featureId: scope.featureId }, context);
+
+  // Who would still name a message after this merge: the consumer index's
+  // consumers, and its `own` — the provider's own `Publishes:` lines as the
+  // merge leaves them. That is the event twin of the overwrite's own-requirement
+  // scan: a message re-keyed or no longer sent while the provider's living
+  // requirement still says it `Publishes:` it archived at exit 0, and the next
+  // `validate --all` reported `spec-event.message-undefined` against the
+  // provider (review 2026-10-12, finding 3) — a REMOVED requirement justifies a
+  // marker, but nothing asks a re-key or a turned-around operation for one.
+  const still = async (svc: string, message: string): Promise<string[]> => {
+    const found = await consumers.messageConsumers(svc, message);
+    return [...found.victims, ...found.own];
+  };
+  // The landscape merge only ADDS edges, so an edge is dropped in the living map itself.
+  const route = `drop its consumes edge in the architecture/ project, MODIFY or REMOVE the requirement whose Consumes:/Publishes: line names it in this feature's specs/<service>/ delta`;
 
   // Retiring a message the fleet still consumes — openapi.remove-op-consumed's
   // twin, and like it a question neither exactness nor justification asks:
@@ -55,13 +74,13 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
   // repository whose author was never in this feature.
   for (const [svc, net] of declared.netRemoved) {
     for (const message of net) {
-      const consumers = await lookups.messageConsumers(svc, message);
-      if (consumers.length === 0) continue;
+      const named = await still(svc, message);
+      if (named.length === 0) continue;
       issues.push({
         severity: "error",
         code: "asyncapi.remove-message-consumed",
         subject: svc,
-        message: `${svc}: this feature retires message '${message}', but the living fleet still consumes it — ${consumers.join("; ")}. Retire the consumer in the same feature (drop the consumes edge from architecture/landscape.likec4, or the requirement that names it), or archive with --approve to break it deliberately.`,
+        message: `${svc}: this feature retires message '${message}', but the fleet would still name it after this merge — ${named.join("; ")}. Retire each in the same change (${route}), or archive with --approve to break it deliberately.`,
       });
     }
   }
@@ -76,13 +95,13 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
     const net = declared.netRemoved.get(svc);
     for (const message of stopped) {
       if (net?.has(message) === true) continue;
-      const consumers = await lookups.messageConsumers(svc, message);
-      if (consumers.length === 0) continue;
+      const named = await still(svc, message);
+      if (named.length === 0) continue;
       issues.push({
         severity: "error",
         code: "asyncapi.remove-message-consumed",
         subject: svc,
-        message: `${svc}: after this feature's merge, ${svc}'s asyncapi.yaml would no longer declare an action: send operation for '${message}', but the living fleet still consumes it — ${consumers.join("; ")}. Keep an operation sending it, retire the consumer in the same feature, or archive with --approve to break it deliberately.`,
+        message: `${svc}: after this feature's merge, ${svc}'s asyncapi.yaml would no longer declare an action: send operation for '${message}', but the fleet would still name it — ${named.join("; ")}. Keep an operation sending it, retire each in the same change (${route}), or archive with --approve to break it deliberately.`,
       });
     }
   }
