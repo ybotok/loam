@@ -771,6 +771,10 @@ describe("a removal is checked against the living consumers", () => {
       ...fleetFixture(FLEET_LANDSCAPE_NO_CAPTURE),
       // checkout-web's own living spec claims the operation. Nothing in the
       // landscape draws it, so only the requirement axis can see the consumer.
+      // It IS a consumer under the ownership rule (src/core/consumers/): an
+      // `Operations:` line names its own service's operation only when that
+      // service's contract defines the id, and checkout-web has no contract at
+      // all here — test/consumer-index.test.ts holds the case where it does.
       "services/checkout-web/spec.md": `${CHECKOUT_SPEC}
 ### Requirement: Capture on confirmation
 The UI SHALL capture the payment when the order is confirmed.
