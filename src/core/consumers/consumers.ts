@@ -1,84 +1,133 @@
 /**
- * Who, in the CURRENT fleet, still depends on a thing the diff says was
- * removed, deprecated or modified — the joins that turn "an operation left
- * the contract" into "and these named consumers break", and "an operation's
- * shape moved" into "and these are the consumers to check it against".
+ * THE consumer index: who in the fleet still depends on an operation or a
+ * message — the join that turns "an operation left the contract" into "and
+ * these named consumers break", and "an operation's shape moved" into "and these
+ * are the consumers to check it against".
  *
- * (Moved from `core/diff/victims.ts` with the fleet reader it is built over,
- * `./current.ts`, so the coherence gate and the archive planner can import it
- * without importing `loam diff`.)
+ * ONE INDEX, FOUR READERS. `loam diff` names the victims of every removal,
+ * deprecation and modification since a base ref (`core/diff/semantic.ts`); the
+ * coherence gate refuses a feature that takes a consumed operation or message
+ * out of the contract (`openapi.remove-op-consumed`, `asyncapi.remove-message-
+ * consumed` — `core/coherence/coherence.ts`, `core/coherence/events/events.ts`);
+ * and `loam archive` names who an overwrite lands on
+ * (`commands/archive/plan/contracts/consumers.ts`). They used to be THREE
+ * copies — this module as `core/diff/victims.ts`, `edgeConsumers` /
+ * `requirementConsumers` / `governorsAfterMerge` in `core/coherence/lookups.ts`,
+ * `messageConsumers` in `core/coherence/events/lookups.ts` — kept "in step by
+ * hand", and they were not: the gate read `architecture/landscape.likec4` alone
+ * while the diff and the spine read the project, the gate never asked a use
+ * case, and the diff excluded an internal edge the gate counted. Rule 13
+ * (docs/DESIGN.md) fired at the third copy; this is the extraction it forces.
  *
- * THREE SOURCES answer that, and only the first two are copies of anything.
+ * THE SOURCES, per question:
  *
- * The first two are deliberately a SECOND copy of the consumer join the
- * coherence gate asks, built on the same shared primitives, and both copies
- * say so:
+ *  - an operation `op` of `provider`: (1) every edge of the `architecture/`
+ *    PROJECT with `metadata { op }` into the provider (`./current.ts` says why
+ *    the project and never the one file); (2) other services' requirements —
+ *    spec.md AND arch.spec.md — whose `Operations:` line names it, unless that
+ *    service's own contract defines the same id (`ownsOperation` says why);
+ *    (3) the use-case hops the model attributes to it
+ *    (`core/usecases/operations.ts`); (4) the provider's OWN requirements and
+ *    its own internal edges still naming it, filed apart as `own`.
+ *  - a message `name` of `provider`: `consumes` edges, other services'
+ *    `Consumes:` lines over both spec files, the use-case hops backed by such an
+ *    edge, and — as `own` — the provider's own `Publishes:` lines.
  *
- *  - the operation half mirrors `core/coherence/lookups.ts`'s
- *    `edgeConsumers`/`requirementConsumers` (landscape edges with
- *    `metadata { op }` resolved through `serviceResolver` WITH the enumerated
- *    fleet — the container lesson recorded there — plus other services'
- *    living `Operations:` lines, spec.md only, exactly as that module scans);
- *  - the message half mirrors `core/coherence/events/lookups.ts`'s
- *    `messageConsumers` (every `consumes` edge naming the message except one
- *    INTO the provider, plus other services' `Consumes:` lines over BOTH spec
- *    axes — the outbox requirement lives in arch.spec.md as often as in
- *    spec.md, that module's lesson).
+ * WHY `own` IS ITS OWN LIST. The gate's question is what the merge would leave
+ * broken, and the provider's own documents break too: an overwrite carries no
+ * removal marker, so nothing made the author restate the provider's requirement
+ * still naming the old id, and the next `validate` reported
+ * `spec-api.op-undefined` against the provider itself; a message re-keyed or no
+ * longer sent left the provider's own `Publishes:` line behind for
+ * `spec-event.message-undefined`. So the gate counts `own`. `loam diff` and the
+ * archive's overwrite warnings answer a different question — who ELSE breaks —
+ * and do not: the rule `usecase.step-unlinked` states, that a service owes no
+ * operationId to itself, is why an internal edge stopped keeping every removal
+ * `diff.op-removed-consumed` (verification 2026-09-04, R3), and why a hop whose
+ * two ends are the provider is never a victim.
  *
- * The copies cannot be one module today: coherence's lookups are closures
- * over a feature's `DeltaScope` and its lazy caches; this one is an index
- * over an already-read fleet. Rule 13 (docs/DESIGN.md) governs — a THIRD
- * copy of this join forces the shared extraction, and whoever changes the
- * victim strings or the scan rules in either module owes the other the same
- * change. The victim string spellings are kept byte-compatible with the
- * coherence findings on purpose, so a reader meets one vocabulary.
+ * READ AFTER A FEATURE, OR AS IT STANDS. With `after`, every requirement is read
+ * as that feature's merge would leave it (`./after.ts` — a consumer the same
+ * feature MODIFIES or REMOVES stops counting, and an unappliable delta fails
+ * closed); without it, the living fleet as it stands, which is what the diff and
+ * the overwrite warnings ask. Edges and hops read the same either way: no
+ * feature can take a living one away.
  *
- * One rule here has no mirror there, and that is recorded rather than hidden:
- * an inbound edge drawn with NO op is a SUSPENSION in `opConsumers` (2026-10-10),
- * because `ConsumerScan` has a channel for "could not be answered" and
- * coherence's `edgeConsumers` returns victims only. Giving the archive gate the
- * same doubt needs that channel first; until then the two answers differ on an
- * op-less edge.
- *
- * The THIRD source is not a copy and does not fall under that rule: the fleet's
- * USE CASES, joined in `core/usecases/operations.ts`. A hop of a
- * capability-tagged `dynamic view` that the model attributes to the operation
- * being removed is a business flow that stops working, and saying so — "step 4
- * of Checkout breaks" — is the only one of the three that names a consequence a
- * human weighs rather than a document they then have to open. It has its own
- * module because it asks a different question of a different reader (an
- * attribution over the whole `architecture/` PROJECT, not a scan of one
- * landscape file), and because the attributed/contested distinction it turns on
- * belongs beside `attributeStep`, not beside a requirement scan. Coherence has
- * no equivalent to keep in step with, so nothing here owes it a mirror.
- *
- * TWO READERS, ONE INDEX. `loam archive` asks `opConsumers`/`messageConsumers`
- * too, to name who an `openapi.op-modified` / `asyncapi.message-modified`
- * overwrite lands on (commands/archive/plan/contracts/consumers.ts). That is a
- * second CALLER of this index, not a third copy of the join — Rule 13 counts
- * copies — and it is why the index takes any already-read `current` fleet
- * rather than the diff's own snapshot.
+ * LAZY, AND PAID ONCE PER INVOCATION. The fleet's four documents per service and
+ * the project load are behind the first question that needs them, and memoised
+ * per FleetContext (`./current.ts`), so a removal-free feature pays for neither
+ * and `validate --all` pays once for every feature it grades. Without a
+ * context (the archive gate's coherence call) the index reads through one of its
+ * own, for its own lifetime.
  */
-import { existsSync } from "node:fs";
-import { type LoadedDoc, type Rel } from "../c4/likec4.js";
-import { serviceResolver } from "../c4/resolve/service.js";
-import { landscapePath } from "../repo/paths.js";
-import { readUseCases, type UseCaseScan } from "../usecases/fleet.js";
+import { type Rel } from "../c4/likec4.js";
 import { hopsConsuming, hopsExercising } from "../usecases/operations.js";
+import { FleetContext } from "../fleet-context.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
-import type { FleetContext } from "../fleet-context.js";
 import type { Requirement } from "../document/spec.js";
 import type { ServiceState } from "./state.js";
 import type { ConsumerScan } from "./scan.js";
+import { livingFleet, livingMap } from "./current.js";
+import { afterMerge, type FeatureView, type MergedRequirement, type SpecAxis } from "./after.js";
 
-/** The current-state consumer questions `core/diff/semantic.ts` asks per removal, deprecation and modification. */
-export interface VictimIndex {
-  /** Current consumers of `provider`'s operation `op`: landscape edges into the provider, then other services' living requirements, then the use-case hops the model attributes to it (contested hops, and inbound edges drawn with no op, ride as suspensions). */
-  opConsumers(provider: string, op: string): Promise<ConsumerScan>;
-  /** Current consumers of message `name` a `provider` is dropping or changing: consumes-edges (not into the provider), then other services' `Consumes:` lines over both spec axes, then the use-case hops backed by such an edge. */
-  messageConsumers(provider: string, name: string): Promise<ConsumerScan>;
-  /** Current services whose asyncapi declares `name` — positive evidence only; a message still declared elsewhere is not orphaned by one producer dropping it. */
-  declarers(name: string): string[];
+/** One consumer question's answer: the scan, plus what of the provider's own still names it. */
+export interface Consumers extends ConsumerScan {
+  /**
+   * The provider's own documents that still name what it is losing — an edge
+   * it draws to itself, a requirement of its own. Positive evidence, like
+   * `victims`, filed apart because only the gate counts it (the header says why).
+   */
+  own: string[];
+}
+
+/** The consumer questions every reader asks. */
+export interface ConsumerIndex {
+  /** Consumers of `provider`'s operation `op`: edges, other services' requirements, use-case hops; inbound op-less edges and contested hops ride as suspensions. */
+  opConsumers(provider: string, op: string): Promise<Consumers>;
+  /** Consumers of message `name` a `provider` is dropping or changing: consumes-edges (not into the provider), other services' `Consumes:` lines, the hops backed by such an edge. */
+  messageConsumers(provider: string, name: string): Promise<Consumers>;
+  /** Living services whose asyncapi declares `name` — positive evidence only; a message still declared elsewhere is not orphaned by one producer dropping it. */
+  declarers(name: string): Promise<string[]>;
+}
+
+/** Where the index reads, and after what. */
+export interface ConsumerRequest {
+  docsDir: DocsDir;
+  /** The invocation's read index. Absent, the index reads through one of its own. */
+  context?: FleetContext;
+  /** The feature whose merge every requirement is read after (`./after.ts`). Absent: the living fleet as it stands. */
+  after?: FeatureView;
+}
+
+/**
+ * Both spec files, for every question. The message half always read both — an
+ * outbox requirement in arch.spec.md is the canonical home of a `Publishes:`
+ * line, and a scan of spec.md alone answered "nobody consumes it" over the file
+ * most authors use. The operation half read spec.md only, because that is
+ * where `validate` grades an `Operations:` line; but an arch.spec.md line
+ * naming another service's operation is exactly the cross-service dependency
+ * `loam dependencies` already reads off both files, and a removal must not
+ * read the same line as a dependency there and as nothing here.
+ */
+export const REQUIREMENT_AXES: readonly SpecAxis[] = ["spec", "archSpec"];
+
+/**
+ * Does this service's own living contract define `op`? Then an `Operations:`
+ * line of its own names ITS operation, not another service's.
+ *
+ * The rule `validate` grades an `Operations:` line by: it resolves against the
+ * requirement's own service's contract (`spec-api.op-undefined`), so in a green
+ * fleet another service naming the same id is naming its own. Matching the bare
+ * id fleet-wide refused a rename on payment-service because checkout-web's own
+ * `capturePayment` requirement shared the name (review 2026-10-12, finding 1) —
+ * and shared ids like `healthCheck` or `getStatus` are common across a fleet.
+ *
+ * A contract that is unreadable or absent proves no ownership, so the line stays
+ * a consumer: the closed direction, and the reading every scan here gave before
+ * ownership was asked at all.
+ */
+export function ownsOperation(state: ServiceState, op: string): boolean {
+  return state.openapi.kind === "read" && state.openapi.value.some((o) => o.id === op);
 }
 
 const EDGE = (resolve: (id: string) => string, r: Rel): string =>
@@ -87,149 +136,155 @@ const EDGE = (resolve: (id: string) => string, r: Rel): string =>
 /** Entry comparator by map key — deterministic suspension order. */
 const byFirst = <T>(a: [string, T], b: [string, T]): number => (a[0] < b[0] ? -1 : 1);
 
-/** The landscape half of the index, loaded at most once and only when a removal actually asks. */
-interface Drawn {
-  usable: LoadedDoc | null;
-  resolve: ((id: string) => string) | null;
+/** How one requirement scan decides a hit — for another service, and for the provider itself. */
+interface RequirementRule {
+  provider: string;
+  foreign: (state: ServiceState, r: Requirement) => Promise<boolean>;
+  own: (r: Requirement) => boolean;
 }
 
-export function victimIndex(snap: {
-  docsDir: DocsDir;
-  context: FleetContext;
-  current: ReadonlyMap<string, ServiceState>;
-  /** Ids the working tree claims twice (./current.ts) — their documents cannot be scanned, so they ride as suspended consumers. */
-  ambiguous: ReadonlyMap<string, string[]>;
-}): VictimIndex {
-  // Lazy on purpose, the coherence lookups' own discipline: the landscape is
-  // a full LikeC4 workspace spin-up, and a diff that removes nothing must not
-  // pay for it. An absent landscape proves nothing; an unreadable one proves
-  // nothing either way — `landscape.invalid` is validate's finding to make,
-  // and inventing victims out of a parse error would point the reader at the
-  // wrong file (core/coherence/lookups.ts's doctrine, verbatim).
-  let drawn: Promise<Drawn> | undefined;
-  const landscape = (): Promise<Drawn> =>
-    (drawn ??= (async (): Promise<Drawn> => {
-      const path = landscapePath(snap.docsDir);
-      const doc: LoadedDoc | null = existsSync(path) ? await snap.context.loadLikeC4(path) : null;
-      const usable = doc !== null && doc.errors.length === 0 ? doc : null;
-      // The enumerated fleet rides into the resolver so a landscape that
-      // models CONTAINERS stays visible: without `known`, an edge into
-      // `payment.api` resolves to a service called "api" that has never
-      // existed and the join finds nobody — the exact defect DESIGN's
-      // serviceResolver-known row records.
-      return {
-        usable,
-        resolve: usable === null ? null : serviceResolver(usable.elements, new Set(snap.current.keys())),
-      };
-    })());
+export function consumerIndex(request: ConsumerRequest): ConsumerIndex {
+  const { docsDir, after } = request;
+  const context = request.context ?? new FleetContext();
 
-  // Sorted, so victim order never depends on the enumeration's walk order.
-  const ids = [...snap.current.keys()].sort();
+  /** One service's requirements on one axis as `after`'s merge would leave them, read once per index. */
+  const merged = new Map<string, Promise<MergedRequirement[] | { unreadable: string }>>();
+  const requirementsOf = (state: ServiceState, axis: SpecAxis): Promise<MergedRequirement[] | { unreadable: string }> => {
+    const key = `${state.id}\0${axis}`;
+    let pending = merged.get(key);
+    if (pending === undefined) {
+      const a = state[axis];
+      pending =
+        a.kind === "unreadable"
+          ? Promise.resolve({ unreadable: a.path })
+          : (async () => afterMerge(a.kind === "read" ? a.value : [], await after?.delta(state.id, axis)))();
+      merged.set(key, pending);
+    }
+    return pending;
+  };
 
-  /**
-   * The use-case half, lazy for the same reason and one step further.
-   *
-   * `readUseCases` carries its own cheap gate — a byte scan for the reserved
-   * tag prefix — so a fleet that declares no use case never starts LikeC4 here
-   * at all, and a fleet that does pays for the `architecture/` project exactly
-   * once per `loam diff`, at the first removal that asks. The fleet set is the
-   * same one the landscape resolver above is built from, so the two halves
-   * cannot disagree about which service an element stands for.
-   */
-  let flows: Promise<UseCaseScan> | undefined;
-  const useCases = (): Promise<UseCaseScan> =>
-    (flows ??= readUseCases({ docsDir: snap.docsDir, known: new Set(snap.current.keys()) }));
+  const label = (service: string, m: MergedRequirement): string =>
+    m.written
+      ? `this feature's ${service} delta requirement '${m.requirement.name}'`
+      : `${service}'s living requirement '${m.requirement.name}'`;
 
   /**
    * The requirement half of one scan, `tupleVisible`'s own discipline applied
    * to victims: an unreadable consumer axis contributes a SUSPENSION, never a
    * silent nothing — "consuming nothing" and "loam refused to read the file"
    * are opposite facts, and collapsing them is how a breaking removal used to
-   * grade down to a confident warning.
+   * grade down to a confident warning. Sorted, so victim order never depends on
+   * the enumeration's walk order. A REMOVED requirement governs nothing: the
+   * rule `validate` reads living requirements by.
+   *
+   * The provider's own unreadable axis is NOT a suspension: it is not a
+   * consumer anybody else must be warned about, and that file is the provider's
+   * own finding (`validate`, and the delta checks when the feature restates it).
    */
-  const scanRequirements = (unit: { provider: string; axes: readonly ("spec" | "archSpec")[]; hit: (r: Requirement) => boolean }): ConsumerScan => {
-    const out: ConsumerScan = { victims: [], suspended: [] };
-    for (const other of ids.filter((id) => id !== unit.provider)) {
-      const state = snap.current.get(other)!;
-      for (const axis of unit.axes) {
-        const a = state[axis];
-        if (a.kind === "unreadable") {
-          out.suspended.push(`${other} — ${a.path} could not be read, so its requirements could not be scanned`);
+  const scanRequirements = async (rule: RequirementRule): Promise<Consumers> => {
+    const { services, ambiguous } = await livingFleet(docsDir, context);
+    const out: Consumers = { victims: [], suspended: [], own: [] };
+    for (const id of [...services.keys()].sort()) {
+      const state = services.get(id)!;
+      const mine = id === rule.provider;
+      for (const axis of REQUIREMENT_AXES) {
+        const reqs = await requirementsOf(state, axis);
+        if (!Array.isArray(reqs)) {
+          if (!mine) out.suspended.push(`${id} — ${reqs.unreadable} could not be read, so its requirements could not be scanned`);
           continue;
         }
-        if (a.kind !== "read") continue;
-        for (const r of a.value) if (unit.hit(r)) out.victims.push(`${other}'s living requirement '${r.name}'`);
+        for (const m of reqs) {
+          if (m.requirement.kind === "REMOVED") continue;
+          if (mine ? rule.own(m.requirement) : await rule.foreign(state, m.requirement)) {
+            (mine ? out.own : out.victims).push(label(id, m));
+          }
+        }
       }
     }
-    for (const [id, dirs] of [...snap.ambiguous].sort(byFirst)) {
-      if (id !== unit.provider) out.suspended.push(`${id} — claimed by ${dirs.join(" and ")}, so its documents could not be scanned`);
+    for (const [id, dirs] of [...ambiguous].sort(byFirst)) {
+      if (id !== rule.provider) out.suspended.push(`${id} — claimed by ${dirs.join(" and ")}, so its documents could not be scanned`);
     }
     return out;
   };
 
-  const opConsumers = async (provider: string, op: string): Promise<ConsumerScan> => {
-    const { usable, resolve } = await landscape();
-    const scan = scanRequirements({ provider, axes: ["spec"], hit: (r) => r.operations.includes(op) });
+  /** Ownership as the merge leaves it: the feature's contract for a service it carries one for, the living one otherwise. */
+  const owns = async (state: ServiceState, op: string): Promise<boolean> =>
+    (await after?.defines(state.id, op)) ?? ownsOperation(state, op);
+
+  const opConsumers = async (provider: string, op: string): Promise<Consumers> => {
+    const map = await livingMap(docsDir, context);
     const edges: string[] = [];
+    const internal: string[] = [];
     const unlinked: string[] = [];
-    if (usable !== null && resolve !== null) {
-      for (const r of usable.relationships) {
-        // An edge whose SOURCE resolves to the provider as well is the
-        // provider's own internal call — the rule `usecase.step-unlinked`
-        // already states, that a service owes no operationId to itself — so it
-        // is not a consumer of the operation it is losing. Without this the
-        // downgrade the message half (`messageConsumers` below) has always
-        // made was unreachable for any service that draws its own containers:
-        // one internal edge carrying the op kept every removal
-        // `diff.op-removed-consumed` (verification 2026-09-04, R3).
-        if (resolve(r.target) !== provider || resolve(r.source) === provider) continue;
-        if (r.op === op) {
-          edges.push(EDGE(resolve, r));
-        } else if (r.op === undefined && r.publishes === undefined && r.consumes === undefined) {
-          // A caller drawn with NO op is neither a victim nor proof of absence:
-          // it calls the provider, and nobody wrote down which operation.
-          // Dropping it silently made every removal on a seeded fleet (`loam
-          // seed` draws every edge without an op) read "no current landscape
-          // edge names it" while validate warned `spine.op-link-missing` on the
-          // very edge. It rides as a suspension — a warning's worth of doubt,
-          // never an error, so an op-less map does not turn every removal red.
-          // An edge naming a message instead (`publishes`/`consumes`) said what
-          // it carries and is the message half's to grade.
-          unlinked.push(`${EDGE(resolve, r)} has no \`metadata { op }\`, so whether it calls '${op}' is unknown`);
-        }
+    for (const r of map.relationships ?? []) {
+      if (map.resolve(r.target) !== provider) continue;
+      // An edge whose SOURCE resolves to the provider as well is the provider's
+      // own internal call — `own`, never a victim (the header says why). The
+      // spine still grades it against the contract, so the gate counts it.
+      const self = map.resolve(r.source) === provider;
+      if (r.op === op) {
+        (self ? internal : edges).push(EDGE(map.resolve, r));
+      } else if (!self && r.op === undefined && r.publishes === undefined && r.consumes === undefined) {
+        // A caller drawn with NO op is neither a victim nor proof of absence:
+        // it calls the provider, and nobody wrote down which operation.
+        // Dropping it silently made every removal on a seeded fleet (`loam
+        // seed` draws every edge without an op) read "no current landscape
+        // edge names it" while validate warned `spine.op-link-missing` on the
+        // very edge. It rides as a suspension — a warning's worth of doubt,
+        // never an error, so an op-less map does not turn every removal red.
+        // An edge naming a message instead (`publishes`/`consumes`) said what
+        // it carries and is the message half's to grade.
+        unlinked.push(`${EDGE(map.resolve, r)} has no \`metadata { op }\`, so whether it calls '${op}' is unknown`);
       }
     }
+    const reqs = await scanRequirements({
+      provider,
+      foreign: async (state, r) => r.operations.includes(op) && !(await owns(state, op)),
+      own: (r) => r.operations.includes(op),
+    });
     // Flows last in each list, deliberately: the edge and the requirement say
     // WHICH document to open, and the flow says what the reader is about to
     // break — so a `details[]` scanned top-down ends on the consequence.
-    const hops = hopsExercising(await useCases(), { provider, op });
+    const hops = hopsExercising(map.useCases, { provider, op });
     return {
-      victims: [...edges, ...scan.victims, ...hops.breaks],
-      suspended: [...unlinked, ...scan.suspended, ...hops.unsure],
+      victims: [...edges, ...reqs.victims, ...hops.breaks],
+      suspended: [...unlinked, ...reqs.suspended, ...hops.unsure],
+      own: [...internal, ...reqs.own],
     };
   };
 
-  const messageConsumers = async (provider: string, name: string): Promise<ConsumerScan> => {
-    const { usable, resolve } = await landscape();
-    const scan = scanRequirements({ provider, axes: ["spec", "archSpec"], hit: (r) => r.consumes.includes(name) });
+  const messageConsumers = async (provider: string, name: string): Promise<Consumers> => {
+    const map = await livingMap(docsDir, context);
     const edges: string[] = [];
-    if (usable !== null && resolve !== null) {
-      for (const r of usable.relationships) {
-        // The message join is fleet-global, so every edge naming it counts —
-        // except one into the provider itself, whose consumption leaves with
-        // the same change (events/lookups.ts's exclusion, verbatim).
-        if (r.consumes === name && resolve(r.target) !== provider) edges.push(EDGE(resolve, r));
-      }
+    for (const r of map.relationships ?? []) {
+      // The message join is fleet-global (names are not service-scoped), so
+      // every edge naming it counts, whoever its producer is — except one INTO
+      // the provider itself: its own consumption leaves in the same change, and
+      // counting it would gate every self-consuming producer on its own
+      // retirement.
+      if (r.consumes === name && map.resolve(r.target) !== provider) edges.push(EDGE(map.resolve, r));
     }
-    const hops = hopsConsuming(await useCases(), { provider, name });
-    return { victims: [...edges, ...scan.victims, ...hops], suspended: scan.suspended };
+    // No ownership rule here, and the asymmetry is the contract's: a consumer
+    // declares the message in its OWN contract with `action: receive` — validate
+    // requires it to — so its own contract naming the message proves nothing
+    // about who sends it. The provider's own `Consumes:` line stays out for the
+    // edge's reason above; its own `Publishes:` line is what `own` is for.
+    const reqs = await scanRequirements({
+      provider,
+      foreign: async (_state, r) => r.consumes.includes(name),
+      own: (r) => r.publishes.includes(name),
+    });
+    const hops = hopsConsuming(map.useCases, { provider, name });
+    return { victims: [...edges, ...reqs.victims, ...hops], suspended: reqs.suspended, own: reqs.own };
   };
 
-  const declarers = (name: string): string[] =>
-    ids.filter((id) => {
-      const axis = snap.current.get(id)!.asyncapi;
+  const declarers = async (name: string): Promise<string[]> => {
+    const { services } = await livingFleet(docsDir, context);
+    return [...services.keys()].sort().filter((id) => {
+      const axis = services.get(id)!.asyncapi;
       return axis.kind === "read" && axis.value.some((m) => m.name === name);
     });
+  };
 
   return { opConsumers, messageConsumers, declarers };
 }

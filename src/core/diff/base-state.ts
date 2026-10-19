@@ -41,6 +41,7 @@
  */
 import { isUtf8 } from "node:buffer";
 import { inOrder } from "../kernel/concurrency.js";
+import { rawServiceId, type RawServiceId } from "../kernel/ids/service.js";
 import { decodeDocument } from "../kernel/document-bytes.js";
 import { parseRequirements } from "../document/parse.js";
 import type { Requirement } from "../document/spec.js";
@@ -71,7 +72,7 @@ export type BaseFleetRead =
 
 /** A classified base service directory and which artifact files the base tree listed in it. */
 interface BaseDir {
-  id: string;
+  id: RawServiceId;
   dir: string;
   files: Set<string>;
 }
@@ -160,7 +161,7 @@ function classifyBaseDirs(paths: string[]): { dirs: BaseDir[]; ambiguous: Map<st
     const segments = dir.split("/");
     if (interior(segments)) continue;
     acceptedDirs.add(dir);
-    accepted.push({ id: segments[segments.length - 1]!, dir, files: fileChildren.get(dir) ?? new Set() });
+    accepted.push({ id: rawServiceId(segments[segments.length - 1]!), dir, files: fileChildren.get(dir) ?? new Set() });
   }
   return { dirs: accepted, ambiguous: collisions(accepted) };
 }

@@ -12,6 +12,7 @@ import { createHash } from "node:crypto";
 import type { Requirement } from "../document/spec.js";
 import type { Operation } from "../openapi/doc.js";
 import type { EventMessage } from "../asyncapi/model.js";
+import type { RawServiceId } from "../kernel/ids/service.js";
 
 /**
  * One artifact's state on one side of the diff. `unreadable` is the
@@ -46,7 +47,8 @@ export function bytesDigest(bytes: Buffer): string {
  * (`./consumers.ts`) read the living fleet in the shape the diff already does.
  */
 export interface ServiceState {
-  id: string;
+  /** The directory's leaf name — a name read off the tree, so the index may join it into a feature's `specs/<svc>/`. */
+  id: RawServiceId;
   /** Docs-relative directory with forward slashes, e.g. `services/billing/payment-service`. */
   dir: string;
   spec: AxisState<Requirement[]>;

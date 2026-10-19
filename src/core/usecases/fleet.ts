@@ -67,7 +67,7 @@ import type { StepScope } from "../c4/resolve/steps.js";
 import { CAP_TAG_PREFIX, REQ_TAG_PREFIX } from "../capabilities/usecase-join.js";
 import type { ParsedView } from "../c4/parsed/dynamic-views.js";
 import { architectureProjectDocuments, loadArchitecture } from "../c4/project/architecture.js";
-import { errorText } from "../c4/likec4.js";
+import { errorText, type LoadedDoc } from "../c4/likec4.js";
 import { serviceResolver } from "../c4/resolve/service.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 import { SUITE_TAG_PREFIX } from "./suites/suites.js";
@@ -328,7 +328,21 @@ export async function readUseCases(req: UseCaseRequest): Promise<UseCaseScan> {
   const documents = await architectureProjectDocuments(req.docsDir);
   if (!(await mentionsTagPrefix(documents))) return none;
 
-  const doc = await loadArchitecture(req.docsDir);
+  return useCasesIn(await loadArchitecture(req.docsDir), req.known);
+}
+
+/**
+ * The use cases of an `architecture/` project somebody has ALREADY loaded —
+ * `readUseCases` minus its byte gate and its load.
+ *
+ * For a reader that needs the project anyway: the consumer index
+ * (`core/consumers/`) reads the project's edges and its hops off one load, and
+ * going through `readUseCases` there would parse the same documents a second
+ * time behind a gate whose whole purpose is to skip a load that has already
+ * happened. The answer is the same one: a project with no reserved-tag view
+ * yields `read` with no views, exactly what the gate returns without loading.
+ */
+export function useCasesIn(doc: LoadedDoc, known: ReadonlySet<string>): UseCaseScan {
   // loam's standing rule, at project altitude: errors mean no model. A use-case
   // file with one unresolved element leaves the whole project unusable, and
   // grading a flow against half a map is the wrong answer this refuses to give.
@@ -338,7 +352,7 @@ export async function readUseCases(req: UseCaseRequest): Promise<UseCaseScan> {
   return {
     kind: "read",
     views: (doc.views ?? []).filter(isUseCase),
-    model: { elements: doc.elements, relationships: doc.relationships, known: req.known },
-    resolve: serviceResolver(doc.elements, req.known),
+    model: { elements: doc.elements, relationships: doc.relationships, known },
+    resolve: serviceResolver(doc.elements, known),
   };
 }

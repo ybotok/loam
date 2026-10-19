@@ -24,10 +24,11 @@
 import { requirementDigest, type Requirement } from "../document/spec.js";
 import type { Severity, Finding } from "../vocabulary/report.js";
 import type { BaseFleet } from "./base-state.js";
+import { rawServiceId } from "../kernel/ids/service.js";
 import type { AxisState, ServiceState } from "../consumers/state.js";
 import type { CurrentFleet } from "../consumers/current.js";
 import { consumerStance } from "../consumers/scan.js";
-import type { VictimIndex } from "../consumers/consumers.js";
+import type { ConsumerIndex } from "../consumers/consumers.js";
 import { consumerJoinChanges } from "./joins.js";
 
 /**
@@ -119,9 +120,12 @@ export interface FleetDiff {
   summary: { added: number; removed: number; modified: number; deprecated: number; unreadable: number };
 }
 
-/** A side the service does not exist on: absence everywhere, honestly. */
+/**
+ * A side the service does not exist on: absence everywhere, honestly. The id is
+ * a key of one of the two sides' maps, each keyed by a directory's leaf name.
+ */
 const ABSENT = { kind: "absent" } as const;
-const emptyState = (id: string): ServiceState => ({ id, dir: "", spec: ABSENT, archSpec: ABSENT, openapi: ABSENT, asyncapi: ABSENT });
+const emptyState = (id: string): ServiceState => ({ id: rawServiceId(id), dir: "", spec: ABSENT, archSpec: ABSENT, openapi: ABSENT, asyncapi: ABSENT });
 
 /**
  * The axes on which an unreadable document the branch left byte-identical is
@@ -209,7 +213,7 @@ function requirementsDiff(sink: ServiceDiff, pair: { base: ServiceState; current
 const notGraded = (tool: string): string =>
   `loam does not grade whether the change is breaking — run ${tool} on the two states of this contract`;
 
-async function opsDiff(sink: ServiceDiff, pair: { base: ServiceState; current: ServiceState }, victims: VictimIndex): Promise<void> {
+async function opsDiff(sink: ServiceDiff, pair: { base: ServiceState; current: ServiceState }, victims: ConsumerIndex): Promise<void> {
   if (!comparable(sink, "openapi", { base: pair.base.openapi, current: pair.current.openapi })) return;
   const base = firstWins(valueOr(pair.base.openapi), (op) => op.id);
   const current = firstWins(valueOr(pair.current.openapi), (op) => op.id);
@@ -253,7 +257,7 @@ async function opsDiff(sink: ServiceDiff, pair: { base: ServiceState; current: S
   }
 }
 
-async function messagesDiff(sink: ServiceDiff, pair: { base: ServiceState; current: ServiceState }, victims: VictimIndex): Promise<void> {
+async function messagesDiff(sink: ServiceDiff, pair: { base: ServiceState; current: ServiceState }, victims: ConsumerIndex): Promise<void> {
   if (!comparable(sink, "asyncapi", { base: pair.base.asyncapi, current: pair.current.asyncapi })) return;
   const base = firstWins(valueOr(pair.base.asyncapi), (m) => m.name);
   const current = firstWins(valueOr(pair.current.asyncapi), (m) => m.name);
@@ -274,7 +278,7 @@ async function messagesDiff(sink: ServiceDiff, pair: { base: ServiceState; curre
     if (current.has(name)) continue;
     // Fleet-global join: a name another current service still declares is not
     // orphaned (positive evidence only — an unreadable contract never vouches).
-    const elsewhere = victims.declarers(name).filter((d) => d !== sink.id);
+    const elsewhere = (await victims.declarers(name)).filter((d) => d !== sink.id);
     if (elsewhere.length > 0) {
       sink.findings.push(found("diff.message-removed", `message '${name}' was removed since base; still declared by ${elsewhere.join(", ")}`));
       continue;
@@ -315,7 +319,7 @@ function consumerFindings(input: { base: BaseFleet; current: CurrentFleet }): Ma
   return byProvider;
 }
 
-async function diffService(unit: { id: string; base?: ServiceState; current?: ServiceState; victims: VictimIndex }): Promise<ServiceDiff> {
+async function diffService(unit: { id: string; base?: ServiceState; current?: ServiceState; victims: ConsumerIndex }): Promise<ServiceDiff> {
   const sink: ServiceDiff = { id: unit.id, change: "unchanged", findings: [], unreadable: [] };
   if (unit.base === undefined) sink.findings.push(found("diff.service-added", `service '${unit.id}' added since base`));
   if (unit.current === undefined && unit.base !== undefined) {
@@ -328,7 +332,7 @@ async function diffService(unit: { id: string; base?: ServiceState; current?: Se
   return sink;
 }
 
-export async function computeDiff(input: { base: BaseFleet; current: CurrentFleet; victims: VictimIndex }): Promise<FleetDiff> {
+export async function computeDiff(input: { base: BaseFleet; current: CurrentFleet; victims: ConsumerIndex }): Promise<FleetDiff> {
   const sides = [input.base.services, input.base.ambiguous, input.current.services, input.current.ambiguous];
   const ids = [...new Set(sides.flatMap((side) => [...side.keys()]))].sort();
   const joins = consumerFindings({ base: input.base, current: input.current });

@@ -547,8 +547,17 @@ model {
   // read. Its own package because each of those three had kept a copy, and
   // the copies had drifted in which documents they read.
   loam.core.consumers -> loam.core.c4
+  // The merge a feature's requirement deltas would make (`applyRequirementDelta`)
+  // and the contract it would leave (`serviceOperationIds`): read AFTER a
+  // feature, a consumer the same feature retires stops counting.
+  loam.core.consumers -> loam.core.document
   loam.core.consumers -> loam.core.envelope
+  // A read index of its own when the caller brings none — the archive gate's
+  // coherence call runs without one — the `context ?? new FleetContext()`
+  // precedent `core/explore/` and `core/verify/` already set.
+  loam.core.consumers -> loam.core.fleet_context
   loam.core.consumers -> loam.core.kernel
+  loam.core.consumers -> loam.core.openapi
   loam.core.consumers -> loam.core.repo
   loam.core.consumers -> loam.core.usecases
 

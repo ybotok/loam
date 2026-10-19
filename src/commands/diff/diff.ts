@@ -24,8 +24,8 @@ import { baseOrRefuse, docsRepoReady, reportDocsRepoError, reportRepositoryUnava
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { readBaseFleet } from "../../core/diff/base-state.js";
-import { readCurrentFleet } from "../../core/consumers/current.js";
-import { victimIndex } from "../../core/consumers/consumers.js";
+import { livingFleet } from "../../core/consumers/current.js";
+import { consumerIndex } from "../../core/consumers/consumers.js";
 import { computeDiff, type FleetDiff } from "../../core/diff/semantic.js";
 import { printDiff } from "./print.js";
 
@@ -73,8 +73,10 @@ export function registerDiff(program: Command): void {
           );
           return;
         }
-        const current = await readCurrentFleet(docsDir, context);
-        const victims = victimIndex({ docsDir, context, current: current.services, ambiguous: current.ambiguous });
+        // The index reads the same memoised fleet (`livingFleet`), so the
+        // working-tree side and the victims are one read of one snapshot.
+        const current = await livingFleet(docsDir, context);
+        const victims = consumerIndex({ docsDir, context });
         diff = await computeDiff({ base: baseFleet.fleet, current, victims });
       } catch (err) {
         if (err instanceof DocsRepoUnavailableError) {
