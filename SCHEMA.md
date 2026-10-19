@@ -2438,9 +2438,12 @@ still parses — and because splicing is text surgery, the computed landscape is
 before anything is written**: a result LikeC4 rejects — a splice bug, or legal inputs the living
 document cannot absorb, like an element kind or tag its `specification` block never declares —
 refuses the archive at plan time (`merge-failed`, nothing written), the same discipline as the
-unparseable delta. A living declaration sharing its line with another statement (legal LikeC4 the
-splice map cannot see around — its statement scan runs to the end of the line) refuses the same way:
-give each top-level declaration its own line, then re-run.
+unparseable delta. A living declaration the splice map cannot locate refuses the same way rather
+than be spliced around blind — most often one sharing its line with another statement, which is
+legal LikeC4 the splice map cannot see around, since it reads one statement per line. The refusal
+names the line LikeC4 parsed the declaration on and what the splice map read there instead, and
+says "shares that line" only when the line shows it: give each top-level declaration its own line,
+then re-run.
 
 **Which document an addition lands in.** The C4 merge asks it per declaration, not per feature. An
 element whose PARENT resolves to a service whose `model.likec4` extends the map is spliced into that

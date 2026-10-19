@@ -21,6 +21,7 @@ import { spawnSync } from "node:child_process";
 import { cp } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { loadSource } from "../src/core/c4/likec4.js";
+import { firstUnlocated, unlocatedReason } from "../src/core/c4/locate/unlocated.js";
 import { scanModel } from "../src/core/c4/source-scan.js";
 import type { ExtendingModel } from "../src/core/c4/splice/contract.js";
 import { planLandscapeMerge } from "../src/core/c4/splice/landscape-merge.js";
@@ -447,5 +448,94 @@ model {
     // And the model is legal against the map it extends: one document, two
     // files' worth of blocks, exactly how LikeC4 merges a project.
     expect((await loadSource(MAP + merged)).errors).toEqual([]);
+  });
+});
+
+describe("what still cannot be located is refused with LikeC4's line and the cause the text shows", () => {
+  // The refusal used to say "most often two declarations sharing one line"
+  // whatever the map held — the reported message, over a declaration on a
+  // line of its own. It names the line LikeC4 parsed the declaration on now,
+  // and a shared line only when that line shows one.
+  const spec = "specification {\n  element softwareSystem\n  element container\n  tag FEAT-7\n}\n";
+  const ADD = `${spec}\nmodel {\n  kiwi = softwareSystem 'kiwi-service' {\n    #FEAT-7\n  }\n}\n`;
+
+  /** The refusal planLandscapeMerge throws for `land`, and the 1-based line of `marker` in it. */
+  async function refusal(land: string, marker: string): Promise<{ message: string; line: number }> {
+    expect((await loadSource(land)).errors, "the map must be valid, or the case proves nothing").toEqual([]);
+    const line = land.split(/\r\n|\r|\n/).findIndex((l) => l.includes(marker)) + 1;
+    const delta = await loadSource(ADD);
+    const plan = planLandscapeMerge({
+      landscapeText: land,
+      deltaText: ADD,
+      deltaElements: delta.elements,
+      newEls: delta.elements,
+      newRels: [],
+      featureId: "FEAT-7",
+    });
+    const err = await plan.then(
+      () => null,
+      (e: unknown) => e as Error,
+    );
+    expect(err, "the merge must refuse").not.toBeNull();
+    return { message: err!.message, line };
+  }
+
+  it("two declarations on one line: the second, its line, and the declaration it shares it with", async () => {
+    const land = `${spec}\nmodel {\n  apple = softwareSystem 'apple-service'  zulu = softwareSystem 'zulu-service'\n}\n`;
+    const { message, line } = await refusal(land, "zulu = ");
+    expect(message).toContain(`declares 'zulu' at line ${line} in a form placement cannot locate: it shares that line with 'apple'`);
+    expect(message).toContain("give each its own line");
+  });
+
+  it("two edges on one line: the swallowed edge by its endpoints, and the edge the scan read", async () => {
+    const land = `${spec}
+model {
+  apple = softwareSystem 'apple-service'
+  zulu = softwareSystem 'zulu-service'
+  apple -> zulu 'calls'  zulu -> apple 'back'
+}
+`;
+    const { message, line } = await refusal(land, "'back'");
+    expect(message).toContain(
+      `declares the relationship 'zulu -> apple' at line ${line} in a form placement cannot locate: it shares that line with the edge 'apple -> zulu'`,
+    );
+  });
+
+  it("a declaration after a property on its line: shared with the statement before it, which is no declaration", async () => {
+    const land = `${spec}
+model {
+  alpha = softwareSystem 'alpha-service' {
+    description 'd'  api = container 'api'
+  }
+}
+`;
+    const { message, line } = await refusal(land, "api = ");
+    expect(message).toContain(`declares 'alpha.api' at line ${line} in a form placement cannot locate: it shares that line with the statement before it`);
+  });
+
+  it("a line break the scan does not make (a bare carriage return): read as part of the statement above, by that statement's line", async () => {
+    const land = `${spec}\nmodel {\n  alpha = softwareSystem 'alpha-service'\r  zulu = softwareSystem 'zulu-service'\n}\n`;
+    const { message, line } = await refusal(land, "zulu = ");
+    expect(message).toContain(`declares 'zulu' at line ${line} in a form placement cannot locate: the splice map read it as part of 'alpha', which starts at line ${line - 1}`);
+    expect(message).toContain("bare carriage return");
+    expect(message).not.toContain("shares that line");
+  });
+
+  it("a map the scan reads whole has nothing unlocated, and a refusal with no locator answer still says what it knows", async () => {
+    const land = `${spec}\nmodel {\n  apple = softwareSystem 'apple-service'\n  zulu = softwareSystem 'zulu-service'\n  apple -> zulu 'calls'\n}\n`;
+    expect(await firstUnlocated(land, scanModel(land)!)).toBeNull();
+    expect(unlocatedReason("landscape.likec4", null)).toContain("LikeC4's locator could not say where — nothing was written");
+    expect(unlocatedReason("landscape.likec4", { kind: "relationship", name: "a -> b" })).toContain(
+      "declares the relationship 'a -> b' in a form placement cannot locate, and the splice map read no statement there",
+    );
+  });
+
+  it("where the scan read nothing, it says so and asks for the shape — never the shared-line guess", () => {
+    const message = unlocatedReason("landscape.likec4", { kind: "element", name: "x", line: 9 });
+    expect(message).toBe(
+      "landscape.likec4 declares 'x' at line 9 in a form placement cannot locate, and the splice map read no statement there — " +
+        "nothing was written; rewrite it on a line of its own as `name = kind 'title' {` (an edge as `a -> b 'title'`) and re-run — " +
+        "and report the original shape: LikeC4 parses it, so it is a form the splice map should read",
+    );
   });
 });

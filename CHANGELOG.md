@@ -55,6 +55,16 @@ written; each now merges.
   one such description above its model had no model block at all, and archive refused with
   `landscape.likec4 has no model block`.
 
+What the splice map still cannot locate is still refused (`merge-failed`, nothing written), and
+the message no longer guesses. It used to say "most often two declarations sharing one line"
+whatever the map held — over the reported declaration, which sat on a line of its own. It names the
+declaration (a relationship by its endpoints, where it used to give only a count) and the line
+LikeC4 parsed it on, then the cause the text shows: "it shares that line with '<other>'" only when
+code precedes it on that line; "the splice map read it as part of '<other>', which starts at line
+<n>" when the scan ran a statement on past a line break LikeC4 makes (a bare carriage return); and
+otherwise that the splice map read nothing there, with the rewrite to make and a request to report
+the shape. Wording only; the code is unchanged.
+
 ### Changed — `loam archive` refuses a delta that would bring back an operation another feature retired
 
 Two codes, both added to the `IssueCode` union, and one additive `--json` key were added.

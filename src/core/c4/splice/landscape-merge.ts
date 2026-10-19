@@ -1,6 +1,7 @@
 
 import { parentIdOf } from "../../kernel/ids/fqn/ancestors.js";
 import { errorText, loadSource, type Elem, type Rel } from "../likec4.js";
+import { firstUnlocated, unlocatedReason } from "../locate/unlocated.js";
 import { elementService, serviceOf } from "../resolve/service.js";
 import { scanModel, type ScannedElement, type ScannedModel, type ScannedRel } from "../source-scan.js";
 import { matchLineEndings, spliceSource } from "./authored-source.js";
@@ -242,19 +243,18 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
   // element bound to its service would miss its neighborhood, and a bodyless
   // parent gaining a body could wrap the wrong declaration. Refuse
   // mechanically (the parse-net discipline) instead of splicing blind.
+  //
+  // THAT something is unlocated is decided here, from the parse already in
+  // hand; WHAT and why is `firstUnlocated`'s, at the price of a second parse on
+  // this path alone. The message used to guess "most often two declarations
+  // sharing one line" whatever the map held, and a fleet read it over a
+  // declaration on a line of its own in a second `model { }` block the scan
+  // did not read then (2026-10): it names LikeC4's line now, and the shared
+  // line only when the scan actually read another statement there.
   if (livingScan !== null) {
     const seen = new Set(livingScan.elements.map((e) => e.id));
-    const invisible = land.elements.find((e) => !seen.has(e.id));
-    if (invisible !== undefined) {
-      throw new LandscapeSpliceError(
-        `landscape.likec4 declares '${invisible.id}' in a form placement cannot locate — most often two declarations sharing one line; give each its own line, then re-run`,
-      );
-    }
-    if (livingScan.rels.length < land.relationships.length) {
-      throw new LandscapeSpliceError(
-        `landscape.likec4 declares ${land.relationships.length} relationship(s) but placement can locate only ${livingScan.rels.length} — most often two statements sharing one line; give each its own line, then re-run`,
-      );
-    }
+    const blind = land.elements.some((e) => !seen.has(e.id)) || livingScan.rels.length < land.relationships.length;
+    if (blind) throw new LandscapeSpliceError(unlocatedReason("landscape.likec4", await firstUnlocated(text, livingScan)));
   }
 
   const livingParentOf = (parentId: string): ScannedElement | null => {
