@@ -337,6 +337,89 @@ describe("loam diff reads the one index", () => {
     ]);
   });
 
+  // The verification of that fix (N1): the line naming checkout-web's OWN
+  // capturePayment never moved, but its openapi.yaml stopped or started
+  // parsing between base and current — and on the side nobody could read,
+  // ownership went unproved and the line counted as a join, while on the
+  // readable side it was checkout-web's own operation. The join "appeared" or
+  // "went away" off a contract's readability alone: a false
+  // `diff.consumer-removed` with the contract fixed, a false
+  // `diff.consumer-added` with it broken, and each counted into the summary.
+  const BROKEN_OPENAPI = "openapi: 3.1.0\npaths: [unclosed\n";
+  /**
+   * The flicker's report: payment-service's findings and the summary — and
+   * what stays true of it, asserted here: the broken contract is still
+   * checkout-web's own suspended axis, and still carries the run to exit 1.
+   */
+  async function ownLineAcrossAFlicker(sides: { base: string; current: string }): Promise<{ found: DiffFinding[]; summary: Record<string, number> }> {
+    const p = await project(fleet({
+      "services/checkout-web/spec.md": checkoutSpec(CAPTURE_AT_CHECKOUT),
+      "services/checkout-web/openapi.yaml": sides.base,
+    }));
+    commitBase(p.docsDir);
+    await p.write("services/checkout-web/openapi.yaml", sides.current);
+    const res = await runLoam(p.workDir, "diff", "--base", "main", "--json");
+    const payload = JSON.parse(res.stdout) as {
+      summary: Record<string, number>;
+      services: Array<{ id: string; unreadable: Array<{ axis: string }> }>;
+    };
+    expect(res.code).toBe(1);
+    expect(payload.services.find((s) => s.id === "checkout-web")!.unreadable).toEqual([expect.objectContaining({ axis: "openapi" })]);
+    return { found: await diffFindings(p, "payment-service"), summary: payload.summary };
+  }
+
+  it("a consumer's own operation is no join that went away when its contract starts parsing", async () => {
+    const { found, summary } = await ownLineAcrossAFlicker({ base: BROKEN_OPENAPI, current: CHECKOUT_OPENAPI });
+    expect(ofCode(found, "diff.consumer-removed")).toEqual([]);
+    expect(summary.removed).toBe(0);
+  });
+
+  it("a consumer's own operation is no join that appeared when its contract stops parsing", async () => {
+    const { found, summary } = await ownLineAcrossAFlicker({ base: CHECKOUT_OPENAPI, current: BROKEN_OPENAPI });
+    expect(ofCode(found, "diff.consumer-added")).toEqual([]);
+    expect(summary.added).toBe(0);
+  });
+
+  // The same flicker over an id two providers define: the unreadable side
+  // joined the line onto EVERY provider of it, so one contract that started
+  // parsing used to read as one join gone from each — shared ids such as
+  // `healthCheck` are the common case, not the exotic one.
+  it("a shared id's flicker is no join on any provider of it", async () => {
+    const health = (title: string): string =>
+      `openapi: 3.1.0\ninfo: { title: ${title}, version: "1.0" }\npaths:\n  /health:\n    get:\n      operationId: healthCheck\n      responses: { "200": { description: ok } }\n`;
+    const p = await project({
+      ...fleet({
+        "architecture/landscape.likec4": LANDSCAPE.replace(
+          "\n}\n\nviews {",
+          "\n  orderService = softwareSystem 'order-service' {\n    metadata { service 'order-service' }\n  }\n}\n\nviews {",
+        ),
+        "services/payment-service/openapi.yaml": PAYMENT_OPENAPI.replace("paths:\n", `paths:\n  /health:\n    get:\n      operationId: healthCheck\n      responses: { "200": { description: ok } }\n`),
+        "services/order-service/spec.md": checkoutSpec().replace(/checkout-web/g, "order-service"),
+        "services/order-service/openapi.yaml": health("order-service"),
+        "services/checkout-web/spec.md": checkoutSpec(CAPTURE_AT_CHECKOUT.replace("capturePayment", "healthCheck")),
+        "services/checkout-web/openapi.yaml": BROKEN_OPENAPI,
+      }),
+    });
+    commitBase(p.docsDir);
+    await p.write("services/checkout-web/openapi.yaml", health("checkout-web"));
+    const removedOn = async (provider: string): Promise<string[]> =>
+      ofCode(await diffFindings(p, provider), "diff.consumer-removed").map((f) => f.message);
+    expect({ payment: await removedOn("payment-service"), order: await removedOn("order-service") }).toEqual({ payment: [], order: [] });
+  });
+
+  // The control the skip must not swallow: the contract breaks on the side
+  // that holds the join, but the readable side proves no ownership either — it
+  // defines no such id — so the join is the line's, and it is reported.
+  it("a join beside a contract that stopped parsing is still reported when the other side proves no ownership", async () => {
+    const p = await project(fleet({ "services/checkout-web/openapi.yaml": CHECKOUT_OPENAPI.replace("capturePayment", "getCart") }));
+    commitBase(p.docsDir);
+    await p.write("services/checkout-web/openapi.yaml", BROKEN_OPENAPI);
+    await p.write("services/checkout-web/spec.md", checkoutSpec(CAPTURE_AT_CHECKOUT));
+    expect(ofCode(await diffFindings(p, "payment-service"), "diff.consumer-added")).toEqual([
+      expect.objectContaining({ message: expect.stringContaining("checkout-web's living requirements now name this service's operation 'capturePayment'") }),
+    ]);
+  });
+
   // An arch.spec.md `Operations:` line naming another service's operation is
   // the dependency `loam dependencies` reads off both spec files; the victim
   // scan read spec.md alone and called the removal unconsumed.

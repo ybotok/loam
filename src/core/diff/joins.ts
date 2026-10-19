@@ -49,7 +49,9 @@ function tupleKey(t: ConsumerTuple): string {
  * (`ownsOperation`). An unreadable axis simply contributes nothing here — no
  * line from a spec file nobody could read, no ownership from a contract nobody
  * could read — and `tupleVisible` below guards the GRADING, so a join is never
- * called added or removed off a side nobody could read.
+ * called added or removed off a side nobody could read, and `ownershipFlicker`
+ * keeps one from being called so off a consumer's own contract that merely
+ * stopped or started parsing.
  */
 export function consumerTuples(states: ReadonlyMap<string, ServiceState>): Map<string, ConsumerTuple> {
   const providersOf = (pick: (s: ServiceState) => string[]): Map<string, string[]> => {
@@ -95,8 +97,31 @@ function tupleVisible(states: ReadonlyMap<string, ServiceState>, ambiguous: Read
   // counts on that side — the index's own rule. A side holding it unread can
   // only have MORE joins, never hide one, and suppressing the join there kept
   // `diff.consumer-added` / `-removed` off a report whose victims named that
-  // very consumer (the contract review, finding 4).
+  // very consumer (the contract review, finding 4). Those extra joins are a
+  // change of their own only when the readable side does not prove the
+  // ownership the unread one could not — `ownershipFlicker` below.
   return readable(t.consumer, ["spec", "archSpec"]) && readable(t.provider, [t.kind === "op" ? "openapi" : "asyncapi"]);
+}
+
+/**
+ * Is this operation join held only because the consumer's own contract did not
+ * parse on the side that holds it, while on the other side it reads and
+ * defines the id? Then the line names the consumer's OWN operation — the
+ * readable side says so — and nothing about the join moved but the contract's
+ * readability: the line that never changed "went away" when the contract was
+ * fixed and "appeared" when it broke, once per provider of a shared id such as
+ * `healthCheck` (the verification of finding 4, N1). The unreadable contract
+ * is already its own `unreadable[]` entry on the consumer, which carries the
+ * run to exit 1; a second, false finding on every provider said nothing true.
+ *
+ * Only that shape is skipped. A readable side that defines no such id proves
+ * no ownership either, so the join is the line's and is graded as before; a
+ * message join asks no ownership at all (`ownsOperation` says why).
+ */
+function ownershipFlicker(sides: { holding: ReadonlyMap<string, ServiceState>; other: ReadonlyMap<string, ServiceState> }, t: ConsumerTuple): boolean {
+  if (t.kind !== "op" || sides.holding.get(t.consumer)?.openapi.kind !== "unreadable") return false;
+  const other = sides.other.get(t.consumer);
+  return other !== undefined && ownsOperation(other, t.token);
 }
 
 /** One graded cross-service join change between the two states. */
@@ -110,7 +135,10 @@ export interface ConsumerChange {
  * deterministic output (provider, kind, token, consumer). The visibility
  * guard is the containment rule: a join is never called "added" off a base
  * side nobody could read, nor "removed" off an unreadable working file — the
- * suspended axis already carries that fact.
+ * suspended axis already carries that fact. The flicker guard is its mirror on
+ * the side that HOLDS the join: one held only because the consumer's own
+ * contract did not read there, over an id the other side shows it owns, is no
+ * change either.
  */
 export function consumerJoinChanges(input: {
   base: ReadonlyMap<string, ServiceState>;
@@ -121,11 +149,15 @@ export function consumerJoinChanges(input: {
   const baseTuples = consumerTuples(input.base);
   const currentTuples = consumerTuples(input.current);
   const graded: ConsumerChange[] = [];
+  const added = { holding: input.current, other: input.base };
+  const removed = { holding: input.base, other: input.current };
   for (const [key, t] of currentTuples) {
-    if (!baseTuples.has(key) && tupleVisible(input.base, input.baseAmbiguous, t)) graded.push({ t, change: "added" });
+    if (baseTuples.has(key) || ownershipFlicker(added, t)) continue;
+    if (tupleVisible(input.base, input.baseAmbiguous, t)) graded.push({ t, change: "added" });
   }
   for (const [key, t] of baseTuples) {
-    if (!currentTuples.has(key) && tupleVisible(input.current, input.currentAmbiguous, t)) graded.push({ t, change: "removed" });
+    if (currentTuples.has(key) || ownershipFlicker(removed, t)) continue;
+    if (tupleVisible(input.current, input.currentAmbiguous, t)) graded.push({ t, change: "removed" });
   }
   return graded.sort((a, b) => {
     const ka = `${a.t.provider}\0${a.t.kind}\0${a.t.token}\0${a.t.consumer}\0${a.change}`;

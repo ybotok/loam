@@ -33,8 +33,13 @@ warnings — and the three copies read different documents. They are one index n
     archive's overwrite warnings. So an
     operation's `diff.consumer-added` / `-removed` is not reported while the consumer's
     `arch.spec.md` cannot be read on the other side, as it never was over an unreadable `spec.md`.
-    The consumer's own `openapi.yaml` never suppresses it: an unreadable contract proves no
-    ownership, so the line counts on that side too.
+    The consumer's own `openapi.yaml` does not suppress it: an unreadable contract proves no
+    ownership, so the line counts on that side too. The exception is a line whose join exists only
+    because that contract did not parse on one side, while on the other side it reads and defines
+    the id: there the line names the consumer's own operation, and only the contract's readability
+    changed. No `diff.consumer-added` / `diff.consumer-removed` is reported for it — before, one per
+    provider of the id, each counted in the `--json` summary's `added` / `removed`. The contract's own
+    `unreadable[]` entry is still reported, and `loam diff` still exits 1 on it.
   - **The provider's own `spec.md` requirements count for a marker retirement too**, as they do for
     the overwrite of the entry below: one still naming the retired operation after the merge (a
     second one beside the REMOVED requirement) archived at exit 0 and left `spec-api.op-undefined`.
