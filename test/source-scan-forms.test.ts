@@ -106,6 +106,35 @@ describe("a URI is one token, whatever comment marker, brace or quote it holds",
     const { parsed, scanned } = await readings(`${SPEC}\nmodel {\n${body}  zulu = softwareSystem 'zulu-service'\n  alpha -> zulu 'calls'\n}\n`);
     expect(scanned).toEqual(parsed);
   });
+
+  // Blanked and recorded nowhere, the URI left `link https://…` reading as the
+  // one bare word `link` — a head that cannot end a statement — so the head ran
+  // on into the next line and swallowed whatever was declared there: the child
+  // vanished (archive refused a map main merged), or the parent's sourceless
+  // edge was read as `link -> zulu` and `validate --all --base` matched no edge
+  // to grade (probed at 23f1578). A URI is a token, though its mask is blank.
+  const NEXT = [
+    ["a `name = kind` child", "    api = container 'API'\n"],
+    ["a kind-form child", "    container api 'API'\n"],
+    ["the parent's sourceless edge", "    -> zulu 'calls'\n"],
+  ] as const;
+  it.each([
+    ...NEXT.map(([what, line]) => [`a link alone on its line, then ${what}`, `    link https://wiki.example.com/alpha\n${line}`]),
+    ...NEXT.map(([what, line]) => [`an icon alone on its line, then ${what}`, `    icon ./icons/alpha.svg\n${line}`]),
+    ["a link whose URI is on the next line, then a child", "    link\n      https://wiki.example.com/alpha\n    api = container 'API'\n"],
+  ])("%s", async (_form, inner) => {
+    const { parsed, scanned } = await readings(
+      `${SPEC}\nmodel {\n  alpha = softwareSystem 'alpha-service' {\n${inner}  }\n  zulu = softwareSystem 'zulu-service'\n}\n`,
+    );
+    expect(scanned).toEqual(parsed);
+  });
+
+  it("the mask records each URI's span, so a reader can tell a blanked URI from blank space", () => {
+    const src = "link https://x.test/a icon ../b.svg // c\n";
+    expect(maskSource(src).uris.map((u) => src.slice(u.start, u.end))).toEqual(["https://x.test/a", "../b.svg"]);
+    // A comment is not a URI: `//` with nothing before it stays the comment token.
+    expect(maskSource("// https://x.test\n").uris).toEqual([]);
+  });
 });
 
 describe("a statement split across lines is read as LikeC4 reads it — its newlines are hidden tokens", () => {

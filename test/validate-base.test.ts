@@ -290,6 +290,32 @@ describe("loam validate --all --base — a call edge the branch edited is graded
     }
   });
 
+  it("a misspelt op on an edge written right after a bare `link` line fails too — the link does not swallow the edge", async () => {
+    // The splice map read the URI as blank, so `link https://…` was the bare
+    // word `link` and ran on into the next line: the edge below it was scanned
+    // as `link -> marketplace.orderService`, matched no parsed edge, and the
+    // branch's one-letter typo was graded nowhere — exit 0, `valid: true`,
+    // where main reported it (probed at 23f1578).
+    const p = await exampleFleet();
+    try {
+      const map = "architecture/landscape.likec4";
+      const anchor = "      metadata {\n        service 'checkout-web'\n      }\n";
+      const link = "      link https://wiki.example.com/checkout-web\n";
+      const before = await p.read(map);
+      expect(before).toContain(anchor);
+      await p.write(map, before.replace(anchor, anchor + link));
+      commitBase(p.docsDir);
+      const edge = "      -> marketplace.orderService 'Calls cancelOrder' {\n        metadata { op 'cancelOrdr' }\n      }\n";
+      await p.write(map, before.replace(anchor, anchor + link + edge));
+      const { code, payload } = await validateJson(p, "--all", "--base", "main");
+      expect(code).toBe(1);
+      const spine = raised(payload).filter((f) => f.code === "spine.op-undefined");
+      expect(spine.map((f) => f.message).join("\n")).toContain("cancelOrdr");
+    } finally {
+      await p.destroy();
+    }
+  });
+
   it("the same misspelling on a freshly seeded spine-first fleet fails — even under --strict it used to be green", async () => {
     const p = await seededFleet();
     try {

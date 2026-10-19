@@ -11,23 +11,34 @@
  * `statementHead` is the one reading of GRAMMAR here — where a statement's
  * head ends, a question about tokens rather than declarations — and it sits
  * beside the mask because it reads nothing but the masked bytes and the
- * literal list; which declaration the head is stays the scanner's to say.
+ * literal and URI lists; which declaration the head is stays the scanner's to say.
  */
-export interface SourceLiteral {
+/** A half-open `[start, end)` run of the source. */
+export interface SourceSpan {
   start: number;
   end: number;
+}
+
+export interface SourceLiteral extends SourceSpan {
   value: string;
 }
 
 /**
  * A LikeC4 source with everything that is not code blanked out: string
- * interiors and comments become spaces, newlines survive, and the result is
- * exactly as long as the input — so structure (braces, arrows, `#tags`) can be
- * read with plain string operations at offsets that are valid in the original.
+ * interiors, URIs and comments become spaces, newlines survive, and the result
+ * is exactly as long as the input — so structure (braces, arrows, `#tags`) can
+ * be read with plain string operations at offsets that are valid in the original.
+ *
+ * A blank is not nothing, which is why the literals and the URIs are listed
+ * beside it: both are TOKENS the grammar reads, and a reader that only sees the
+ * spaces reads `description 'x'` as the word `description` alone. Comments are
+ * listed nowhere, because to the grammar they are exactly the blank they become.
  */
 export interface MaskedSource {
   code: string;
   literals: SourceLiteral[];
+  /** Every URI token (`uriEnd`), in document order. */
+  uris: SourceSpan[];
 }
 
 /**
@@ -53,8 +64,11 @@ const MARKDOWN_QUOTES = ["'''", '"""'] as const;
  * that blanked whatever followed on the line: `x = kind 'X' { link
  * https://… }` lost its closing brace, and the scan found no model block in a
  * map LikeC4 parses. A URI's interior is never structure — a `{id}`, a `#anchor`,
- * an apostrophe are all part of the token — so it is blanked like a literal's,
- * and recorded as none: it is no string.
+ * an apostrophe are all part of the token — so it is blanked like a literal's.
+ * It is recorded in `uris`, not among the literals, because it is no string —
+ * no title is read from it — but it IS a token: blanked and recorded nowhere,
+ * `link https://…` read as the bare word `link`, and `statementHead` ran that
+ * on into the next line and swallowed the declaration written there.
  */
 function uriEnd(text: string, at: number): number {
   if (at > 0 && /[\w.-]/.test(text[at - 1]!)) return -1;
@@ -76,6 +90,7 @@ function uriEnd(text: string, at: number): number {
 export function maskSource(text: string): MaskedSource {
   const out = text.split("");
   const literals: SourceLiteral[] = [];
+  const uris: SourceSpan[] = [];
   type State = "code" | "squote" | "dquote" | "markdown" | "lineComment" | "blockComment";
   let state: State = "code";
   let litStart = -1;
@@ -88,6 +103,7 @@ export function maskSource(text: string): MaskedSource {
       case "code": {
         const uri = uriEnd(text, i);
         if (uri !== -1) {
+          uris.push({ start: i, end: uri });
           for (; i < uri; i += 1) out[i] = " ";
           i -= 1;
           break;
@@ -156,7 +172,7 @@ export function maskSource(text: string): MaskedSource {
         break;
     }
   }
-  return { code: out.join(""), literals };
+  return { code: out.join(""), literals, uris };
 }
 
 /** Index of the `}` matching the `{` at `open`, over MASKED code; -1 when unbalanced. */
@@ -224,11 +240,17 @@ export interface StatementHead {
  *    element's tags live inside its body, never after its head;
  *  - anything at all, when the head so far cannot end a statement: it ends in
  *    `=` or `->`, or it is one bare name (`entityService` above `= kind`, a
- *    kind above the name it declares).
+ *    kind above the name it declares, `link` above its URI).
  *
  * A line starting `->` after a COMPLETE head is a statement of its own — the
  * sourceless edge from the enclosing element — which is why an arrow at the
  * start of a line continues only a bare name.
+ *
+ * "Bare" is read off the tokens, not the blanks: `link https://…` and
+ * `description 'x'` are masked to one word each, and both are complete
+ * properties. Read as bare names they ran on into the next line, and whatever
+ * was declared there — a child, the parent's sourceless edge — was read into
+ * the property and lost (2e490dd blanked the URI and recorded nothing).
  */
 export function statementHead(masked: MaskedSource, from: number, close: number): StatementHead {
   const { code } = masked;
@@ -244,44 +266,54 @@ export function statementHead(masked: MaskedSource, from: number, close: number)
   }
 }
 
-/** The first token after `at`: a literal's start, or a non-blank character of code; -1 at the block's close. */
+/**
+ * The first token after `at`: a literal's or a URI's start, or a non-blank
+ * character of code; -1 at the block's close. A URI is masked blank, so
+ * without its span `link` above its URI looked past the URI to the line after
+ * — and ran on into it.
+ */
 function nextToken(masked: MaskedSource, at: number, close: number): number {
   for (let k = at; k < close; k += 1) {
-    if (literalAt(masked.literals, k) !== undefined || !/\s/.test(masked.code[k]!)) return k;
+    if (spanAt(masked.literals, k) || spanAt(masked.uris, k) || !/\s/.test(masked.code[k]!)) return k;
   }
   return -1;
 }
 
 /** Whether the token at `next` belongs to the statement whose head so far spans `[from, end)`. */
 function readsOn(masked: MaskedSource, head: { from: number; end: number }, next: number): boolean {
-  const { code, literals } = masked;
-  if (literalAt(literals, next) !== undefined) return true;
+  const { code, literals, uris } = masked;
+  if (spanAt(literals, next)) return true;
   if (code[next] === "{" || code[next] === "#") return true;
   if (code[next] === "}") return false;
   const sofar = code.slice(head.from, head.end).trim();
   if (/(?:=|->)$/.test(sofar)) return true;
-  // Masked, `description 'x'` reads as the one word `description`: a head
-  // holding a literal is never a bare name.
-  const literal = firstLiteralFrom(literals, head.from);
-  return (literal === undefined || literal.start >= head.end) && /^[A-Za-z_][\w.-]*$/.test(sofar);
+  // Masked, `description 'x'` reads as the one word `description` and
+  // `link https://…` as the one word `link`: a head holding a literal or a URI
+  // is never a bare name.
+  return !spanIn(literals, head) && !spanIn(uris, head) && /^[A-Za-z_][\w.-]*$/.test(sofar);
 }
 
-/** The literal starting exactly at `at`, if one does. */
-function literalAt(literals: readonly SourceLiteral[], at: number): SourceLiteral | undefined {
-  const l = firstLiteralFrom(literals, at);
-  return l?.start === at ? l : undefined;
+/** Whether a span starts exactly at `at`. */
+function spanAt(spans: readonly SourceSpan[], at: number): boolean {
+  return firstSpanFrom(spans, at)?.start === at;
 }
 
-/** The first literal starting at or after `at` — `maskSource` records them in order, so a binary search. */
-function firstLiteralFrom(literals: readonly SourceLiteral[], at: number): SourceLiteral | undefined {
+/** Whether a span starts inside `[from, end)`. */
+function spanIn(spans: readonly SourceSpan[], range: { from: number; end: number }): boolean {
+  const s = firstSpanFrom(spans, range.from);
+  return s !== undefined && s.start < range.end;
+}
+
+/** The first span starting at or after `at` — `maskSource` records each list in order, so a binary search. */
+function firstSpanFrom(spans: readonly SourceSpan[], at: number): SourceSpan | undefined {
   let lo = 0;
-  let hi = literals.length;
+  let hi = spans.length;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
-    if (literals[mid]!.start < at) lo = mid + 1;
+    if (spans[mid]!.start < at) lo = mid + 1;
     else hi = mid;
   }
-  return literals[lo];
+  return spans[lo];
 }
 
 /** An element declaration located in source, under the id the computed model gives it. */

@@ -48,7 +48,8 @@ written; each now merges.
 - **A `link` (or `icon`) URI followed by more code on its line.** LikeC4 reads `https://…` and a
   relative `./…` path as one token; the splice map read its `//` as a comment that ran to the end
   of the line, so `x = kind 'X' { link https://… }` lost its closing brace and archive refused with
-  `landscape.likec4 has no model block`.
+  `landscape.likec4 has no model block`. The URI is a token wherever it sits: a `link` or `icon`
+  alone on its line ends there, and the child or edge declared on the line below is its own.
 - **A markdown string (`'''…'''` or `"""…"""`) whose prose holds an apostrophe or an odd number
   of quotes.** The splice map read the triple as three ordinary quotes, so the first `it's` in a
   long `description` ended the string and the rest of the file was read inside out — a map with
