@@ -128,12 +128,14 @@ export function scanModel(text: string): ScannedModel | null {
 
   // Element kinds from the specification block(s): the `<kind> <name>`
   // declaration form is recognisable only by its first token being a kind.
+  // Relationship kinds likewise, for the `source .kind target` edge form.
   const kinds = new Set<string>();
+  const relKinds = new Set<string>();
   for (const sm of code.matchAll(/\bspecification\s*\{/g)) {
     const sClose = matchBrace(code, sm.index + sm[0].length - 1);
     if (sClose === -1) continue;
-    for (const em of code.slice(sm.index, sClose).matchAll(/\belement\s+([A-Za-z_][\w-]*)/g)) {
-      kinds.add(em[1]!);
+    for (const em of code.slice(sm.index, sClose).matchAll(/\b(element|relationship)\s+([A-Za-z_][\w-]*)/g)) {
+      (em[1] === "element" ? kinds : relKinds).add(em[2]!);
     }
   }
 
@@ -232,12 +234,12 @@ export function scanModel(text: string): ScannedModel | null {
       // in a string — the head is masked), then the `kind name` form, else a
       // property/tag line that is consumed whole, nested block included.
       let localName: string | null = null;
-      const assign = /^([A-Za-z_]\w*)\s*=\s*[A-Za-z_]/.exec(head);
+      const assign = /^([A-Za-z_][\w-]*)\s*=\s*[A-Za-z_]/.exec(head);
       if (assign !== null) {
         localName = assign[1]!;
       } else if (!head.includes("->")) {
         const toks = head.trim().split(/\s+/);
-        if (toks.length >= 2 && kinds.has(toks[0]!) && /^[A-Za-z_]\w*$/.test(toks[1]!)) {
+        if (toks.length >= 2 && kinds.has(toks[0]!) && /^[A-Za-z_][\w-]*$/.test(toks[1]!)) {
           localName = toks[1]!;
         }
       }
@@ -266,20 +268,20 @@ export function scanModel(text: string): ScannedModel | null {
         continue;
       }
 
-      if (head.includes("->")) {
+      const am = relationHead(head, relKinds);
+      if (am !== null || head.includes("->")) {
         const bClose = opener === -1 ? -1 : matchBrace(code, opener);
         const stmtEnd = opener === -1 ? trimmedEnd(stmtStart, headEnd) : bClose === -1 ? close : bClose + 1;
-        const am = /^([A-Za-z_][\w.]*)?\s*(?:-\[[^\]]*\])?->\s*([A-Za-z_][\w.]*)/.exec(head);
         if (am !== null) {
-          const arrowEnd = stmtStart + am[0].length;
+          const arrowEnd = stmtStart + am.length;
           const bodyFrom = opener === -1 ? -1 : opener + 1;
           const bodyTo = opener === -1 ? -1 : stmtEnd - 1;
           const title = literalIn(arrowEnd, headEnd)?.value ?? keyedLiteral("title", bodyFrom, bodyTo);
           const tags: string[] = [];
           for (const tm of code.slice(stmtStart, stmtEnd).matchAll(/#([\w-]+)/g)) tags.push(tm[1]!);
           raw.push({
-            srcLit: am[1],
-            tgtLit: am[2]!,
+            srcLit: am.src,
+            tgtLit: am.tgt,
             parent: parentId,
             start: stmtStart,
             end: stmtEnd,
@@ -346,4 +348,25 @@ export function scanModel(text: string): ScannedModel | null {
 
   elements.sort((a, b) => a.start - b.start);
   return { blocks, elements, rels };
+}
+
+/**
+ * A relationship head's endpoints as written, and where its arrow form ends —
+ * null for any other head. Three forms, each with the source omittable inside
+ * an element: `a -> b`, `a -[kind]-> b`, and `a .kind b` for a relationship
+ * kind the specification declares, which the scan used to skip as a property
+ * line, so archive refused a valid map on a relationship count.
+ *
+ * Ids carry hyphens (`entity-service`): LikeC4's identifier is
+ * `[a-zA-Z_][-\w]*`, and the `\w`-only spelling here made such an element, or
+ * an edge naming one, invisible. The lexer's greed is why `a->b` without a
+ * space is not a form worth reading — LikeC4 takes `a-` for the id and rejects
+ * the document.
+ */
+function relationHead(head: string, relKinds: ReadonlySet<string>): { src: string | undefined; tgt: string; length: number } | null {
+  const arrow = /^([A-Za-z_][\w.-]*)?\s*(?:-\[[^\]]*\])?->\s*([A-Za-z_][\w.-]*)/.exec(head);
+  if (arrow !== null) return { src: arrow[1], tgt: arrow[2]!, length: arrow[0].length };
+  const dotted = /^(?:([A-Za-z_][\w.-]*)\s+)?\.([A-Za-z_][\w-]*)\s+([A-Za-z_][\w.-]*)/.exec(head);
+  if (dotted === null || !relKinds.has(dotted[2]!)) return null;
+  return { src: dotted[1], tgt: dotted[3]!, length: dotted[0].length };
 }

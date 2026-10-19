@@ -167,6 +167,38 @@ model {
   });
 });
 
+describe("identifiers and edge forms the grammar allows", () => {
+  it("a hyphenated id, declared in both forms and named by edges, is the element LikeC4 sees", async () => {
+    const { parsed, scanned } = await readings(`${SPEC}
+model {
+  entity-service = softwareSystem 'entity-service' {
+    read-api = container 'Read API'
+  }
+  softwareSystem audit-log 'audit-log'
+  entity-service.read-api -> audit-log 'writes'
+  audit-log -[async]-> entity-service 'replays'
+}
+`);
+    expect(scanned).toEqual(parsed);
+  });
+
+  it("a dot-kind edge (`source .kind target`), sourced or not, is a relationship", async () => {
+    const { parsed, scanned } = await readings(`${SPEC}
+model {
+  alpha = softwareSystem 'alpha-service' {
+    .async zulu 'from inside'
+  }
+  zulu = softwareSystem 'zulu-service'
+  alpha .async zulu 'emits' {
+    #t
+  }
+}
+`);
+    expect(scanned).toEqual(parsed);
+    expect(scanned[1]).toHaveLength(2);
+  });
+});
+
 describe("every top-level model block is read, and only those", () => {
   it("a second (and third) model block below the views is part of the model", async () => {
     const src = `${SPEC}
@@ -220,5 +252,91 @@ model {
 `;
     const { parsed, scanned } = await readings(src);
     expect(scanned).toEqual(parsed);
+  });
+});
+
+describe("a landscape written in every one of those forms at once archives, and loses nothing", () => {
+  it("additions anchored to each form land, and every living element keeps what it had", async () => {
+    const spec = `specification {
+  element softwareSystem
+  element container
+  relationship async
+  tag FEAT-9
+}
+`;
+    const land = `${spec}
+model {
+  alpha = softwareSystem 'alpha-service' {
+    description '''
+      Alpha's job: { settle } the "split"
+    '''
+  }
+  entity-service = softwareSystem 'entity-service'
+  {
+    description 'Holds entities'
+  }
+  zulu =
+    softwareSystem 'zulu-service'
+  alpha .async zulu 'emits'
+}
+
+views {
+  view index { include * }
+}
+
+model {
+  ledger = softwareSystem 'ledger-service' {
+    description 'Posts entries'
+  }
+  zulu -> ledger 'settles'
+}
+`;
+    const deltaText = `${spec}
+model {
+  entity-service = softwareSystem 'entity-service' {
+    cache = container 'Cache' {
+      #FEAT-9
+    }
+  }
+  entity-worker = softwareSystem 'Entity Worker' {
+    #FEAT-9
+    metadata { service 'entity-service' }
+  }
+  ledger = softwareSystem 'ledger-service' {
+    store = container 'Store' {
+      #FEAT-9
+    }
+  }
+  zulu = softwareSystem 'zulu-service'
+  zulu -> entity-service 'reads' {
+    #FEAT-9
+  }
+}
+`;
+    const living = await loadSource(land);
+    expect(living.errors).toEqual([]);
+    const delta = await loadSource(deltaText);
+    const plan = await planLandscapeMerge({
+      landscapeText: land,
+      deltaText,
+      deltaElements: delta.elements,
+      newEls: delta.elements.filter((e) => e.tags.includes("FEAT-9")),
+      newRels: delta.relationships.filter((r) => r.tags.includes("FEAT-9")),
+      featureId: "FEAT-9",
+    });
+    const merged = await loadSource(plan.content!);
+    expect(merged.errors).toEqual([]);
+    for (const e of living.elements) {
+      expect(merged.elements.find((m) => m.id === e.id), e.id).toMatchObject({ title: e.title, description: e.description });
+    }
+    expect(merged.elements.map((e) => e.id)).toEqual(
+      expect.arrayContaining(["entity-service.cache", "entity-worker", "ledger.store"]),
+    );
+    expect(merged.relationships).toHaveLength(living.relationships.length + 1);
+    // Each where its anchor lives: the worker beside entity-service in the
+    // first block, the store inside ledger in the second.
+    const scan = scanModel(plan.content!)!;
+    expect(scan.elements.find((e) => e.id === "entity-worker")?.block).toBe(0);
+    expect(scan.elements.find((e) => e.id === "ledger.store")?.block).toBe(1);
   });
 });

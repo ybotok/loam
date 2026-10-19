@@ -36,6 +36,10 @@ written; each now merges.
   a bodyless element: an addition anchored after it landed between the head and its body and took
   that body — description, children, `metadata { service }` binding — for its own, in a merge that
   parsed and was written (exit 0). The body stays with its element now.
+- **A hyphenated id (`entity-service = …`) and a dot-kind edge (`a .async b`).** LikeC4's
+  identifiers may carry hyphens and a declared relationship kind may be written as `.kind`; the
+  splice map read neither, so such an element was "in a form placement cannot locate" and such an
+  edge made the relationship count disagree.
 - **A markdown string (`'''…'''` or `"""…"""`) whose prose holds an apostrophe or an odd number
   of quotes.** The splice map read the triple as three ordinary quotes, so the first `it's` in a
   long `description` ended the string and the rest of the file was read inside out — a map with
