@@ -22,14 +22,15 @@ warnings — and the three copies read different documents. They are one index n
 
 - **More consumers are found, so more removals are refused:**
   - **Edges come from the whole `architecture/` project**, not `architecture/landscape.likec4`
-    alone, for the gate as for `loam diff`: an edge with `metadata { op }` (or `consumes`) drawn in
+    alone, for the gate as for `loam diff` and the archive's overwrite warnings: an edge with `metadata { op }` (or `consumes`) drawn in
     `architecture/calls.likec4` or in a use-case document counts. The gate passed such a removal
     and the next `validate --all` reported `spine.op-undefined` on the edge. Where only a sibling
     document fails to parse, the map file's own edges still count.
   - **The gate names use-case hops** attributed to the operation (or backed by a `consumes` edge),
     as `loam diff` already did.
   - **An `arch.spec.md` `Operations:` line** of another service counts, as a spec.md one does —
-    for the gate, `loam diff`'s victims and `diff.consumer-added` / `diff.consumer-removed`. So an
+    for the gate, `loam diff`'s victims, `diff.consumer-added` / `diff.consumer-removed` and the
+    archive's overwrite warnings. So an
     operation's `diff.consumer-added` / `-removed` is not reported while the consumer's
     `arch.spec.md` cannot be read on the other side, as it never was over an unreadable `spec.md`.
     The consumer's own `openapi.yaml` never suppresses it: an unreadable contract proves no
@@ -68,7 +69,8 @@ warnings — and the three copies read different documents. They are one index n
     consumers; the warning for a message another service does send reads "still sent by".
 - **Fewer refusals where the consumer was false or already retired:**
   - **Another service's `Operations:` line naming an id its own contract defines** names its own
-    operation, and is no consumer (gate, `loam diff`, `diff.consumer-added` / `-removed`): shared
+    operation, and is no consumer (gate, `loam diff`, `diff.consumer-added` / `-removed`, the
+    archive's overwrite warnings): shared
     ids such as `healthCheck` no longer refuse a rename, and `--approve` is no longer the only way
     past a fleet `validate --all` calls clean.
   - **Read after the feature's merge**: a consumer requirement the same feature MODIFIES to drop
@@ -528,8 +530,8 @@ No code or flag was added. Existing warnings now fill a payload key that was alw
   `no current consumer names it`. The warning's `details` (until now always `[]`) list the
   consumers, in `archive --json` `warnings[]` and, when the contract merge is refused as
   `not-coherent`, in the same warning's entry in `issues[]`:
-  - landscape edges;
-  - other services' living requirements;
+  - edges of the `architecture/` project;
+  - other services' living requirements, in either spec file;
   - use-case hops;
   - and last, any consumer whose documents could not be read, or any caller drawn without an
     `op`.

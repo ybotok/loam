@@ -79,8 +79,9 @@ function hops(scan: Extract<UseCaseScan, { kind: "read" }>): Array<{ view: Parse
  * The flows one removed operation breaks, and the ones loam cannot answer for.
  *
  * An `unreadable` scan contributes NOTHING — neither break nor suspension — and
- * that is `core/consumers/consumers.ts`'s own landscape doctrine applied one
- * axis over: an unreadable fleet map proves nothing either way, `landscape.invalid` is
+ * that is the consumer index's own landscape doctrine (`livingMap` in
+ * `core/consumers/current.ts`, which reads the map for every consumer
+ * question) applied one axis over: an unreadable fleet map proves nothing either way, `landscape.invalid` is
  * validate's finding to make, and inventing doubt out of a parse error would
  * point the reviewer at a file their change never touched. The caller reports
  * the hole; this join stays quiet about it.

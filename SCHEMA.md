@@ -1272,9 +1272,11 @@ of an operation are read once, the same way for every reader (`core/consumers/`)
   resolves to the provider — any document the spine grades, never `landscape.likec4` alone (when
   only a sibling document fails to parse, the map file's own edges still count);
 - another service's requirement — in `spec.md` **or** `arch.spec.md` — whose `Operations:` line
-  names it, **unless that service's own contract defines the same id**: `validate` resolves an
-  `Operations:` line against its own service's contract, so such a line names that service's own
-  operation (an unreadable or absent contract proves no ownership, and the line counts);
+  names it, **unless that service's own contract defines the same id** — then the line names that
+  service's own operation: `validate` resolves a spec.md `Operations:` line against its own
+  service's contract, and `loam dependencies` reads a line in either file naming an operation its
+  own service provides as no dependency on anybody (an unreadable or absent contract proves no
+  ownership, and the line counts);
 - the use-case hops the model attributes to it (a contested hop is a doubt, never a consumer);
 - the provider's OWN documents still naming it — its `spec.md` requirements, and edges it draws to
   itself. Not its `arch.spec.md` lines: `validate` grades an `Operations:` line in spec.md only, so

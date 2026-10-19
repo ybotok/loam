@@ -146,9 +146,14 @@ export const REQUIREMENT_AXES: readonly SpecAxis[] = ["spec", "archSpec"];
  * Does this service's own living contract define `op`? Then an `Operations:`
  * line of its own names ITS operation, not another service's.
  *
- * The rule `validate` grades an `Operations:` line by: it resolves against the
- * requirement's own service's contract (`spec-api.op-undefined`), so in a green
- * fleet another service naming the same id is naming its own. Matching the bare
+ * Two rules say so, one per spec file. In spec.md it is the rule `validate`
+ * grades an `Operations:` line by: it resolves against the requirement's own
+ * service's contract (`spec-api.op-undefined`, `commands/validate/service/
+ * api.ts`), so in a green fleet another service naming the same id there is
+ * naming its own. `validate` never grades an arch.spec.md line against a
+ * contract; there it is `loam dependencies`' rule — a requirement naming an
+ * operation its own service already provides is "not a dependency on
+ * anybody" (`core/dependencies/facts.ts`), read off both files. Matching the bare
  * id fleet-wide refused a rename on payment-service because checkout-web's own
  * `capturePayment` requirement shared the name (review 2026-10-12, finding 1) —
  * and shared ids like `healthCheck` or `getStatus` are common across a fleet.
