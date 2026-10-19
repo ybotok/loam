@@ -11,12 +11,13 @@
  */
 import type { Requirement } from "../document/spec.js";
 import type { ServiceState } from "../consumers/state.js";
+import { ownsOperation, REQUIREMENT_AXES } from "../consumers/consumers.js";
 
-/** The requirements one current service contributes to a scan, per axis rule. */
-function reqsOf(state: ServiceState, axes: readonly ("spec" | "archSpec")[]): Requirement[] {
-  return axes.flatMap((axis) => {
+/** The requirements one service contributes to a join — both spec files, a REMOVED one governing nothing. */
+function reqsOf(state: ServiceState): Requirement[] {
+  return REQUIREMENT_AXES.flatMap((axis) => {
     const a = state[axis];
-    return a.kind === "read" ? a.value : [];
+    return a.kind === "read" ? a.value.filter((r) => r.kind !== "REMOVED") : [];
   });
 }
 
@@ -41,10 +42,13 @@ function tupleKey(t: ConsumerTuple): string {
 
 /**
  * Every cross-service join one state holds, keyed for the base/current join.
- * Axis rules mirror the index's two consumer scans: `Operations:` from spec.md
- * only, `Consumes:` from both spec axes. Unreadable axes simply contribute
- * nothing here — `./semantic.ts` guards the GRADING so a join is never called
- * added or removed off a side nobody could read.
+ * The rules are the consumer index's, read off it rather than restated: both
+ * spec files for `Operations:` and `Consumes:` alike (`REQUIREMENT_AXES`), and
+ * an `Operations:` line naming an id the consumer's own contract defines is
+ * that consumer's own operation, no join onto anybody else's
+ * (`ownsOperation`). Unreadable axes simply contribute nothing here —
+ * `./semantic.ts` guards the GRADING so a join is never called added or
+ * removed off a side nobody could read.
  */
 export function consumerTuples(states: ReadonlyMap<string, ServiceState>): Map<string, ConsumerTuple> {
   const providersOf = (pick: (s: ServiceState) => string[]): Map<string, string[]> => {
@@ -62,12 +66,11 @@ export function consumerTuples(states: ReadonlyMap<string, ServiceState>): Map<s
   };
   for (const consumer of [...states.keys()].sort()) {
     const state = states.get(consumer)!;
-    for (const r of reqsOf(state, ["spec"])) {
+    for (const r of reqsOf(state)) {
       for (const op of r.operations) {
+        if (ownsOperation(state, op)) continue;
         for (const p of opProviders.get(op) ?? []) if (p !== consumer) add({ kind: "op", consumer, provider: p, token: op });
       }
-    }
-    for (const r of reqsOf(state, ["spec", "archSpec"])) {
       for (const name of r.consumes) {
         for (const p of msgProviders.get(name) ?? []) if (p !== consumer) add({ kind: "message", consumer, provider: p, token: name });
       }
@@ -83,8 +86,11 @@ function tupleVisible(states: ReadonlyMap<string, ServiceState>, ambiguous: Read
     const state = states.get(id);
     return state === undefined || axes.every((axis) => state[axis].kind !== "unreadable");
   };
+  // The consumer's own contract is read for an operation join too: whether its
+  // line names its own operation is decided there, so a side that could not
+  // read it cannot say the join came or went.
   return (
-    readable(t.consumer, t.kind === "op" ? ["spec"] : ["spec", "archSpec"]) &&
+    readable(t.consumer, t.kind === "op" ? ["spec", "archSpec", "openapi"] : ["spec", "archSpec"]) &&
     readable(t.provider, [t.kind === "op" ? "openapi" : "asyncapi"])
   );
 }

@@ -274,6 +274,24 @@ describe("loam diff reads the one index", () => {
     expect(ofCode(foreign, "diff.op-removed-consumed")[0]!.details).toContain("checkout-web's living requirement 'Capture at checkout'");
   });
 
+  // The base/current joins (`diff.consumer-added`) read the index's rules, not
+  // a restatement of them: a line naming checkout-web's OWN capturePayment is
+  // no new obligation on payment-service, and a line in arch.spec.md naming
+  // payment-service's is one.
+  it("a new join is reported by the index's rules — ownership and both spec files", async () => {
+    const p = await project(fleet({ "services/checkout-web/openapi.yaml": CHECKOUT_OPENAPI }));
+    commitBase(p.docsDir);
+    await p.write("services/checkout-web/spec.md", checkoutSpec(CAPTURE_AT_CHECKOUT));
+    expect(ofCode(await diffFindings(p, "payment-service"), "diff.consumer-added")).toEqual([]);
+
+    const q = await project(fleet());
+    commitBase(q.docsDir);
+    await q.write("services/checkout-web/arch.spec.md", CHECKOUT_ARCH_SPEC);
+    expect(ofCode(await diffFindings(q, "payment-service"), "diff.consumer-added")).toEqual([
+      expect.objectContaining({ message: expect.stringContaining("checkout-web's living requirements now name this service's operation 'capturePayment'") }),
+    ]);
+  });
+
   // An arch.spec.md `Operations:` line naming another service's operation is
   // the dependency `loam dependencies` reads off both spec files; the victim
   // scan read spec.md alone and called the removal unconsumed.
