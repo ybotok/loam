@@ -41,7 +41,10 @@ warnings — and the three copies read different documents. They are one index n
     them. A message slot re-keyed to another name, or a send operation turned to receive, while the
     provider's requirement still publishes the message, archived at exit 0 and the next
     `validate --all` reported `spec-event.message-undefined`; it is `asyncapi.remove-message-consumed`
-    now.
+    now. So do its own `publishes` edges, which the spine grades on their source: a full retirement
+    over a living `paymentService -> billingService { metadata { publishes '…' } }` archived at exit
+    0 and left `spine.message-undefined` on the provider. The remedy names "drop or redraw its
+    publishes edge".
   - **Fail closed**: a spec the merge refuses to apply — a malformed `Requirement-ID:` in the
     living spec or the delta — no longer answers "no consumers". The living requirements count,
     plus every requirement the delta ADDS or MODIFIES.

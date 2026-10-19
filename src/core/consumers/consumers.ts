@@ -31,7 +31,8 @@
  *    its own internal edges still naming it, filed apart as `own`.
  *  - a message `name` of `provider`: `consumes` edges, other services'
  *    `Consumes:` lines over both spec files, the use-case hops backed by such an
- *    edge, and — as `own` — the provider's own `Publishes:` lines.
+ *    edge, and — as `own` — the provider's own `publishes` edges and
+ *    `Publishes:` lines.
  *
  * WHY `own` IS ITS OWN LIST. The gate's question is what the merge would leave
  * broken, and the provider's own documents break too: an overwrite carries no
@@ -101,7 +102,7 @@ export interface Consumers extends ConsumerScan {
 export interface ConsumerIndex {
   /** Consumers of `provider`'s operation `op`: edges, other services' requirements, use-case hops; inbound op-less edges and contested hops ride as suspensions. */
   opConsumers(provider: string, op: string): Promise<Consumers>;
-  /** Consumers of message `name` a `provider` is dropping or changing: consumes-edges (not into the provider), other services' `Consumes:` lines, the hops backed by such an edge. */
+  /** Consumers of message `name` a `provider` is dropping or changing: consumes-edges (not into the provider), other services' `Consumes:` lines, the hops backed by such an edge; the provider's own publishes edges and `Publishes:` lines ride as `own`. */
   messageConsumers(provider: string, name: string): Promise<Consumers>;
   /**
    * Living services whose asyncapi SENDS `name` — positive evidence only; a
@@ -290,6 +291,7 @@ export function consumerIndex(request: ConsumerRequest): ConsumerIndex {
   const messageConsumers = async (provider: string, name: string): Promise<Consumers> => {
     const map = await livingMap(docsDir, context);
     const edges: string[] = [];
+    const outbound: string[] = [];
     for (const r of map.relationships ?? []) {
       // The message join is fleet-global (names are not service-scoped), so
       // every edge naming it counts, whoever its producer is — except one INTO
@@ -297,19 +299,29 @@ export function consumerIndex(request: ConsumerRequest): ConsumerIndex {
       // counting it would gate every self-consuming producer on its own
       // retirement.
       if (r.consumes === name && map.resolve(r.target) !== provider) edges.push(EDGE(map.resolve, r));
+      // The provider's OWN `publishes` edge is the op half's internal edge on
+      // this axis: the spine grades a publishes edge on its SOURCE
+      // (`spine.message-undefined` when the source's contract sends no such
+      // message), so once the provider stops sending it the edge strands the
+      // provider itself — `own`, which only the gate counts. Collecting the
+      // `Publishes:` lines alone let a full retirement archive at exit 0 over
+      // a living publishes edge (the one-index review, finding 3). Another
+      // service's publishes edge is that service's claim, untouched by this one.
+      if (r.publishes === name && map.resolve(r.source) === provider) outbound.push(EDGE(map.resolve, r));
     }
     // No ownership rule here, and the asymmetry is the contract's: a consumer
     // declares the message in its OWN contract with `action: receive` — validate
     // requires it to — so its own contract naming the message proves nothing
     // about who sends it. The provider's own `Consumes:` line stays out for the
-    // edge's reason above; its own `Publishes:` line is what `own` is for.
+    // edge's reason above; its own `Publishes:` line is what `own` is for,
+    // beside its publishes edges.
     const reqs = await scanRequirements({
       provider,
       foreign: async (_state, r) => r.consumes.includes(name),
       own: (r) => r.publishes.includes(name),
     });
     const hops = hopsConsuming(map.useCases, { provider, name });
-    return { victims: [...edges, ...reqs.victims, ...hops], suspended: reqs.suspended, own: reqs.own, ownSuspended: reqs.ownSuspended };
+    return { victims: [...edges, ...reqs.victims, ...hops], suspended: reqs.suspended, own: [...outbound, ...reqs.own], ownSuspended: reqs.ownSuspended };
   };
 
   const producers = async (name: string): Promise<string[]> => {

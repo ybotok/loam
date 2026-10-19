@@ -64,8 +64,10 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
   // A consumer document nobody could read or place refuses too, as on the
   // contract axis (../consumed/refusal.ts).
   const still = async (svc: string, message: string): Promise<StillNamed> => stillNamed(await consumers.messageConsumers(svc, message));
-  // The landscape merge only ADDS edges, so an edge is dropped in the living map itself.
-  const route = `drop its consumes edge in the architecture/ project, MODIFY or REMOVE the requirement whose Consumes:/Publishes: line names it in this feature's specs/<service>/ delta`;
+  // The landscape merge only ADDS edges, so an edge is dropped in the living map
+  // itself — a consumer's consumes edge, or the provider's own publishes edge,
+  // which the spine grades on its source (`own`, core/consumers/consumers.ts).
+  const route = `drop its consumes edge, or drop or redraw its publishes edge, in the architecture/ project, MODIFY or REMOVE the requirement whose Consumes:/Publishes: line names it in this feature's specs/<service>/ delta`;
 
   // Retiring a message the fleet still consumes — openapi.remove-op-consumed's
   // twin, and like it a question neither exactness nor justification asks:

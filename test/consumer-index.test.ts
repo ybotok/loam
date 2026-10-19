@@ -671,6 +671,44 @@ components:
     expect(issue!.message).toContain("still name it — payment-service's living requirement 'Legacy events'.");
     expect((await archive(p, "FEAT-60")).code).toBe(1);
   });
+
+  // The quality review's third finding: the spine grades a `publishes` edge
+  // on its SOURCE (`spine.message-undefined`), so the provider's own outbound
+  // edge strands as surely as its `Publishes:` line — but `own` collected the
+  // lines only, the full retirement archived at exit 0, and the next
+  // `validate --all` reported `spine.message-undefined` on payment-service.
+  it("the provider's own publishes edge is named, with the remedy that drops or redraws it", async () => {
+    const p = await project({
+      ...fleet({
+        "architecture/landscape.likec4": LANDSCAPE.replace(
+          "\n}\n\nviews {",
+          "\n  paymentService -> checkoutWeb 'Delivers legacy events' {\n    metadata { publishes 'payment.Legacy' }\n  }\n}\n\nviews {",
+        ),
+        "services/payment-service/spec.md": PAYMENT_SPEC_PUBLISHING,
+        "services/payment-service/asyncapi.yaml": PAYMENT_EVENTS,
+      }),
+      ...INTENT,
+      [`${FEAT}/specs/payment-service/asyncapi.yaml`]: `asyncapi: 3.0.0
+channels:
+  legacyEvents:
+    x-loam-remove: true
+operations:
+  sendLegacy:
+    x-loam-remove: true
+components:
+  messages:
+    Legacy:
+      name: payment.Legacy
+      x-loam-remove: true
+`,
+      [`${FEAT}/specs/payment-service/spec.md`]: `# payment-service — delta for FEAT-60\n\n## REMOVED Requirements\n\n### Requirement: Legacy events\nBased-On: ${pinFor(PAYMENT_SPEC_PUBLISHING, "Legacy events")}\n\nPublishes: payment.Legacy\n`,
+    });
+    const [issue, ...more] = ofCode(await featureFindings(p, "FEAT-60"), "asyncapi.remove-message-consumed");
+    expect(more).toEqual([]);
+    expect(issue!.details).toEqual([`edge payment-service → checkout-web ("Delivers legacy events")`]);
+    expect(issue!.message).toContain("drop or redraw its publishes edge");
+    expect((await archive(p, "FEAT-60")).code).toBe(1);
+  });
 });
 
 /* ------------------------------------------------------------------ */

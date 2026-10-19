@@ -1435,7 +1435,8 @@ demanding a justifying requirement there would invent a join the corpus cannot e
 a `consumes` edge of the `architecture/` project, another service's `Consumes:` line in either spec
 file (no ownership rule here: a consumer declares the message in its own contract as `receive` by
 construction), a use-case hop backed by such an edge — or whose provider's own `Publishes:` line the
-merge would leave behind, which covers a message slot re-keyed to another name or a send operation
+merge would leave behind, or its own `publishes` edge (the spine grades that edge on its source,
+`spine.message-undefined`; drop or redraw it in the living map), which covers a message slot re-keyed to another name or a send operation
 turned around as surely as a marker: read after the merge, as on the HTTP axis, and a `REMOVED`
 requirement owes no marker for a message the merge already takes out. The lag argument
 survives as an **operational warning**, not a veto: passing the gate proves the *documents* agree
