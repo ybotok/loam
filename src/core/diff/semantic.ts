@@ -59,7 +59,7 @@ export type DiffCode =
   | "diff.op-modified"
   /** An AsyncAPI message name absent at base. */
   | "diff.message-added"
-  /** A base message gone, nothing currently consumes it (or another service still declares it — the details say). */
+  /** A base message gone, nothing currently consumes it (or another service still sends it — the message says). */
   | "diff.message-removed"
   /** Removed since base AND still consumed — a `Consumes:` line or a consumes-edge; details list the victims. Sets `breaking`. */
   | "diff.message-removed-consumed"
@@ -141,7 +141,7 @@ const emptyState = (id: string): ServiceState => ({ id: rawServiceId(id), dir: "
  * service's removal could not be checked against (`core/consumers/consumers.ts`'s
  * `scanRequirements`), and its `unreadable[]` entry here is what carries that
  * suspension to exit 1 (`opsDiff`'s removal branch says so). No scan reads a
- * contract it could not parse as evidence of anything — `declarers` takes
+ * contract it could not parse as evidence of anything — `producers` takes
  * positive evidence only — so skipping one hides no other answer.
  */
 const UNTOUCHED_SKIPS: ReadonlySet<UnreadableEntry["axis"]> = new Set(["openapi", "asyncapi"]);
@@ -276,11 +276,13 @@ async function messagesDiff(sink: ServiceDiff, pair: { base: ServiceState; curre
   }
   for (const [name] of [...base].sort(byKey)) {
     if (current.has(name)) continue;
-    // Fleet-global join: a name another current service still declares is not
-    // orphaned (positive evidence only — an unreadable contract never vouches).
-    const elsewhere = (await victims.declarers(name)).filter((d) => d !== sink.id);
+    // Fleet-global join: a name another current service still SENDS is not
+    // orphaned (positive evidence only — an unreadable contract never vouches,
+    // and a service that only receives it is one of its consumers, never its
+    // producer: `producers` says why that distinction is the gate's too).
+    const elsewhere = (await victims.producers(name)).filter((d) => d !== sink.id);
     if (elsewhere.length > 0) {
-      sink.findings.push(found("diff.message-removed", `message '${name}' was removed since base; still declared by ${elsewhere.join(", ")}`));
+      sink.findings.push(found("diff.message-removed", `message '${name}' was removed since base; still sent by ${elsewhere.join(", ")}`));
       continue;
     }
     const scan = await victims.messageConsumers(sink.id, name);

@@ -125,7 +125,7 @@ loam `0.2.0-alpha.8` · fleet `examples/docs` · service `payment-service` · by
 | an adopt session before it reads code | the `loam-adopt` page + the full brief | 78,081 | ~19,520 |
 | one code, median of 356 | `loam explain <code> --json` | 590 | ~148 |
 | one code, smallest / largest | `loam explain <code> --json` | 271 / 2,583 | ~68 / ~646 |
-| the whole code vocabulary | `loam explain --codes --json` | 234,141 | ~58,535 |
+| the whole code vocabulary | `loam explain --codes --json` | 234,209 | ~58,552 |
 
 | page | invocation | bytes | ~tokens | with `--no-fix-tables` |
 |---|---|---|---|---|

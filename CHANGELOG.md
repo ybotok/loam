@@ -51,6 +51,12 @@ warnings — and the three copies read different documents. They are one index n
     `asyncapi.remove-message-consumed` name each in `details[]` and say the gate could not check —
     never that the fleet still consumes it. An edge drawn with no `metadata { op }` and a contested
     use-case hop still never refuse; `loam diff` lists them as doubts, as before.
+  - **`loam diff` counts only a service that SENDS a message as still producing it.** A removed
+    message another service declares only with `action: receive` — a consumer's own declaration,
+    which validate requires — was `diff.message-removed` (warn), "still declared by" that consumer,
+    while the gate refused the same removal and the next `validate --all` reported
+    `spine.message-unproduced` there. It is `diff.message-removed-consumed` now, naming the gate's
+    consumers; the warning for a message another service does send reads "still sent by".
 - **Fewer refusals where the consumer was false or already retired:**
   - **Another service's `Operations:` line naming an id its own contract defines** names its own
     operation, and is no consumer (gate, `loam diff`, `diff.consumer-added` / `-removed`): shared
@@ -76,7 +82,8 @@ warnings — and the three copies read different documents. They are one index n
   active feature in that shape) exit 1; `loam status` counts the finding as gating; `loam show
   <FEAT> --json` reports `review.readyToArchive: false`; and `loam diff` exits 1
   (`diff.op-removed-consumed` / `diff.message-removed-consumed`, `breaking: true`) where a removal
-  now has a victim. Where another service's spec file does not decode, `loam validate --feature`
+  now has a victim — a removed message whose only other declarer receives it included, which exited
+  0. Where another service's spec file does not decode, `loam validate --feature`
   reports `openapi.remove-op-consumed` / `asyncapi.remove-message-consumed` naming the file where it
   reported `feature.unreadable`, at exit 1 as before, and `loam archive` exits 1 as before. Where
   two directories claim a service id, or the provider's own spec file does not decode, `loam

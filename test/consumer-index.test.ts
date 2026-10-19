@@ -890,3 +890,79 @@ describe("the archive gate and loam diff name the same consumers", () => {
     expect(victims!.details).toEqual(gate!.details);
   });
 });
+
+describe("the message gate and loam diff name the same consumers", () => {
+  /** checkout-web's own contract RECEIVING `payment.Legacy` — what validate requires of a consumer that declares it. */
+  const CHECKOUT_RECEIVES = PAYMENT_EVENTS.replace("payment-service events", "checkout-web events")
+    .replace("sendLegacy", "receiveLegacy")
+    .replace("action: send", "action: receive");
+  const CHECKOUT_CONSUMES = `
+### Requirement: Book legacy payments
+The UI SHALL show each legacy payment event.
+
+Consumes: payment.Legacy
+
+#### Scenario: Shown
+- **Given** a legacy event
+- **When** it arrives
+- **Then** it is shown
+`;
+
+  // The quality review's second finding: `loam diff` asked which other
+  // services DECLARE the message and found checkout-web's own receive
+  // declaration, so it said "still declared by checkout-web" (warn) — while the
+  // gate refused for the same consumers, and the next `validate --all`
+  // reported `spine.message-unproduced` on checkout-web, since nobody sends it.
+  it("a service that only receives the message is no producer of it: the diff names the gate's consumers", async () => {
+    const p = await project({
+      ...fleet({
+        "architecture/landscape.likec4": LANDSCAPE.replace(
+          "\n}\n\nviews {",
+          "\n  paymentService -> checkoutWeb 'Delivers legacy events' {\n    metadata { consumes 'payment.Legacy' }\n  }\n}\n\nviews {",
+        ),
+        "services/payment-service/spec.md": PAYMENT_SPEC_PUBLISHING,
+        "services/payment-service/asyncapi.yaml": PAYMENT_EVENTS,
+        "services/checkout-web/spec.md": checkoutSpec(CHECKOUT_CONSUMES),
+        "services/checkout-web/asyncapi.yaml": CHECKOUT_RECEIVES,
+      }),
+      ...INTENT,
+      [`${FEAT}/specs/payment-service/asyncapi.yaml`]: `asyncapi: 3.0.0\ncomponents:\n  messages:\n    Legacy:\n      name: payment.Legacy\n      x-loam-remove: true\n`,
+      [`${FEAT}/specs/payment-service/spec.md`]: `# payment-service — delta for FEAT-60\n\n## REMOVED Requirements\n\n### Requirement: Legacy events\nBased-On: ${pinFor(PAYMENT_SPEC_PUBLISHING, "Legacy events")}\n\nPublishes: payment.Legacy\n`,
+    });
+    commitBase(p.docsDir);
+
+    const refused = await archive(p, "FEAT-60");
+    expect(refused.code).toBe(1);
+    const [gate, ...more] = ofCode(refused.issues, "asyncapi.remove-message-consumed");
+    expect(more).toEqual([]);
+    expect(gate!.details).toEqual([
+      `edge payment-service → checkout-web ("Delivers legacy events")`,
+      "checkout-web's living requirement 'Book legacy payments'",
+    ]);
+
+    const approved = await runLoam(p.workDir, "archive", "FEAT-60", "--approve", "--json");
+    expect(approved.code, approved.out).toBe(0);
+    const found = await diffFindings(p, "payment-service");
+    expect(ofCode(found, "diff.message-removed")).toEqual([]);
+    const [victims, ...others] = ofCode(found, "diff.message-removed-consumed");
+    expect(others).toEqual([]);
+    expect(victims!.details).toEqual(gate!.details);
+  });
+
+  // The control: a service that still SENDS the message keeps it produced, so
+  // the removal orphans nobody — the rule `spine.message-unproduced` grades by.
+  it("a message another service still sends is not orphaned by one producer dropping it", async () => {
+    const p = await project(
+      fleet({
+        "services/payment-service/asyncapi.yaml": PAYMENT_EVENTS,
+        "services/checkout-web/spec.md": checkoutSpec(CHECKOUT_CONSUMES),
+        "services/checkout-web/asyncapi.yaml": PAYMENT_EVENTS.replace("payment-service events", "checkout-web events"),
+      }),
+    );
+    commitBase(p.docsDir);
+    await p.write("services/payment-service/asyncapi.yaml", `asyncapi: 3.0.0\ninfo:\n  title: payment-service events\n  version: "1.0"\n`);
+    expect(ofCode(await diffFindings(p, "payment-service"), "diff.message-removed")).toEqual([
+      expect.objectContaining({ message: "message 'payment.Legacy' was removed since base; still sent by checkout-web" }),
+    ]);
+  });
+});

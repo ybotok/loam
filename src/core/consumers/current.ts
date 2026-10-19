@@ -35,9 +35,24 @@ import type { DocsDir } from "../kernel/ids/dirs.js";
 import type { FleetContext } from "../fleet-context.js";
 import { bytesDigest, collisions, type AxisState, type ServiceState } from "./state.js";
 
+/**
+ * One living service as the consumer index reads it: the diff's four axes, plus
+ * the one fact about its event contract the index asks and the diff never
+ * compares — which messages it SENDS. Current side only: the base side is read
+ * for what changed, and nothing asks who produced a message at the base ref.
+ */
+export interface LivingServiceState extends ServiceState {
+  /**
+   * The message names an `action: send` operation of the living asyncapi.yaml
+   * reaches (`AsyncapiDoc.sent`) — what this service PRODUCES. Empty unless the
+   * contract reads: an unreadable one never vouches for a producer.
+   */
+  sent: readonly string[];
+}
+
 export interface CurrentFleet {
   /** By service id, in the enumeration's (sorted-walk) order. Ids the `ambiguous` map claims are excluded. */
-  services: Map<string, ServiceState>;
+  services: Map<string, LivingServiceState>;
   /**
    * Ids more than one working-tree directory claims — `subsystem.name-collision`'s
    * live shape, which validate diagnoses. Diffing either claimant would pick a
@@ -96,15 +111,20 @@ async function openapiAxis(context: FleetContext, abs: string, rel: string): Pro
   }
 }
 
-async function asyncapiAxis(context: FleetContext, abs: string, rel: string): Promise<AxisState<EventMessage[]>> {
-  if (!existsSync(abs)) return { kind: "absent" };
+/** The event contract as its declarations, and the names it sends — `sent` empty unless it read. */
+async function asyncapiAxis(
+  context: FleetContext,
+  abs: string,
+  rel: string,
+): Promise<{ axis: AxisState<EventMessage[]>; sent: readonly string[] }> {
+  if (!existsSync(abs)) return { axis: { kind: "absent" }, sent: [] };
   try {
     const doc = await context.readAsyncapi(abs);
     return doc.unreadable
-      ? await unreadableAt(abs, rel, doc.error ?? "not a readable AsyncAPI document")
-      : { kind: "read", value: doc.messages.filter((m) => m.remove !== true) };
+      ? { axis: await unreadableAt(abs, rel, doc.error ?? "not a readable AsyncAPI document"), sent: [] }
+      : { axis: { kind: "read", value: doc.messages.filter((m) => m.remove !== true) }, sent: doc.sent };
   } catch (e) {
-    return readFailure(e, { abs, rel });
+    return { axis: await readFailure(e, { abs, rel }), sent: [] };
   }
 }
 
@@ -116,15 +136,17 @@ async function asyncapiAxis(context: FleetContext, abs: string, rel: string): Pr
  */
 async function readCurrentFleet(docsDir: DocsDir, context: FleetContext): Promise<CurrentFleet> {
   const entries = await context.listServices(docsDir);
-  const states = await inOrder(entries, async (entry): Promise<ServiceState> => {
+  const states = await inOrder(entries, async (entry): Promise<LivingServiceState> => {
     const paths = servicePathsAt(entry.dir);
+    const events = await asyncapiAxis(context, paths.asyncapi, repoPath(docsDir, paths.asyncapi));
     return {
       id: entry.id,
       dir: repoPath(docsDir, entry.dir),
       spec: await requirementsAxis(context, paths.spec, repoPath(docsDir, paths.spec)),
       archSpec: await requirementsAxis(context, paths.archSpec, repoPath(docsDir, paths.archSpec)),
       openapi: await openapiAxis(context, paths.openapi, repoPath(docsDir, paths.openapi)),
-      asyncapi: await asyncapiAxis(context, paths.asyncapi, repoPath(docsDir, paths.asyncapi)),
+      asyncapi: events.axis,
+      sent: events.sent,
     };
   });
   const ambiguous = collisions(states);

@@ -103,8 +103,18 @@ export interface ConsumerIndex {
   opConsumers(provider: string, op: string): Promise<Consumers>;
   /** Consumers of message `name` a `provider` is dropping or changing: consumes-edges (not into the provider), other services' `Consumes:` lines, the hops backed by such an edge. */
   messageConsumers(provider: string, name: string): Promise<Consumers>;
-  /** Living services whose asyncapi declares `name` — positive evidence only; a message still declared elsewhere is not orphaned by one producer dropping it. */
-  declarers(name: string): Promise<string[]>;
+  /**
+   * Living services whose asyncapi SENDS `name` — positive evidence only; a
+   * message another service still sends is not orphaned by one producer
+   * dropping it. Senders, never declarers: a consumer declares the message in
+   * its own contract with `action: receive` (validate requires it to), so
+   * counting declarations named the consumer as the message's producer —
+   * `loam diff` said "still declared by" the very service the removal orphaned,
+   * while the gate refused for it and the next `validate --all` reported
+   * `spine.message-unproduced` there. The rule that check grades by
+   * (`commands/validate/service/events/message-producers.ts`).
+   */
+  producers(name: string): Promise<string[]>;
 }
 
 /** Where the index reads, and after what. */
@@ -302,13 +312,10 @@ export function consumerIndex(request: ConsumerRequest): ConsumerIndex {
     return { victims: [...edges, ...reqs.victims, ...hops], suspended: reqs.suspended, own: reqs.own, ownSuspended: reqs.ownSuspended };
   };
 
-  const declarers = async (name: string): Promise<string[]> => {
+  const producers = async (name: string): Promise<string[]> => {
     const { services } = await livingFleet(docsDir, context);
-    return [...services.keys()].sort().filter((id) => {
-      const axis = services.get(id)!.asyncapi;
-      return axis.kind === "read" && axis.value.some((m) => m.name === name);
-    });
+    return [...services.keys()].sort().filter((id) => services.get(id)!.sent.includes(name));
   };
 
-  return { opConsumers, messageConsumers, declarers };
+  return { opConsumers, messageConsumers, producers };
 }
