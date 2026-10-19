@@ -8,10 +8,11 @@
  * `matchBrace` close a block inside a string, and the merge writes into the
  * middle of somebody's description.
  *
- * `statementHead` is the one reading of GRAMMAR here — where a statement's
- * head ends, a question about tokens rather than declarations — and it sits
- * beside the mask because it reads nothing but the masked bytes and the
- * literal and URI lists; which declaration the head is stays the scanner's to say.
+ * `statementHead` and `statementEnd` are the readings of GRAMMAR here — where a
+ * statement's head ends, and where a bodyless statement ends past it: questions
+ * about tokens rather than declarations — and they sit beside the mask because
+ * they read nothing but the bytes, the mask and the literal and URI lists;
+ * which declaration the head is stays the scanner's to say.
  */
 /** A half-open `[start, end)` run of the source. */
 export interface SourceSpan {
@@ -324,6 +325,39 @@ export function pastComments(text: string): string {
   return rest;
 }
 
+/** One past the last token in `[from, to)` — a code character, a literal or a URI; `from` when it holds none. */
+export function tokenEnd(masked: MaskedSource, from: number, to: number): number {
+  let end = to;
+  while (end > from && /\s/.test(masked.code[end - 1]!)) end -= 1;
+  for (const spans of [masked.literals, masked.uris]) {
+    // The last span ending by `to`: the lists are in order and never overlap.
+    let k = firstSpanIndex(spans, to) - 1;
+    while (k >= 0 && spans[k]!.end > to) k -= 1;
+    if (k >= 0 && spans[k]!.start >= from) end = Math.max(end, spans[k]!.end);
+  }
+  return end;
+}
+
+/**
+ * Where a bodyless statement whose head spans `head` ends: past its last token
+ * and whatever trails that on its line — a `// comment`, a closed `/* … *\/` —
+ * which is its own authored text and rides with it when the archive carries it.
+ *
+ * A block comment it OPENS there and closes on a later line is the exception,
+ * and it ends before that one. Ended inside it, the statement handed its
+ * readers a point inside a comment: placement spliced the next addition on
+ * the following line, still in the comment, and a bodyless parent gained its
+ * `{` there — the addition was commented out of a merge that parsed, written
+ * at exit 0 (probed on main at 171555d).
+ */
+export function statementEnd(text: string, masked: MaskedSource, head: SourceSpan): number {
+  const last = tokenEnd(masked, head.start, head.end);
+  if (pastComments(text.slice(last, head.end)).startsWith("/*")) return last;
+  let end = head.end;
+  while (end > head.start && /\s/.test(text[end - 1]!)) end -= 1;
+  return end;
+}
+
 /** Whether a span starts exactly at `at`. */
 function spanAt(spans: readonly SourceSpan[], at: number): boolean {
   return firstSpanFrom(spans, at)?.start === at;
@@ -335,8 +369,13 @@ function spanIn(spans: readonly SourceSpan[], range: { from: number; end: number
   return s !== undefined && s.start < range.end;
 }
 
-/** The first span starting at or after `at` — `maskSource` records each list in order, so a binary search. */
+/** The first span starting at or after `at`. */
 function firstSpanFrom(spans: readonly SourceSpan[], at: number): SourceSpan | undefined {
+  return spans[firstSpanIndex(spans, at)];
+}
+
+/** The index of the first span starting at or after `at` — `maskSource` records each list in order, so a binary search. */
+function firstSpanIndex(spans: readonly SourceSpan[], at: number): number {
   let lo = 0;
   let hi = spans.length;
   while (lo < hi) {
@@ -344,7 +383,7 @@ function firstSpanFrom(spans: readonly SourceSpan[], at: number): SourceSpan | u
     if (spans[mid]!.start < at) lo = mid + 1;
     else hi = mid;
   }
-  return spans[lo];
+  return lo;
 }
 
 /** An element declaration located in source, under the id the computed model gives it. */

@@ -78,6 +78,14 @@ written; each now merges.
   two declarations on such a line also write the same bytes in either order now; before, whichever
   ran second landed above the other. A comment trailing the anchor changes nothing: the addition
   lands on the next line, as before.
+- **A bodyless declaration with a comment trailing it on its line.** A parent such as
+  `api = container 'API' // the api` that gained its first child got its `{` inside the comment,
+  and archive refused: the merged landscape "would not parse". The body now opens before the
+  comment, which then trails the new closing brace. A block comment that closes on a LATER line
+  was worse: the splice map ended the declaration inside it, so a child it gained, or an element
+  or edge anchored after it, was written inside the comment, in a merge that parsed and was
+  written (exit 0). The declaration now ends before such a comment. A comment that closes on the
+  declaration's own line keeps its place, and the bytes come out as before.
 
 What the splice map still cannot locate is still refused (`merge-failed`, nothing written), and
 the message no longer guesses. It used to say "most often two declarations sharing one line"

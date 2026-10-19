@@ -12,6 +12,7 @@
 import { describe, expect, it } from "vitest";
 import { loadSource } from "../src/core/c4/likec4.js";
 import { planLandscapeMerge } from "../src/core/c4/splice/landscape-merge.js";
+import { scanModel } from "../src/core/c4/source-scan.js";
 import { spotAfter } from "../src/core/c4/splice/placement.js";
 
 const SPEC = `specification {
@@ -104,5 +105,62 @@ describe("an addition anchored to a statement that shares its line with the next
     ["only the block's closing brace follows: before that brace, as before", "  a { } }", { at: 8, bare: true }],
   ])("spotAfter: %s", (_form, text, spot) => {
     expect(spotAfter(text, text.lastIndexOf("}"), "  a { }".length)).toEqual(spot);
+  });
+});
+
+describe("a comment trailing a bodyless declaration, and what is spliced after or into it", () => {
+  const NESTED = `${SPEC}model {\n  alpha = softwareSystem 'alpha-service' {\n    api = container 'API' {\n      db = container 'DB' {\n        #FEAT-7\n      }\n    }\n  }\n}\n`;
+  const living = (api: string): string => `${SPEC}model {\n  alpha = softwareSystem 'alpha-service' {\n    ${api}\n  }\n}\n`;
+
+  it("a parent with a trailing `// comment` gains its body before the comment, which then trails the closing brace", async () => {
+    // The `{` landed inside `// the api`, the rest of the line was comment,
+    // and the parse net refused a valid map ("Expecting end of file").
+    const expected = living("api = container 'API' {\n      db = container 'DB'\n    } // the api");
+    expect(await merge(living("api = container 'API' // the api"), NESTED, "FEAT-7")).toBe(expected);
+    const crlf = living("api = container 'API' // the api").replace(/\n/g, "\r\n");
+    expect(await merge(crlf, NESTED, "FEAT-7")).toBe(expected.replace(/\n/g, "\r\n"));
+  });
+
+  it("a parent with a closed `/* … */` trailing it keeps the bytes it always had", async () => {
+    expect(await merge(living("api = container 'API' /* the api */"), NESTED, "FEAT-7")).toBe(
+      living("api = container 'API' /* the api */ {\n      db = container 'DB'\n    }"),
+    );
+  });
+
+  it("a parent whose trailing block comment closes on a later line gains its body before the comment, not in it", async () => {
+    // The scan ended the parent inside the comment it opened, so its new body
+    // was commented out of a merge that parsed — `alpha.api.db` missing at exit 0.
+    const merged = await merge(living("api = container 'API' /* the\n    api */"), NESTED, "FEAT-7");
+    expect(await ids(merged)).toEqual(["alpha", "alpha.api", "alpha.api.db"]);
+  });
+
+  it("an element anchored after a statement whose trailing block comment runs on lands before the comment, not in it", async () => {
+    const land = `${SPEC}model {\n  alpha = softwareSystem 'alpha' /*\n    the alpha box\n  */\n  beta = softwareSystem 'beta-service'\n}\n`;
+    expect(await ids(await merge(land, bound("kiwi", "alpha", "FEAT-7"), "FEAT-7"))).toEqual(["alpha", "beta", "kiwi"]);
+  });
+
+  it("an edge anchored after an edge whose trailing block comment runs on lands before the comment, not in it", async () => {
+    const land = `${SPEC}model {\n  alpha = softwareSystem 'alpha-service'\n  beta = softwareSystem 'beta-service'\n  alpha -> beta 'calls' /*\n    why\n  */\n}\n`;
+    const delta = `${SPEC}model {\n  alpha = softwareSystem 'alpha-service'\n  beta = softwareSystem 'beta-service'\n  alpha -> beta 'second' {\n    #FEAT-7\n  }\n}\n`;
+    const doc = await loadSource(await merge(land, delta, "FEAT-7"));
+    expect(doc.errors).toEqual([]);
+    expect(doc.relationships.map((r) => r.title).sort()).toEqual(["calls", "second"]);
+  });
+
+  it("the scan's span of a bodyless statement keeps a comment that ends on its line, and stops before one that does not", () => {
+    const src = `${SPEC}model {\n  a = softwareSystem 'A' // why a\n  b = softwareSystem 'B' /* why b */\n  c = softwareSystem 'C' /* why\n  c */\n  a -> b 'x' // why the edge\n  b -> c 'y' /* why\n  the edge */\n}\n`;
+    const scan = scanModel(src)!;
+    expect(scan.elements.map((e) => src.slice(e.start, e.end))).toEqual([
+      "a = softwareSystem 'A' // why a",
+      "b = softwareSystem 'B' /* why b */",
+      "c = softwareSystem 'C'",
+    ]);
+    expect(scan.rels.map((r) => src.slice(r.start, r.end))).toEqual(["a -> b 'x' // why the edge", "b -> c 'y'"]);
+  });
+
+  it("a delta edge's own trailing comment still rides with it onto the map", async () => {
+    const land = `${SPEC}model {\n  alpha = softwareSystem 'alpha-service'\n  beta = softwareSystem 'beta-service'\n}\n`;
+    const delta = `${SPEC}model {\n  alpha = softwareSystem 'alpha-service'\n  beta = softwareSystem 'beta-service'\n  beta -> alpha 'cb' #FEAT-7 // why\n}\n`;
+    expect(await merge(land, delta, "FEAT-7")).toContain("  beta -> alpha 'cb' // why\n");
   });
 });

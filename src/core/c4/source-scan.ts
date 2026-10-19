@@ -8,7 +8,7 @@
  * declaration physically is. A key only one of them reads is a key the merge
  * silently drops, which is why `metadata` handling is spelled out in both.
  */
-import { maskSource, matchBrace, statementHead, topLevelBlocks, type SourceLiteral } from "./source-mask.js";
+import { maskSource, matchBrace, statementEnd, statementHead, topLevelBlocks, type SourceLiteral } from "./source-mask.js";
 
 export interface ScannedElement {
   /** Full dotted id — `parent.child` for a nested declaration. */
@@ -182,11 +182,9 @@ export function scanModel(text: string): ScannedModel | null {
     const shut = matchBrace(code, open);
     return shut === -1 || shut > body.to ? null : { from: open + 1, to: shut };
   };
-  const trimmedEnd = (from: number, to: number): number => {
-    let e = to;
-    while (e > from && /\s/.test(text[e - 1]!)) e -= 1;
-    return e;
-  };
+  // A bodyless statement's end — its trailing comment included, unless that
+  // comment runs on past the line (`statementEnd` says why).
+  const bodylessEnd = (from: number, to: number): number => statementEnd(text, masked, { start: from, end: to });
 
   const elements: ScannedElement[] = [];
   interface RawRel {
@@ -289,7 +287,7 @@ export function scanModel(text: string): ScannedModel | null {
           stack.push({ id, el });
           i = opener + 1;
         } else {
-          el.end = trimmedEnd(stmtStart, headEnd);
+          el.end = bodylessEnd(stmtStart, headEnd);
           elements.push(el);
           i = headEnd;
         }
@@ -299,7 +297,7 @@ export function scanModel(text: string): ScannedModel | null {
       const am = relationHead(head, relKinds);
       if (am !== null || head.includes("->")) {
         const bClose = opener === -1 ? -1 : matchBrace(code, opener);
-        const stmtEnd = opener === -1 ? trimmedEnd(stmtStart, headEnd) : bClose === -1 ? close : bClose + 1;
+        const stmtEnd = opener === -1 ? bodylessEnd(stmtStart, headEnd) : bClose === -1 ? close : bClose + 1;
         if (am !== null) {
           const arrowEnd = stmtStart + am.length;
           const body = opener === -1 ? null : { from: opener + 1, to: stmtEnd - 1 };

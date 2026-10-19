@@ -1,6 +1,6 @@
 import { type Elem } from "../likec4.js";
 import { elementService, serviceOf } from "../resolve/service.js";
-import { pastComments } from "../source-mask.js";
+import { maskSource, pastComments, tokenEnd } from "../source-mask.js";
 import type { ScannedBlock, ScannedElement, ScannedModel } from "../source-scan.js";
 import { relSortKey } from "./identity/edges.js";
 
@@ -338,7 +338,7 @@ function lineStartAt(text: string, at: number): number {
  */
 export function nestedInsert(text: string, parent: ScannedElement, block: string): { at: number; insert: string } {
   if (parent.bodyOpen === -1) {
-    return { at: parent.end, insert: ` {\n${block}\n${parent.indent}}` };
+    return { at: bodyAt(text, parent), insert: ` {\n${block}\n${parent.indent}}` };
   }
   const lineStart = text.lastIndexOf("\n", parent.bodyClose - 1) + 1;
   if (/^[ \t]*$/.test(text.slice(lineStart, parent.bodyClose))) {
@@ -346,4 +346,19 @@ export function nestedInsert(text: string, parent: ScannedElement, block: string
   }
   // `{ ... }` on one line — break the brace onto its own line to make room.
   return { at: parent.bodyClose, insert: `\n${block}\n${parent.indent}` };
+}
+
+/**
+ * Where a bodyless parent's new body opens: where its span ends, unless a line
+ * comment trails its last token there. The span carries that comment — it is
+ * the declaration's own authored text (`statementEnd`) — so the `{` landed
+ * INSIDE `// the api`, everything after it on the line was comment, and the
+ * parse net refused a valid map ("Expecting end of file"). It opens before the
+ * comment now, which then trails the new closing brace. A closed block comment
+ * is no such trap, and keeps the bytes it always had.
+ */
+function bodyAt(text: string, parent: ScannedElement): number {
+  const span = text.slice(parent.start, parent.end);
+  const last = parent.start + tokenEnd(maskSource(span), 0, span.length);
+  return pastComments(text.slice(last, parent.end)) === "" ? parent.end : last;
 }
