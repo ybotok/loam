@@ -45,6 +45,10 @@ written; each now merges.
   identifiers may carry hyphens and a declared relationship kind may be written as `.kind`; the
   splice map read neither, so such an element was "in a form placement cannot locate" and such an
   edge made the relationship count disagree.
+- **A `link` (or `icon`) URI followed by more code on its line.** LikeC4 reads `https://…` and a
+  relative `./…` path as one token; the splice map read its `//` as a comment that ran to the end
+  of the line, so `x = kind 'X' { link https://… }` lost its closing brace and archive refused with
+  `landscape.likec4 has no model block`.
 - **A markdown string (`'''…'''` or `"""…"""`) whose prose holds an apostrophe or an odd number
   of quotes.** The splice map read the triple as three ordinary quotes, so the first `it's` in a
   long `description` ended the string and the rest of the file was read inside out — a map with

@@ -94,6 +94,20 @@ model {
   });
 });
 
+describe("a URI is one token, whatever comment marker, brace or quote it holds", () => {
+  // LikeC4 lexes `scheme://…` and a relative path as one token to the next
+  // whitespace; read as code, the `//` opened a comment that ate the rest of
+  // the line — the closing brace of a one-line body included.
+  it.each([
+    ["a link closing a one-line body", "  alpha = softwareSystem 'alpha-service' { link https://example.com/alpha }\n"],
+    ["a relative link holding `/*` and `//`", "  alpha = softwareSystem 'alpha-service' { link ./docs/*/a//b }\n"],
+    ["a link holding braces, an anchor and an apostrophe", "  alpha = softwareSystem 'alpha-service' { link https://x.test/{id}/it's#t }\n"],
+  ])("%s", async (_form, body) => {
+    const { parsed, scanned } = await readings(`${SPEC}\nmodel {\n${body}  zulu = softwareSystem 'zulu-service'\n  alpha -> zulu 'calls'\n}\n`);
+    expect(scanned).toEqual(parsed);
+  });
+});
+
 describe("a statement split across lines is read as LikeC4 reads it — its newlines are hidden tokens", () => {
   const ZULU = "  zulu = softwareSystem 'zulu-service'\n";
   it.each([

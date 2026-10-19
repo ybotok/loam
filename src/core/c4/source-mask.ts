@@ -43,6 +43,36 @@ export interface MaskedSource {
  */
 const MARKDOWN_QUOTES = ["'''", '"""'] as const;
 
+/**
+ * Where a URI token starting at `at` ends, or -1 when none starts there.
+ *
+ * LikeC4 lexes `scheme://…` and a relative `./…`, `../…` or `/…` path as ONE
+ * token running to the next whitespace — tried before the comment tokens can
+ * see the `//` inside it, because the token starts at the scheme, not at the
+ * slash. Read as code, `link https://…` opened a line comment at the `//`, and
+ * that blanked whatever followed on the line: `x = kind 'X' { link
+ * https://… }` lost its closing brace, and the scan found no model block in a
+ * map LikeC4 parses. A URI's interior is never structure — a `{id}`, a `#anchor`,
+ * an apostrophe are all part of the token — so it is blanked like a literal's,
+ * and recorded as none: it is no string.
+ */
+function uriEnd(text: string, at: number): number {
+  if (at > 0 && /[\w.-]/.test(text[at - 1]!)) return -1;
+  let j = at;
+  if (/\w/.test(text[at]!)) {
+    while (j < text.length && /\w/.test(text[j]!)) j += 1;
+    if (!text.startsWith("://", j)) return -1;
+    j += 3;
+  } else {
+    while (j < at + 2 && text[j] === ".") j += 1;
+    const after = text[j + 1];
+    // `//` and `/*` with no dot before them are the comment tokens, which win there.
+    if (text[j] !== "/" || after === undefined || after === "/" || /\s/.test(after) || (j === at && after === "*")) return -1;
+  }
+  while (j < text.length && !/\s/.test(text[j]!)) j += 1;
+  return j;
+}
+
 export function maskSource(text: string): MaskedSource {
   const out = text.split("");
   const literals: SourceLiteral[] = [];
@@ -55,7 +85,13 @@ export function maskSource(text: string): MaskedSource {
     const ch = text[i]!;
     const next = text[i + 1];
     switch (state) {
-      case "code":
+      case "code": {
+        const uri = uriEnd(text, i);
+        if (uri !== -1) {
+          for (; i < uri; i += 1) out[i] = " ";
+          i -= 1;
+          break;
+        }
         fence = MARKDOWN_QUOTES.find((q) => text.startsWith(q, i)) ?? "";
         if (fence !== "") {
           state = "markdown";
@@ -76,6 +112,7 @@ export function maskSource(text: string): MaskedSource {
           out[i] = " ";
         }
         break;
+      }
       case "squote":
       case "dquote":
         if (ch === "\\" && i + 1 < text.length) {
