@@ -33,7 +33,7 @@
  * the heavy new structure this reuse was allowed only without.
  */
 import { consumerIndex } from "../../../../core/consumers/consumers.js";
-import { consumerStance, type ConsumerScan } from "../../../../core/consumers/scan.js";
+import { consumerStance, scanDetails, type ConsumerScan } from "../../../../core/consumers/scan.js";
 import { FleetContext } from "../../../../core/fleet-context.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
 
@@ -62,5 +62,5 @@ export function contractConsumers(config: { docsDir: DocsDir; fleet: FleetContex
  * the order `loam diff` lists them in.
  */
 export function consumerClause(scan: ConsumerScan): { clause: string; details: string[] } {
-  return { clause: consumerStance(scan), details: [...scan.victims, ...scan.suspended] };
+  return { clause: consumerStance(scan), details: scanDetails(scan) };
 }

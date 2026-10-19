@@ -29,6 +29,7 @@ import { eventLookups } from "./lookups.js";
 import type { RetiredLookup } from "../retired/archived.js";
 import { revivedEvents } from "../retired/revival/revived.js";
 import type { ConsumerIndex } from "../../consumers/consumers.js";
+import { nothingStill, refusalDetails, refusalMessage, stillNamed, type StillNamed } from "../consumed/refusal.js";
 
 /** What featureCoherence hands the event axis — the delta facts it already computed. */
 export interface EventCoherenceRequest {
@@ -60,10 +61,9 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
   // `validate --all` reported `spec-event.message-undefined` against the
   // provider (review 2026-10-12, finding 3) — a REMOVED requirement justifies a
   // marker, but nothing asks a re-key or a turned-around operation for one.
-  const still = async (svc: string, message: string): Promise<string[]> => {
-    const found = await consumers.messageConsumers(svc, message);
-    return [...found.victims, ...found.own];
-  };
+  // A consumer document nobody could read or place refuses too, as on the
+  // contract axis (../consumed/refusal.ts).
+  const still = async (svc: string, message: string): Promise<StillNamed> => stillNamed(await consumers.messageConsumers(svc, message));
   // The landscape merge only ADDS edges, so an edge is dropped in the living map itself.
   const route = `drop its consumes edge in the architecture/ project, MODIFY or REMOVE the requirement whose Consumes:/Publishes: line names it in this feature's specs/<service>/ delta`;
 
@@ -74,14 +74,19 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
   // repository whose author was never in this feature.
   for (const [svc, net] of declared.netRemoved) {
     for (const message of net) {
-      const named = await still(svc, message);
-      if (named.length === 0) continue;
+      const found = await still(svc, message);
+      if (nothingStill(found)) continue;
       issues.push({
         severity: "error",
         code: "asyncapi.remove-message-consumed",
         subject: svc,
-        details: named,
-        message: `${svc}: this feature retires message '${message}', but the fleet would still name it after this merge — ${named.join("; ")}. Retire each in the same change (${route}), or archive with --approve to break it deliberately.`,
+        details: refusalDetails(found),
+        message: refusalMessage(found, {
+          subject: svc,
+          lost: `this feature retires message '${message}'`,
+          verb: "name",
+          named: (list) => `${svc}: this feature retires message '${message}', but the fleet would still name it after this merge — ${list}. Retire each in the same change (${route}), or archive with --approve to break it deliberately.`,
+        }),
       });
     }
   }
@@ -96,14 +101,20 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
     const net = declared.netRemoved.get(svc);
     for (const message of stopped) {
       if (net?.has(message) === true) continue;
-      const named = await still(svc, message);
-      if (named.length === 0) continue;
+      const found = await still(svc, message);
+      if (nothingStill(found)) continue;
+      const lost = `after this feature's merge, ${svc}'s asyncapi.yaml would no longer declare an action: send operation for '${message}'`;
       issues.push({
         severity: "error",
         code: "asyncapi.remove-message-consumed",
         subject: svc,
-        details: named,
-        message: `${svc}: after this feature's merge, ${svc}'s asyncapi.yaml would no longer declare an action: send operation for '${message}', but the fleet would still name it — ${named.join("; ")}. Keep an operation sending it, retire each in the same change (${route}), or archive with --approve to break it deliberately.`,
+        details: refusalDetails(found),
+        message: refusalMessage(found, {
+          subject: svc,
+          lost,
+          verb: "name",
+          named: (list) => `${svc}: ${lost}, but the fleet would still name it — ${list}. Keep an operation sending it, retire each in the same change (${route}), or archive with --approve to break it deliberately.`,
+        }),
       });
     }
   }

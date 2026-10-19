@@ -14,6 +14,8 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { Finding } from "../src/core/vocabulary/report.js";
 import { makeProject, pinAsyncapi, pinFor, pinOpenapi, runLoam, type Project } from "./helpers/harness.js";
 
@@ -668,6 +670,94 @@ components:
     expect(issue!.message).toContain("would no longer declare an action: send operation for 'payment.Legacy'");
     expect(issue!.message).toContain("still name it — payment-service's living requirement 'Legacy events'.");
     expect((await archive(p, "FEAT-60")).code).toBe(1);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* A consumer nobody could read refuses; a drawing nobody labelled not */
+/* ------------------------------------------------------------------ */
+
+describe("the removal gate fails closed on a consumer document it cannot read", () => {
+  /** checkout-web's capture requirement, one prose byte outside ASCII — saved as Latin-1 it is not UTF-8. The `Operations:` line itself is plain ASCII. */
+  const ACCENTED = checkoutSpec(CAPTURE_AT_CHECKOUT.replace("when the order is confirmed.", "when the order is confirmed (café)."));
+
+  // The quality and contract reviews' first finding: the index turns a spec it
+  // refuses to decode into a suspension, and the gate kept only victims and
+  // `own` — so a Latin-1 spec.md still naming the operation let the removal
+  // archive at exit 0, where the gate before the one index read the line and
+  // refused (archive) or stopped on the unreadable file (`validate --feature`).
+  it("an unreadable consumer spec.md refuses the removal, naming the file", async () => {
+    const p = await project({ ...fleet(), ...INTENT, ...RETIRE_CAPTURE });
+    await writeFile(join(p.docsDir, "services/checkout-web/spec.md"), Buffer.from(ACCENTED, "latin1"));
+    const issue = (await consumedIssue(p))!;
+    expect(issue.details).toEqual(["checkout-web — services/checkout-web/spec.md could not be read, so its requirements could not be scanned"]);
+    expect(issue.message).toContain("whether the fleet would still consume it after this merge could not be checked");
+    const archived = await archive(p, "FEAT-60");
+    expect(archived.code).toBe(1);
+    expect(ofCode(archived.issues, "openapi.remove-op-consumed")).toHaveLength(1);
+  });
+
+  // The other identity a scan cannot settle: two directories claiming one
+  // service id, neither of whose documents the index will pick between.
+  it("a consumer id two directories claim refuses the removal, naming both", async () => {
+    const p = await project({
+      ...fleet({ "services/web/checkout-web/spec.md": checkoutSpec(CAPTURE_AT_CHECKOUT) }),
+      ...INTENT,
+      ...RETIRE_CAPTURE,
+    });
+    expect((await consumedIssue(p))!.details).toEqual([
+      "checkout-web — claimed by services/checkout-web and services/web/checkout-web, so its documents could not be scanned",
+    ]);
+  });
+
+  // The provider's own half of the same hole: an overwrite carries no marker
+  // and no REMOVED requirement, so its own spec.md is the one place the old id
+  // can still be governed — and before the one index the gate read it
+  // (leniently on archive, or stopped on it under `validate`).
+  it("the provider's own unreadable spec.md refuses an overwrite", async () => {
+    const p = await project({ ...fleet(), ...INTENT, ...SETTLE_OVER_CAPTURE });
+    await writeFile(
+      join(p.docsDir, "services/payment-service/spec.md"),
+      Buffer.from(PAYMENT_SPEC.replace("before capture.", "before capture (café)."), "latin1"),
+    );
+    expect((await consumedIssue(p))!.details).toEqual([
+      "payment-service — services/payment-service/spec.md could not be read, so its own requirements could not be scanned",
+    ]);
+  });
+
+  // The event axis asks the same index and refuses the same way.
+  it("an unreadable consumer spec.md refuses a message retirement too", async () => {
+    const p = await project({
+      ...fleet({
+        "services/payment-service/spec.md": PAYMENT_SPEC_PUBLISHING,
+        "services/payment-service/asyncapi.yaml": PAYMENT_EVENTS,
+      }),
+      ...INTENT,
+      [`${FEAT}/specs/payment-service/asyncapi.yaml`]: `asyncapi: 3.0.0\ncomponents:\n  messages:\n    Legacy:\n      name: payment.Legacy\n      x-loam-remove: true\n`,
+      [`${FEAT}/specs/payment-service/spec.md`]: `# payment-service — delta for FEAT-60\n\n## REMOVED Requirements\n\n### Requirement: Legacy events\nBased-On: ${pinFor(PAYMENT_SPEC_PUBLISHING, "Legacy events")}\n\nPublishes: payment.Legacy\n`,
+    });
+    await writeFile(
+      join(p.docsDir, "services/checkout-web/spec.md"),
+      Buffer.from(checkoutSpec("\n### Requirement: Book legacy payments (café)\nThe UI SHALL show each legacy payment.\n\nConsumes: payment.Legacy\n\n#### Scenario: Shown\n- **Given** a legacy event\n- **When** it arrives\n- **Then** it is shown\n"), "latin1"),
+    );
+    const [issue, ...more] = ofCode(await featureFindings(p, "FEAT-60"), "asyncapi.remove-message-consumed");
+    expect(more).toEqual([]);
+    expect(issue!.details).toEqual(["checkout-web — services/checkout-web/spec.md could not be read, so its requirements could not be scanned"]);
+  });
+
+  // The seeded-fleet doctrine (`opConsumers`): `loam seed` draws every edge
+  // without an op, so an op-less caller is a doubt about a DRAWING — `loam
+  // diff` lists it as a warning's worth — and turning it into a refusal would
+  // make every removal on such a fleet red. It stays out of the gate.
+  it("an op-less caller does not refuse the removal", async () => {
+    const opLess = LANDSCAPE.replace(
+      "\n}\n\nviews {",
+      "\n  checkoutWeb -> paymentService 'Calls the payment API'\n}\n\nviews {",
+    );
+    const p = await project({ ...fleet({ "architecture/landscape.likec4": opLess }), ...INTENT, ...RETIRE_CAPTURE });
+    expect(await consumedIssue(p)).toBeUndefined();
+    const archived = await archive(p, "FEAT-60");
+    expect(archived.code, JSON.stringify(archived.issues)).toBe(0);
   });
 });
 

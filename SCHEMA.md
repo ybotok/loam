@@ -1287,7 +1287,13 @@ the id does. A delta the merge would refuse to apply fails closed: the living re
 plus every one the delta adds or modifies. Edges and hops are read as they stand: the landscape
 merge only ADDS edges and a feature's flows are create-only, so no feature document can take one
 away — drop or redraw a living edge by editing the living map in the same change. The refusal lists
-the consumers in its `details[]`, in the order `loam diff` lists the victims of the same removal. Archive deletes only the matching method, reports removals in
+the consumers in its `details[]`, in the order `loam diff` lists the victims of the same removal.
+A consumer document nobody could read refuses too, and is named there: a spec file that does not
+decode (another service's, or the provider's own), or a service id two directories claim — the gate
+cannot prove such a document does not name what is leaving, so it says it could not check, never
+that the fleet still consumes it. An edge drawn with no `metadata { op }` and a contested use-case
+hop are doubts about a drawing: `loam diff` lists them, and they never refuse, since `loam seed`
+draws every edge without an op. Archive deletes only the matching method, reports removals in
 text and `openapiRemovals` JSON, never copies the marker into living OpenAPI, and deliberately does
 not garbage-collect components. A removal marker in a living `openapi.yaml` is
 `openapi.remove-marker-living` (error). The usual staged-write rollback and `unarchive` snapshot

@@ -45,6 +45,12 @@ warnings — and the three copies read different documents. They are one index n
   - **Fail closed**: a spec the merge refuses to apply — a malformed `Requirement-ID:` in the
     living spec or the delta — no longer answers "no consumers". The living requirements count,
     plus every requirement the delta ADDS or MODIFIES.
+  - **A consumer document loam cannot read refuses the removal**, as the gate did before it asked
+    one index: another service's `spec.md` or `arch.spec.md` that does not decode as UTF-8, the
+    provider's own spec file, or a service id two directories claim. `openapi.remove-op-consumed` /
+    `asyncapi.remove-message-consumed` name each in `details[]` and say the gate could not check —
+    never that the fleet still consumes it. An edge drawn with no `metadata { op }` and a contested
+    use-case hop still never refuse; `loam diff` lists them as doubts, as before.
 - **Fewer refusals where the consumer was false or already retired:**
   - **Another service's `Operations:` line naming an id its own contract defines** names its own
     operation, and is no consumer (gate, `loam diff`, `diff.consumer-added` / `-removed`): shared
@@ -70,7 +76,13 @@ warnings — and the three copies read different documents. They are one index n
   active feature in that shape) exit 1; `loam status` counts the finding as gating; `loam show
   <FEAT> --json` reports `review.readyToArchive: false`; and `loam diff` exits 1
   (`diff.op-removed-consumed` / `diff.message-removed-consumed`, `breaking: true`) where a removal
-  now has a victim. Where a refusal was false or the consumer is retired in the same feature, each
+  now has a victim. Where another service's spec file does not decode, `loam validate --feature`
+  reports `openapi.remove-op-consumed` / `asyncapi.remove-message-consumed` naming the file where it
+  reported `feature.unreadable`, at exit 1 as before, and `loam archive` exits 1 as before. Where
+  two directories claim a service id, or the provider's own spec file does not decode, `loam
+  archive` and `loam validate --feature` exit 1 for the removal whatever those documents say —
+  before, 0 unless a copy the gate could read named it — until the document reads or `--approve` is
+  passed. Where a refusal was false or the consumer is retired in the same feature, each
   of those exits 0 for that shape unless something else gates, and `loam diff` reports
   `diff.op-removed` (warn) where its only victim was a same-id requirement. `--approve` overrides
   every one of these refusals as before. `--strict` changes nothing here beyond that: every finding

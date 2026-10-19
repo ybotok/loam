@@ -46,6 +46,13 @@
  * `diff.op-removed-consumed` (verification 2026-09-04, R3), and why a hop whose
  * two ends are the provider is never a victim.
  *
+ * WHAT A DOUBT IS WORTH. A consumer the index could not check is a typed
+ * suspension (`./scan.ts`), never a silent nothing, and the readers weigh the
+ * kinds differently: `loam diff` and the overwrite warnings list every one; the
+ * gate refuses on a document nobody could read or place — a consumer's, in
+ * `suspended`, or the provider's own, in `ownSuspended` — and never on a caller
+ * drawn with no op or a contested hop (`documentDoubt` says why).
+ *
  * READ AFTER A FEATURE, OR AS IT STANDS. With `afterFeature`, every requirement is read
  * as that feature's merge would leave it (`./after.ts` — a consumer the same
  * feature MODIFIES or REMOVES stops counting, and an unappliable delta fails
@@ -66,7 +73,7 @@ import { FleetContext } from "../fleet-context.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 import type { Requirement } from "../document/spec.js";
 import type { ServiceState } from "./state.js";
-import type { ConsumerScan } from "./scan.js";
+import type { ConsumerScan, Suspension } from "./scan.js";
 import { livingFleet, livingMap } from "./current.js";
 import { afterMerge, featureView, type MergedRequirement, type SpecAxis } from "./after.js";
 
@@ -78,6 +85,16 @@ export interface Consumers extends ConsumerScan {
    * `victims`, filed apart because only the gate counts it (the header says why).
    */
   own: string[];
+  /**
+   * The provider's own documents the scan could not read or place, on the axes
+   * `own` reads — the gate's doubt about `own`, as `suspended` is every reader's
+   * doubt about `victims`. Filed apart for `own`'s reason: the diff and the
+   * overwrite warnings name who ELSE is affected, and the provider's broken file
+   * is its own `validate` finding there. The gate refuses on it, because an
+   * overwrite carries no REMOVED requirement and that file is where the old id
+   * may still be governed.
+   */
+  ownSuspended: Suspension[];
 }
 
 /** The consumer questions every reader asks. */
@@ -181,17 +198,19 @@ export function consumerIndex(request: ConsumerRequest): ConsumerIndex {
    * The provider's own unreadable axis is NOT a suspension: it is not a
    * consumer anybody else must be warned about, and that file is the provider's
    * own finding (`validate`, and the delta checks when the feature restates it).
+   * It is filed as `ownSuspended`, which only the gate reads.
    */
   const scanRequirements = async (rule: RequirementRule): Promise<Consumers> => {
     const { services, ambiguous } = await livingFleet(docsDir, context);
-    const out: Consumers = { victims: [], suspended: [], own: [] };
+    const out: Consumers = { victims: [], suspended: [], own: [], ownSuspended: [] };
     for (const id of [...services.keys()].sort()) {
       const state = services.get(id)!;
       const mine = id === rule.provider;
       for (const axis of REQUIREMENT_AXES) {
         const reqs = await requirementsOf(state, axis);
         if (!Array.isArray(reqs)) {
-          if (!mine) out.suspended.push(`${id} — ${reqs.unreadable} could not be read, so its requirements could not be scanned`);
+          if (mine) out.ownSuspended.push({ kind: "unreadable", text: `${id} — ${reqs.unreadable} could not be read, so its own requirements could not be scanned` });
+          else out.suspended.push({ kind: "unreadable", text: `${id} — ${reqs.unreadable} could not be read, so its requirements could not be scanned` });
           continue;
         }
         for (const m of reqs) {
@@ -203,7 +222,8 @@ export function consumerIndex(request: ConsumerRequest): ConsumerIndex {
       }
     }
     for (const [id, dirs] of [...ambiguous].sort(byFirst)) {
-      if (id !== rule.provider) out.suspended.push(`${id} — claimed by ${dirs.join(" and ")}, so its documents could not be scanned`);
+      const text = `${id} — claimed by ${dirs.join(" and ")}, so its ${id === rule.provider ? "own " : ""}documents could not be scanned`;
+      (id === rule.provider ? out.ownSuspended : out.suspended).push({ kind: "ambiguous", text });
     }
     return out;
   };
@@ -216,7 +236,7 @@ export function consumerIndex(request: ConsumerRequest): ConsumerIndex {
     const map = await livingMap(docsDir, context);
     const edges: string[] = [];
     const internal: string[] = [];
-    const unlinked: string[] = [];
+    const unlinked: Suspension[] = [];
     for (const r of map.relationships ?? []) {
       if (map.resolve(r.target) !== provider) continue;
       // An edge whose SOURCE resolves to the provider as well is the provider's
@@ -232,10 +252,12 @@ export function consumerIndex(request: ConsumerRequest): ConsumerIndex {
         // seed` draws every edge without an op) read "no current landscape
         // edge names it" while validate warned `spine.op-link-missing` on the
         // very edge. It rides as a suspension — a warning's worth of doubt,
-        // never an error, so an op-less map does not turn every removal red.
+        // never an error, so an op-less map does not turn every removal red:
+        // its kind is `unlinked`, which the removal gate does not refuse on
+        // (`documentDoubt` in ./scan.ts says which kinds it does, and why).
         // An edge naming a message instead (`publishes`/`consumes`) said what
         // it carries and is the message half's to grade.
-        unlinked.push(`${EDGE(map.resolve, r)} has no \`metadata { op }\`, so whether it calls '${op}' is unknown`);
+        unlinked.push({ kind: "unlinked", text: `${EDGE(map.resolve, r)} has no \`metadata { op }\`, so whether it calls '${op}' is unknown` });
       }
     }
     const reqs = await scanRequirements({
@@ -249,8 +271,9 @@ export function consumerIndex(request: ConsumerRequest): ConsumerIndex {
     const hops = hopsExercising(map.useCases, { provider, op });
     return {
       victims: [...edges, ...reqs.victims, ...hops.breaks],
-      suspended: [...unlinked, ...reqs.suspended, ...hops.unsure],
+      suspended: [...unlinked, ...reqs.suspended, ...hops.unsure.map((text): Suspension => ({ kind: "contested", text }))],
       own: [...internal, ...reqs.own],
+      ownSuspended: reqs.ownSuspended,
     };
   };
 
@@ -276,7 +299,7 @@ export function consumerIndex(request: ConsumerRequest): ConsumerIndex {
       own: (r) => r.publishes.includes(name),
     });
     const hops = hopsConsuming(map.useCases, { provider, name });
-    return { victims: [...edges, ...reqs.victims, ...hops], suspended: reqs.suspended, own: reqs.own };
+    return { victims: [...edges, ...reqs.victims, ...hops], suspended: reqs.suspended, own: reqs.own, ownSuspended: reqs.ownSuspended };
   };
 
   const declarers = async (name: string): Promise<string[]> => {

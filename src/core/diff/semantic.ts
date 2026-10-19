@@ -27,7 +27,7 @@ import type { BaseFleet } from "./base-state.js";
 import { rawServiceId } from "../kernel/ids/service.js";
 import type { AxisState, ServiceState } from "../consumers/state.js";
 import type { CurrentFleet } from "../consumers/current.js";
-import { consumerStance } from "../consumers/scan.js";
+import { consumerStance, scanDetails } from "../consumers/scan.js";
 import type { ConsumerIndex } from "../consumers/consumers.js";
 import { consumerJoinChanges } from "./joins.js";
 
@@ -223,7 +223,7 @@ async function opsDiff(sink: ServiceDiff, pair: { base: ServiceState; current: S
       sink.findings.push(found("diff.op-added", `operation '${id}' added since base (${op.method.toUpperCase()} ${op.path})`));
     } else if (!before.deprecated && op.deprecated) {
       const scan = await victims.opConsumers(sink.id, id);
-      sink.findings.push(found("diff.op-deprecated", `operation '${id}' is deprecated since base — ${consumerStance(scan)}`, [...scan.victims, ...scan.suspended]));
+      sink.findings.push(found("diff.op-deprecated", `operation '${id}' is deprecated since base — ${consumerStance(scan)}`, scanDetails(scan)));
     } else if (before.closureDigest !== op.closureDigest || before.path !== op.path || before.method !== op.method) {
       // `else`, because setting the flag moves the digest by itself (it is a
       // key of the node): a deprecation already names the same consumers, and
@@ -235,7 +235,7 @@ async function opsDiff(sink: ServiceDiff, pair: { base: ServiceState; current: S
       sink.findings.push(found(
         "diff.op-modified",
         `operation '${id}' (${op.method.toUpperCase()} ${op.path}) changed since base, in its own definition or a schema it references — ${consumerStance(scan)}; ${notGraded("`oasdiff breaking`")}`,
-        [...scan.victims, ...scan.suspended],
+        scanDetails(scan),
       ));
     }
   }
@@ -243,14 +243,14 @@ async function opsDiff(sink: ServiceDiff, pair: { base: ServiceState; current: S
     if (current.has(id)) continue;
     const scan = await victims.opConsumers(sink.id, id);
     if (scan.victims.length > 0) {
-      sink.findings.push(found("diff.op-removed-consumed", `operation '${id}' was removed since base and the current fleet still names it — these joins break`, [...scan.victims, ...scan.suspended]));
+      sink.findings.push(found("diff.op-removed-consumed", `operation '${id}' was removed since base and the current fleet still names it — these joins break`, scanDetails(scan)));
     } else if (scan.suspended.length > 0) {
       // "Nobody could be checked" is not "nobody names it", so this message
       // must not assert a negative the scan never proved. An unreadable
       // consumer document carries the run to exit 1 through its own
       // unreadable[] entry; a caller drawn with no op does not — it stays this
       // warning, so a seeded, op-less map does not fail every removal.
-      sink.findings.push(found("diff.op-removed", `operation '${id}' was removed since base; whether the current fleet still names it could NOT be fully answered — ${scan.suspended.length} possible consumer(s) could not be checked`, scan.suspended));
+      sink.findings.push(found("diff.op-removed", `operation '${id}' was removed since base; whether the current fleet still names it could NOT be fully answered — ${scan.suspended.length} possible consumer(s) could not be checked`, scanDetails(scan)));
     } else {
       sink.findings.push(found("diff.op-removed", `operation '${id}' was removed since base; no current edge, requirement or use-case hop names it`));
     }
@@ -270,7 +270,7 @@ async function messagesDiff(sink: ServiceDiff, pair: { base: ServiceState; curre
       sink.findings.push(found(
         "diff.message-modified",
         `message '${name}' changed since base, in its declaration or a schema its payload references — ${consumerStance(scan)}; ${notGraded("`asyncapi diff`")}`,
-        [...scan.victims, ...scan.suspended],
+        scanDetails(scan),
       ));
     }
   }
@@ -285,9 +285,9 @@ async function messagesDiff(sink: ServiceDiff, pair: { base: ServiceState; curre
     }
     const scan = await victims.messageConsumers(sink.id, name);
     if (scan.victims.length > 0) {
-      sink.findings.push(found("diff.message-removed-consumed", `message '${name}' was removed since base and the current fleet still consumes it — these joins break`, [...scan.victims, ...scan.suspended]));
+      sink.findings.push(found("diff.message-removed-consumed", `message '${name}' was removed since base and the current fleet still consumes it — these joins break`, scanDetails(scan)));
     } else if (scan.suspended.length > 0) {
-      sink.findings.push(found("diff.message-removed", `message '${name}' was removed since base; whether anything still consumes it could NOT be fully answered — ${scan.suspended.length} consumer document(s) were not scannable`, scan.suspended));
+      sink.findings.push(found("diff.message-removed", `message '${name}' was removed since base; whether anything still consumes it could NOT be fully answered — ${scan.suspended.length} consumer document(s) were not scannable`, scanDetails(scan)));
     } else {
       sink.findings.push(found("diff.message-removed", `message '${name}' was removed since base; nothing currently consumes it`));
     }
