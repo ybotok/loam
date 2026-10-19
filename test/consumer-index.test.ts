@@ -323,6 +323,20 @@ describe("loam diff reads the one index", () => {
     ]);
   });
 
+  // The contract review's fourth finding: the join was suppressed whenever the
+  // consumer's own openapi.yaml could not be read on the other side. But that
+  // contract is read only to ask whether the line names the consumer's OWN
+  // operation, and an unreadable one proves no ownership — the index counts
+  // the line, so a side holding that contract cannot have hidden the join.
+  it("a new join is reported though the consumer's own contract does not parse — it proves no ownership", async () => {
+    const p = await project(fleet({ "services/checkout-web/openapi.yaml": "openapi: 3.1.0\npaths: [unclosed\n" }));
+    commitBase(p.docsDir);
+    await p.write("services/checkout-web/spec.md", checkoutSpec(CAPTURE_AT_CHECKOUT));
+    expect(ofCode(await diffFindings(p, "payment-service"), "diff.consumer-added")).toEqual([
+      expect.objectContaining({ message: expect.stringContaining("checkout-web's living requirements now name this service's operation 'capturePayment'") }),
+    ]);
+  });
+
   // An arch.spec.md `Operations:` line naming another service's operation is
   // the dependency `loam dependencies` reads off both spec files; the victim
   // scan read spec.md alone and called the removal unconsumed.

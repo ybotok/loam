@@ -29,7 +29,11 @@ warnings — and the three copies read different documents. They are one index n
   - **The gate names use-case hops** attributed to the operation (or backed by a `consumes` edge),
     as `loam diff` already did.
   - **An `arch.spec.md` `Operations:` line** of another service counts, as a spec.md one does —
-    for the gate, `loam diff`'s victims and `diff.consumer-added` / `diff.consumer-removed`.
+    for the gate, `loam diff`'s victims and `diff.consumer-added` / `diff.consumer-removed`. So an
+    operation's `diff.consumer-added` / `-removed` is not reported while the consumer's
+    `arch.spec.md` cannot be read on the other side, as it never was over an unreadable `spec.md`.
+    The consumer's own `openapi.yaml` never suppresses it: an unreadable contract proves no
+    ownership, so the line counts on that side too.
   - **The provider's own `spec.md` requirements count for a marker retirement too**, as they do for
     the overwrite of the entry below: one still naming the retired operation after the merge (a
     second one beside the REMOVED requirement) archived at exit 0 and left `spec-api.op-undefined`.

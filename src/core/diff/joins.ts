@@ -46,9 +46,10 @@ function tupleKey(t: ConsumerTuple): string {
  * spec files for `Operations:` and `Consumes:` alike (`REQUIREMENT_AXES`), and
  * an `Operations:` line naming an id the consumer's own contract defines is
  * that consumer's own operation, no join onto anybody else's
- * (`ownsOperation`). Unreadable axes simply contribute nothing here —
- * `./semantic.ts` guards the GRADING so a join is never called added or
- * removed off a side nobody could read.
+ * (`ownsOperation`). An unreadable axis simply contributes nothing here — no
+ * line from a spec file nobody could read, no ownership from a contract nobody
+ * could read — and `tupleVisible` below guards the GRADING, so a join is never
+ * called added or removed off a side nobody could read.
  */
 export function consumerTuples(states: ReadonlyMap<string, ServiceState>): Map<string, ConsumerTuple> {
   const providersOf = (pick: (s: ServiceState) => string[]): Map<string, string[]> => {
@@ -86,13 +87,16 @@ function tupleVisible(states: ReadonlyMap<string, ServiceState>, ambiguous: Read
     const state = states.get(id);
     return state === undefined || axes.every((axis) => state[axis].kind !== "unreadable");
   };
-  // The consumer's own contract is read for an operation join too: whether its
-  // line names its own operation is decided there, so a side that could not
-  // read it cannot say the join came or went.
-  return (
-    readable(t.consumer, t.kind === "op" ? ["spec", "archSpec", "openapi"] : ["spec", "archSpec"]) &&
-    readable(t.provider, [t.kind === "op" ? "openapi" : "asyncapi"])
-  );
+  // Both spec files on the consumer's side, for either kind: a line in the file
+  // nobody could read may be the very one the join came or went by. NOT the
+  // consumer's own contract, although an operation join reads it: it is asked
+  // only whether the line names the consumer's OWN operation, and an
+  // unreadable contract proves no ownership (`ownsOperation`), so the line
+  // counts on that side — the index's own rule. A side holding it unread can
+  // only have MORE joins, never hide one, and suppressing the join there kept
+  // `diff.consumer-added` / `-removed` off a report whose victims named that
+  // very consumer (the contract review, finding 4).
+  return readable(t.consumer, ["spec", "archSpec"]) && readable(t.provider, [t.kind === "op" ? "openapi" : "asyncapi"]);
 }
 
 /** One graded cross-service join change between the two states. */
