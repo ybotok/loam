@@ -47,6 +47,12 @@ import { relSortKey } from "./identity/edges.js";
  * placed before an element it names still parses; the in-memory parse net in
  * landscape-merge.ts's planLandscapeMerge stays as the backstop regardless.
  */
+export interface Spot {
+  /** Offset into the living text: a line start, or a point inside a shared line. */
+  at: number;
+  /** True when `at` shares its line with other text (the closing brace, or a displaced statement) — the block must bring its own newlines. */
+  bare: boolean;
+}
 
 /**
  * The block an addition with no anchor lands in: the document's FIRST
@@ -64,12 +70,6 @@ import { relSortKey } from "./identity/edges.js";
  * reasons.
  */
 export const HOME_BLOCK = 0;
-export interface Spot {
-  /** Offset into the living text: a line start, or a point inside a shared line. */
-  at: number;
-  /** True when `at` shares its line with other text (the closing brace, or a displaced statement) — the block must bring its own newlines. */
-  bare: boolean;
-}
 
 /** A top-level statement of the living model, with everything placement asks of it. */
 export interface TopStmt {

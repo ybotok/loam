@@ -249,8 +249,8 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
   // this path alone. The message used to guess "most often two declarations
   // sharing one line" whatever the map held, and a fleet read it over a
   // declaration on a line of its own in a second `model { }` block the scan
-  // did not read then (2026-10): it names LikeC4's line now, and the shared
-  // line only when the scan actually read another statement there.
+  // did not read then (2026-10): it names LikeC4's line now, and a shared line
+  // only when that line shows one.
   if (livingScan !== null) {
     const seen = new Set(livingScan.elements.map((e) => e.id));
     const blind = land.elements.some((e) => !seen.has(e.id)) || livingScan.rels.length < land.relationships.length;
