@@ -79,7 +79,7 @@ export interface Arrival {
  * removal marker in the delta names it: another operation now stands at
  * every address it held, so the merge — which writes per method and path —
  * replaced it there. The removal gate's own question
- * (`openapi.remove-op-consumed`, ../../coherence.ts) asked of the one way to
+ * (`openapi.remove-op-consumed`, ../../consumed/operations.ts) asked of the one way to
  * take an operation out of a contract that carries no marker for it to read:
  * a delta defining
  * `fetchOrder` where `getOrder` lives archived at exit 0 while a landscape

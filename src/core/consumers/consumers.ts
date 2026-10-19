@@ -8,7 +8,7 @@
  * deprecation and modification since a base ref (`core/diff/semantic.ts`); the
  * coherence gate refuses a feature that takes a consumed operation or message
  * out of the contract (`openapi.remove-op-consumed`, `asyncapi.remove-message-
- * consumed` — `core/coherence/coherence.ts`, `core/coherence/events/events.ts`);
+ * consumed` — `core/coherence/consumed/operations.ts`, `core/coherence/events/events.ts`);
  * and `loam archive` names who an overwrite lands on
  * (`commands/archive/plan/contracts/consumers.ts`). They used to be THREE
  * copies — this module as `core/diff/victims.ts`, `edgeConsumers` /
