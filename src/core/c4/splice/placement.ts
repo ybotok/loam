@@ -1,5 +1,6 @@
 import { type Elem } from "../likec4.js";
 import { elementService, serviceOf } from "../resolve/service.js";
+import { pastComments } from "../source-mask.js";
 import type { ScannedBlock, ScannedElement, ScannedModel } from "../source-scan.js";
 import { relSortKey } from "./identity/edges.js";
 
@@ -298,10 +299,24 @@ function beforeSpot(text: string, before: TopStmt): Spot {
  * brace's own spot. Exported for the service-model splice (`./model/merge.ts`),
  * which asks the same two questions of a `model { }` block it does not group by
  * service: after this statement, or last thing in the block.
+ *
+ * Unless code follows `end` on its line: then the spot is `end` itself, bare.
+ * The next line belongs to whatever is written there, and when that is a
+ * declaration whose body opens on the same line — `alpha = … { … }  beta = … {`
+ * — the line after is INSIDE beta: an addition anchored to alpha's service
+ * landed as `beta.kiwi`, in a merge that parsed and was written (exit 0,
+ * probed on main at 171555d). Right after the anchor is also what keeps two
+ * archives order-free when both anchor on that line: one anchored to alpha and
+ * one to beta used to share the next line's start, and whichever ran second
+ * landed above the other. A comment trailing the anchor is not code — the
+ * next line stays the spot, byte for byte as before — but a block comment
+ * it does not close is: its next line is inside the comment.
  */
 export function spotAfter(text: string, close: number, end: number): Spot {
   const nl = text.indexOf("\n", end);
   const at = nl === -1 ? text.length : nl + 1;
+  const rest = pastComments(text.slice(end, Math.min(at, close)));
+  if (rest !== "" && !rest.startsWith("//")) return { at: end, bare: true };
   return at > close ? closeSpot(text, close) : { at, bare: false };
 }
 

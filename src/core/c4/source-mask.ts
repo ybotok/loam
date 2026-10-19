@@ -306,6 +306,24 @@ function readsOn(masked: MaskedSource, head: { from: number; end: number }, next
   return !spanIn(literals, head) && !spanIn(uris, head) && /^[A-Za-z_][\w.-]*$/.test(sofar);
 }
 
+/**
+ * Source text from a point in CODE, past its leading blanks and every block
+ * comment that closes within it: what is left starts with code, with a line
+ * comment, with a block comment the text does not close — or is empty. Read
+ * off the raw text, because the mask blanks a comment exactly like a string's
+ * interior, and the splice must tell the two apart: a comment trailing a
+ * statement is room to splice past, a string is not.
+ */
+export function pastComments(text: string): string {
+  let rest = text.trimStart();
+  while (rest.startsWith("/*")) {
+    const shut = rest.indexOf("*/", 2);
+    if (shut === -1) break;
+    rest = rest.slice(shut + 2).trimStart();
+  }
+  return rest;
+}
+
 /** Whether a span starts exactly at `at`. */
 function spanAt(spans: readonly SourceSpan[], at: number): boolean {
   return firstSpanFrom(spans, at)?.start === at;

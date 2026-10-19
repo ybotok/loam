@@ -68,6 +68,16 @@ written; each now merges.
   Two elements, two edges or a property and a child on either side of a bare `\r` were refused as
   "in a form placement cannot locate". A bare `\r` ends the statement and the comment now. A CRLF
   map reads exactly as before.
+- **An addition anchored to a declaration whose line goes on with more code.** Placement put an
+  addition on the line after its anchor. When the next declaration opened a multi-line body on the
+  anchor's own line (`alpha = … { … }  beta = … {`), that next line was inside beta. An element
+  bound to alpha's service was then written inside beta as its child, in a merge that parsed and
+  was written (exit 0). A block comment opened on the anchor's line and closed on a later one
+  swallowed the addition the same way. The addition now lands right after its anchor whenever code, or a block
+  comment the line does not close, follows the anchor on its line. Two archives anchored to the
+  two declarations on such a line also write the same bytes in either order now; before, whichever
+  ran second landed above the other. A comment trailing the anchor changes nothing: the addition
+  lands on the next line, as before.
 
 What the splice map still cannot locate is still refused (`merge-failed`, nothing written), and
 the message no longer guesses. It used to say "most often two declarations sharing one line"
