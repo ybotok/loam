@@ -242,6 +242,39 @@ model {
   });
 });
 
+describe("a delta edge whose body holds a word containing a spine key archives", () => {
+  // The archive matches each parsed addition back to its authored statement by
+  // a key that includes the op (`relStatementKey`). The scan read `op` out of
+  // `op-version`, `#op-critical` or a `#op` tag, so the two keys disagreed and
+  // archive refused a valid delta: "cannot locate the 'beta -> alpha'
+  // relationship in delta.likec4" (probed on main at 171555d).
+  const spec = "specification {\n  element softwareSystem\n  tag FEAT-9\n  tag op-critical\n  tag op\n}\n";
+  const ctx = "  alpha = softwareSystem 'alpha-service'\n  beta = softwareSystem 'beta-service'\n";
+  it.each([
+    ["a hyphenated metadata key above the op", "    metadata {\n      op-version 'v2'\n      op 'cancelOrder'\n    }\n"],
+    ["a hyphenated tag holding `op`, above a description", "    #op-critical\n    description 'calls it'\n    metadata { op 'cancelOrder' }\n"],
+    ["a tag named op, above a description", "    #op\n    description 'calls it'\n"],
+  ])("%s", async (_form, body) => {
+    const land = `${spec}\nmodel {\n${ctx}}\n`;
+    const deltaText = `${spec}\nmodel {\n${ctx}  beta -> alpha 'callback' {\n    #FEAT-9\n${body}  }\n}\n`;
+    const delta = await loadSource(deltaText);
+    expect(delta.errors).toEqual([]);
+    const plan = await planLandscapeMerge({
+      landscapeText: land,
+      deltaText,
+      deltaElements: delta.elements,
+      newEls: [],
+      newRels: delta.relationships,
+      featureId: "FEAT-9",
+    });
+    const merged = await loadSource(plan.content!);
+    expect(merged.errors).toEqual([]);
+    expect(merged.relationships.map((r) => [r.source, r.target, r.op ?? null])).toEqual([
+      ["beta", "alpha", delta.relationships[0]!.op ?? null],
+    ]);
+  });
+});
+
 describe("an `extend` frame written in the landscape itself", () => {
   const spec = "specification {\n  element softwareSystem\n  element container\n  tag FEAT-9\n}\n";
   const land = `${spec}

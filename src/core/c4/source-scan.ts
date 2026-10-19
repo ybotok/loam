@@ -63,6 +63,12 @@ export interface ScannedRel {
   block: number;
 }
 
+/** A half-open `[from, to)` run of the masked code — a body, or the metadata block inside one. */
+interface CodeRange {
+  from: number;
+  to: number;
+}
+
 /** One top-level `model { }` block: its own braces. */
 export interface ScannedBlock {
   open: number;
@@ -146,13 +152,35 @@ export function scanModel(text: string): ScannedModel | null {
   };
   const literalIn = (from: number, to: number): SourceLiteral | undefined =>
     literals.find((l) => l.start >= from && l.end <= to);
-  const keyedLiteral = (key: string, from: number, to: number): string | undefined => {
-    if (from === -1) return undefined;
-    const re = new RegExp(`\\b${key}\\b`, "g");
-    re.lastIndex = from;
+  // A key is a whole identifier, and LikeC4's identifiers carry hyphens. `\b`
+  // took the `-` for a boundary, so `op-version 'v2'` above `op 'cancelOrdr'`
+  // was read as op `'v2'`, a `#op-critical` tag as the key `op` naming the
+  // literal after it — the next property's — and `validate --all --base`
+  // graded neither op the branch wrote: the scanned edge matched no parsed one,
+  // so the misspelt `cancelOrdr` went green where the plain run reports
+  // `spine.op-undefined` (probed on main at 171555d; 57b33ad fixed the same
+  // hyphen for ids and not here).
+  const keyedLiteral = (key: string, range: CodeRange | null): string | undefined => {
+    if (range === null) return undefined;
+    const re = new RegExp(`(?<![\\w-])${key}(?![\\w-])`, "g");
+    re.lastIndex = range.from;
     const km = re.exec(code);
-    if (km === null || km.index >= to) return undefined;
-    return literalIn(km.index, to)?.value;
+    if (km === null || km.index >= range.to) return undefined;
+    return literalIn(km.index, range.to)?.value;
+  };
+  // The spine keys are METADATA keys — the parsed `Rel` reads them out of
+  // `metadata { }` and nowhere else (`likec4.ts`) — so the scan reads them only
+  // there. Read from the whole body, a bare `#op` tag (a legal tag name) above a
+  // `description` was the key `op` once more, whatever the boundary rule.
+  const metadataOf = (body: CodeRange | null): CodeRange | null => {
+    if (body === null) return null;
+    const re = /(?<![\w-])metadata\s*\{/g;
+    re.lastIndex = body.from;
+    const mm = re.exec(code);
+    if (mm === null || mm.index >= body.to) return null;
+    const open = mm.index + mm[0].length - 1;
+    const shut = matchBrace(code, open);
+    return shut === -1 || shut > body.to ? null : { from: open + 1, to: shut };
   };
   const trimmedEnd = (from: number, to: number): number => {
     let e = to;
@@ -274,9 +302,9 @@ export function scanModel(text: string): ScannedModel | null {
         const stmtEnd = opener === -1 ? trimmedEnd(stmtStart, headEnd) : bClose === -1 ? close : bClose + 1;
         if (am !== null) {
           const arrowEnd = stmtStart + am.length;
-          const bodyFrom = opener === -1 ? -1 : opener + 1;
-          const bodyTo = opener === -1 ? -1 : stmtEnd - 1;
-          const title = literalIn(arrowEnd, headEnd)?.value ?? keyedLiteral("title", bodyFrom, bodyTo);
+          const body = opener === -1 ? null : { from: opener + 1, to: stmtEnd - 1 };
+          const meta = metadataOf(body);
+          const title = literalIn(arrowEnd, headEnd)?.value ?? keyedLiteral("title", body);
           const tags: string[] = [];
           for (const tm of code.slice(stmtStart, stmtEnd).matchAll(/#([\w-]+)/g)) tags.push(tm[1]!);
           raw.push({
@@ -288,9 +316,9 @@ export function scanModel(text: string): ScannedModel | null {
             indent: indentOf(stmtStart),
             block,
             title,
-            op: keyedLiteral("op", bodyFrom, bodyTo),
-            publishes: keyedLiteral("publishes", bodyFrom, bodyTo),
-            consumes: keyedLiteral("consumes", bodyFrom, bodyTo),
+            op: keyedLiteral("op", meta),
+            publishes: keyedLiteral("publishes", meta),
+            consumes: keyedLiteral("consumes", meta),
             tags,
           });
         }

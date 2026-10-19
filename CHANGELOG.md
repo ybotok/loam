@@ -55,6 +55,13 @@ written; each now merges.
   long `description` ended the string and the rest of the file was read inside out — a map with
   one such description above its model had no model block at all, and archive refused with
   `landscape.likec4 has no model block`.
+- **A delta edge whose body holds a key or tag containing `op`, `publishes` or `consumes`.** The
+  splice map read those keys anywhere in the edge's body, and took a hyphen for the end of a word,
+  so `op-version 'v2'` above `op 'cancelOrder'` read as op `v2`, and a `#op-critical` or `#op` tag
+  as an op naming the description below it. The edge then matched none of the delta's statements
+  and archive refused with "cannot locate the '<a> -> <b>' relationship in delta.likec4". A key is
+  read whole now, and `op`, `publishes` and `consumes` only from `metadata { }`, which is where
+  LikeC4 reads them. The same misreading hid such an edge from `validate --all --base` (below).
 
 What the splice map still cannot locate is still refused (`merge-failed`, nothing written), and
 the message no longer guesses. It used to say "most often two declarations sharing one line"
@@ -512,6 +519,12 @@ unchanged.
   the same way), filed on the `landscape` target. Only those edges are graded: the provider is not
   pulled into scope, so its own documents — on a seeded fleet, its `service.no-model` — stay out of
   the PR's verdict. An edge is new when its (source, target, op) is; a reformat grades nothing.
+- **An edge whose metadata or tags hold a word containing `op` is graded on the op it names.**
+  `--base` finds the branch's edges by reading the map's text, and that reading took
+  `op-version 'v2'` above `op 'cancelOrdr'` for op `v2`, and a `#op-critical` tag for an op naming
+  the description below it. The edge it read matched no edge in the parsed map, so the branch's
+  misspelt `cancelOrdr` was graded nowhere: exit 0 and `valid: true`, where the unscoped run
+  reports `spine.op-undefined`. A key is read whole now, and the op only from `metadata { }`.
 - **The landscape re-grades a fleet-wide vocabulary only when the file that carries it changed.**
   `permissions.*` rides a scoped run only when `architecture/permissions.yaml` changed,
   `capability.*` only when `architecture/capabilities.yaml` or `capabilities/` did,
