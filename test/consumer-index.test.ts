@@ -499,6 +499,57 @@ Operations: capturePayment
     const p = await project({ ...fleet({ "services/payment-service/spec.md": malformed }), ...INTENT, ...SETTLE_OVER_CAPTURE });
     expect((await consumedIssue(p))!.message).toContain("still consumed — payment-service's living requirement 'Capture a payment'.");
     expect((await archive(p, "FEAT-60")).code).toBe(1);
+
+    // And a DELTA the merge refuses — its restatement carries the malformed
+    // id — reads as the living spec plus what it adds or modifies, never as
+    // "no consumers": the living requirement it meant to restate still counts.
+    const refused = await project({
+      ...fleet(),
+      ...INTENT,
+      ...SETTLE_OVER_CAPTURE,
+      [`${FEAT}/specs/payment-service/spec.md`]: RESTATED_CAPTURE[`${FEAT}/specs/payment-service/spec.md`]!.replace(
+        "### Requirement: Capture a payment\n",
+        "### Requirement: Capture a payment\nRequirement-ID: 9-bad id\n",
+      ),
+    });
+    expect((await consumedIssue(refused))!.message).toContain("still consumed — payment-service's living requirement 'Capture a payment'.");
+  });
+
+  // Ownership is read off the contract the MERGE leaves: a feature that gives
+  // checkout-web its own capturePayment makes checkout-web's line name that one,
+  // and a feature that takes checkout-web's own away leaves the line naming
+  // payment-service's again.
+  it("ownership is the contract as the feature's merge leaves it", async () => {
+    const living = checkoutSpec(CAPTURE_AT_CHECKOUT);
+    const gains = await project({
+      ...fleet({ "services/checkout-web/spec.md": living }),
+      ...INTENT,
+      ...RETIRE_CAPTURE,
+      [`${FEAT}/specs/checkout-web/openapi.yaml`]: CHECKOUT_OPENAPI,
+    });
+    expect(await consumedIssue(gains)).toBeUndefined();
+
+    const loses = await project({
+      ...fleet({ "services/checkout-web/spec.md": living, "services/checkout-web/openapi.yaml": CHECKOUT_OPENAPI }),
+      ...INTENT,
+      ...RETIRE_CAPTURE,
+      [`${FEAT}/specs/checkout-web/openapi.yaml`]: `openapi: 3.1.0
+paths:
+  /checkout/card:
+    post:
+      operationId: capturePayment
+      x-loam-remove: true
+`,
+    });
+    // Two findings, one per provider: checkout-web retiring its own
+    // capturePayment strands its own line too. payment-service's is the one
+    // this case is about.
+    const onPayment = ofCode(await featureFindings(loses, "FEAT-60"), "openapi.remove-op-consumed").filter(
+      (f) => f.subject === "payment-service",
+    );
+    expect(onPayment).toEqual([
+      expect.objectContaining({ message: expect.stringContaining("checkout-web's living requirement 'Capture at checkout'") }),
+    ]);
   });
 
   // The not_done item of the overwrite gate: a removal whose feature also
