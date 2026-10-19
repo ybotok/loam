@@ -786,6 +786,20 @@ describe("the removal gate fails closed on a consumer document it cannot read", 
     expect(ofCode(archived.issues, "openapi.remove-op-consumed")).toHaveLength(1);
   });
 
+  // Beside a named consumer the unreadable one is still listed, after it, and
+  // the refusal keeps the named consumer's sentence and remedy.
+  it("an unreadable consumer beside a named one is listed after it", async () => {
+    const p = await project({ ...fleet({ "architecture/calls.likec4": CALLS }), ...INTENT, ...RETIRE_CAPTURE });
+    await writeFile(join(p.docsDir, "services/checkout-web/spec.md"), Buffer.from(ACCENTED, "latin1"));
+    const issue = (await consumedIssue(p))!;
+    expect(issue.details).toEqual([
+      `edge checkout-web → payment-service ("Calls capturePayment")`,
+      "checkout-web — services/checkout-web/spec.md could not be read, so its requirements could not be scanned",
+    ]);
+    expect(issue.message).toContain(`would still consume it after this merge — edge checkout-web → payment-service ("Calls capturePayment"). Retire each consumer`);
+    expect(issue.message).toContain("Whether anything else would still consume it could not be checked either");
+  });
+
   // The other identity a scan cannot settle: two directories claiming one
   // service id, neither of whose documents the index will pick between.
   it("a consumer id two directories claim refuses the removal, naming both", async () => {
