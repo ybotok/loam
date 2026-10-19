@@ -14,7 +14,8 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
 
 No code, flag or `--json` key was added or changed. Each case below is a landscape (or a delta)
 that `loam validate --all` called valid and that `loam archive` refused with `merge-failed`, nothing
-written; each now merges.
+written — or, where the case says "exit 0", merged wrong and wrote; each now merges as LikeC4
+reads it.
 
 - **A landscape with more than one top-level `model { }` block.** The splice map read only the
   first block, so every declaration in a later one was invisible and archive refused with
@@ -73,11 +74,11 @@ written; each now merges.
   anchor's own line (`alpha = … { … }  beta = … {`), that next line was inside beta. An element
   bound to alpha's service was then written inside beta as its child, in a merge that parsed and
   was written (exit 0). A block comment opened on the anchor's line and closed on a later one
-  swallowed the addition the same way. The addition now lands right after its anchor whenever code, or a block
-  comment the line does not close, follows the anchor on its line. Two archives anchored to the
-  two declarations on such a line also write the same bytes in either order now; before, whichever
-  ran second landed above the other. A comment trailing the anchor changes nothing: the addition
-  lands on the next line, as before.
+  swallowed the addition the same way. The addition now lands right after its anchor whenever
+  code, or a block comment the line does not close, follows the anchor on its line. Two archives
+  anchored to the two declarations on such a line also write the same bytes in either order now;
+  before, whichever ran second landed above the other. A comment trailing the anchor changes
+  nothing: the addition lands on the next line, as before.
 - **A bodyless declaration with a comment trailing it on its line.** A parent such as
   `api = container 'API' // the api` that gained its first child got its `{` inside the comment,
   and archive refused: the merged landscape "would not parse". The body now opens before the
