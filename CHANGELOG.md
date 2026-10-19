@@ -86,6 +86,13 @@ written; each now merges.
   or edge anchored after it, was written inside the comment, in a merge that parsed and was
   written (exit 0). The declaration now ends before such a comment. A comment that closes on the
   declaration's own line keeps its place, and the bytes come out as before.
+- **A delta whose feature tag sits in a tag list with a separator.** LikeC4 reads a tag list as
+  `#a #b, #c;`: one or more tags, then comma groups, then an optional `;`. Stripping the feature's
+  own tag left `#FEAT-1, #x` as `, #x` and `#FEAT-1;` as a bare `;`, and archive refused because
+  the merged landscape "would not parse". The tag now takes the comma after it with it (or else
+  the comma before it), and takes a `;` when no tag is left in front of it. A tag after a comma no
+  longer leaves that comma behind either: `#x, #FEAT-1` lands as `#x`, where it used to land as
+  `#x,`.
 
 What the splice map still cannot locate is still refused (`merge-failed`, nothing written), and
 the message no longer guesses. It used to say "most often two declarations sharing one line"

@@ -2408,7 +2408,8 @@ The landscape merge **splices authored source, it does not re-serialize**. Each 
 relationship is copied into the living landscape byte-for-byte from `delta.likec4` — technology,
 style, icons, links, metadata, nested children, every tag — with exactly one edit: the feature's own
 tag is stripped (the additions are baseline now — the drop above is why unarchive restores bytes),
-and a construct the strip empties goes with it (`x = kind 'y' { #FEAT-1 }` lands as `x = kind 'y'`).
+together with the `,` or `;` that set it apart in a tag list (`#FEAT-1, #x` lands as `#x`), and a
+construct the strip empties goes with it (`x = kind 'y' { #FEAT-1 }` lands as `x = kind 'y'`).
 Placement is deterministic and **service-grouped**, and never moves an authored byte — it only
 chooses where the new blocks go. A top-level element whose service the model already draws (the
 `metadata { service }` binding first, the title as fallback) lands immediately after the last

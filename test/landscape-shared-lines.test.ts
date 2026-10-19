@@ -8,6 +8,8 @@
  * parser reads differently from the author — inside another declaration's
  * body, or inside a comment — in a merge that parsed and was written at exit 0
  * (probed on main at 171555d), or one the parse net refused over a valid map.
+ * The last block is the same question one level down: what shares a tag list
+ * with the feature tag the splice strips.
  */
 import { describe, expect, it } from "vitest";
 import { loadSource } from "../src/core/c4/likec4.js";
@@ -162,5 +164,41 @@ describe("a comment trailing a bodyless declaration, and what is spliced after o
     const land = `${SPEC}model {\n  alpha = softwareSystem 'alpha-service'\n  beta = softwareSystem 'beta-service'\n}\n`;
     const delta = `${SPEC}model {\n  alpha = softwareSystem 'alpha-service'\n  beta = softwareSystem 'beta-service'\n  beta -> alpha 'cb' #FEAT-7 // why\n}\n`;
     expect(await merge(land, delta, "FEAT-7")).toContain("  beta -> alpha 'cb' // why\n");
+  });
+});
+
+describe("the feature tag stripped from a tag list takes its separator with it", () => {
+  // LikeC4 reads a tag list as `#a #b, #c;` — one or more tags, then `,`
+  // groups, then an optional `;`. Stripped alone, `#FEAT-7, #x` left `, #x`
+  // and `#FEAT-7;` a bare `;`, and the parse net refused a delta LikeC4
+  // accepts; a tag after a comma left the comma behind (`#x,`), legal but stray.
+  const spec = SPEC.replace("  tag FEAT-8\n", "  tag FEAT-8\n  tag x\n  tag y\n");
+  const land = `${spec}model {\n  alpha = softwareSystem 'alpha-service'\n  beta = softwareSystem 'beta-service'\n}\n`;
+
+  it.each([
+    ["first, before a comma", "#FEAT-7, #x", "    #x\n", ["x"]],
+    ["alone, before a semicolon", "#FEAT-7;", "", []],
+    ["after a comma", "#x, #FEAT-7", "    #x\n", ["x"]],
+    ["after a comma, before the semicolon", "#x, #FEAT-7;", "    #x;\n", ["x"]],
+    ["between two commas", "#x, #FEAT-7, #y", "    #x, #y\n", ["x", "y"]],
+    ["after a tag, before the semicolon (bytes as before)", "#x #FEAT-7;", "    #x;\n", ["x"]],
+  ])("%s", async (_form, tags, kept, expected) => {
+    const delta = `${spec}model {\n  kiwi = softwareSystem 'kiwi-service' {\n    ${tags}\n    description 'k'\n  }\n}\n`;
+    const merged = await merge(land, delta, "FEAT-7");
+    expect(merged).toContain(`  kiwi = softwareSystem 'kiwi-service' {\n${kept}    description 'k'\n  }\n`);
+    const doc = await loadSource(merged);
+    expect(doc.errors).toEqual([]);
+    // Sorted: LikeC4 lists a comma group's tags ahead of the ones before it.
+    expect([...doc.elements.find((e) => e.id === "kiwi")!.tags].sort()).toEqual(expected);
+  });
+
+  it.each([
+    ["inline, first before a comma", "beta -> alpha 'cb' #FEAT-7, #x\n", "  beta -> alpha 'cb' #x\n"],
+    ["alone in a body, before a semicolon", "beta -> alpha 'cb' {\n    #FEAT-7;\n  }\n", "  beta -> alpha 'cb'\n"],
+  ])("on an edge: %s", async (_form, edge, kept) => {
+    const delta = `${spec}model {\n  alpha = softwareSystem 'alpha-service'\n  beta = softwareSystem 'beta-service'\n  ${edge}}\n`;
+    const merged = await merge(land, delta, "FEAT-7");
+    expect(merged).toContain(kept);
+    expect((await loadSource(merged)).errors).toEqual([]);
   });
 });
