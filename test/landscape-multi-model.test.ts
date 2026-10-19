@@ -456,7 +456,7 @@ describe("what still cannot be located is refused with LikeC4's line and the cau
   // whatever the map held — the reported message, over a declaration on a
   // line of its own. It names the line LikeC4 parsed the declaration on now,
   // and a shared line only when that line shows one.
-  const spec = "specification {\n  element softwareSystem\n  element container\n  tag FEAT-7\n}\n";
+  const spec = "specification {\n  element softwareSystem\n  element container\n  relationship async\n  tag FEAT-7\n}\n";
   const ADD = `${spec}\nmodel {\n  kiwi = softwareSystem 'kiwi-service' {\n    #FEAT-7\n  }\n}\n`;
 
   /** The refusal planLandscapeMerge throws for `land`, and the 1-based line of `marker` in it. */
@@ -519,6 +519,81 @@ model {
     expect(message).toContain(`declares 'zulu' at line ${line} in a form placement cannot locate: the splice map read it as part of 'alpha', which starts at line ${line - 1}`);
     expect(message).toContain("bare carriage return");
     expect(message).not.toContain("shares that line");
+  });
+
+  // LikeC4's locator points an element at its NAME and a relationship at its
+  // ARROW — inside `-[…]->`, at the kind — so the declaration's own kind keyword
+  // or source sits in front of the anchor. Read as "code before it", every
+  // unlocated edge and every `kind name` element shared its line with itself,
+  // and the carriage-return explanation below the shared-line one was never
+  // reached (probed at 23f1578).
+  it.each([
+    ["an edge", "  zulu -> apple 'back'", "zulu -> apple"],
+    ["an edge with a bracketed kind", "  zulu -[async]-> apple 'back'", "zulu -> apple"],
+    ["an edge with a dot kind", "  zulu .async apple 'back'", "zulu -> apple"],
+  ])("a bare carriage return before %s: read as part of the edge above, never a shared line", async (_form, second, name) => {
+    const land = `${spec}\nmodel {\n  apple = softwareSystem 'apple-service'\n  zulu = softwareSystem 'zulu-service'\n  apple -> zulu 'calls'\r${second}\n}\n`;
+    const { message, line } = await refusal(land, "'back'");
+    expect(message).toContain(
+      `declares the relationship '${name}' at line ${line} in a form placement cannot locate: the splice map read it as part of the edge 'apple -> zulu', which starts at line ${line - 1}`,
+    );
+    expect(message).not.toContain("shares that line");
+  });
+
+  it("a bare carriage return between two `kind name` elements: read as part of the first, never a shared line", async () => {
+    const land = `${spec}\nmodel {\n  softwareSystem alpha 'alpha-service'\r  softwareSystem zulu 'zulu-service'\n}\n`;
+    const { message, line } = await refusal(land, "zulu 'zulu");
+    expect(message).toContain(`declares 'zulu' at line ${line} in a form placement cannot locate: the splice map read it as part of 'alpha', which starts at line ${line - 1}`);
+    expect(message).not.toContain("shares that line");
+  });
+
+  it("a `kind name` child on a line of its own the scan missed: the scan read nothing there, never a shared line", async () => {
+    // The shape behind the URI regression: `link` alone on its line, then a
+    // kind-form child. The scan reads it now (`test/source-scan-forms.test.ts`),
+    // so the child is cut from a whole scan here — the words must be true
+    // whatever made the scan miss it, and this line holds nothing but the child.
+    const land = `${spec}\nmodel {\n  alpha = softwareSystem 'alpha-service' {\n    link https://wiki.example.com/alpha\n    container api 'API'\n  }\n}\n`;
+    expect((await loadSource(land)).errors).toEqual([]);
+    const whole = scanModel(land)!;
+    const gap = await firstUnlocated(land, { ...whole, elements: whole.elements.filter((e) => e.id !== "alpha.api") });
+    const line = land.split("\n").findIndex((l) => l.includes("container api")) + 1;
+    expect(gap).toEqual({ kind: "element", name: "alpha.api", line });
+    expect(unlocatedReason("landscape.likec4", gap)).toContain("the splice map read no statement there");
+  });
+
+  it("a bare carriage return after a property, before a `kind name` child: no shared line either", async () => {
+    // The property is no declaration, so nothing scanned covers the child and
+    // the words fall back to what is known — but not to the shared-line guess.
+    const land = `${spec}\nmodel {\n  alpha = softwareSystem 'alpha-service' {\n    description 'd'\r    container api 'API'\n  }\n}\n`;
+    const { message, line } = await refusal(land, "container api");
+    expect(message).toContain(`declares 'alpha.api' at line ${line} in a form placement cannot locate, and the splice map read no statement there`);
+  });
+
+  it.each([
+    {
+      form: "two `kind name` elements",
+      body: "  softwareSystem alpha 'alpha-service'  softwareSystem zulu 'zulu-service'\n",
+      marker: "zulu 'zulu",
+      what: "'zulu'",
+      other: "'alpha'",
+    },
+    {
+      form: "a property, then a `kind name` child",
+      body: "  alpha = softwareSystem 'alpha-service' {\n    description 'd'  container api 'api'\n  }\n",
+      marker: "container api",
+      what: "'alpha.api'",
+      other: "the statement before it",
+    },
+    {
+      form: "two edges, the second with a bracketed kind",
+      body: "  apple = softwareSystem 'apple-service'\n  zulu = softwareSystem 'zulu-service'\n  apple -> zulu 'calls'  zulu -[async]-> apple 'back'\n",
+      marker: "'back'",
+      what: "the relationship 'zulu -> apple'",
+      other: "the edge 'apple -> zulu'",
+    },
+  ])("a line genuinely shared — $form — still says so, past the declaration's own kind or source", async ({ body, marker, what, other }) => {
+    const { message, line } = await refusal(`${spec}\nmodel {\n${body}}\n`, marker);
+    expect(message).toContain(`declares ${what} at line ${line} in a form placement cannot locate: it shares that line with ${other}`);
   });
 
   it("a map the scan reads whole has nothing unlocated, and a refusal with no locator answer still says what it knows", async () => {

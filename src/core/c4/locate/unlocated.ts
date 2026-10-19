@@ -10,8 +10,8 @@
  * `model { }` block — and was asked to rewrite a valid map to satisfy a message
  * that described something else. So the cause is no longer guessed where it can
  * be read: LikeC4's own locator says on which line the declaration is, the
- * line itself says whether anything precedes it there, and the scan says what
- * it read in that place instead.
+ * line itself says whether anything but the declaration's own lead (`Lead`)
+ * precedes it there, and the scan says what it read in that place instead.
  *
  * A second parse of the landscape, and it is paid only on the refusal path —
  * the merge decides THAT something is unlocated from the parse it already has,
@@ -28,7 +28,10 @@ export interface Unlocated {
   name: string;
   /** 1-based line LikeC4's locator puts the declaration on; absent when it has no answer. */
   line?: number;
-  /** Code precedes the declaration on its own line — the shared line is then a FACT, not a guess. */
+  /**
+   * Code other than the declaration's own lead precedes it on its own line —
+   * the shared line is then a FACT, not a guess.
+   */
   sharesLine?: true;
   /** The scanned statement that covers where the declaration sits, and the line that statement starts on. */
   readAs?: { name: string; line: number };
@@ -52,7 +55,7 @@ export async function firstUnlocated(text: string, scan: ScannedModel): Promise<
     const scanned = new Set(scan.elements.map((e) => e.id));
     for (const e of model.elements()) {
       if (scanned.has(e.id)) continue;
-      return { kind: "element", name: e.id, ...where.place(likec4.languageServices.locate({ element: e.id })?.range.start) };
+      return { kind: "element", name: e.id, ...where.place(likec4.languageServices.locate({ element: e.id })?.range.start, { kind: e.kind }) };
     }
     const edges = [...model.relationships()].map((r) => {
       const start = likec4.languageServices.locate({ relation: r.id })?.range.start;
@@ -66,7 +69,7 @@ export async function firstUnlocated(text: string, scan: ScannedModel): Promise<
         claimed.add(span);
         continue;
       }
-      return { kind: "relationship", name: edge.name, ...where.place(edge.start) };
+      return { kind: "relationship", name: edge.name, ...where.place(edge.start, "edge") };
     }
     // Every located edge has a statement of its own: an unlocated one, if the
     // count says there is one, is among those the locator could not place.
@@ -83,9 +86,43 @@ interface Position {
   character: number;
 }
 
+/**
+ * The part of a declaration LikeC4's locator leaves BEFORE its anchor. It
+ * points an element at its NAME and a relationship at its ARROW — inside
+ * `-[…]->`, at the kind — so `container api 'API'` has its kind keyword in
+ * front of the anchor and `zulu -> apple` its source. Read as "code before
+ * it", every unlocated edge and every `kind name` element shared its line with
+ * itself, and the line-break explanation `unlocatedReason` holds below the
+ * shared-line one was never reached. An element's lead is a token equal to
+ * its parsed kind; an edge's is its source reference (`it`, a dotted path or
+ * none) and the `-[` opening a bracketed kind.
+ */
+type Lead = { kind: string } | "edge";
+
+/** A whole token — not the tail of a longer id — directly before the anchor, the kind written there. */
+const ELEMENT_LEAD = /(?<![\w.-])([A-Za-z_][\w-]*)\s*$/;
+/** An optional source reference and an optional `-[`, directly before the anchor; always matches, possibly empty. */
+const EDGE_LEAD = /(?<![\w.-])(?:[A-Za-z_][\w.-]*\s*)?(?:-\[\s*)?$/;
+
+/**
+ * Where the declaration anchored at `at` starts, in the masked `code` of the
+ * line starting at `from`: before its lead when the code there ends in one,
+ * else `at`. Masked, a literal or a URI is blank, so the word before one reads
+ * as an edge's source here exactly as `relationHead` reads it in the scan
+ * (`link https://… -> zulu` is `link -> zulu` to both). Such a line is a
+ * scanned edge of its own, so its edge is unlocated only when an earlier
+ * statement's span ran on over it — and then the line-break explanation is
+ * the one to give, which is what dropping that word leads to.
+ */
+function leadStart(code: string, span: { from: number; at: number }, lead: Lead): number {
+  const before = code.slice(span.from, span.at);
+  const m = lead === "edge" ? EDGE_LEAD.exec(before) : ELEMENT_LEAD.exec(before);
+  return m === null || (lead !== "edge" && m[1] !== lead.kind) ? span.at : span.from + m.index;
+}
+
 /** Everything a position tells about a declaration, and the offset arithmetic that is built on. */
 interface Placer {
-  place: (start: Position | undefined) => Pick<Unlocated, "line" | "sharesLine" | "readAs">;
+  place: (start: Position | undefined, lead: Lead) => Pick<Unlocated, "line" | "sharesLine" | "readAs">;
   offset: (start: Position) => number;
 }
 
@@ -107,10 +144,13 @@ function placer(text: string, scan: ScannedModel): Placer {
       .map((e) => ({ name: `'${e.id}'`, start: e.start, end: e.bodyOpen === -1 ? e.end : e.bodyOpen })),
     ...scan.rels.map((r) => ({ name: `the edge '${r.source} -> ${r.target}'`, start: r.start, end: r.end })),
   ];
-  const place = (start: Position | undefined): Pick<Unlocated, "line" | "sharesLine" | "readAs"> => {
+  const place = (start: Position | undefined, lead: Lead): Pick<Unlocated, "line" | "sharesLine" | "readAs"> => {
     if (start === undefined) return {};
     const at = offset(start);
-    const before = code.slice(starts[start.line] ?? at, at);
+    const from = starts[start.line] ?? at;
+    // Measured from where the declaration starts, not from the anchor: its own
+    // kind keyword or source is no other statement (`Lead`).
+    const before = code.slice(from, leadStart(code, { from, at }, lead));
     // Innermost first: a nested declaration's span lies inside its parent's.
     const cover = heads.filter((h) => at >= h.start && at < h.end).sort((a, b) => b.start - a.start)[0];
     return {
