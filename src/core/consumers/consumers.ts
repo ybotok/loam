@@ -27,12 +27,13 @@
  *    spec.md AND arch.spec.md — whose `Operations:` line names it, unless that
  *    service's own contract defines the same id (`ownsOperation` says why);
  *    (3) the use-case hops the model attributes to it
- *    (`core/usecases/operations.ts`); (4) the provider's OWN requirements and
- *    its own internal edges still naming it, filed apart as `own`.
+ *    (`core/usecases/operations.ts`); (4) the provider's OWN spec.md
+ *    requirements — the file `validate` grades its `Operations:` lines in —
+ *    and its own internal edges still naming it, filed apart as `own`.
  *  - a message `name` of `provider`: `consumes` edges, other services'
  *    `Consumes:` lines over both spec files, the use-case hops backed by such an
  *    edge, and — as `own` — the provider's own `publishes` edges and
- *    `Publishes:` lines.
+ *    `Publishes:` lines over both spec files, which `validate` grades alike.
  *
  * WHY `own` IS ITS OWN LIST. The gate's question is what the merge would leave
  * broken, and the provider's own documents break too: an overwrite carries no
@@ -128,7 +129,9 @@ export interface ConsumerRequest {
 }
 
 /**
- * Both spec files, for every question. The message half always read both — an
+ * Both spec files, for every question about another service — the provider's
+ * own lines are read where `validate` grades them (`RequirementRule.ownAxes`).
+ * The message half always read both — an
  * outbox requirement in arch.spec.md is the canonical home of a `Publishes:`
  * line, and a scan of spec.md alone answered "nobody consumes it" over the file
  * most authors use. The operation half read spec.md only, because that is
@@ -169,6 +172,12 @@ interface RequirementRule {
   provider: string;
   foreign: (state: ServiceState, r: Requirement) => Promise<boolean>;
   own: (r: Requirement) => boolean;
+  /**
+   * The provider's spec files `own` reads: the ones `validate` grades the line
+   * in, since a line it never grades can never be left broken. Other services
+   * are read over `REQUIREMENT_AXES` whatever this says.
+   */
+  ownAxes: readonly SpecAxis[];
 }
 
 export function consumerIndex(request: ConsumerRequest): ConsumerIndex {
@@ -218,6 +227,7 @@ export function consumerIndex(request: ConsumerRequest): ConsumerIndex {
       const state = services.get(id)!;
       const mine = id === rule.provider;
       for (const axis of REQUIREMENT_AXES) {
+        if (mine && !rule.ownAxes.includes(axis)) continue;
         const reqs = await requirementsOf(state, axis);
         if (!Array.isArray(reqs)) {
           if (mine) out.ownSuspended.push({ kind: "unreadable", text: `${id} — ${reqs.unreadable} could not be read, so its own requirements could not be scanned` });
@@ -275,6 +285,14 @@ export function consumerIndex(request: ConsumerRequest): ConsumerIndex {
       provider,
       foreign: async (state, r) => r.operations.includes(op) && !(await owns(state, op)),
       own: (r) => r.operations.includes(op),
+      // spec.md only: `validate` resolves an `Operations:` line against its
+      // own service's contract there (`spec-api.op-undefined`) and never in
+      // arch.spec.md, so the provider's arch.spec.md line naming the operation
+      // strands nothing — refusing for it turned a removal that archived
+      // before the one index into an exit 1 (the contract review, finding 2).
+      // Another service's arch.spec.md line still counts: there it is a
+      // dependency on this contract, as `loam dependencies` reads it.
+      ownAxes: ["spec"],
     });
     // Flows last in each list, deliberately: the edge and the requirement say
     // WHICH document to open, and the flow says what the reader is about to
@@ -319,6 +337,10 @@ export function consumerIndex(request: ConsumerRequest): ConsumerIndex {
       provider,
       foreign: async (_state, r) => r.consumes.includes(name),
       own: (r) => r.publishes.includes(name),
+      // Both: `validate` grades a `Publishes:` line in either file
+      // (`spec-event.message-undefined`), the outbox requirement in
+      // arch.spec.md being its canonical home.
+      ownAxes: REQUIREMENT_AXES,
     });
     const hops = hopsConsuming(map.useCases, { provider, name });
     return { victims: [...edges, ...reqs.victims, ...hops], suspended: reqs.suspended, own: [...outbound, ...reqs.own], ownSuspended: reqs.ownSuspended };

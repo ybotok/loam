@@ -30,11 +30,12 @@ warnings — and the three copies read different documents. They are one index n
     as `loam diff` already did.
   - **An `arch.spec.md` `Operations:` line** of another service counts, as a spec.md one does —
     for the gate, `loam diff`'s victims and `diff.consumer-added` / `diff.consumer-removed`.
-  - **The provider's own requirements count for a marker retirement too**: one still naming the
-    retired operation after the merge (a second one beside the REMOVED requirement). Before, only an
-    overwrite counted the provider's requirements, and the second requirement archived at exit 0
-    and left `spec-api.op-undefined`. An edge the provider draws to itself counted already, and
-    still does — the spine grades it like any other.
+  - **The provider's own `spec.md` requirements count for a marker retirement too**, as they do for
+    the overwrite of the entry below: one still naming the retired operation after the merge (a
+    second one beside the REMOVED requirement) archived at exit 0 and left `spec-api.op-undefined`.
+    Its `arch.spec.md` `Operations:` lines count for neither shape: `validate` grades such a line in
+    spec.md only, so one in arch.spec.md strands nothing. An edge the provider draws to itself
+    counted already, and still does — the spine grades it like any other.
     `loam diff` and the archive's overwrite warnings still leave the provider's own documents out:
     they name who ELSE is affected.
   - **On the event axis the provider's own `Publishes:` lines count**, as the merge would leave
@@ -50,7 +51,8 @@ warnings — and the three copies read different documents. They are one index n
     plus every requirement the delta ADDS or MODIFIES.
   - **A consumer document loam cannot read refuses the removal**, as the gate did before it asked
     one index: another service's `spec.md` or `arch.spec.md` that does not decode as UTF-8, the
-    provider's own spec file, or a service id two directories claim. `openapi.remove-op-consumed` /
+    provider's own `spec.md` (either spec file, for a message), or a service id two directories
+    claim. `openapi.remove-op-consumed` /
     `asyncapi.remove-message-consumed` name each in `details[]` and say the gate could not check —
     never that the fleet still consumes it. An edge drawn with no `metadata { op }` and a contested
     use-case hop still never refuse; `loam diff` lists them as doubts, as before.
@@ -89,7 +91,8 @@ warnings — and the three copies read different documents. They are one index n
   0. Where another service's spec file does not decode, `loam validate --feature`
   reports `openapi.remove-op-consumed` / `asyncapi.remove-message-consumed` naming the file where it
   reported `feature.unreadable`, at exit 1 as before, and `loam archive` exits 1 as before. Where
-  two directories claim a service id, or the provider's own spec file does not decode, `loam
+  two directories claim a service id, or the provider's own `spec.md` does not decode (either spec
+  file, for a message), `loam
   archive` and `loam validate --feature` exit 1 for the removal whatever those documents say —
   before, 0 unless a copy the gate could read named it — until the document reads or `--approve` is
   passed. Where a refusal was false or the consumer is retired in the same feature, each
@@ -150,8 +153,8 @@ No code, flag or payload key was added: an existing code covers a second shape.
   The merge replaces it there with no removal marker naming it, so before this only the advisory
   `api.op-unconsumed` fired, the archive passed without `--approve`, and the next `validate`
   reported `spine.op-undefined` / `spec-api.op-undefined`. The consumers are a removal's — the one
-  consumer index of the entry above — including the provider's own requirements as the merge would
-  leave them: one the feature MODIFIES to name the new operation, or REMOVES, no longer counts. The
+  consumer index of the entry above — including the provider's own `spec.md` requirements as the
+  merge would leave them: one the feature MODIFIES to name the new operation, or REMOVES, no longer counts. The
   message names what replaces the operation and where, and says to define it at another address in
   the same delta if it is to stay.
 - **Exit code:** on this shape `loam archive` now exits 1 (`not-coherent`) without `--approve`,

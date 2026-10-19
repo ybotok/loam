@@ -488,6 +488,43 @@ Operations: capturePayment
     expect((await consumedIssue(p))!.message).toContain("after this merge — payment-service's living requirement 'Refund a capture'.");
   });
 
+  // The contract review's second finding: `own` read both spec files, but
+  // `validate` grades an `Operations:` line against its own service's contract
+  // in spec.md only (`spec-api.op-undefined`), so the provider's arch.spec.md
+  // line the refusal named could never break anything — and an archive that
+  // passed before the one index was refused for it. Another service's
+  // arch.spec.md line still counts: that one is a dependency on this contract.
+  it("the provider's own arch.spec.md Operations: line is no consumer — validate never grades it", async () => {
+    const p = await project({
+      ...fleet({
+        "services/payment-service/arch.spec.md": `---
+service: payment-service
+status: verified
+---
+
+# payment-service — architecture spec
+
+## Requirements
+
+### Requirement: Capture is idempotent
+The service SHALL capture a payment at most once, whatever the retries.
+
+Operations: capturePayment
+
+#### Scenario: Retried capture
+- **Given** a captured payment
+- **When** capture is requested again
+- **Then** nothing is captured twice
+`,
+      }),
+      ...INTENT,
+      ...RETIRE_CAPTURE,
+    });
+    expect(await consumedIssue(p)).toBeUndefined();
+    const archived = await archive(p, "FEAT-60");
+    expect(archived.code, JSON.stringify(archived.issues)).toBe(0);
+  });
+
   // Review finding 5: the provider's requirements were read through the
   // archive's merge, which grades the LIVING file's Requirement-IDs too, and a
   // throw answered "no consumers" — so one malformed id elsewhere in the

@@ -1275,8 +1275,10 @@ of an operation are read once, the same way for every reader (`core/consumers/`)
   `Operations:` line against its own service's contract, so such a line names that service's own
   operation (an unreadable or absent contract proves no ownership, and the line counts);
 - the use-case hops the model attributes to it (a contested hop is a doubt, never a consumer);
-- the provider's OWN documents still naming it — its requirements, and edges it draws to itself.
-  The gate counts these, because the merge strands them as surely; `loam diff` and the archive's
+- the provider's OWN documents still naming it — its `spec.md` requirements, and edges it draws to
+  itself. Not its `arch.spec.md` lines: `validate` grades an `Operations:` line in spec.md only, so
+  one in arch.spec.md strands nothing (another service's does count — it is a dependency on this
+  contract, as `loam dependencies` reads it). The gate counts these, because the merge strands them as surely; `loam diff` and the archive's
   `openapi.op-modified` warnings answer who ELSE is affected, and leave them out (a service owes no
   operationId to itself).
 
