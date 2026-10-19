@@ -80,6 +80,7 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
         severity: "error",
         code: "asyncapi.remove-message-consumed",
         subject: svc,
+        details: named,
         message: `${svc}: this feature retires message '${message}', but the fleet would still name it after this merge — ${named.join("; ")}. Retire each in the same change (${route}), or archive with --approve to break it deliberately.`,
       });
     }
@@ -101,6 +102,7 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
         severity: "error",
         code: "asyncapi.remove-message-consumed",
         subject: svc,
+        details: named,
         message: `${svc}: after this feature's merge, ${svc}'s asyncapi.yaml would no longer declare an action: send operation for '${message}', but the fleet would still name it — ${named.join("; ")}. Keep an operation sending it, retire each in the same change (${route}), or archive with --approve to break it deliberately.`,
       });
     }

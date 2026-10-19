@@ -22,7 +22,6 @@ import { flowDeltaIssues } from "../usecases/delta/flows.js";
 import { deploymentDeltaIssues, readFeatureDeployments } from "../deployment/delta.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
-
 /**
  * Cross-axis consistency for a feature: do C4 (architecture), requirements (behaviour),
  * and OpenAPI (contract) agree? Errors are hard (would corrupt the living docs on archive);
@@ -221,6 +220,7 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
         severity: "error",
         code: "openapi.remove-op-consumed",
         subject: svc,
+        details: named,
         message: `${svc}: this feature retires '${op}', but the fleet would still consume it after this merge — ${named.join("; ")}. Retire each consumer in the same change (${route}), or archive with --approve to break it deliberately.`,
       });
     }
@@ -243,6 +243,7 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
         severity: "error",
         code: "openapi.remove-op-consumed",
         subject: svc,
+        details: named,
         message: `${svc}: this feature's openapi.yaml defines ${by}, where '${op}' lives now — the merge replaces it there and would leave '${op}' defined nowhere, but it is still consumed — ${named.join("; ")}. Define '${op}' at another address in this delta if it is to stay. To take it out on purpose, update every consumer in the same change — ${route} (${svc}'s own restated to name the new operation, for a rename; a REMOVED one owes no x-loam-remove marker, since the overwrite already takes '${op}' out) — or archive with --approve to break it deliberately.`,
       });
     }

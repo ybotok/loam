@@ -62,9 +62,12 @@ async function featureFindings(p: Project, feature: string): Promise<Finding[]> 
 }
 
 /** `loam archive <id> --json`: the exit code and, when refused, the issues it was refused for. */
-async function archive(p: Project, feature: string): Promise<{ code: number; issues: Array<{ code: string; message: string }> }> {
+async function archive(
+  p: Project,
+  feature: string,
+): Promise<{ code: number; issues: Array<{ code: string; message: string; details?: string[] }> }> {
   const res = await runLoam(p.workDir, "archive", feature, "--json");
-  const payload = JSON.parse(res.stdout) as { issues?: Array<{ code: string; message: string }> };
+  const payload = JSON.parse(res.stdout) as { issues?: Array<{ code: string; message: string; details?: string[] }> };
   return { code: res.code, issues: payload.issues ?? [] };
 }
 
@@ -96,6 +99,32 @@ model {
 views {
   view landscape {
     include *
+  }
+}
+`;
+
+/**
+ * The map without the authorize edge, so the one relationship between the two
+ * services is the capture call, and a hop between them is attributed to it
+ * rather than contested between two operations.
+ */
+const LANDSCAPE_NO_AUTHORIZE = LANDSCAPE.replace(
+  `  checkoutWeb -> paymentService 'Calls authorizePayment' {\n    metadata { op 'authorizePayment' }\n  }\n`,
+  "",
+);
+
+/** A use case drawing its own capture edge — outside the map file — and one hop over it. */
+const CHECKOUT_FLOW = `model {
+  checkoutWeb -> paymentService 'Calls capturePayment' {
+    metadata { op 'capturePayment' }
+  }
+}
+
+views {
+  dynamic view uc_checkout {
+    #cap-checkout
+    title 'Checkout'
+    checkoutWeb -> paymentService 'captures the payment'
   }
 }
 `;
@@ -413,27 +442,8 @@ describe("openapi.remove-op-consumed reads the one index", () => {
   it("a use-case hop onto the operation is named, after the edge that backs it", async () => {
     const p = await project({
       ...fleet({
-        // The map without the authorize edge, so the one relationship between
-        // the two services is the capture call and the hop is attributed to it
-        // rather than contested between two operations.
-        "architecture/landscape.likec4": LANDSCAPE.replace(
-          `  checkoutWeb -> paymentService 'Calls authorizePayment' {\n    metadata { op 'authorizePayment' }\n  }\n`,
-          "",
-        ),
-        "architecture/usecases/checkout.likec4": `model {
-  checkoutWeb -> paymentService 'Calls capturePayment' {
-    metadata { op 'capturePayment' }
-  }
-}
-
-views {
-  dynamic view uc_checkout {
-    #cap-checkout
-    title 'Checkout'
-    checkoutWeb -> paymentService 'captures the payment'
-  }
-}
-`,
+        "architecture/landscape.likec4": LANDSCAPE_NO_AUTHORIZE,
+        "architecture/usecases/checkout.likec4": CHECKOUT_FLOW,
       }),
       ...INTENT,
       ...SETTLE_OVER_CAPTURE,
@@ -696,5 +706,46 @@ Publishes: payment.Legacy
     expect(ofCode(found, "asyncapi.remove-message-consumed")).toEqual([]);
     const archived = await archive(p, "FEAT-60");
     expect(archived.code, JSON.stringify(archived.issues)).toBe(0);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* One answer: the gate and the diff agree                             */
+/* ------------------------------------------------------------------ */
+
+describe("the archive gate and loam diff name the same consumers", () => {
+  // The point of one index. The gate's refusal and the diff's victims used to
+  // come from two copies that read different documents — so a removal the gate
+  // called unconsumed could be `diff.op-removed-consumed` on the very pull
+  // request that archived it, and the reverse.
+  it("on one tree, the refusal's consumers are the diff's victims of the same removal once it is archived", async () => {
+    const p = await project({
+      ...fleet({
+        // The map without the authorize edge, so the flow's one hop is
+        // attributed to the capture call rather than contested.
+        "architecture/landscape.likec4": LANDSCAPE_NO_AUTHORIZE,
+        "architecture/usecases/checkout.likec4": CHECKOUT_FLOW,
+        "services/checkout-web/arch.spec.md": CHECKOUT_ARCH_SPEC,
+      }),
+      ...INTENT,
+      ...RETIRE_CAPTURE,
+    });
+    commitBase(p.docsDir);
+
+    const refused = await archive(p, "FEAT-60");
+    expect(refused.code).toBe(1);
+    const [gate, ...more] = ofCode(refused.issues, "openapi.remove-op-consumed");
+    expect(more).toEqual([]);
+    expect(gate!.details).toEqual([
+      `edge checkout-web → payment-service ("Calls capturePayment")`,
+      "checkout-web's living requirement 'Capture goes through the payment gateway'",
+      "use case 'uc_checkout' step 1 'captures the payment' (architecture/usecases/checkout.likec4)",
+    ]);
+
+    const approved = await runLoam(p.workDir, "archive", "FEAT-60", "--approve", "--json");
+    expect(approved.code, approved.out).toBe(0);
+    const [victims, ...others] = ofCode(await diffFindings(p, "payment-service"), "diff.op-removed-consumed");
+    expect(others).toEqual([]);
+    expect(victims!.details).toEqual(gate!.details);
   });
 });
