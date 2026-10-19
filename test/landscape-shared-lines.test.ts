@@ -90,6 +90,17 @@ describe("an addition anchored to a statement that shares its line with the next
     }
   });
 
+  it("a trailing line comment, a bare carriage return, then a declaration whose body opens: kiwi, not beta.kiwi", async () => {
+    // The mask ends `// note` at the bare `\r`, so beta is located — and the
+    // next `\n`-line was inside beta's body: the merge parsed, declared
+    // `beta.kiwi` and was written at exit 0, where 171555d refused.
+    for (const lead of ["// note", "/* a */ // note"]) {
+      const land = `${SPEC}model {\n  alpha = softwareSystem 'alpha-service' { metadata { service 'alpha' } } ${lead}\r  beta = softwareSystem 'beta-service' {\n    api = container 'API'\n  }\n}\n`;
+      const merged = await merge(land, bound("kiwi", "alpha", "FEAT-7"), "FEAT-7");
+      expect(await ids(merged)).toEqual(["alpha", "beta", "beta.api", "kiwi"]);
+    }
+  });
+
   it("a block comment the anchor's line opens and a later line closes: the addition lands before it, not in it", async () => {
     // The next line is inside the comment, and an addition written there was
     // commented out of a merge that parsed.
@@ -102,6 +113,11 @@ describe("an addition anchored to a statement that shares its line with the next
   it.each([
     ["code follows on the line: right after the anchor, bare", "  a { }  b {\n  }\n}", { at: 7, bare: true }],
     ["a line comment follows: the next line", "  a { } // c\n  b\n}", { at: 13, bare: false }],
+    // LikeC4 ends a line comment at a bare carriage return, as the source mask
+    // does since the bare-CR fix: `b {` after `// c\r` is code on the anchor's
+    // `\n`-line, and the next `\n`-line is inside b's body.
+    ["a line comment then a bare CR then code: right after the anchor, bare", "  a { } // c\r  b {\n  }\n}", { at: 7, bare: true }],
+    ["a line comment ending in CRLF: the next line, as before", "  a { } // c\r\n  b\n}", { at: 14, bare: false }],
     ["a closed block comment follows: the next line", "  a { } /* c */\n  b\n}", { at: 16, bare: false }],
     ["a block comment the line does not close: right after the anchor, bare", "  a { } /* c\n  */\n}", { at: 7, bare: true }],
     ["only the block's closing brace follows: before that brace, as before", "  a { } }", { at: 8, bare: true }],

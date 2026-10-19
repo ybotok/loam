@@ -78,7 +78,8 @@ reads it.
   code, or a block comment the line does not close, follows the anchor on its line. Two archives
   anchored to the two declarations on such a line also write the same bytes in either order now;
   before, whichever ran second landed above the other. A comment trailing the anchor changes
-  nothing: the addition lands on the next line, as before.
+  nothing: the addition lands on the next line, as before — unless a bare `\r` ends that `// comment`
+  and the next declaration follows it on the same line, which counts as code following the anchor.
 - **A bodyless declaration with a comment trailing it on its line.** A parent such as
   `api = container 'API' // the api` that gained its first child got its `{` inside the comment,
   and archive refused: the merged landscape "would not parse". The body now opens before the

@@ -311,12 +311,23 @@ function beforeSpot(text: string, before: TopStmt): Spot {
  * landed above the other. A comment trailing the anchor is not code — the
  * next line stays the spot, byte for byte as before — but a block comment
  * it does not close is: its next line is inside the comment.
+ *
+ * A line comment ends where LikeC4's NL does, at `\r` as well as `\n` — the
+ * source mask agrees since the bare-CR fix — so `// note\r  beta = … {` is a
+ * comment and then code on the anchor's `\n`-line, and the spot after that
+ * line is inside beta: the same `beta.kiwi` merge, written at exit 0, which
+ * 171555d refused because it could not locate beta at all. A CRLF ending
+ * leaves nothing after the comment and keeps the next line, byte for byte.
  */
 export function spotAfter(text: string, close: number, end: number): Spot {
   const nl = text.indexOf("\n", end);
   const at = nl === -1 ? text.length : nl + 1;
-  const rest = pastComments(text.slice(end, Math.min(at, close)));
-  if (rest !== "" && !rest.startsWith("//")) return { at: end, bare: true };
+  let rest = pastComments(text.slice(end, Math.min(at, close)));
+  while (rest.startsWith("//")) {
+    const eol = rest.search(/[\r\n]/);
+    rest = eol === -1 ? "" : pastComments(rest.slice(eol));
+  }
+  if (rest !== "") return { at: end, bare: true };
   return at > close ? closeSpot(text, close) : { at, bare: false };
 }
 
