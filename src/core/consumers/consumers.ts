@@ -125,6 +125,19 @@ export interface ConsumerIndex {
    * other's living contract.
    */
   producers(name: string): Promise<string[]>;
+  /**
+   * The #external element whose living `publishes` edge sends `name`, or null —
+   * a producer OUTSIDE the fleet, which `producers` never names because no
+   * contract of its own exists. Validate counts it (`spine.message-unproduced`
+   * stays quiet over it), so the gate and `loam diff` must too: counting fleet
+   * senders alone refused a retirement from a message's only fleet sender
+   * while an #external element still published it, and `loam diff` called the
+   * archived removal `diff.message-removed-consumed`, though the next
+   * `validate --all` was clean (the verification of N1–N3, D1). The living map
+   * alone, after a feature as without one: the landscape merge only adds to
+   * the map, so no feature takes a living edge or tag away.
+   */
+  externalProducer(name: string): Promise<string | null>;
 }
 
 /** Where the index reads, and after what. */
@@ -364,5 +377,7 @@ export function consumerIndex(request: ConsumerRequest): ConsumerIndex {
     return [...services.keys()].sort().filter((id) => services.get(id)!.sent.includes(name));
   };
 
-  return { opConsumers, messageConsumers, producers };
+  const externalProducer = async (name: string): Promise<string | null> => (await livingMap(docsDir, context)).externalProducer(name);
+
+  return { opConsumers, messageConsumers, producers, externalProducer };
 }

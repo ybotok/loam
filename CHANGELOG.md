@@ -98,6 +98,19 @@ warnings — and the three copies read different documents. They are one index n
     "no readable contract would still send it after this merge" and adds the route "keep another
     service sending it". With a sender left it names the senders, lists only the provider's own
     documents, and gives only their remedy.
+  - **An `#external` element that publishes the message keeps its consumers produced too**, for
+    the gate and for `loam diff` as for `validate`. Both counted only senders inside the fleet, so
+    retiring a message from its only fleet sender was refused while an `#external` element still
+    published it (an edge from it with `metadata { publishes }`), and after `--approve` `loam diff`
+    reported `diff.message-removed-consumed` (error) — while `spine.message-unproduced` accepts such
+    a producer and the next `validate --all` was clean. Now the outside producer counts as a
+    sender, read off the living `architecture/` project with validate's own rule: only while the
+    project parses, and not from an edge the feature's own C4 delta draws. `loam diff` reports
+    `diff.message-removed` (warn), "still sent by `<title>` (#external)", and a refusal for the
+    provider's own documents, which it still does not excuse, names it the same way. With no sender
+    left, the refusal now also says "nor does an #external element publish it", and its route
+    reads "keep another service sending it (…) or an #external element publishing it (a publishes
+    edge from it in the living architecture/ project)". This predates the one index too.
   - **`openapi.remove-marker-missing` is owed only while there is a living operation to retire**:
     not for an id the service's living contract does not define (a consumer's REMOVED requirement
     naming another service's operation), and not for one the delta already replaces at its method
@@ -126,11 +139,15 @@ warnings — and the three copies read different documents. They are one index n
   before, 0 unless a copy the gate could read named it — until the document reads or `--approve` is
   passed. Where a refusal was false or the consumer is retired in the same feature, each
   of those exits 0 for that shape unless something else gates. That includes a message retired from
-  one sender while another service would still send it after the merge, where only consumers were
+  one sender while another service would still send it after the merge, or while an `#external`
+  element still publishes it, where only consumers were
   named: `loam archive`, `loam validate --feature`, `loam validate <FEAT>` and `loam validate
   --all` exited 1 and now exit 0, `loam status` no longer counts it as gating, and `loam show
   <FEAT> --json` no longer reports `review.readyToArchive: false` for it. `loam diff` reports
-  `diff.op-removed` (warn) where its only victim was a same-id requirement. `--approve` overrides
+  `diff.op-removed` (warn) where its only victim was a same-id requirement, and
+  `diff.message-removed` (warn) where an `#external` element still publishes the removed message —
+  it exited 1 (`diff.message-removed-consumed`, `breaking: true`) and now exits 0 unless something
+  else fails. `--approve` overrides
   every one of these refusals as before. `--strict` changes nothing here beyond that: every finding
   in this entry is an error, or is unchanged.
 

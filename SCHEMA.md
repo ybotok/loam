@@ -1444,13 +1444,19 @@ merge would leave behind, or its own `publishes` edge (the spine grades that edg
 `spine.message-undefined`; drop or redraw it in the living map), which covers a message slot re-keyed to another name or a send operation
 turned around as surely as a marker: read after the merge, as on the HTTP axis, and a `REMOVED`
 requirement owes no marker for a message the merge already takes out. **A consumer counts only
-while no service would still send the message after the merge**: the join is fleet-global, and a
-consumer with another producer is not stranded — `spine.message-unproduced` grades a consumer by
-exactly that, and `loam diff` reports such a removal as `diff.message-removed`, "still sent by …".
+while nothing would still send the message after the merge** — no service, and no `#external`
+element whose edge publishes it: the join is fleet-global, and a consumer with another producer is
+not stranded — `spine.message-unproduced` grades a consumer by exactly that, an outside producer
+included (*The direction is not decoration* above), and `loam diff` reports such a removal as
+`diff.message-removed`, "still sent by …", naming an outside producer as `<title> (#external)`.
 The senders are read after the merge too: a service this feature carries an event delta for sends
 what the merged contract would (the delta itself, where it creates the contract), and vouches for
 nothing where the merge cannot be simulated, so a feature retiring the message from every sender
-is still refused; an unreadable contract never vouches. Another sender does not excuse the
+is still refused; an unreadable contract never vouches. The outside producer is read off the
+living `architecture/` project with validate's own rule, and only while that project parses; the
+merge only adds to the map, so no feature takes it away, and a `publishes` edge from an `#external`
+element that only the feature's own C4 delta draws does not count — draw it in the living map, or
+archive with `--approve`. Another sender does not excuse the
 provider's own `Publishes:` lines and `publishes` edges — those are graded against its own
 contract, whoever else sends the message — nor its own unreadable spec files; another service's
 unreadable spec file, or an id two directories claim, refuses only while nothing would send. The lag argument

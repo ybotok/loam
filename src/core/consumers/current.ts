@@ -24,6 +24,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Rel } from "../c4/likec4.js";
 import { serviceResolver } from "../c4/resolve/service.js";
+import { externalProducerOf } from "../c4/resolve/external.js";
 import { readUseCases, useCasesIn, type UseCaseScan } from "../usecases/fleet.js";
 import type { Requirement } from "../document/spec.js";
 import type { Operation } from "../openapi/doc.js";
@@ -173,6 +174,17 @@ export interface LivingMap {
    */
   resolve: (id: string) => string;
   useCases: UseCaseScan;
+  /**
+   * The #external element whose `publishes` edge sends a message, or null —
+   * validate's own rule (`externalProducerOf`, `core/c4/resolve/external.ts`),
+   * asked of the same project with the same resolver and the same directory
+   * ids, so the gate and `loam diff` call a message produced exactly where
+   * `spine.message-unproduced` stays quiet. Null wherever the PROJECT does not
+   * parse, the fallback below included: validate grades the producer against
+   * the project or not at all, and an outside producer found on a map it
+   * would not accept would pass a removal its next run then reports.
+   */
+  externalProducer: (message: string) => string | null;
 }
 
 /** What one invocation has read, per docs root: each half paid for at its first question. */
@@ -238,20 +250,28 @@ export function livingFleet(docsDir: DocsDir, context: FleetContext): Promise<Cu
 export function livingMap(docsDir: DocsDir, context: FleetContext): Promise<LivingMap> {
   const memo = memoFor(docsDir, context);
   return (memo.map ??= (async (): Promise<LivingMap> => {
-    const fleet = await livingFleet(docsDir, context);
-    const known = new Set<string>([...fleet.services.keys(), ...fleet.ambiguous.keys()]);
+    // Every directory id the walk found, the ones two directories claim
+    // included — the services and the `ambiguous` ids of `livingFleet` together,
+    // which is the set validate resolves the map against (`known` in
+    // `commands/validate/service/service.ts`), read off the same memoised
+    // enumeration. Directory names, so the producer rule's guard (a services/
+    // directory outranks a tag) is handed what it demands.
+    const known = new Set((await context.listServices(docsDir)).map((entry) => entry.id));
+    const none = (): null => null;
     const mapPath = landscapePath(docsDir);
     if (!existsSync(mapPath)) {
-      return { relationships: null, resolve: (id) => id, useCases: await readUseCases({ docsDir, known }) };
+      return { relationships: null, resolve: (id) => id, useCases: await readUseCases({ docsDir, known }), externalProducer: none };
     }
     const doc = await context.architecture(docsDir);
     const useCases = useCasesIn(doc, known);
     if (doc.errors.length === 0) {
-      return { relationships: doc.relationships, resolve: serviceResolver(doc.elements, known), useCases };
+      const resolve = serviceResolver(doc.elements, known);
+      const externalProducer = (message: string): string | null => externalProducerOf(message, doc, resolve, known);
+      return { relationships: doc.relationships, resolve, useCases, externalProducer };
     }
     const alone = await context.loadLikeC4(mapPath);
     return alone.errors.length > 0
-      ? { relationships: null, resolve: (id) => id, useCases }
-      : { relationships: alone.relationships, resolve: serviceResolver(alone.elements, known), useCases };
+      ? { relationships: null, resolve: (id) => id, useCases, externalProducer: none }
+      : { relationships: alone.relationships, resolve: serviceResolver(alone.elements, known), useCases, externalProducer: none };
   })());
 }

@@ -279,10 +279,15 @@ async function messagesDiff(sink: ServiceDiff, pair: { base: ServiceState; curre
     // Fleet-global join: a name another current service still SENDS is not
     // orphaned (positive evidence only — an unreadable contract never vouches,
     // and a service that only receives it is one of its consumers, never its
-    // producer: `producers` says why that distinction is the gate's too).
+    // producer: `producers` says why that distinction is the gate's too). Nor
+    // is one an #external element still publishes, by validate's own rule
+    // (`externalProducer` says why): counting the fleet's senders alone made
+    // this removal an error that the next `validate --all` called clean.
     const elsewhere = (await victims.producers(name)).filter((d) => d !== sink.id);
-    if (elsewhere.length > 0) {
-      sink.findings.push(found("diff.message-removed", `message '${name}' was removed since base; still sent by ${elsewhere.join(", ")}`));
+    const outside = await victims.externalProducer(name);
+    const senders = outside === null ? elsewhere : [...elsewhere, `${outside} (#external)`];
+    if (senders.length > 0) {
+      sink.findings.push(found("diff.message-removed", `message '${name}' was removed since base; still sent by ${senders.join(", ")}`));
       continue;
     }
     const scan = await victims.messageConsumers(sink.id, name);

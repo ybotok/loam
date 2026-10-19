@@ -1305,4 +1305,102 @@ components:
     expect(issue!.message).toContain("order-service would still send it");
     expect((await archive(p, "FEAT-60")).code).toBe(1);
   });
+
+  /*
+   * A producer OUTSIDE the fleet keeps a message produced too (the
+   * verification of N1–N3, D1, older than the one index): validate accepts an
+   * #external element whose edge carries `metadata { publishes }` as the
+   * message's producer — `spine.message-unproduced` stays quiet over it — but
+   * the gate and `loam diff` counted only senders inside the fleet. So
+   * retiring the message from payment-service, its only sender in the fleet,
+   * was refused over checkout-web's consumers while legacy-gateway still
+   * published it; after `--approve`, `loam diff` reported
+   * `diff.message-removed-consumed` (exit 1); and the next `validate --all`
+   * had no errors.
+   */
+  const GATEWAY = "\n  legacyGateway = softwareSystem 'legacy-gateway' {\n    #external\n  }\n";
+  /** The fleet with legacy-gateway's edge into checkout-web carrying `metadata`, and payment-service retiring the message. */
+  const gatewayFleet = (metadata: string, gateway = GATEWAY): Record<string, string> => ({
+    "services/payment-service/model.likec4": serviceModel("payment-service", "paymentService"),
+    "services/checkout-web/model.likec4": serviceModel("checkout-web", "checkoutWeb"),
+    ...fleet({
+      "architecture/landscape.likec4": LANDSCAPE.replace("  tag cap-checkout\n", "  tag cap-checkout\n  tag external\n").replace(
+        "\n}\n\nviews {",
+        `${gateway}  legacyGateway -> checkoutWeb 'Delivers legacy events' {\n    metadata {\n${metadata}    }\n  }\n}\n\nviews {`,
+      ),
+      "services/payment-service/spec.md": PAYMENT_SPEC_PUBLISHING,
+      "services/payment-service/asyncapi.yaml": PAYMENT_EVENTS,
+      "services/checkout-web/spec.md": checkoutSpec(CHECKOUT_CONSUMES),
+      "services/checkout-web/asyncapi.yaml": CHECKOUT_RECEIVES,
+    }),
+    ...INTENT,
+    ...retireFrom("payment-service", PAYMENT_SPEC_PUBLISHING),
+  });
+  const GATEWAY_PUBLISHES = "      publishes 'payment.Legacy'\n      consumes 'payment.Legacy'\n";
+  const GATEWAY_CONSUMERS = [
+    `edge legacy-gateway → checkout-web ("Delivers legacy events")`,
+    "checkout-web's living requirement 'Book legacy payments'",
+  ];
+
+  it("an #external element still publishing the message keeps its consumers produced: no refusal, `loam diff` names it, and the fleet stays green", async () => {
+    const p = await project(gatewayFleet(GATEWAY_PUBLISHES));
+    await runLoam(p.workDir, "subsystem", "sync");
+    commitBase(p.docsDir);
+    const gate = await runLoam(p.workDir, "validate", "--feature", "FEAT-60", "--json");
+    expect(gate.code, gate.out).toBe(0);
+    expect(ofCode(await featureFindings(p, "FEAT-60"), "asyncapi.remove-message-consumed")).toEqual([]);
+    const archived = await archive(p, "FEAT-60");
+    expect(archived.code, JSON.stringify(archived.issues)).toBe(0);
+
+    const diff = await runLoam(p.workDir, "diff", "--base", "main", "--json");
+    expect(diff.code, diff.out).toBe(0);
+    const found = await diffFindings(p, "payment-service");
+    expect(ofCode(found, "diff.message-removed-consumed")).toEqual([]);
+    expect(ofCode(found, "diff.message-removed")).toEqual([
+      expect.objectContaining({ severity: "warn", message: "message 'payment.Legacy' was removed since base; still sent by legacy-gateway (#external)" }),
+    ]);
+
+    const all = await runLoam(p.workDir, "validate", "--all", "--json");
+    const errors = (JSON.parse(all.stdout) as { targets: Array<{ findings: Finding[] }> }).targets
+      .flatMap((t) => t.findings)
+      .filter((f) => f.severity === "error");
+    expect(errors).toEqual([]);
+  });
+
+  // The controls: validate's rule exactly, so an #external edge that only
+  // consumes vouches for no producer, and neither does a publishing source
+  // nobody tagged #external — the refusal and the diff's error stand as before.
+  it.each([
+    ["an #external edge that only consumes", "      consumes 'payment.Legacy'\n", GATEWAY],
+    ["a publishing source not tagged #external", GATEWAY_PUBLISHES, "\n  legacyGateway = softwareSystem 'legacy-gateway'\n"],
+  ])("%s keeps nothing produced: refused as before, and `loam diff` names the joins", async (_label, metadata, gateway) => {
+    const p = await project(gatewayFleet(metadata, gateway));
+    commitBase(p.docsDir);
+    const [issue, ...more] = ofCode(await featureFindings(p, "FEAT-60"), "asyncapi.remove-message-consumed");
+    expect(more).toEqual([]);
+    expect(issue!.details).toEqual(GATEWAY_CONSUMERS);
+    expect(issue!.message).toContain("no readable contract would still send it after this merge");
+    expect(issue!.message).toContain("nor does an #external element publish it");
+    expect((await archive(p, "FEAT-60")).code).toBe(1);
+
+    const approved = await runLoam(p.workDir, "archive", "FEAT-60", "--approve", "--json");
+    expect(approved.code, approved.out).toBe(0);
+    const found = await diffFindings(p, "payment-service");
+    expect(ofCode(found, "diff.message-removed")).toEqual([]);
+    expect(ofCode(found, "diff.message-removed-consumed").map((f) => f.details)).toEqual([GATEWAY_CONSUMERS]);
+  });
+
+  // An outside producer excuses what another fleet sender excuses, and no
+  // more: the provider's own `Publishes:` line still strands.
+  it("an #external sender does not excuse the provider's own Publishes: line", async () => {
+    const files = gatewayFleet(GATEWAY_PUBLISHES);
+    files[`${FEAT}/specs/payment-service/asyncapi.yaml`] = "asyncapi: 3.0.0\noperations:\n  sendLegacy:\n    x-loam-remove: true\n";
+    delete files[`${FEAT}/specs/payment-service/spec.md`];
+    const p = await project(files);
+    const [issue, ...more] = ofCode(await featureFindings(p, "FEAT-60"), "asyncapi.remove-message-consumed");
+    expect(more).toEqual([]);
+    expect(issue!.details).toEqual(["payment-service's living requirement 'Legacy events'"]);
+    expect(issue!.message).toContain("legacy-gateway (#external) would still send it");
+    expect((await archive(p, "FEAT-60")).code).toBe(1);
+  });
 });

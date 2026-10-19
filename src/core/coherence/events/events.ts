@@ -64,14 +64,21 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
   // A consumer document nobody could read or place refuses too, as on the
   // contract axis (../consumed/refusal.ts).
   //
-  // But a CONSUMER is stranded only when no service would send the message
-  // after this merge — the rule `spine.message-unproduced` grades a consumer
-  // by, and the one `loam diff` asks first (`producers`, core/diff/semantic.ts).
+  // But a CONSUMER is stranded only when nothing would send the message after
+  // this merge — no service, and no #external element whose edge publishes it.
+  // That is the rule `spine.message-unproduced` grades a consumer by — it stays
+  // quiet over an outside producer (`externalProducerOf`,
+  // core/c4/resolve/external.ts) — and the one `loam diff` asks first
+  // (`producers`, then `externalProducer`, core/diff/semantic.ts).
   // Counting every consumer "whoever its producer is" refused a retirement from
   // one of two senders over the other sender's own consumes edge, and told the
   // author to drop it, while `loam diff` called the same removal a warning
   // ("still sent by …") and the next `validate --all` was clean (the
-  // verification of the consumer fixes, N2). The provider's OWN documents are
+  // verification of the consumer fixes, N2). Counting the fleet's senders alone
+  // then refused a retirement from a message's only fleet sender while an
+  // #external element still published it, and `loam diff` called the archived
+  // removal `diff.message-removed-consumed`, while the next `validate --all` was
+  // clean again (the verification of N1–N3, D1). The provider's OWN documents are
   // another matter: the spine and validate grade them against the provider's
   // own contract, so they strand whoever else sends the message, and `own`
   // still refuses beside a surviving sender.
@@ -83,12 +90,17 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
   // simulation leaves it (`declared.sentAfter`), or vouches for nothing; every
   // other service sends what its living contract does. Positive evidence only,
   // as `producers` is: an unreadable contract, or a merge that stood down,
-  // never keeps a message produced.
+  // never keeps a message produced. The outside producer is the living map's,
+  // which the merge cannot take away (it only adds to the map); one this
+  // feature's own C4 delta would draw is not counted, so that shape errs
+  // toward refusing — `--approve`, or draw the edge in the living map.
   const touched = new Set<string>([...declared.featureDocs.keys(), ...declared.unreadable]);
   const sendersAfter = async (svc: string, message: string): Promise<string[]> => {
     const living = (await consumers.producers(message)).filter((id) => !touched.has(id));
     const merged = [...declared.sentAfter].filter(([, sent]) => sent.includes(message)).map(([id]) => id);
-    return [...new Set([...living, ...merged])].filter((id) => id !== svc).sort();
+    const fleet = [...new Set([...living, ...merged])].filter((id) => id !== svc).sort();
+    const outside = await consumers.externalProducer(message);
+    return outside === null ? fleet : [...fleet, `${outside} (#external)`];
   };
   const still = async (svc: string, message: string): Promise<{ found: StillNamed; senders: string[] }> => {
     const answer = await consumers.messageConsumers(svc, message);
@@ -107,8 +119,11 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
   const ownOnly = (svc: string, senders: string[]): string =>
     `${senders.join(", ")} would still send it after this merge, so its consumers keep a producer, but ${svc}'s own documents would still name it`;
   // The route a consumer's refusal gains: another sender keeps the message
-  // produced, and one this feature adds counts (`declared.sentAfter`).
-  const anotherSender = "keep another service sending it (an action: send operation in its asyncapi.yaml, living or in this feature's specs/<service>/ delta)";
+  // produced, and one this feature adds counts (`declared.sentAfter`); so does
+  // the #external element that publishes it, drawn in the living map — the one
+  // place `sendersAfter` reads an outside producer from.
+  const anotherSender =
+    "keep another service sending it (an action: send operation in its asyncapi.yaml, living or in this feature's specs/<service>/ delta) or an #external element publishing it (a publishes edge from it in the living architecture/ project)";
 
   // Retiring a message the fleet still consumes — openapi.remove-op-consumed's
   // twin, and like it a question neither exactness nor justification asks:
@@ -131,7 +146,7 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
           verb: "name",
           named: (list) =>
             senders.length === 0
-              ? `${svc}: ${lost}, and no readable contract would still send it after this merge, but the fleet would still name it — ${list}. Retire each in the same change (${route}), ${anotherSender}, or archive with --approve to break it deliberately.`
+              ? `${svc}: ${lost}, and no readable contract would still send it after this merge, nor does an #external element publish it, but the fleet would still name it — ${list}. Retire each in the same change (${route}), ${anotherSender}, or archive with --approve to break it deliberately.`
               : `${svc}: ${lost}; ${ownOnly(svc, senders)} — ${list}. Retire each in the same change (${ownRoute(svc)}), or archive with --approve to break it deliberately.`,
         }),
       });
@@ -162,7 +177,7 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
           verb: "name",
           named: (list) =>
             senders.length === 0
-              ? `${svc}: ${lost}, and no other readable contract would send it either, but the fleet would still name it — ${list}. Keep an operation sending it, ${anotherSender}, retire each in the same change (${route}), or archive with --approve to break it deliberately.`
+              ? `${svc}: ${lost}, and no other readable contract would send it either, nor does an #external element publish it, but the fleet would still name it — ${list}. Keep an operation sending it, ${anotherSender}, retire each in the same change (${route}), or archive with --approve to break it deliberately.`
               : `${svc}: ${lost}; ${ownOnly(svc, senders)} — ${list}. Keep an operation sending it, retire each in the same change (${ownRoute(svc)}), or archive with --approve to break it deliberately.`,
         }),
       });
