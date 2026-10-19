@@ -634,8 +634,11 @@ replaces it with a `full` field naming the one run that carries them, which is 5
 (`rev-parse`/`ls-tree`/`show`, read-only, no checkout), so it refuses (`repository-unavailable`)
 when the docs repo has no history to ask and (`unknown-target`) when `--base` resolves to no commit
 there. What it reports is the *joined*, fleet-meaningful delta — a removed operation is graded
-against the landscape edges and living requirements that still name it (`diff.op-removed-consumed`,
-exit 1), a removed message against its `Consumes:` lines and consumes-edges — and an artifact
+against the consumers the archive gate reads too ([SCHEMA.md](SCHEMA.md), "Who still consumes it"):
+the edges of the `architecture/` project, other services' `Operations:` lines in either spec file
+(not one naming its own service's operation of the same id) and the use-case hops attributed to it
+(`diff.op-removed-consumed`, exit 1); a removed message against its `Consumes:` lines,
+consumes-edges and hops — and an artifact
 unreadable on either side suspends that subject's axis and exits 1, because "nobody could look" must
 never read as "nothing changed". The exception is an `openapi.yaml` or `asyncapi.yaml` that cannot be
 read but is byte-identical at the base (an AsyncAPI 2.x file nobody has converted yet): the branch did
@@ -761,10 +764,12 @@ living contract. Validation refuses stale, mismatched, or unjustified markers; a
 method without persisting the marker or garbage-collecting components, and reports the removals in
 both text and JSON. See [SCHEMA.md](SCHEMA.md) for the lifecycle contract. A delta that defines
 another operationId where a living operation lives replaces it there, and when the merged contract
-then defines it nowhere the gate grades it like a retirement: `openapi.remove-op-consumed` while a
-landscape edge, another service's requirement, or the provider's own requirement as the merge would
-leave it still names the old id — so a rename redraws the edge and restates its requirement in the
-same change, or defines the old operation at another address if it is to stay.
+then defines it nowhere the gate grades it like a retirement: `openapi.remove-op-consumed` while an
+edge of the `architecture/` project, another service's requirement, a use-case hop, or the
+provider's own requirement as the merge would leave it still names the old id — so a rename redraws
+the edge and restates its requirement in the same change, or defines the old operation at another
+address if it is to stay. Every consumer is read after the feature's merge, so retiring one in the
+same feature (MODIFY or REMOVE the requirement that names it) is a fix the gate sees.
 
 A retirement also stays retired. The archive gate reads the removal markers every feature under
 `features/archive/` left behind, and refuses a delta that spells an HTTP operation, a channel, an

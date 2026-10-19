@@ -298,7 +298,10 @@ the workspace layout differs, and that part is already isolated.
     about whether an operation existed — and that disagreement gated an archive.
 13. **Extract a shared helper at the third copy, not the second.** `format.ts` exists because five
     renderers had drifted into five copies of one ternary; `docs-repo-gate.ts` because four errno
-    readings had drifted and a fix landed in one of them.
+    readings had drifted and a fix landed in one of them; `core/consumers/` because the consumer
+    join had three copies — the archive gate's, its event twin's and `loam diff`'s — kept "in step
+    by hand", and they read different documents (one map file against the project, spec.md against
+    both spec files), so the gate and the diff disagreed about who consumed the same removal.
 14. **No filesystem port, no injected FS, no fake FS.** Tests use real temp dirs. Most of the
     suite's runtime is Langium parsing, not filesystem calls, so a fake FS buys almost nothing — and
     it would destroy what `test/write-path-integrity.test.ts` and `test/archive-integrity.test.ts`

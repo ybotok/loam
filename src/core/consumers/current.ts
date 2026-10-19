@@ -165,7 +165,9 @@ interface Memo {
  * for its reason: the key IS the per-invocation object, so two runs can never
  * see each other's answer and the entry dies with the context. `validate --all`
  * grades every active feature with one context, and every one of them asks the
- * same fleet who consumes what; without this each feature re-read it.
+ * same fleet who consumes what; without this each feature re-read it. Not a
+ * memo ON FleetContext for that module's reason too: the class sits below this
+ * package, and the import such a memo needs would point up the DAG.
  */
 const PER_INVOCATION = new WeakMap<FleetContext, Map<string, Memo>>();
 

@@ -252,7 +252,7 @@ async function opsDiff(sink: ServiceDiff, pair: { base: ServiceState; current: S
       // warning, so a seeded, op-less map does not fail every removal.
       sink.findings.push(found("diff.op-removed", `operation '${id}' was removed since base; whether the current fleet still names it could NOT be fully answered — ${scan.suspended.length} possible consumer(s) could not be checked`, scan.suspended));
     } else {
-      sink.findings.push(found("diff.op-removed", `operation '${id}' was removed since base; no current landscape edge or living requirement names it`));
+      sink.findings.push(found("diff.op-removed", `operation '${id}' was removed since base; no current edge, requirement or use-case hop names it`));
     }
   }
 }

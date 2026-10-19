@@ -436,7 +436,7 @@ describe("loam diff — containment: nobody could look is not nothing changed", 
       const removal = provider.findings.find((f) => f.code === "diff.op-removed");
       expect(removal, codes(provider).join(",")).toBeDefined();
       // The false-negative string must never print over a suspended scan.
-      expect(removal!.message).not.toContain("no current landscape edge or living requirement names it");
+      expect(removal!.message).not.toContain("no current edge, requirement or use-case hop names it");
       expect(removal!.message).toContain("could NOT be fully answered");
       expect(removal!.details.some((d) => d.includes("checkout-web"))).toBe(true);
       const consumer = service(payload, "checkout-web");
@@ -1067,7 +1067,7 @@ describe("loam diff — a caller drawn with no op", () => {
       const removal = service(payload, "payment-service").findings.find((f) => f.code === "diff.op-removed");
       expect(removal).toBeDefined();
       expect(removal!.severity).toBe("warn");
-      expect(removal!.message).not.toContain("no current landscape edge or living requirement names it");
+      expect(removal!.message).not.toContain("no current edge, requirement or use-case hop names it");
       expect(removal!.message).toContain("could NOT be fully answered");
       expect(removal!.details).toEqual([
         "edge checkout-web → payment-service (\"Calls the payment API\") has no `metadata { op }`, so whether it calls 'paymentHealth' is unknown",

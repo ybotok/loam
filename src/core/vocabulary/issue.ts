@@ -140,7 +140,7 @@ export type IssueCode =
   | "openapi.remove-target-missing"
   /** an operation-removal marker's id differs from the living operation at that path+method */
   | "openapi.remove-target-mismatch"
-  /** a REMOVED requirement governs an operation but the feature has no matching removal marker */
+  /** a REMOVED requirement governs an operation its service's living contract still defines, and the feature has no matching removal marker — owed only while there is one to retire: not for another service's id, not for one this delta already replaces at its address */
   | "openapi.remove-marker-missing"
   /** an operation-removal marker is not justified by a REMOVED requirement */
   | "openapi.remove-marker-unjustified"
@@ -159,11 +159,11 @@ export type IssueCode =
   | "asyncapi.remove-target-missing"
   /** a message-removal marker's name differs from the living declaration at that key */
   | "asyncapi.remove-target-mismatch"
-  /** a REMOVED requirement's Publishes:/Consumes: line names a message the living contract still declares, with no matching removal marker in the feature */
+  /** a REMOVED requirement's Publishes:/Consumes: line names a message the living contract still declares and the merged contract would too, with no matching removal marker in the feature */
   | "asyncapi.remove-marker-missing"
   /** a message-removal marker no REMOVED requirement's Publishes:/Consumes: line justifies — message slots only; channel and operation slots need exactness alone */
   | "asyncapi.remove-marker-unjustified"
-  /** the feature retires a message the LIVING fleet still consumes — a landscape consumes-edge, or another service's living requirement */
+  /** the feature retires a message, or stops sending it, while the fleet would still name it after the merge — the consumer index's consumes-edges, other services' `Consumes:` lines and use-case hops, plus the provider's own `Publishes:` lines (core/consumers/) */
   | "asyncapi.remove-message-consumed"
   /** another feature in flight adds or edits the same (service, message) — whichever archives second replaces the other's declaration wholesale */
   | "asyncapi.message-conflict"
@@ -255,7 +255,7 @@ export type IssueCode =
   | "openapi.baseline-stale"
   /** an operation this feature spells, the living contract no longer has, and an ARCHIVED feature's removal marker retired — or spells at an address an archived feature moved it away from — the merge cannot tell a quote of a retired or moved operation from an addition, so archiving would put it back (beside its new address, for a move). A warning that GATES; `--approve` re-adds it on purpose */
   | "openapi.op-revived"
-  /** the feature takes out of the contract an operation the LIVING fleet still consumes — a landscape edge's `metadata { op }`, or another service's living requirement. Two shapes: a removal marker retires it, or the delta defines another operation at its method and path and the contract the merge would write defines it nowhere — the overwrite, which carries no marker, also counts the provider's own requirements the merge would leave naming it (the stand-in for the REMOVED requirement a marker owes) */
+  /** the feature takes out of the contract an operation the fleet would still consume after the merge — the consumer index's edges of the `architecture/` project, other services' `Operations:` lines (not one naming its own service's operation of the same id), use-case hops, plus the provider's own requirements and self-edges (core/consumers/). Two shapes: a removal marker retires it, or the delta defines another operation at its method and path and the contract the merge would write defines it nowhere */
   | "openapi.remove-op-consumed"
   /** two requirements in the LIVING document share one heading — MODIFIED rewrites the first, REMOVED deletes both, so no delta applies predictably */
   | "delta.living-duplicate-requirement"

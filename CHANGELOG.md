@@ -10,6 +10,72 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Changed — one consumer index: `loam archive`, `loam validate` and `loam diff` agree about who still consumes an operation or a message
+
+No code or flag was added; one additive `--json` key on two existing codes. Who still consumes what
+a change takes out was answered three ways — the coherence gate (`openapi.remove-op-consumed`,
+`asyncapi.remove-message-consumed`), `loam diff`'s victims (`diff.op-removed-consumed`,
+`diff.message-removed-consumed`, the `-deprecated`/`-modified` details, `diff.consumer-added` /
+`diff.consumer-removed`) and `loam archive`'s `openapi.op-modified` / `asyncapi.message-modified`
+warnings — and the three copies read different documents. They are one index now; SCHEMA.md's
+"Who still consumes it" states the rules.
+
+- **More consumers are found, so more removals are refused:**
+  - **Edges come from the whole `architecture/` project**, not `architecture/landscape.likec4`
+    alone, for the gate as for `loam diff`: an edge with `metadata { op }` (or `consumes`) drawn in
+    `architecture/calls.likec4` or in a use-case document counts. The gate passed such a removal
+    and the next `validate --all` reported `spine.op-undefined` on the edge. Where only a sibling
+    document fails to parse, the map file's own edges still count.
+  - **The gate names use-case hops** attributed to the operation (or backed by a `consumes` edge),
+    as `loam diff` already did.
+  - **An `arch.spec.md` `Operations:` line** of another service counts, as a spec.md one does —
+    for the gate, `loam diff`'s victims and `diff.consumer-added` / `diff.consumer-removed`.
+  - **The provider's own requirements count for a marker retirement too**: one still naming the
+    retired operation after the merge (a second one beside the REMOVED requirement). Before, only an
+    overwrite counted the provider's requirements, and the second requirement archived at exit 0
+    and left `spec-api.op-undefined`. An edge the provider draws to itself counted already, and
+    still does — the spine grades it like any other.
+    `loam diff` and the archive's overwrite warnings still leave the provider's own documents out:
+    they name who ELSE is affected.
+  - **On the event axis the provider's own `Publishes:` lines count**, as the merge would leave
+    them. A message slot re-keyed to another name, or a send operation turned to receive, while the
+    provider's requirement still publishes the message, archived at exit 0 and the next
+    `validate --all` reported `spec-event.message-undefined`; it is `asyncapi.remove-message-consumed`
+    now.
+  - **Fail closed**: a spec the merge refuses to apply — a malformed `Requirement-ID:` in the
+    living spec or the delta — no longer answers "no consumers". The living requirements count,
+    plus every requirement the delta ADDS or MODIFIES.
+- **Fewer refusals where the consumer was false or already retired:**
+  - **Another service's `Operations:` line naming an id its own contract defines** names its own
+    operation, and is no consumer (gate, `loam diff`, `diff.consumer-added` / `-removed`): shared
+    ids such as `healthCheck` no longer refuse a rename, and `--approve` is no longer the only way
+    past a fleet `validate --all` calls clean.
+  - **Read after the feature's merge**: a consumer requirement the same feature MODIFIES to drop
+    the id, or REMOVES, no longer counts — another service's included, which is the remedy the
+    refusal itself names.
+  - **`openapi.remove-marker-missing` is owed only while there is a living operation to retire**:
+    not for an id the service's living contract does not define (a consumer's REMOVED requirement
+    naming another service's operation), and not for one the delta already replaces at its method
+    and path (no marker could be written there). The overwrite's "REMOVE the requirement" route can
+    now be followed; its message says a REMOVED requirement owes no marker there.
+    `asyncapi.remove-marker-missing` likewise skips a message the merge already takes out.
+- **`details[]`** (additive) on `openapi.remove-op-consumed` and `asyncapi.remove-message-consumed`:
+  the consumers, one per line, in the order `loam diff` lists the victims of the same removal.
+- **Messages reworded**: the remedies name the `architecture/` project instead of
+  `architecture/landscape.likec4`, and say a requirement is retired in the feature's
+  `specs/<service>/` delta; `diff.op-removed`'s no-consumer sentence reads "no current edge,
+  requirement or use-case hop names it".
+- **Exit code:** where a consumer is newly found, `loam archive` exits 1 (`not-coherent`) without
+  `--approve`; `loam validate --feature`, `loam validate <FEAT>` and `loam validate --all` (for every
+  active feature in that shape) exit 1; `loam status` counts the finding as gating; `loam show
+  <FEAT> --json` reports `review.readyToArchive: false`; and `loam diff` exits 1
+  (`diff.op-removed-consumed` / `diff.message-removed-consumed`, `breaking: true`) where a removal
+  now has a victim. Where a refusal was false or the consumer is retired in the same feature, each
+  of those exits 0 for that shape unless something else gates, and `loam diff` reports
+  `diff.op-removed` (warn) where its only victim was a same-id requirement. `--approve` overrides
+  every one of these refusals as before. `--strict` changes nothing here beyond that: every finding
+  in this entry is an error, or is unchanged.
+
 ### Fixed — `loam instructions loam-spine` says what `loam rebase` pins for a revived quote
 
 The page said `loam rebase` "pins neither shape". That has been false since rebase began grading
@@ -38,7 +104,16 @@ work by slot now see it:
   `openapi.baseline-missing` (warn, gates archive), and so does an unpinned delta operation without
   an `operationId` over a living one. Their pins are graded like any other (`-stale`, `-invalid`).
   **Exit code:** `loam archive` now exits 1 (`not-coherent`) on either shape until `loam rebase`
-  pins it, or `--approve` merges unpinned.
+  pins it, or `--approve` merges unpinned. `openapi.baseline-missing` is a warning that gates:
+  `loam validate` exits as before on it, except `--strict` (and `--all --strict`), which fails on
+  any warning and so now exits 1; `loam status` counts it as gating, and `loam show <FEAT> --json`
+  reports `review.readyToArchive: false` until the pin is written.
+- **A pin on such an operation where nothing lives is `openapi.baseline-invalid` (error)**, as it is
+  for a named operation (rebase never writes one; a malformed pin on such an operation is refused
+  the same way). **Exit code:** `loam validate --feature`, `loam validate <FEAT>` and `loam validate
+  --all` (for every active feature carrying one) now exit 1 on it, where they exited 0 with no
+  finding; `loam archive` exits 1 (`not-coherent`) without `--approve`; `loam status` counts it as
+  gating; `loam show <FEAT> --json` reports `review.readyToArchive: false`.
 - **`openapi.remove-op-consumed`** also fires when the delta defines an operation with no
   `operationId` where a consumed one lives. Before, a delta holding only such an operation upserted
   over the consumed one with no finding of any kind.
@@ -52,21 +127,23 @@ No code, flag or payload key was added: an existing code covers a second shape.
   operation lives, and the contract the archive would write then defines the living one nowhere.
   The merge replaces it there with no removal marker naming it, so before this only the advisory
   `api.op-unconsumed` fired, the archive passed without `--approve`, and the next `validate`
-  reported `spine.op-undefined` / `spec-api.op-undefined`. The consumers are a removal's: living
-  landscape edges with `metadata { op }` and other services' living `Operations:` lines, read as
-  they stand. They also include the provider's own requirements as the merge would leave them —
-  one the feature MODIFIES to name the new operation, or REMOVES, no longer counts. The message
-  names what replaces the operation and where, and says to define it at another address in the
-  same delta if it is to stay.
+  reported `spine.op-undefined` / `spec-api.op-undefined`. The consumers are a removal's — the one
+  consumer index of the entry above — including the provider's own requirements as the merge would
+  leave them: one the feature MODIFIES to name the new operation, or REMOVES, no longer counts. The
+  message names what replaces the operation and where, and says to define it at another address in
+  the same delta if it is to stay.
 - **Exit code:** on this shape `loam archive` now exits 1 (`not-coherent`) without `--approve`,
-  and `loam validate --feature` exits 1. With `--approve` the archive merges as before and lists
-  the finding in `overridden[]`.
+  and `loam validate --feature`, `loam validate <FEAT>` and `loam validate --all` (for every active
+  feature in this shape) exit 1. `loam status` counts it as gating, and `loam show <FEAT> --json`
+  reports `review.readyToArchive: false` until it is fixed or archived past with `--approve`. With
+  `--approve` the archive merges as before and lists the finding in `overridden[]`.
 - **`c4-api.op-removing`** now also fires for a new tagged edge onto an operation the delta
   replaces that way.
-- An overwrite of an operation nothing names is unchanged: `api.op-unconsumed` stays advisory.
-  The event axis needed no change: `asyncapi.remove-message-consumed` already grades the simulated
-  merge's sent messages, so a channel, operation or message slot redefined under another identity
-  is caught like a retirement.
+- An overwrite of an operation nothing names is unchanged: `api.op-unconsumed` stays advisory. On
+  the event axis `asyncapi.remove-message-consumed` already graded the simulated merge's sent
+  messages, so a channel, operation or message slot redefined under another identity was caught
+  like a retirement for its OTHER consumers — but not for the provider's own `Publishes:` line,
+  which the consumer-index entry above adds.
 
 ### Changed — `loam archive` refuses a delta that would bring back an operation another feature retired
 
