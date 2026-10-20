@@ -10,6 +10,28 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+## [0.2.0-alpha.9] - 2026-10-20
+
+The first publish since `0.2.0-alpha.7`. `0.2.0-alpha.8` was tagged but never reached npm (its
+release run failed at `npm ci` on a stripped lockfile), so a repository upgrading from alpha.7 takes
+alpha.8's section below as well as this one. Still a prerelease on the `alpha` line.
+
+Most of it is fixes. `loam archive` merges into a landscape written in any form LikeC4 parses —
+several model blocks, markdown strings, split heads, hyphenated ids — and no longer writes a wrong
+merge at exit 0 for the shapes listed under "Fixed — `loam archive` merges into a landscape…",
+which alpha.7 did. Consumers are counted once, by one index, so `loam archive`, `loam validate` and
+`loam diff` agree; the PR gate sees a changed schema, an edited `op` on an edge and a caller drawn
+with no `op`; `loam gate --since` keeps an archived feature in view; the trust readouts show stale
+vouches; a waiting writer no longer deletes the next writer's lock.
+
+Several entries change an exit code, listed in each: refusals that are new (an overwrite or
+retirement a consumer still names, a delta reviving a retired operation, an unreadable consumer
+document) and refusals that were false and are gone. A federated verification record is now one
+file per service, and an older loam does not read it: upgrade every repository that records or
+gates a feature together. New: `loam list suites`, `loam new --modifies`, `loam gate --since`,
+`loam_adopt` on MCP; six new stable codes — `openapi.op-revived`, `asyncapi.slot-revived`,
+`next.revouch`, `frontmatter.owner-mismatch`, `diff.op-modified` and `diff.message-modified`.
+
 ### Changed — one consumer index: `loam archive`, `loam validate` and `loam diff` agree about who still consumes an operation or a message
 
 No code or flag was added; one additive `--json` key on two existing codes. Who still consumes what
@@ -863,7 +885,7 @@ No code, flag, path or payload key was added, changed or retired; only documenta
   truth; the drift test forbids the publication claim in README and in the CHANGELOG section of the
   checkout's own version. The `0.2.0-alpha.8` section below carries a dated note that it was never
   published.
-- The `0.2.0-alpha.3` section said `npm i @ybotok/loam@alpha` installs it. That release was tagged
+- The `0.2.0-alpha.3` section promised that installing `@ybotok/loam@alpha` gets it. That release was tagged
   and withdrawn before its publish step, which only the `0.2.0-alpha.4` section said. It now carries
   the same kind of dated note.
 - README said Codex reads `.codex/skills/`. That is the folder the `codex` target writes, and Codex
