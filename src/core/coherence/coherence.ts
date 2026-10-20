@@ -14,13 +14,14 @@ import { declaredByService, type DeltaScope } from "./declared.js";
 import { retiredLookup } from "./retired/archived.js";
 import { revivedOperations } from "./retired/revival/revived.js";
 import { coherenceLookups } from "./lookups.js";
+import { consumerIndex } from "../consumers/consumers.js";
+import { consumedOperationIssues } from "./consumed/operations.js";
 import { eventCoherence } from "./events/events.js";
 import { authoringIssues } from "./authoring/scaffold.js";
 import { glossaryDeltaIssues } from "../glossary/delta.js";
 import { flowDeltaIssues } from "../usecases/delta/flows.js";
 import { deploymentDeltaIssues, readFeatureDeployments } from "../deployment/delta.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
-
 
 /**
  * Cross-axis consistency for a feature: do C4 (architecture), requirements (behaviour),
@@ -177,7 +178,7 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
     ...(await authoringIssues({ featureDir, featureId, splicedEls: elements.filter(ridesWithTag), svcNames, context })),
   );
   const {
-    reqOps, removingOps, featureApiOps, unreadableApis, revivalCandidates,
+    reqOps, removingOps, featureApiOps, unreadableApis, revivalCandidates, displacedOps,
   } = await declaredByService(scope, svcNames, issues, context);
 
   // A revival: an operation the merged contract would answer that the living
@@ -193,23 +194,13 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
     if (arrived.length === 0) continue;
     issues.push(...revivedOperations(svc, arrived, await retired()));
   }
-  const {
-    governedByLivingSpec, edgeConsumers, requirementConsumers, definedElsewhere,
-    deprecatedInLiving, undeprecatedByFeature,
-  } = coherenceLookups(scope, context);
+  const { governedByLivingSpec, definedElsewhere, deprecatedInLiving, undeprecatedByFeature } = coherenceLookups(scope, context);
 
-  for (const [svc, retiring] of removingOps) {
-    for (const op of retiring) {
-      const consumers = [...(await edgeConsumers(svc, op)), ...(await requirementConsumers(svc, op))];
-      if (consumers.length === 0) continue;
-      issues.push({
-        severity: "error",
-        code: "openapi.remove-op-consumed",
-        subject: svc,
-        message: `${svc}: this feature retires '${op}', but the living fleet still consumes it — ${consumers.join("; ")}. Retire the consumer in the same feature (drop the edge from architecture/landscape.likec4, or the requirement that names it), or archive with --approve to break it deliberately.`,
-      });
-    }
-  }
+  // --- taking an operation out of the contract while the fleet still calls it ---
+  // ./consumed/operations.ts owns the gate; the index is built here because
+  // the event axis below asks the same one, so the fleet is read once.
+  const consumers = consumerIndex({ docsDir, context, afterFeature: featureDir });
+  issues.push(...(await consumedOperationIssues({ consumers, removingOps, displacedOps })));
 
   // E1: Spec -> API — every operation a requirement governs must exist in that service's OpenAPI.
   for (const [svc, ops] of reqOps) {
@@ -264,7 +255,13 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
         : await serviceOperationIds(docsDir, pathable, featureDir, context);
     if (contractUnreadable) {
       // openapi.invalid (declared.ts) already gates; one breach, one finding.
-    } else if (pathable !== undefined && removingOps.get(pathable)?.has(r.op) === true) {
+    } else if (
+      pathable !== undefined &&
+      // An operation replaced at its address leaves as surely as a retired
+      // one; `available` below still lists it, because serviceOperationIds
+      // subtracts markers only, so without this a new edge onto it passed.
+      (removingOps.get(pathable)?.has(r.op) === true || displacedOps.get(pathable)?.some((d) => d.id === r.op) === true)
+    ) {
       issues.push({ severity: "error", code: "c4-api.op-removing", message: `${svcOf(r.source)} builds new consumption on '${r.op}', which this feature removes from ${target}` });
     } else if (!available.includes(r.op)) {
       const other = await definedElsewhere(target, r.op);
@@ -350,7 +347,7 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
   // feature's asyncapi deltas (pins, markers, justification), the tagged
   // edges' publishes/consumes metadata, and the requirement deltas'
   // Publishes:/Consumes: lines (./events/events.ts owns the walk).
-  issues.push(...(await eventCoherence({ scope, svcNames, taggedRels, svcOf, context, retired })));
+  issues.push(...(await eventCoherence({ scope, svcNames, taggedRels, svcOf, context, retired, consumers })));
 
   return issues;
 }

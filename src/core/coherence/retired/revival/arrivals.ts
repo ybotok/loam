@@ -17,6 +17,10 @@
  * address), a retirement whose address became a second one when a later
  * feature re-added the id elsewhere. The merged contract answers each of
  * them by construction.
+ *
+ * The same comparison read the other way round answers the removal gate's
+ * blind spot: a living operationId the merged contract answers nowhere,
+ * with no marker naming it, was taken out by an overwrite (`Displacement`).
  */
 import { existsSync } from "node:fs";
 import type { OpenapiDoc, Operation } from "../../../openapi/doc.js";
@@ -51,6 +55,15 @@ export interface Arrival {
    */
   replaces?: string;
   /**
+   * Set where what the living contract answers at `at` is an operation
+   * written with NO operationId: the merge replaces it there all the same,
+   * and no id can name it, so `replaces` stays absent. The reader dropped
+   * such operations outright once, and the finding called their address one
+   * "the living contract no longer has" — the very defect `replaces` was
+   * added for, through the one door it left open.
+   */
+  replacesUnnamed?: true;
+  /**
    * Can this same delta take it out of every one of `besides`? A living
    * address the delta spells nothing at takes a removal marker; a declaration
    * inline under a channel is taken out by restating or retiring the channel
@@ -61,17 +74,56 @@ export interface Arrival {
   markable: boolean;
 }
 
+/**
+ * A living operationId the merged contract answers NOWHERE although no
+ * removal marker in the delta names it: another operation now stands at
+ * every address it held, so the merge — which writes per method and path —
+ * replaced it there. The removal gate's own question
+ * (`openapi.remove-op-consumed`, ../../consumed/operations.ts) asked of the one way to
+ * take an operation out of a contract that carries no marker for it to read:
+ * a delta defining
+ * `fetchOrder` where `getOrder` lives archived at exit 0 while a landscape
+ * edge still called `getOrder`, and the next `validate` reported the
+ * contract broken (`spine.op-undefined`) on a repository nobody in the
+ * feature touched. Read off the merged contract, never re-derived from the
+ * delta, for this module's reason.
+ */
+export interface Displacement {
+  /** The living operationId the contract the archive would write no longer defines. */
+  id: string;
+  /**
+   * Every address it lives at now, with what the merged contract answers
+   * there — the operationId that replaces it, or nothing for an operation
+   * written without one, which the reader cannot name.
+   */
+  at: ReadonlyArray<{ address: string; by?: string }>;
+}
+
+/** What the merged contract answers that the living one does not, and what it stops answering. */
+export interface OperationArrivals {
+  /** Every (operationId, address) the merged contract has and the living one lacks — the revival candidates. */
+  operations: Arrival[];
+  /** Every living operationId the merged contract answers nowhere, no removal marker naming it. */
+  displaced: Displacement[];
+}
+
 /** An identity and one address a contract answers it at. */
 type Placed = readonly [id: string, at: string];
 
 const opsPlaced = (ops: readonly Operation[]): Placed[] => ops.filter((op) => !op.remove).map((op) => [op.id, operationAddress(op)]);
 const messagesPlaced = (all: readonly EventMessage[]): Placed[] => all.filter((m) => m.remove !== true).map((m) => [m.name, m.slot]);
 
-/** Every (identity, address) the merged contract has and the living one lacks, in the merged contract's order. */
+/**
+ * Every (identity, address) the merged contract has and the living one lacks,
+ * in the merged contract's order. `unnamed` holds the living addresses an
+ * entry with no identity stands at — an operation with no operationId; the
+ * event axis has none.
+ */
 function arrivals(
   living: readonly Placed[],
   merged: readonly Placed[],
   markable: (address: string, livesAt: readonly string[]) => boolean,
+  unnamed: ReadonlySet<string> = new Set(),
 ): Arrival[] {
   const where = (all: readonly Placed[], id: string): string[] => all.filter(([i]) => i === id).map(([, at]) => at);
   return merged.flatMap(([id, at]) => {
@@ -79,7 +131,8 @@ function arrivals(
     if (livesAt.includes(at)) return [];
     const besides = where(merged, id).filter((b) => b !== at);
     const replaces = living.find(([, address]) => address === at)?.[0];
-    return [{ id, at, livesAt, besides, markable: besides.every((b) => markable(b, livesAt)), ...(replaces === undefined ? {} : { replaces }) }];
+    const occupant = replaces !== undefined ? { replaces } : unnamed.has(at) ? { replacesUnnamed: true as const } : {};
+    return [{ id, at, livesAt, besides, markable: besides.every((b) => markable(b, livesAt)), ...occupant }];
   });
 }
 
@@ -91,20 +144,53 @@ function arrivals(
  * runs only when some definition in the delta is not living at its own
  * address already: nothing else the merge writes can be new, so a delta that
  * only restates what stands has nothing to compare and never pays for it.
+ * The displacements ride the same run, and need one more trigger: a named
+ * operation replacing a living one is itself a definition not living there,
+ * but one written with no operationId at a living operation's address is
+ * not, and it replaces that operation all the same.
  */
-export async function operationArrivals(sides: PairSides<OpenapiDoc>, context?: FleetContext): Promise<Arrival[]> {
+export async function operationArrivals(sides: PairSides<OpenapiDoc>, context?: FleetContext): Promise<OperationArrivals> {
+  const none: OperationArrivals = { operations: [], displaced: [] };
   const { featPath, featDoc, livingPath, livingDoc, service } = sides;
-  if (featDoc.unreadable || livingDoc.unreadable) return [];
+  if (featDoc.unreadable || livingDoc.unreadable) return none;
   const living = opsPlaced(livingDoc.ops);
-  if (arrivals(living, opsPlaced(featDoc.ops), () => true).length === 0) return [];
+  const named = new Set(living.map(([, at]) => at));
+  const overNamed = featDoc.anonymousOps.some((op) => named.has(operationAddress(op)));
+  if (arrivals(living, opsPlaced(featDoc.ops), () => true).length === 0 && !overNamed) return none;
   const featureText = sides.featText ?? (await readOr(featPath, context));
   const livingExists = existsSync(livingPath);
   const livingText = livingExists ? await readOr(livingPath, context) : undefined;
-  if (featureText === undefined || (livingExists && livingText === undefined)) return [];
+  if (featureText === undefined || (livingExists && livingText === undefined)) return none;
   const merged = mergedOpenapiDoc({ livingText, livingDoc, featureText, service });
-  if (merged === undefined) return [];
-  const spelled = new Set([...featDoc.ops, ...featDoc.anonymousRemovals].map(operationAddress));
-  return arrivals(living, opsPlaced(merged.ops), (b, livesAt) => livesAt.includes(b) && !spelled.has(b));
+  if (merged === undefined) return none;
+  // Every address the delta spells — a removal marker, an operation, named
+  // or not — holds what the delta spells there, so no marker can stand
+  // beside it.
+  const spelled = new Set([...featDoc.ops, ...featDoc.anonymousRemovals, ...featDoc.anonymousOps].map(operationAddress));
+  const placed = opsPlaced(merged.ops);
+  const unnamed = new Set(livingDoc.anonymousOps.map(operationAddress));
+  return {
+    operations: arrivals(living, placed, (b, livesAt) => livesAt.includes(b) && !spelled.has(b), unnamed),
+    displaced: displacements(living, placed, new Set(featDoc.ops.filter((op) => op.remove).map((op) => op.id))),
+  };
+}
+
+/**
+ * The living identities the merged contract answers nowhere, minus every one
+ * a removal marker names: those are the removal gate's already — retired,
+ * relocated, or a marker the exactness checks refuse — and grading them here
+ * too would file one loss under two findings.
+ */
+function displacements(living: readonly Placed[], merged: readonly Placed[], marked: ReadonlySet<string>): Displacement[] {
+  const answered = new Set(merged.map(([id]) => id));
+  const gone = [...new Set(living.map(([id]) => id))].filter((id) => !answered.has(id) && !marked.has(id));
+  return gone.map((id) => ({
+    id,
+    at: living.filter(([i]) => i === id).map(([, address]) => {
+      const by = merged.find(([, at]) => at === address)?.[0];
+      return by === undefined ? { address } : { address, by };
+    }),
+  }));
 }
 
 /** What an event delta brings that the living contract does not have. */

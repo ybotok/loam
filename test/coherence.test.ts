@@ -223,7 +223,10 @@ Operations: authorizePayment
 
   it("a REMOVED requirement must explicitly remove every operation it governed", async () => {
     // the requirement being removed has to exist to be removable — otherwise the
-    // delta-shape check fires first and this rule is never reached
+    // delta-shape check fires first and this rule is never reached. And the
+    // operation it governed has to exist in the living contract: a marker is
+    // owed only while there is a living operation for it to retire, so a
+    // service with no openapi.yaml owes none (declared.ts says why).
     const livingSplit = `# payment-split-service
 
 ## Requirements
@@ -240,6 +243,13 @@ Operations: legacyOp
 `;
     const issues = await coherenceOf({
       "services/payment-split-service/spec.md": livingSplit,
+      "services/payment-split-service/openapi.yaml": `openapi: 3.1.0
+paths:
+  /legacy:
+    post:
+      operationId: legacyOp
+      responses: { "200": { description: ok } }
+`,
       [`${FEATURE_REL}/specs/payment-split-service/spec.md`]: `# delta for FEAT-1
 
 ## REMOVED Requirements
@@ -330,8 +340,12 @@ paths:
     const files = removalFiles();
     delete files[`${FEATURE_REL}/specs/payment-service/spec.md`];
     const issues = await coherenceOf(files);
-    expect(issues).toHaveLength(1);
-    expect(issues[0]).toMatchObject({ severity: "error", code: "openapi.remove-marker-unjustified" });
+    // Two findings, and the second is what the first cannot say: the
+    // requirement the merge would leave governing the retired operation —
+    // the one the missing REMOVED requirement would have taken with it.
+    expect(issues.map((i) => i.code).sort()).toEqual(["openapi.remove-marker-unjustified", "openapi.remove-op-consumed"]);
+    expect(issues.find((i) => i.code === "openapi.remove-marker-unjustified")).toMatchObject({ severity: "error" });
+    expect(issues.find((i) => i.code === "openapi.remove-op-consumed")!.message).toContain("payment-service's living requirement 'Legacy authorization'");
   });
 
   it("rejects a new tagged edge that consumes an operation removed by the same feature", async () => {

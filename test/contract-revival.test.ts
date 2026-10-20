@@ -678,6 +678,130 @@ paths:
     );
   });
 
+  it("followed without its 'stay' step over an operation the fleet calls, the move back is refused as the removal it is", async () => {
+    // The move back writes cancelOrder over requestCancellation and leaves
+    // requestCancellation defined nowhere — a removal with no marker, which
+    // the removal gate never read: with a living edge still calling it, this
+    // reached coherence.ok and an archive that broke the edge at exit 0.
+    const f = await occupied();
+    const landscape = "architecture/landscape.likec4";
+    const callsGetOrder = `  marketplace.checkoutWeb -> marketplace.orderService 'Calls getOrder' {
+    metadata {
+      op 'getOrder'
+    }
+  }
+`;
+    expect(f.read(landscape)).toContain(callsGetOrder);
+    f.write(
+      landscape,
+      f.read(landscape).replace(
+        callsGetOrder,
+        `${callsGetOrder}  marketplace.checkoutWeb -> marketplace.orderService 'Calls requestCancellation' {
+    metadata {
+      op 'requestCancellation'
+    }
+  }
+`,
+      ),
+    );
+    contractOnly(
+      f,
+      "FEAT-206",
+      "FEAT-206-move-back",
+      `openapi: 3.1.0
+paths:
+  /orders/{id}/cancellation:
+    post:
+      operationId: cancelOrder
+      x-loam-remove: true
+  /orders/{id}/cancel:
+    post:
+${CANCEL_OP}`,
+    );
+    const all = findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-206", "--json")).stdout);
+    // A relocation, so no revival — the loss is the operation it replaces.
+    expect(ofCode(all, "openapi.op-revived")).toEqual([]);
+    const [consumed, ...more] = ofCode(all, "openapi.remove-op-consumed");
+    expect(more).toEqual([]);
+    expect(consumed).toMatchObject({ severity: "error", subject: "order-service" });
+    expect(consumed!.message).toContain("defines 'cancelOrder' at POST /orders/{id}/cancel, where 'requestCancellation' lives now");
+    expect(consumed!.message).toContain(`edge checkout-web → order-service ("Calls requestCancellation")`);
+    expect(consumed!.message).toContain("Define 'requestCancellation' at another address in this delta if it is to stay");
+
+    const refused = await runLoam(f.fleet, "archive", "FEAT-206", "--json");
+    expect(refused.code, refused.out).toBe(1);
+    expect(f.read(LIVING_ORDER_API)).toContain("operationId: requestCancellation");
+  });
+
+  /** `moved()`, then FEAT-205 archived: an operation with NO operationId lives at the address cancelOrder left. */
+  async function occupiedUnnamed(): Promise<Fleet> {
+    const f = await moved();
+    contractOnly(
+      f,
+      "FEAT-205",
+      "FEAT-205-legacy-gateway",
+      `openapi: 3.1.0
+paths:
+  /orders/{id}/cancel:
+    post:
+      summary: Request cancellation (legacy gateway, no operationId)
+      responses:
+        "202":
+          description: accepted
+`,
+    );
+    const archived = await runLoam(f.fleet, "archive", "FEAT-205");
+    expect(archived.code, archived.out).toBe(0);
+    expect(f.read(LIVING_ORDER_API)).toContain("Request cancellation (legacy gateway, no operationId)");
+    return f;
+  }
+
+  it("an operation with NO operationId living at the vacated address is named as well, and the quote over it owes a pin", async () => {
+    // The reader dropped such an operation outright, so the finding called
+    // its address one "the living contract no longer has", the move-back
+    // remedy reached coherence.ok, and the archive deleted it with nothing
+    // naming it — the slot gate could not see it either, so no pin was owed.
+    const f = await occupiedUnnamed();
+    contractOnly(f, "FEAT-206", "FEAT-206-quote-cancel", QUOTED_CANCEL);
+    const all = findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-206", "--json")).stdout);
+    const [warned, ...more] = ofCode(all, "openapi.op-revived");
+    expect(more).toEqual([]);
+    expect(warned!.message).toContain("spells 'cancelOrder' at POST /orders/{id}/cancel, an address it no longer lives at — archived FEAT-200 moved it");
+    expect(warned!.message).not.toContain("an address the living contract no longer has");
+    expect(warned!.message).toContain(
+      "POST /orders/{id}/cancel now holds an operation with no operationId, and archiving this delta replaces it there.",
+    );
+    expect(warned!.message).toContain(
+      "add a removal marker for 'cancelOrder' at POST /orders/{id}/cancellation to this same delta — and, if the operation with no operationId is to stay, define it at another address in it.",
+    );
+    expect(ofCode(all, "openapi.baseline-missing")).toEqual([
+      expect.objectContaining({ message: expect.stringContaining("1 operation(s)") }),
+    ]);
+  });
+
+  it("pinned over that operation, rebase and validate agree about the pin", async () => {
+    // Rebase pins by slot, whatever stands there; the gate read named
+    // operations alone and refused the pin rebase had just written as one
+    // over "no operation at that slot" — so the two could never agree.
+    const f = await occupiedUnnamed();
+    contractOnly(f, "FEAT-206", "FEAT-206-quote-cancel", QUOTED_CANCEL);
+    const rebased = JSON.parse((await runLoam(f.fleet, "rebase", "FEAT-206", "--json")).stdout) as {
+      pins: Array<{ target: string; status: string }>;
+      revived: Array<{ message: string }>;
+      written: string[];
+    };
+    expect(rebased.pins.find((p) => p.target.includes("cancelOrder"))!.status).toBe("pinned");
+    expect(rebased.written).toHaveLength(1);
+    const after = findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-206", "--json")).stdout);
+    expect(ofCode(after, "openapi.baseline-invalid")).toEqual([]);
+    expect(ofCode(after, "openapi.baseline-missing")).toEqual([]);
+    expect(ofCode(after, "openapi.op-revived").map((r) => r.message)).toEqual(rebased.revived.map((r) => r.message));
+    // And again: the pin rebase wrote is the one validate grades, so a second
+    // rebase has nothing to move.
+    const again = JSON.parse((await runLoam(f.fleet, "rebase", "FEAT-206", "--json")).stdout) as { written: string[] };
+    expect(again.written).toEqual([]);
+  });
+
   it("moved, then retired there and re-added elsewhere: the message names where the mover put it, and apart from that where it lives now", async () => {
     // FEAT-200 moved cancelOrder to /cancellation; FEAT-204 retired it there;
     // FEAT-205 re-added it at /abort. A quote of /cancel would still put the

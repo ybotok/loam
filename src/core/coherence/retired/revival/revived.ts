@@ -84,7 +84,7 @@ export function revivedOperations(service: string, arrived: readonly Arrival[], 
       ? `'${id}' (${at}), ${broughtBack(by, replacing(arrival, "holds"))}`
       // A second address, not the operation back: it is living, so the
       // remedy is which address to drop — never "bring it back".
-      : `'${id}' at ${at}, ${arrival.replaces === undefined ? "an address the living contract no longer has" : "an address it no longer lives at"} — ${vacators(by, " there")}${present(by, livesAt, "lives")}, and archiving this delta would put it back at ${at} beside ${besides.join(" and ")}: one operationId at ${count(besides.length + 1)} addresses.${replacing(arrival, "holds")} ${dropOne(arrival, `add a removal marker for '${id}' at ${besides.join(" and ")} to this same delta${keeping(arrival, "address")}`)}`;
+      : `'${id}' at ${at}, ${occupant(arrival) === undefined ? "an address the living contract no longer has" : "an address it no longer lives at"} — ${vacators(by, " there")}${present(by, livesAt, "lives")}, and archiving this delta would put it back at ${at} beside ${besides.join(" and ")}: one operationId at ${count(besides.length + 1)} addresses.${replacing(arrival, "holds")} ${dropOne(arrival, `add a removal marker for '${id}' at ${besides.join(" and ")} to this same delta${keeping(arrival, "address")}`)}`;
     issues.push({ severity: "warn", gates: true, code: "openapi.op-revived", subject: service, message: `${service}: this feature's openapi.yaml spells ${what}` });
   }
   return issues;
@@ -206,7 +206,7 @@ export async function serviceRevivals(request: ServiceRevivalRequest): Promise<I
     const featDoc = await readOpenapi(feature.openapi, context);
     const livingDoc = await readOpenapi(living.openapi, context);
     const sides = { featPath: feature.openapi, featDoc, livingPath: living.openapi, livingDoc, service, featText: planned?.get(feature.openapi) };
-    const ops = await operationArrivals(sides, context);
+    const ops = (await operationArrivals(sides, context)).operations;
     if (ops.length > 0) issues.push(...revivedOperations(service, ops, await retired()));
   }
 
@@ -227,9 +227,19 @@ function broughtBack(by: Vacations, replaced = ""): string {
   return `which the living contract no longer has — ${vacators(by, "")}, and archiving this delta would put it back.${replaced} ${REMEDY}`;
 }
 
+/**
+ * How a finding names the entry living at the arrival's address — its
+ * identity quoted, or, for an operation written with no operationId, what it
+ * is; undefined where nothing lives there.
+ */
+function occupant({ replaces, replacesUnnamed }: Arrival): string | undefined {
+  return replaces !== undefined ? `'${replaces}'` : replacesUnnamed === true ? "an operation with no operationId" : undefined;
+}
+
 /** The entry the merge would replace at the arrival's address, said as a sentence of its own — or nothing. */
-function replacing({ at, replaces }: Arrival, verb: "holds" | "declares"): string {
-  return replaces === undefined ? "" : ` ${at} now ${verb} '${replaces}', and archiving this delta replaces it there.`;
+function replacing(arrival: Arrival, verb: "holds" | "declares"): string {
+  const there = occupant(arrival);
+  return there === undefined ? "" : ` ${arrival.at} now ${verb} ${there}, and archiving this delta replaces it there.`;
 }
 
 /**
@@ -252,8 +262,14 @@ function dropOne({ at, besides, markable }: Arrival, moveBack: string): string {
  * once read, the move back reached a clean gate and an archive that deleted
  * the other entry with nothing naming it.
  */
-function keeping({ replaces }: Arrival, place: "address" | "key"): string {
-  return replaces === undefined ? "" : ` — and define '${replaces}' at another ${place} in it if it is to stay`;
+function keeping(arrival: Arrival, place: "address" | "key"): string {
+  const there = occupant(arrival);
+  if (there === undefined) return "";
+  // An operation nobody can name is still what stands there, and the delta
+  // can restate it elsewhere all the same — said by what it is, not by an id.
+  return arrival.replaces === undefined
+    ? ` — and, if the operation with no operationId is to stay, define it at another ${place} in it`
+    : ` — and define ${there} at another ${place} in it if it is to stay`;
 }
 
 function count(n: number): string {

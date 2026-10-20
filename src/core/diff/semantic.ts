@@ -1,10 +1,11 @@
 /**
  * The diff computation: join the base fleet (`./base-state.ts`) against the
- * working tree (`./current-state.ts`) and say, per service, what changed in
+ * working tree (`core/consumers/current.ts`) and say, per service, what changed in
  * FLEET-MEANINGFUL terms — requirements by identity and digest, operations
  * and messages by their join tokens and their `$ref`-closure digests,
  * cross-service joins by tuple — with the authored consumers of every
- * removal, deprecation and modification named (`./victims.ts`).
+ * removal, deprecation and modification named (`core/consumers/consumers.ts`),
+ * and the cross-service joins that appeared or went away (`./joins.ts`).
  *
  * Two disciplines rule every branch here. Removal is graded against who still
  * depends on it: a removal nobody names is a warning, a removal the fleet
@@ -22,9 +23,13 @@
  */
 import { requirementDigest, type Requirement } from "../document/spec.js";
 import type { Severity, Finding } from "../vocabulary/report.js";
-import type { AxisState, BaseFleet, ServiceState } from "./base-state.js";
-import type { CurrentFleet } from "./current-state.js";
-import { consumerJoinChanges, consumerStance, type VictimIndex } from "./victims.js";
+import type { BaseFleet } from "./base-state.js";
+import { rawServiceId } from "../kernel/ids/service.js";
+import type { AxisState, ServiceState } from "../consumers/state.js";
+import type { CurrentFleet } from "../consumers/current.js";
+import { consumerStance, scanDetails } from "../consumers/scan.js";
+import type { ConsumerIndex } from "../consumers/consumers.js";
+import { consumerJoinChanges } from "./joins.js";
 
 /**
  * The stable finding codes `loam diff` emits. Codes are the machine contract;
@@ -54,7 +59,7 @@ export type DiffCode =
   | "diff.op-modified"
   /** An AsyncAPI message name absent at base. */
   | "diff.message-added"
-  /** A base message gone, nothing currently consumes it (or another service still declares it — the details say). */
+  /** A base message gone, nothing currently consumes it (or another service still sends it — the message says). */
   | "diff.message-removed"
   /** Removed since base AND still consumed — a `Consumes:` line or a consumes-edge; details list the victims. Sets `breaking`. */
   | "diff.message-removed-consumed"
@@ -115,9 +120,12 @@ export interface FleetDiff {
   summary: { added: number; removed: number; modified: number; deprecated: number; unreadable: number };
 }
 
-/** A side the service does not exist on: absence everywhere, honestly. */
+/**
+ * A side the service does not exist on: absence everywhere, honestly. The id is
+ * a key of one of the two sides' maps, each keyed by a directory's leaf name.
+ */
 const ABSENT = { kind: "absent" } as const;
-const emptyState = (id: string): ServiceState => ({ id, dir: "", spec: ABSENT, archSpec: ABSENT, openapi: ABSENT, asyncapi: ABSENT });
+const emptyState = (id: string): ServiceState => ({ id: rawServiceId(id), dir: "", spec: ABSENT, archSpec: ABSENT, openapi: ABSENT, asyncapi: ABSENT });
 
 /**
  * The axes on which an unreadable document the branch left byte-identical is
@@ -130,10 +138,10 @@ const emptyState = (id: string): ServiceState => ({ id, dir: "", spec: ABSENT, a
  *
  * Not the spec axes, and that is the victims scan's doing, not an oversight:
  * an unreadable spec.md or arch.spec.md is also the document ANOTHER
- * service's removal could not be checked against (`victims.ts`'s
+ * service's removal could not be checked against (`core/consumers/consumers.ts`'s
  * `scanRequirements`), and its `unreadable[]` entry here is what carries that
  * suspension to exit 1 (`opsDiff`'s removal branch says so). No scan reads a
- * contract it could not parse as evidence of anything — `declarers` takes
+ * contract it could not parse as evidence of anything — `producers` takes
  * positive evidence only — so skipping one hides no other answer.
  */
 const UNTOUCHED_SKIPS: ReadonlySet<UnreadableEntry["axis"]> = new Set(["openapi", "asyncapi"]);
@@ -205,7 +213,7 @@ function requirementsDiff(sink: ServiceDiff, pair: { base: ServiceState; current
 const notGraded = (tool: string): string =>
   `loam does not grade whether the change is breaking — run ${tool} on the two states of this contract`;
 
-async function opsDiff(sink: ServiceDiff, pair: { base: ServiceState; current: ServiceState }, victims: VictimIndex): Promise<void> {
+async function opsDiff(sink: ServiceDiff, pair: { base: ServiceState; current: ServiceState }, victims: ConsumerIndex): Promise<void> {
   if (!comparable(sink, "openapi", { base: pair.base.openapi, current: pair.current.openapi })) return;
   const base = firstWins(valueOr(pair.base.openapi), (op) => op.id);
   const current = firstWins(valueOr(pair.current.openapi), (op) => op.id);
@@ -215,7 +223,7 @@ async function opsDiff(sink: ServiceDiff, pair: { base: ServiceState; current: S
       sink.findings.push(found("diff.op-added", `operation '${id}' added since base (${op.method.toUpperCase()} ${op.path})`));
     } else if (!before.deprecated && op.deprecated) {
       const scan = await victims.opConsumers(sink.id, id);
-      sink.findings.push(found("diff.op-deprecated", `operation '${id}' is deprecated since base — ${consumerStance(scan)}`, [...scan.victims, ...scan.suspended]));
+      sink.findings.push(found("diff.op-deprecated", `operation '${id}' is deprecated since base — ${consumerStance(scan)}`, scanDetails(scan)));
     } else if (before.closureDigest !== op.closureDigest || before.path !== op.path || before.method !== op.method) {
       // `else`, because setting the flag moves the digest by itself (it is a
       // key of the node): a deprecation already names the same consumers, and
@@ -227,7 +235,7 @@ async function opsDiff(sink: ServiceDiff, pair: { base: ServiceState; current: S
       sink.findings.push(found(
         "diff.op-modified",
         `operation '${id}' (${op.method.toUpperCase()} ${op.path}) changed since base, in its own definition or a schema it references — ${consumerStance(scan)}; ${notGraded("`oasdiff breaking`")}`,
-        [...scan.victims, ...scan.suspended],
+        scanDetails(scan),
       ));
     }
   }
@@ -235,21 +243,21 @@ async function opsDiff(sink: ServiceDiff, pair: { base: ServiceState; current: S
     if (current.has(id)) continue;
     const scan = await victims.opConsumers(sink.id, id);
     if (scan.victims.length > 0) {
-      sink.findings.push(found("diff.op-removed-consumed", `operation '${id}' was removed since base and the current fleet still names it — these joins break`, [...scan.victims, ...scan.suspended]));
+      sink.findings.push(found("diff.op-removed-consumed", `operation '${id}' was removed since base and the current fleet still names it — these joins break`, scanDetails(scan)));
     } else if (scan.suspended.length > 0) {
       // "Nobody could be checked" is not "nobody names it", so this message
       // must not assert a negative the scan never proved. An unreadable
       // consumer document carries the run to exit 1 through its own
       // unreadable[] entry; a caller drawn with no op does not — it stays this
       // warning, so a seeded, op-less map does not fail every removal.
-      sink.findings.push(found("diff.op-removed", `operation '${id}' was removed since base; whether the current fleet still names it could NOT be fully answered — ${scan.suspended.length} possible consumer(s) could not be checked`, scan.suspended));
+      sink.findings.push(found("diff.op-removed", `operation '${id}' was removed since base; whether the current fleet still names it could NOT be fully answered — ${scan.suspended.length} possible consumer(s) could not be checked`, scanDetails(scan)));
     } else {
-      sink.findings.push(found("diff.op-removed", `operation '${id}' was removed since base; no current landscape edge or living requirement names it`));
+      sink.findings.push(found("diff.op-removed", `operation '${id}' was removed since base; no current edge, requirement or use-case hop names it`));
     }
   }
 }
 
-async function messagesDiff(sink: ServiceDiff, pair: { base: ServiceState; current: ServiceState }, victims: VictimIndex): Promise<void> {
+async function messagesDiff(sink: ServiceDiff, pair: { base: ServiceState; current: ServiceState }, victims: ConsumerIndex): Promise<void> {
   if (!comparable(sink, "asyncapi", { base: pair.base.asyncapi, current: pair.current.asyncapi })) return;
   const base = firstWins(valueOr(pair.base.asyncapi), (m) => m.name);
   const current = firstWins(valueOr(pair.current.asyncapi), (m) => m.name);
@@ -262,31 +270,38 @@ async function messagesDiff(sink: ServiceDiff, pair: { base: ServiceState; curre
       sink.findings.push(found(
         "diff.message-modified",
         `message '${name}' changed since base, in its declaration or a schema its payload references — ${consumerStance(scan)}; ${notGraded("`asyncapi diff`")}`,
-        [...scan.victims, ...scan.suspended],
+        scanDetails(scan),
       ));
     }
   }
   for (const [name] of [...base].sort(byKey)) {
     if (current.has(name)) continue;
-    // Fleet-global join: a name another current service still declares is not
-    // orphaned (positive evidence only — an unreadable contract never vouches).
-    const elsewhere = victims.declarers(name).filter((d) => d !== sink.id);
-    if (elsewhere.length > 0) {
-      sink.findings.push(found("diff.message-removed", `message '${name}' was removed since base; still declared by ${elsewhere.join(", ")}`));
+    // Fleet-global join: a name another current service still SENDS is not
+    // orphaned (positive evidence only — an unreadable contract never vouches,
+    // and a service that only receives it is one of its consumers, never its
+    // producer: `producers` says why that distinction is the gate's too). Nor
+    // is one an #external element still publishes, by validate's own rule
+    // (`externalProducer` says why): counting the fleet's senders alone made
+    // this removal an error that the next `validate --all` called clean.
+    const elsewhere = (await victims.producers(name)).filter((d) => d !== sink.id);
+    const outside = await victims.externalProducer(name);
+    const senders = outside === null ? elsewhere : [...elsewhere, `${outside} (#external)`];
+    if (senders.length > 0) {
+      sink.findings.push(found("diff.message-removed", `message '${name}' was removed since base; still sent by ${senders.join(", ")}`));
       continue;
     }
     const scan = await victims.messageConsumers(sink.id, name);
     if (scan.victims.length > 0) {
-      sink.findings.push(found("diff.message-removed-consumed", `message '${name}' was removed since base and the current fleet still consumes it — these joins break`, [...scan.victims, ...scan.suspended]));
+      sink.findings.push(found("diff.message-removed-consumed", `message '${name}' was removed since base and the current fleet still consumes it — these joins break`, scanDetails(scan)));
     } else if (scan.suspended.length > 0) {
-      sink.findings.push(found("diff.message-removed", `message '${name}' was removed since base; whether anything still consumes it could NOT be fully answered — ${scan.suspended.length} consumer document(s) were not scannable`, scan.suspended));
+      sink.findings.push(found("diff.message-removed", `message '${name}' was removed since base; whether anything still consumes it could NOT be fully answered — ${scan.suspended.length} consumer document(s) were not scannable`, scanDetails(scan)));
     } else {
       sink.findings.push(found("diff.message-removed", `message '${name}' was removed since base; nothing currently consumes it`));
     }
   }
 }
 
-/** The graded join changes (`victims.ts`) as findings on each PROVIDER — the service whose surface the join lands on. */
+/** The graded join changes (`./joins.ts`) as findings on each PROVIDER — the service whose surface the join lands on. */
 function consumerFindings(input: { base: BaseFleet; current: CurrentFleet }): Map<string, Finding[]> {
   const changes = consumerJoinChanges({
     base: input.base.services,
@@ -311,7 +326,7 @@ function consumerFindings(input: { base: BaseFleet; current: CurrentFleet }): Ma
   return byProvider;
 }
 
-async function diffService(unit: { id: string; base?: ServiceState; current?: ServiceState; victims: VictimIndex }): Promise<ServiceDiff> {
+async function diffService(unit: { id: string; base?: ServiceState; current?: ServiceState; victims: ConsumerIndex }): Promise<ServiceDiff> {
   const sink: ServiceDiff = { id: unit.id, change: "unchanged", findings: [], unreadable: [] };
   if (unit.base === undefined) sink.findings.push(found("diff.service-added", `service '${unit.id}' added since base`));
   if (unit.current === undefined && unit.base !== undefined) {
@@ -324,7 +339,7 @@ async function diffService(unit: { id: string; base?: ServiceState; current?: Se
   return sink;
 }
 
-export async function computeDiff(input: { base: BaseFleet; current: CurrentFleet; victims: VictimIndex }): Promise<FleetDiff> {
+export async function computeDiff(input: { base: BaseFleet; current: CurrentFleet; victims: ConsumerIndex }): Promise<FleetDiff> {
   const sides = [input.base.services, input.base.ambiguous, input.current.services, input.current.ambiguous];
   const ids = [...new Set(sides.flatMap((side) => [...side.keys()]))].sort();
   const joins = consumerFindings({ base: input.base, current: input.current });

@@ -292,7 +292,7 @@ export async function deltaShapeIssues(
  * there still realize a capability requirement this feature retires?
  *
  * The same shape and the same cost `openapi.remove-op-consumed` pays through
- * `coherence/lookups.ts` one axis over, and for the same reason — the merge
+ * the consumer index (`core/consumers/`) one axis over, and for the same reason — the merge
  * deletes the promise while the `Realizes:` line stays, so the very next
  * `validate --all` reports a breach on a repository whose author was never in
  * this feature. Called behind a thunk (`removedRealizedIssues` invokes it only

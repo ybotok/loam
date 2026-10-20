@@ -4,24 +4,24 @@
 // there is not another one — loam is a single binary, and ROADMAP.md's
 // "Self-hosting: loam on loam" is the standing statement of what that costs.
 //
-// THE COLLAPSE RULE, and it is the whole design of this file. `src/` holds 487
-// modules in 150 package directories (`npm run arch:graph` prints both). Drawing
-// 150 boxes would model the tree's INDENTATION; drawing three would model
+// THE COLLAPSE RULE, and it is the whole design of this file. `src/` holds 496
+// modules in 153 package directories (`npm run arch:graph` prints both). Drawing
+// 153 boxes would model the tree's INDENTATION; drawing three would model
 // nothing. The unit here is the TOP-LEVEL SUBJECT — exactly what
 // `docs/DESIGN.md`'s package-layout table has one row for:
 //
 //     src/cli.ts               -> loam.cli
-//     src/core/<name>/**       -> loam.core.<name>         (38 packages)
+//     src/core/<name>/**       -> loam.core.<name>         (39 packages)
 //     src/core/<name>.ts       -> loam.core.<name>         (the 4 loose modules)
 //     src/commands/<name>/**   -> loam.commands.<name>     (25, policy included)
 //     src/commands/<name>.ts   -> loam.commands.<name>     (the 5 loose modules)
 //
-// 73 containers, and one edge for every VALUE import that crosses two of them:
-// 456 of them — 179 out of core (its packages and its loose modules alike), 208
+// 74 containers, and one edge for every VALUE import that crosses two of them:
+// 469 of them — 189 out of core (its packages and its loose modules alike), 211
 // from a command into core, 39 command to command, 30 out of cli.ts. These are
 // the counts `npm run meta:check` prints (units / import edges) and
 // `node scripts/self-model.mjs --print` lists; they were last moved on
-// 2026-10-10 and drift with every package added, so trust the script over this
+// 2026-10-20 and drift with every package added, so trust the script over this
 // paragraph. (The split used to name "the loose modules" beside cli.ts; their
 // edges were always counted under core and commands.) A `-` in a directory name
 // becomes `_` in the element name, because a LikeC4 element name is an
@@ -43,7 +43,7 @@
 //     spelled at all — it is not a preference that was weighed and lost.
 //   - An element is graded at service level only when NO ancestor already stands
 //     for a service (`validate/fleet/census.ts`), so one `metadata { service }`
-//     on the root puts all 73 boxes on the map while
+//     on the root puts all 74 boxes on the map while
 //     `landscape.service-undocumented` stays correctly silent: none of them is a
 //     service, and none of them owes a directory under `services/`.
 //
@@ -82,7 +82,7 @@ specification {
 model {
   loam = softwareSystem 'loam' {
     // The binding that makes services/loam/ this element's directory, and the
-    // one line that keeps 73 containers off the service census: an element is
+    // one line that keeps 74 containers off the service census: an element is
     // graded at service level only when no ancestor already stands for a
     // service, and this is that ancestor.
     metadata {
@@ -99,6 +99,7 @@ model {
       capabilities = container 'src/core/capabilities/'
       coherence = container 'src/core/coherence/'
       conflict_markers = container 'src/core/conflict-markers.ts'
+      consumers = container 'src/core/consumers/'
       delta = container 'src/core/delta/'
       dependencies = container 'src/core/dependencies/'
       diff = container 'src/core/diff/'
@@ -234,7 +235,7 @@ model {
   loam.commands.archive -> loam.core.asyncapi
   loam.commands.archive -> loam.core.c4
   loam.commands.archive -> loam.core.coherence
-  loam.commands.archive -> loam.core.diff
+  loam.commands.archive -> loam.core.consumers
   loam.commands.archive -> loam.core.document
   loam.commands.archive -> loam.core.envelope
   loam.commands.archive -> loam.core.fleet_context
@@ -271,6 +272,7 @@ model {
   loam.commands.dependencies -> loam.core.repo
 
   loam.commands.diff -> loam.commands.policy
+  loam.commands.diff -> loam.core.consumers
   loam.commands.diff -> loam.core.diff
   loam.commands.diff -> loam.core.envelope
   loam.commands.diff -> loam.core.fleet_context
@@ -520,6 +522,12 @@ model {
   loam.core.c4 -> loam.core.envelope
   loam.core.c4 -> loam.core.kernel
   loam.core.c4 -> loam.core.repo
+  // For `EXTERNAL_TAG` alone, and from one leaf: `c4/resolve/external.ts` names
+  // the #external element that publishes a message, the answer validate's
+  // producer check and the consumer index must give alike. The tag constants
+  // live in the vocabulary because this package was full when they were
+  // extracted (`core/vocabulary/maturity.ts` says so).
+  loam.core.c4 -> loam.core.vocabulary
 
   loam.core.capabilities -> loam.core.c4
   loam.core.capabilities -> loam.core.document
@@ -530,6 +538,7 @@ model {
   loam.core.coherence -> loam.core.c4
   loam.core.coherence -> loam.core.capabilities
   loam.core.coherence -> loam.core.conflict_markers
+  loam.core.coherence -> loam.core.consumers
   loam.core.coherence -> loam.core.delta
   loam.core.coherence -> loam.core.document
   loam.core.coherence -> loam.core.envelope
@@ -539,6 +548,25 @@ model {
   loam.core.coherence -> loam.core.repo
   loam.core.coherence -> loam.core.staging
   loam.core.coherence -> loam.core.usecases
+
+  // The one consumer index — who still calls an operation, still consumes a
+  // message — that `loam diff`, the coherence gate and the archive planner all
+  // read. Its own package because each of those three had kept a copy, and
+  // the copies had drifted in which documents they read.
+  loam.core.consumers -> loam.core.c4
+  // The merge a feature's requirement deltas would make (`applyRequirementDelta`)
+  // and the contract it would leave (`serviceOperationIds`): read AFTER a
+  // feature, a consumer the same feature retires stops counting.
+  loam.core.consumers -> loam.core.document
+  loam.core.consumers -> loam.core.envelope
+  // A read index of its own when the caller brings none — the archive gate's
+  // coherence call runs without one — the `context ?? new FleetContext()`
+  // precedent `core/explore/` and `core/verify/` already set.
+  loam.core.consumers -> loam.core.fleet_context
+  loam.core.consumers -> loam.core.kernel
+  loam.core.consumers -> loam.core.openapi
+  loam.core.consumers -> loam.core.repo
+  loam.core.consumers -> loam.core.usecases
 
   loam.core.delta -> loam.core.capabilities
   // Which of the fleet's models EXTEND the map, so the merge preview a feature's
@@ -558,6 +586,7 @@ model {
   loam.core.dependencies -> loam.core.repo
 
   loam.core.diff -> loam.core.asyncapi
+  loam.core.diff -> loam.core.consumers
   loam.core.diff -> loam.core.c4
   loam.core.diff -> loam.core.document
   loam.core.diff -> loam.core.envelope
@@ -565,7 +594,6 @@ model {
   loam.core.diff -> loam.core.openapi
   loam.core.diff -> loam.core.provenance
   loam.core.diff -> loam.core.repo
-  loam.core.diff -> loam.core.usecases
 
   loam.core.docs -> loam.core.agent
   loam.core.docs -> loam.core.repo

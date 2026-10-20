@@ -7,7 +7,8 @@
  * delta facts it already holds (tagged relationships and the element
  * resolver): ./declared.ts walks the feature's own contracts and grades
  * what one service's pair of documents can settle; ./lookups.ts answers the
- * fleet questions lazily; this module joins the three axes — the exact
+ * in-flight question lazily, and the consumer index (core/consumers/) who
+ * still consumes a message; this module joins the three axes — the exact
  * shape coherence.ts gives the operation join, on the message name.
  *
  * A package of its own rather than lines in coherence.ts because that file
@@ -27,6 +28,8 @@ import { declaredEvents, type EventDeltaScope } from "./declared.js";
 import { eventLookups } from "./lookups.js";
 import type { RetiredLookup } from "../retired/archived.js";
 import { revivedEvents } from "../retired/revival/revived.js";
+import type { ConsumerIndex } from "../../consumers/consumers.js";
+import { nothingStill, refusalDetails, refusalMessage, stillNamed, type StillNamed } from "../consumed/refusal.js";
 
 /** What featureCoherence hands the event axis — the delta facts it already computed. */
 export interface EventCoherenceRequest {
@@ -40,13 +43,98 @@ export interface EventCoherenceRequest {
   context?: FleetContext;
   /** The retired index, shared with the contract axis so one call walks `features/archive/` once at most. */
   retired: RetiredLookup;
+  /** The consumer index, read after this feature's merge — shared with the contract axis so the fleet is read once. */
+  consumers: ConsumerIndex;
 }
 
 export async function eventCoherence(request: EventCoherenceRequest): Promise<Issue[]> {
-  const { scope, svcNames, taggedRels, svcOf, context } = request;
+  const { scope, svcNames, taggedRels, svcOf, context, consumers } = request;
   const issues: Issue[] = [];
   const declared = await declaredEvents(scope, svcNames, issues, context);
   const lookups = eventLookups({ docsDir: scope.docsDir, featureId: scope.featureId }, context);
+
+  // Who would still name a message after this merge: the consumer index's
+  // consumers, and its `own` — the provider's own `Publishes:` lines as the
+  // merge leaves them. That is the event twin of the overwrite's own-requirement
+  // scan: a message re-keyed or no longer sent while the provider's living
+  // requirement still says it `Publishes:` it archived at exit 0, and the next
+  // `validate --all` reported `spec-event.message-undefined` against the
+  // provider (review 2026-10-12, finding 3) — a REMOVED requirement justifies a
+  // marker, but nothing asks a re-key or a turned-around operation for one.
+  // A consumer document nobody could read or place refuses too, as on the
+  // contract axis (../consumed/refusal.ts).
+  //
+  // But a CONSUMER is stranded only when nothing would send the message after
+  // this merge — no service, and no #external element whose edge publishes it.
+  // That is the rule `spine.message-unproduced` grades a consumer by — it stays
+  // quiet over an outside producer (`externalProducerOf`,
+  // core/c4/resolve/external.ts) — and the one `loam diff` asks first
+  // (`producers`, then `externalProducer`, core/diff/semantic.ts).
+  // Counting every consumer "whoever its producer is" refused a retirement from
+  // one of two senders over the other sender's own consumes edge, and told the
+  // author to drop it, while `loam diff` called the same removal a warning
+  // ("still sent by …") and the next `validate --all` was clean (the
+  // verification of the consumer fixes, N2). Counting the fleet's senders alone
+  // then refused a retirement from a message's only fleet sender while an
+  // #external element still published it, and `loam diff` called the archived
+  // removal `diff.message-removed-consumed`, while the next `validate --all` was
+  // clean again (the verification of N1–N3, D1). The provider's OWN documents are
+  // another matter: the spine and validate grade them against the provider's
+  // own contract, so they strand whoever else sends the message, and `own`
+  // still refuses beside a surviving sender.
+  //
+  // The senders are asked of the MERGE, never of the living fleet alone:
+  // `producers` reads the fleet as it stands, so a feature retiring the message
+  // from both senders would let each one pass on the other's living contract.
+  // A service this feature carries an event delta for sends what the
+  // simulation leaves it (`declared.sentAfter`), or vouches for nothing; every
+  // other service sends what its living contract does. Positive evidence only,
+  // as `producers` is: an unreadable contract, or a merge that stood down,
+  // never keeps a message produced. The outside producer is the living map's
+  // edge and tag, which the landscape merge cannot take away (it only adds to
+  // the map), asked over the directories the merge leaves: each `specs/<svc>/`
+  // of this feature becomes a `services/<svc>/`, and a directory the #external
+  // element resolves to outranks its tag, so a feature onboarding the outside
+  // system as a service takes the producer away. Asked over the directories
+  // as they stood, the gate passed that retirement while the next `loam diff`
+  // reported `diff.message-removed-consumed` and `validate --all`
+  // `spine.message-unproduced` (the verification of D1, X2). One this
+  // feature's own C4 delta would draw is not counted, so that shape errs
+  // toward refusing — `--approve`, or draw the edge in the living map.
+  const touched = new Set<string>([...declared.featureDocs.keys(), ...declared.unreadable]);
+  const sendersAfter = async (svc: string, message: string): Promise<string[]> => {
+    const living = (await consumers.producers(message)).filter((id) => !touched.has(id));
+    const merged = [...declared.sentAfter].filter(([, sent]) => sent.includes(message)).map(([id]) => id);
+    const fleet = [...new Set([...living, ...merged])].filter((id) => id !== svc).sort();
+    const outside = await consumers.externalProducer(message);
+    return outside === null ? fleet : [...fleet, `${outside} (#external)`];
+  };
+  const still = async (svc: string, message: string): Promise<{ found: StillNamed; senders: string[] }> => {
+    const answer = await consumers.messageConsumers(svc, message);
+    const senders = await sendersAfter(svc, message);
+    return { senders, found: stillNamed(senders.length === 0 ? answer : { ...answer, victims: [], suspended: [] }) };
+  };
+  // The landscape merge only ADDS edges, so an edge is dropped in the living map
+  // itself — a consumer's consumes edge, or the provider's own publishes edge,
+  // which the spine grades on its source (`own`, core/consumers/consumers.ts).
+  const route = `drop its consumes edge, or drop or redraw its publishes edge, in the architecture/ project, MODIFY or REMOVE the requirement whose Consumes:/Publishes: line names it in this feature's specs/<service>/ delta`;
+  // With a sender left only the provider's own documents are named, so the
+  // remedy is theirs alone — telling the author to drop a consumer's edge
+  // there is the false route this gate used to give.
+  const ownRoute = (svc: string): string =>
+    `drop or redraw its publishes edge in the architecture/ project, or MODIFY or REMOVE the requirement whose Publishes: line names it in this feature's specs/${svc}/ delta`;
+  const ownOnly = (svc: string, senders: string[]): string =>
+    `${senders.join(", ")} would still send it after this merge, so its consumers keep a producer, but ${svc}'s own documents would still name it`;
+  // The route a consumer's refusal gains: another sender keeps the message
+  // produced, and one this feature adds counts (`declared.sentAfter`); so does
+  // the #external element that publishes it, drawn in the living map — the one
+  // place `sendersAfter` reads an outside producer from — unless this feature
+  // makes it a service. The route says so: a feature onboarding the gateway is
+  // told no #external element publishes the message while its living map
+  // draws one doing exactly that, and the way out is the first route, the new
+  // service's own send operation in its specs/<service>/ delta.
+  const anotherSender =
+    "keep another service sending it (an action: send operation in its asyncapi.yaml, living or in this feature's specs/<service>/ delta) or an #external element publishing it (a publishes edge from it in the living architecture/ project; one whose element this feature's specs/<service>/ makes a service no longer counts)";
 
   // Retiring a message the fleet still consumes — openapi.remove-op-consumed's
   // twin, and like it a question neither exactness nor justification asks:
@@ -55,13 +143,23 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
   // repository whose author was never in this feature.
   for (const [svc, net] of declared.netRemoved) {
     for (const message of net) {
-      const consumers = await lookups.messageConsumers(svc, message);
-      if (consumers.length === 0) continue;
+      const { found, senders } = await still(svc, message);
+      if (nothingStill(found)) continue;
+      const lost = `this feature retires message '${message}'`;
       issues.push({
         severity: "error",
         code: "asyncapi.remove-message-consumed",
         subject: svc,
-        message: `${svc}: this feature retires message '${message}', but the living fleet still consumes it — ${consumers.join("; ")}. Retire the consumer in the same feature (drop the consumes edge from architecture/landscape.likec4, or the requirement that names it), or archive with --approve to break it deliberately.`,
+        details: refusalDetails(found),
+        message: refusalMessage(found, {
+          subject: svc,
+          lost,
+          verb: "name",
+          named: (list) =>
+            senders.length === 0
+              ? `${svc}: ${lost}, and no readable contract would still send it after this merge, nor does an #external element publish it, but the fleet would still name it — ${list}. Retire each in the same change (${route}), ${anotherSender}, or archive with --approve to break it deliberately.`
+              : `${svc}: ${lost}; ${ownOnly(svc, senders)} — ${list}. Retire each in the same change (${ownRoute(svc)}), or archive with --approve to break it deliberately.`,
+        }),
       });
     }
   }
@@ -76,13 +174,23 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
     const net = declared.netRemoved.get(svc);
     for (const message of stopped) {
       if (net?.has(message) === true) continue;
-      const consumers = await lookups.messageConsumers(svc, message);
-      if (consumers.length === 0) continue;
+      const { found, senders } = await still(svc, message);
+      if (nothingStill(found)) continue;
+      const lost = `after this feature's merge, ${svc}'s asyncapi.yaml would no longer declare an action: send operation for '${message}'`;
       issues.push({
         severity: "error",
         code: "asyncapi.remove-message-consumed",
         subject: svc,
-        message: `${svc}: after this feature's merge, ${svc}'s asyncapi.yaml would no longer declare an action: send operation for '${message}', but the living fleet still consumes it — ${consumers.join("; ")}. Keep an operation sending it, retire the consumer in the same feature, or archive with --approve to break it deliberately.`,
+        details: refusalDetails(found),
+        message: refusalMessage(found, {
+          subject: svc,
+          lost,
+          verb: "name",
+          named: (list) =>
+            senders.length === 0
+              ? `${svc}: ${lost}, and no other readable contract would send it either, nor does an #external element publish it, but the fleet would still name it — ${list}. Keep an operation sending it, ${anotherSender}, retire each in the same change (${route}), or archive with --approve to break it deliberately.`
+              : `${svc}: ${lost}; ${ownOnly(svc, senders)} — ${list}. Keep an operation sending it, retire each in the same change (${ownRoute(svc)}), or archive with --approve to break it deliberately.`,
+        }),
       });
     }
   }

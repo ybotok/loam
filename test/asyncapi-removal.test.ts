@@ -205,8 +205,18 @@ describe("a relocation is not a removal", () => {
     // Same message name, marker on the old key, declaration at a new one:
     // the message only changes address, so it needs no REMOVED requirement
     // and nothing here fires — declared.ts's netRemoved distinction on the
-    // event axis.
+    // event axis. The channel is restated with its `$ref` pointed at the new
+    // key, as a whole relocation must be: left pointing at the retired key,
+    // the send operation stops sending the message, and the provider's own
+    // `Publishes:` line is then stranded — `asyncapi.remove-message-consumed`,
+    // rightly, since the consumer index counts the provider's own lines.
     const relocation = `asyncapi: 3.0.0
+channels:
+  legacyEvents:
+    address: payment.legacy.v1
+    messages:
+      Legacy:
+        $ref: '#/components/messages/LegacyV2'
 components:
   messages:
     Legacy:
@@ -394,6 +404,47 @@ operations:
     expect(issue!.severity).toBe("error");
     expect(issue!.message).toContain("would no longer declare an action: send operation for 'payment.Legacy'");
     expect(issue!.message).toContain("billing-service");
+  });
+
+  it("fires when the feature REDEFINES a slot under another identity — the overwrite carries no marker, and the wire half still sees it", async () => {
+    // The contract axis had this hole: a delta defining another operationId
+    // where a consumed operation lived replaced it with no marker for the
+    // removal gate to read (`openapi.remove-op-consumed` now asks it of the
+    // merged contract). The event axis cannot have it, and these pin why: the
+    // consumer question is asked of the simulated merge's SENT set, so an
+    // overwrite stops answering exactly as a retirement does — a message slot
+    // re-keyed to another name, or a send operation turned around.
+    const overwrites = [
+      `asyncapi: 3.0.0
+components:
+  messages:
+    Legacy:
+      name: payment.LegacyV2
+      payload:
+        type: object
+`,
+      `asyncapi: 3.0.0
+operations:
+  sendLegacy:
+    action: receive
+    channel:
+      $ref: '#/channels/legacyEvents'
+`,
+    ];
+    for (const overwrite of overwrites) {
+      const issues = await coherenceOf(
+        fixture({
+          "features/FEAT-40-retire-legacy/specs/payment-service/asyncapi.yaml": pinAsyncapiSlots(overwrite, LIVING_EVENTS, "payment-service").text!,
+          "features/FEAT-40-retire-legacy/specs/payment-service/spec.md": null,
+          "architecture/landscape.likec4": CONSUMES_LANDSCAPE,
+        }),
+      );
+      const [issue, ...rest] = only(issues, "asyncapi.remove-message-consumed");
+      expect(rest).toEqual([]);
+      expect(issue!.severity).toBe("error");
+      expect(issue!.message).toContain("would no longer declare an action: send operation for 'payment.Legacy'");
+      expect(issue!.message).toContain("billing-service");
+    }
   });
 });
 

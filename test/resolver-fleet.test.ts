@@ -218,10 +218,10 @@ describe("the removal gate sees a consumer drawn into a container", () => {
     const p = await makeProject({ ...nestedFleet(), ...retireAuthorize() });
     try {
       const res = await runLoam(p.workDir, "archive", "FEAT-10", "--json");
-      // This is exactly the path of lookups.ts's edgeConsumers: the living
-      // landscape's relationships are filtered by `resolve(r.target) ===
-      // 'payment-service'`, where `resolve` is `serviceResolver(elements, new
-      // Set(enumerated fleet))`. The edge's target `paymentService.api` has no
+      // This is exactly the path of the consumer index's `opConsumers`
+      // (src/core/consumers/): the living map's relationships are filtered by
+      // `resolve(r.target) === 'payment-service'`, where `resolve` is
+      // `serviceResolver(elements, new Set(enumerated fleet))`. The edge's target `paymentService.api` has no
       // explicit binding and its own title ('api') names no services/
       // directory, so only the ancestor walk — paymentService's title
       // 'payment-service', vouched for by the enumeration — attaches the edge.

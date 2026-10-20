@@ -1241,9 +1241,64 @@ under any flag — `x-loam-remove` and `x-loam-based-on` are stripped at path le
 level alike, on every merge branch. A path item consisting of nothing but a marker publishes no
 phantom path. The same feature must carry a `REMOVED` requirement whose `Operations:` line names
 that id. Coherence gates an absent path+method, an id mismatch, an unjustified marker, a removed
-requirement with no marker, and a new tagged C4 edge consuming the operation being removed.
+requirement with no marker, a new tagged C4 edge consuming the operation being removed, and a
+removal anything would still consume after the merge (`openapi.remove-op-consumed`, error,
+`--approve` overrides — **Who still consumes it** below says what counts). A `REMOVED`
+requirement owes a marker only while there is a living operation for it to retire: not for an id
+the service's living contract does not define (a consumer's `REMOVED` requirement naming another
+service's operation), and not for one this delta already replaces at its address (the overwrite
+below — no marker could be written there, since the replacement holds the slot). A living
+contract that does not parse proves neither exemption, so the marker stays owed.
 `serviceOperationIds` evaluates the feature as living upserts minus removals, so other same-feature
-checks see the post-archive contract. Archive deletes only the matching method, reports removals in
+checks see the post-archive contract.
+
+**An overwrite can remove an operation too, and is graded as one.** The merge writes per method and
+path, so a delta defining ANOTHER operationId where a living operation lives replaces it there — and
+when the contract the merge would write then defines the living one nowhere, it has left the
+contract with no marker for any of the checks above to read. Coherence asks the removal's own
+consumer question of it, on the merged contract: `openapi.remove-op-consumed` (error, `--approve`
+overrides, exactly as for a marker) while anything would still consume it after the merge. With no
+marker there is no `REMOVED` requirement either, so the provider's own requirement naming the old id
+stays unless the feature `MODIFIES` it to name the new operation or `REMOVES` it — and a `REMOVED`
+one owes no marker here. A new tagged edge onto the replaced operation is `c4-api.op-removing`. The
+fix is the delta's choice: define the replaced operation at another address in the same delta if it
+is to stay; for a rename, redraw the living edge and restate the governing requirement. An
+overwrite of an operation nothing names stays the advisory `api.op-unconsumed` it always was.
+
+**Who still consumes it — one answer for the gate, `loam diff` and `loam archive`.** The consumers
+of an operation are read once, the same way for every reader (`core/consumers/`):
+
+- every edge of the `architecture/` **project** whose `metadata { op }` names it and whose target
+  resolves to the provider — any document the spine grades, never `landscape.likec4` alone (when
+  only a sibling document fails to parse, the map file's own edges still count);
+- another service's requirement — in `spec.md` **or** `arch.spec.md` — whose `Operations:` line
+  names it, **unless that service's own contract defines the same id** — then the line names that
+  service's own operation: `validate` resolves a spec.md `Operations:` line against its own
+  service's contract, and `loam dependencies` reads a line in either file naming an operation its
+  own service provides as no dependency on anybody (an unreadable or absent contract proves no
+  ownership, and the line counts);
+- the use-case hops the model attributes to it (a contested hop is a doubt, never a consumer);
+- the provider's OWN documents still naming it — its `spec.md` requirements, and edges it draws to
+  itself. Not its `arch.spec.md` lines: `validate` grades an `Operations:` line in spec.md only, so
+  one in arch.spec.md strands nothing (another service's does count — it is a dependency on this
+  contract, as `loam dependencies` reads it). The gate counts these, because the merge strands them as surely; `loam diff` and the archive's
+  `openapi.op-modified` warnings answer who ELSE is affected, and leave them out (a service owes no
+  operationId to itself).
+
+The gate reads all of it **after the feature's merge**: a requirement the same feature `MODIFIES`
+to drop the id, or `REMOVES`, no longer counts — another service's too, so retiring the consumer in
+the same feature is a fix the gate sees — and one of its own `ADDED`/`MODIFIED` requirements naming
+the id does. A delta the merge would refuse to apply fails closed: the living requirements count,
+plus every one the delta adds or modifies. Edges and hops are read as they stand: the landscape
+merge only ADDS edges and a feature's flows are create-only, so no feature document can take one
+away — drop or redraw a living edge by editing the living map in the same change. The refusal lists
+the consumers in its `details[]`, in the order `loam diff` lists the victims of the same removal.
+A consumer document nobody could read refuses too, and is named there: a spec file that does not
+decode (another service's, or the provider's own), or a service id two directories claim — the gate
+cannot prove such a document does not name what is leaving, so it says it could not check, never
+that the fleet still consumes it. An edge drawn with no `metadata { op }` and a contested use-case
+hop are doubts about a drawing: `loam diff` lists them, and they never refuse, since `loam seed`
+draws every edge without an op. Archive deletes only the matching method, reports removals in
 text and `openapiRemovals` JSON, never copies the marker into living OpenAPI, and deliberately does
 not garbage-collect components. A removal marker in a living `openapi.yaml` is
 `openapi.remove-marker-living` (error). The usual staged-write rollback and `unarchive` snapshot
@@ -1381,7 +1436,36 @@ decision that reverses that stance: the removal family exists, a message-slot re
 justified by a `REMOVED` requirement's `Publishes:`/`Consumes:` line (channel and operation slots
 need exactness only — requirements join on message names and never on channel or operation keys, so
 demanding a justifying requirement there would invent a join the corpus cannot express), and
-`asyncapi.remove-message-consumed` gates a removal the living fleet still consumes. The lag argument
+`asyncapi.remove-message-consumed` gates a removal the fleet would still consume after the merge —
+a `consumes` edge of the `architecture/` project, another service's `Consumes:` line in either spec
+file (no ownership rule here: a consumer declares the message in its own contract as `receive` by
+construction), a use-case hop backed by such an edge — or whose provider's own `Publishes:` line the
+merge would leave behind, or its own `publishes` edge (the spine grades that edge on its source,
+`spine.message-undefined`; drop or redraw it in the living map), which covers a message slot re-keyed to another name or a send operation
+turned around as surely as a marker: read after the merge, as on the HTTP axis, and a `REMOVED`
+requirement owes no marker for a message the merge already takes out. **A consumer counts only
+while nothing would still send the message after the merge** — no service, and no `#external`
+element whose edge publishes it: the join is fleet-global, and a consumer with another producer is
+not stranded — `spine.message-unproduced` grades a consumer by exactly that, an outside producer
+included (*The direction is not decoration* above), and `loam diff` reports such a removal as
+`diff.message-removed`, "still sent by …", naming an outside producer as `<title> (#external)`.
+The senders are read after the merge too: a service this feature carries an event delta for sends
+what the merged contract would (the delta itself, where it creates the contract), and vouches for
+nothing where the merge cannot be simulated, so a feature retiring the message from every sender
+is still refused; an unreadable contract never vouches. The outside producer is read off the
+living `architecture/` project with validate's own rule, and only while that project parses. The
+landscape merge only adds to the map, so no feature takes its edge or tag away — but the rule also
+asks that no `services/<id>/` directory stand for the element, and the merge creates one from each
+`specs/<id>/` the feature carries. So the rule is asked over the directories as the merge leaves
+them: a feature that onboards the outside system as a service (`specs/legacy-gateway/`, its element
+titled or bound `legacy-gateway`, or a topic nested inside it) takes the producer away, and a
+retirement in it is refused unless something else still sends the message — the new service's own
+contract, in its `specs/legacy-gateway/` delta, for one. A `publishes` edge
+from an `#external` element that only the feature's own C4 delta draws does not count either —
+draw it in the living map, or archive with `--approve`. Another sender does not excuse the
+provider's own `Publishes:` lines and `publishes` edges — those are graded against its own
+contract, whoever else sends the message — nor its own unreadable spec files; another service's
+unreadable spec file, or an id two directories claim, refuses only while nothing would send. The lag argument
 survives as an **operational warning**, not a veto: passing the gate proves the *documents* agree
 nobody consumes the message — it does not prove no consumer is still reading the topic with lag, so
 sequence the runtime retirement accordingly.
@@ -1518,7 +1602,12 @@ the source for tests.
   stripped on merge exactly like `Based-On:`. The digest is taken over the operation's *canonical*
   form (object keys sorted), which is the same comparison `isDeepStrictEqual` makes when the merge
   decides an operation "differs" — so a pin goes stale exactly when the merge would say something
-  moved, never over a reordered key. The pin is always the digest of the **living** operation, and
+  moved, never over a reordered key. The pin is keyed by the slot, method and path, on both sides,
+  so an operation written with no `operationId` — living or in the delta — is pinned, graded and
+  quoted exactly as a named one: `loam rebase` always pinned against whatever stood at the slot,
+  and the gate once read named operations alone, so it refused the pin rebase had just written as
+  one over "no operation at that slot" and never asked an unnamed quote for a pin. The pin is
+  always the digest of the **living** operation, and
   that one rule yields both merge verdicts by itself: an operation the author only quoted is
   byte-equal to living, so its pin equals its own content and **the merge skips it entirely**
   (reported as `· quotes …` in the plan, so the plan never silently writes less than the delta
@@ -2400,7 +2489,9 @@ requirement would land in the file twice — and `--approve` does not override i
 duplication is mechanical, not a judgment call; re-home the requirement first. A delta that
 redefines a path+method the living OpenAPI already has (`openapi.op-modified`, warning) merges
 anyway, but the plan says so — the overwrite is wholesale, and the living definition it replaces
-deserved an eye. An unparseable `delta.likec4` fails the archive at plan time regardless of
+deserved an eye. One that defines a different operationId there, leaving a consumed operation
+defined nowhere, never reaches the plan without `--approve`: the gate refuses it first
+(`openapi.remove-op-consumed`, the overwrite shape). An unparseable `delta.likec4` fails the archive at plan time regardless of
 `--approve`: the alternative was archiving with the architecture axis silently dropped, which is the
 data loss this tool exists to prevent.
 

@@ -96,6 +96,21 @@ export interface AnonymousRemoval {
   method: string;
 }
 
+/**
+ * An operation written with no usable operationId — legal OpenAPI, and a slot
+ * the merge replaces like any other, but one no id-keyed join can name. Kept
+ * apart from `ops` so every join on the id stays blind to it, as it must: a
+ * requirement, an edge or a removal marker can only ever name an id.
+ */
+export interface AnonymousOperation {
+  path: string;
+  method: string;
+  /** `operationDigest` of it — what a pin over its slot is graded against, as for a named one. */
+  digest: string;
+  /** `x-loam-based-on`, as on a named operation — a feature delta's pin. */
+  basedOn?: string;
+}
+
 /** The parse of one OpenAPI document: its operations, and whether the file could be read at all. */
 export interface OpenapiDoc {
   ops: Operation[];
@@ -112,6 +127,20 @@ export interface OpenapiDoc {
    * write `x-loam-remove: true` straight into a living contract.
    */
   anonymousRemovals: AnonymousRemoval[];
+  /**
+   * Operations with no usable operationId that are not removal markers.
+   *
+   * Dropped outright until they were kept here, and the slot-keyed questions
+   * paid for it. The baseline gate could not see a living one, so a delta
+   * `loam rebase` pinned over it (rebase reads the slot) was refused by
+   * `validate` as pinned over "no operation at that slot" — the two never
+   * agreed, and an unpinned quote over it drew no `openapi.baseline-missing`.
+   * And the revival check, asked what an arriving operation would replace,
+   * called an address it held one "the living contract no longer has", so
+   * the remedy it gave deleted the operation with nothing naming it. Slots
+   * only, never ids: nothing that joins on an operationId reads this list.
+   */
+  anonymousOps: AnonymousOperation[];
   /**
    * Paths carrying `x-loam-remove: true` at PATH level, beside the methods
    * rather than inside one.
@@ -146,7 +175,9 @@ export interface OpenapiDoc {
  * dotted) and picks up phantom ids from description text. Each operation
  * carries its id and its `deprecated: true` flag (exactly `true` counts —
  * strings and truthy noise do not). `ops` is the defined set, keyed by the
- * (path, method) SLOT — not by operationId.
+ * (path, method) SLOT — not by operationId. An operation written with no
+ * operationId is not in it — nothing that joins on the id could name it —
+ * but it is in `anonymousOps`, by its slot, for the questions asked BY slot.
  *
  * Keying by id used to drop the second slot claiming a name, which made the
  * single most common contract edit invisible: relocating an endpoint is a
@@ -205,6 +236,7 @@ export function openapiFromText(text: string): OpenapiDoc {
   if (!paths || typeof paths !== "object") return { ...empty(), danglingRefs: refs };
   const ops: Operation[] = [];
   const anonymousRemovals: AnonymousRemoval[] = [];
+  const anonymousOps: AnonymousOperation[] = [];
   const pathLevelRemovals: string[] = [];
   const seen = new Map<string, number>();
   const closureDigest = closureDigester(doc);
@@ -216,12 +248,13 @@ export function openapiFromText(text: string): OpenapiDoc {
       if (!op || typeof op !== "object") continue;
       const id = (op as Record<string, unknown>)["operationId"];
       const remove = (op as Record<string, unknown>)["x-loam-remove"] === true;
+      const basedOn = operationBaselineOf(op);
       if (typeof id !== "string" || id.length === 0) {
         if (remove) anonymousRemovals.push({ path, method });
+        else anonymousOps.push({ path, method, digest: operationDigest(op), ...(basedOn === undefined ? {} : { basedOn }) });
         continue;
       }
       seen.set(id, (seen.get(id) ?? 0) + 1);
-      const basedOn = operationBaselineOf(op);
       ops.push({
         id,
         deprecated: (op as Record<string, unknown>)["deprecated"] === true,
@@ -237,7 +270,7 @@ export function openapiFromText(text: string): OpenapiDoc {
     }
   }
   const duplicateIds = [...seen].filter(([, n]) => n > 1).map(([id]) => id);
-  return { ops, duplicateIds, anonymousRemovals, pathLevelRemovals, unreadable: false, danglingRefs: refs };
+  return { ops, duplicateIds, anonymousRemovals, anonymousOps, pathLevelRemovals, unreadable: false, danglingRefs: refs };
 }
 
 function empty(): OpenapiDoc {
@@ -245,6 +278,7 @@ function empty(): OpenapiDoc {
     ops: [],
     duplicateIds: [],
     anonymousRemovals: [],
+    anonymousOps: [],
     pathLevelRemovals: [],
     unreadable: false,
     danglingRefs: [],

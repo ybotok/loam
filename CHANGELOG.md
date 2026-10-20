@@ -10,6 +10,222 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Changed — one consumer index: `loam archive`, `loam validate` and `loam diff` agree about who still consumes an operation or a message
+
+No code or flag was added; one additive `--json` key on two existing codes. Who still consumes what
+a change takes out was answered three ways — the coherence gate (`openapi.remove-op-consumed`,
+`asyncapi.remove-message-consumed`), `loam diff`'s victims (`diff.op-removed-consumed`,
+`diff.message-removed-consumed`, the `-deprecated`/`-modified` details, `diff.consumer-added` /
+`diff.consumer-removed`) and `loam archive`'s `openapi.op-modified` / `asyncapi.message-modified`
+warnings — and the three copies read different documents. They are one index now; SCHEMA.md's
+"Who still consumes it" states the rules.
+
+- **More consumers are found, so more removals are refused:**
+  - **Edges come from the whole `architecture/` project**, not `architecture/landscape.likec4`
+    alone, for the gate as for `loam diff` and the archive's overwrite warnings: an edge with `metadata { op }` (or `consumes`) drawn in
+    `architecture/calls.likec4` or in a use-case document counts. The gate passed such a removal
+    and the next `validate --all` reported `spine.op-undefined` on the edge. Where only a sibling
+    document fails to parse, the map file's own edges still count.
+  - **The gate names use-case hops** attributed to the operation (or backed by a `consumes` edge),
+    as `loam diff` already did.
+  - **An `arch.spec.md` `Operations:` line** of another service counts, as a spec.md one does —
+    for the gate, `loam diff`'s victims, `diff.consumer-added` / `diff.consumer-removed` and the
+    archive's overwrite warnings. So an
+    operation's `diff.consumer-added` / `-removed` is not reported while the consumer's
+    `arch.spec.md` cannot be read on the other side, as it never was over an unreadable `spec.md`.
+    The consumer's own `openapi.yaml` does not suppress it: an unreadable contract proves no
+    ownership, so the line counts on that side too. The exception is a line whose join exists only
+    because that contract did not parse on one side, while on the other side it reads and defines
+    the id: there the line names the consumer's own operation, and only the contract's readability
+    changed. No `diff.consumer-added` / `diff.consumer-removed` is reported for it — before, one per
+    provider of the id, each counted in the `--json` summary's `added` / `removed`. The contract's own
+    `unreadable[]` entry is still reported, and `loam diff` still exits 1 on it.
+  - **The provider's own `spec.md` requirements count for a marker retirement too**, as they do for
+    the overwrite of the entry below: one still naming the retired operation after the merge (a
+    second one beside the REMOVED requirement) archived at exit 0 and left `spec-api.op-undefined`.
+    Its `arch.spec.md` `Operations:` lines count for neither shape: `validate` grades such a line in
+    spec.md only, so one in arch.spec.md strands nothing. An edge the provider draws to itself
+    counted already, and still does — the spine grades it like any other.
+    `loam diff` and the archive's overwrite warnings still leave the provider's own documents out:
+    they name who ELSE is affected.
+  - **On the event axis the provider's own `Publishes:` lines count**, as the merge would leave
+    them. A message slot re-keyed to another name, or a send operation turned to receive, while the
+    provider's requirement still publishes the message, archived at exit 0 and the next
+    `validate --all` reported `spec-event.message-undefined`; it is `asyncapi.remove-message-consumed`
+    now. So do its own `publishes` edges, which the spine grades on their source: a full retirement
+    over a living `paymentService -> billingService { metadata { publishes '…' } }` archived at exit
+    0 and left `spine.message-undefined` on the provider. The remedy names "drop or redraw its
+    publishes edge".
+  - **Fail closed**: a spec the merge refuses to apply — a malformed `Requirement-ID:` in the
+    living spec or the delta — no longer answers "no consumers". The living requirements count,
+    plus every requirement the delta ADDS or MODIFIES.
+  - **A consumer document loam cannot read refuses the removal**, as the gate did before it asked
+    one index: another service's `spec.md` or `arch.spec.md` that does not decode as UTF-8, the
+    provider's own `spec.md` (either spec file, for a message), or a service id two directories
+    claim. `openapi.remove-op-consumed` /
+    `asyncapi.remove-message-consumed` name each in `details[]` and say the gate could not check —
+    never that the fleet still consumes it. An edge drawn with no `metadata { op }` and a contested
+    use-case hop still never refuse; `loam diff` lists them as doubts, as before.
+  - **`loam diff` counts only a service that SENDS a message as still producing it.** A removed
+    message another service declares only with `action: receive` — a consumer's own declaration,
+    which validate requires — was `diff.message-removed` (warn), "still declared by" that consumer,
+    while the gate refused the same removal and the next `validate --all` reported
+    `spine.message-unproduced` there. It is `diff.message-removed-consumed` now, naming the gate's
+    consumers; the warning for a message another service does send reads "still sent by".
+- **Fewer refusals where the consumer was false or already retired:**
+  - **Another service's `Operations:` line naming an id its own contract defines** names its own
+    operation, and is no consumer (gate, `loam diff`, `diff.consumer-added` / `-removed`, the
+    archive's overwrite warnings): shared
+    ids such as `healthCheck` no longer refuse a rename, and `--approve` is no longer the only way
+    past a fleet `validate --all` calls clean.
+  - **Read after the feature's merge**: a consumer requirement the same feature MODIFIES to drop
+    the id, or REMOVES, no longer counts — another service's included, which is the remedy the
+    refusal itself names.
+  - **A message another service would still send after the merge strands no consumer.**
+    `asyncapi.remove-message-consumed` counted every `consumes` edge, `Consumes:` line and use-case
+    hop of a message whoever sent it, so retiring it from one of two senders was refused over the
+    other sender's consumers. Its remedy said to drop that sender's own `consumes` edge. Meanwhile
+    `loam diff` reported the same removal as `diff.message-removed` (warn), "still sent by …", and
+    the next `validate --all` was clean. Now a consumer refuses only while no service would send the
+    message after this feature's merge. The senders are read as the merge leaves them: a service
+    the feature carries an event delta for sends what its merged contract would (the delta itself
+    where it creates that contract), so moving production to another service in the same feature
+    passes, and a feature that retires the message from every sender is still refused. An unreadable contract never counts as
+    a sender. Beside another sender, the provider's own `Publishes:` lines, its own `publishes`
+    edges and its own unreadable spec files still refuse; another service's unreadable spec file,
+    or an id two directories claim, does not. This predates the one index: the gate behaved the
+    same before it. The message is reworded to say which case applies. With no sender left it reads
+    "no readable contract would still send it after this merge" and adds the route "keep another
+    service sending it". With a sender left it names the senders, lists only the provider's own
+    documents, and gives only their remedy.
+  - **An `#external` element that publishes the message keeps its consumers produced too**, for
+    the gate and for `loam diff` as for `validate`. Both counted only senders inside the fleet, so
+    retiring a message from its only fleet sender was refused while an `#external` element still
+    published it (an edge from it with `metadata { publishes }`), and after `--approve` `loam diff`
+    reported `diff.message-removed-consumed` (error) — while `spine.message-unproduced` accepts such
+    a producer and the next `validate --all` was clean. Now the outside producer counts as a
+    sender, read off the living `architecture/` project with validate's own rule: only while the
+    project parses, and not from an edge the feature's own C4 delta draws. The gate asks the rule
+    over the service directories as the merge leaves them, so an element the same feature makes a
+    service — a `specs/<id>/` directory for the id the element, or the element it is nested in,
+    resolves to, which the archive turns into `services/<id>/` — no longer counts, and the
+    retirement is refused, as the next `loam diff` and `validate --all` would read it; `loam diff`
+    asks over the directories as they stand. `loam diff` reports
+    `diff.message-removed` (warn), "still sent by `<title>` (#external)", and a refusal for the
+    provider's own documents, which it still does not excuse, names it the same way. With no sender
+    left, the refusal now also says "nor does an #external element publish it", and its route
+    reads "keep another service sending it (…) or an #external element publishing it (a publishes
+    edge from it in the living architecture/ project; one whose element this feature's
+    specs/<service>/ makes a service no longer counts)". This predates the one index too.
+  - **`openapi.remove-marker-missing` is owed only while there is a living operation to retire**:
+    not for an id the service's living contract does not define (a consumer's REMOVED requirement
+    naming another service's operation), and not for one the delta already replaces at its method
+    and path (no marker could be written there). A living `openapi.yaml` that does not parse proves
+    neither, so the marker is still owed there, as before. The overwrite's "REMOVE the requirement"
+    route can now be followed; its message says a REMOVED requirement owes no marker there.
+    `asyncapi.remove-marker-missing` likewise skips a message the merge already takes out.
+- **`details[]`** (additive) on `openapi.remove-op-consumed` and `asyncapi.remove-message-consumed`:
+  the consumers, one per line, in the order `loam diff` lists the victims of the same removal.
+- **Messages reworded**: the remedies name the `architecture/` project instead of
+  `architecture/landscape.likec4`, and say a requirement is retired in the feature's
+  `specs/<service>/` delta; `diff.op-removed`'s no-consumer sentence reads "no current edge,
+  requirement or use-case hop names it".
+- **Exit code:** where a consumer is newly found, `loam archive` exits 1 (`not-coherent`) without
+  `--approve`; `loam validate --feature`, `loam validate <FEAT>` and `loam validate --all` (for every
+  active feature in that shape) exit 1; `loam status` counts the finding as gating; `loam show
+  <FEAT> --json` reports `review.readyToArchive: false`; and `loam diff` exits 1
+  (`diff.op-removed-consumed` / `diff.message-removed-consumed`, `breaking: true`) where a removal
+  now has a victim — a removed message whose only other declarer receives it included, which exited
+  0. Where another service's spec file does not decode, `loam validate --feature`
+  reports `openapi.remove-op-consumed` / `asyncapi.remove-message-consumed` naming the file where it
+  reported `feature.unreadable`, at exit 1 as before, and `loam archive` exits 1 as before. Where
+  two directories claim a service id, or the provider's own `spec.md` does not decode (either spec
+  file, for a message), `loam
+  archive` and `loam validate --feature` exit 1 for the removal whatever those documents say —
+  before, 0 unless a copy the gate could read named it — until the document reads or `--approve` is
+  passed. Where a refusal was false or the consumer is retired in the same feature, each
+  of those exits 0 for that shape unless something else gates. That includes a message retired from
+  one sender while another service would still send it after the merge, or while an `#external`
+  element still publishes it and the feature does not make that element a service, where only
+  consumers were named: `loam archive`, `loam validate --feature`, `loam validate <FEAT>` and `loam validate
+  --all` exited 1 and now exit 0, `loam status` no longer counts it as gating, and `loam show
+  <FEAT> --json` no longer reports `review.readyToArchive: false` for it. `loam diff` reports
+  `diff.op-removed` (warn) where its only victim was a same-id requirement, and
+  `diff.message-removed` (warn) where an `#external` element still publishes the removed message —
+  it exited 1 (`diff.message-removed-consumed`, `breaking: true`) and now exits 0 unless something
+  else fails. `--approve` overrides
+  every one of these refusals as before. `--strict` changes nothing here beyond that: every finding
+  in this entry is an error, or is unchanged.
+
+### Fixed — `loam instructions loam-spine` says what `loam rebase` pins for a revived quote
+
+The page said `loam rebase` "pins neither shape". That has been false since rebase began grading
+the delta it will write. Rebase never pins a retired operation as new, but it does repin a quote
+of an address a move vacated over the operation that lives there now, and it reports the revival
+that edit makes. The page now says so, in line with the `loam-codes` command map, WORKFLOW.md
+and SCHEMA.md.
+
+### Fixed — an operation with no `operationId` is a slot like any other
+
+No code, flag or payload key was added. The OpenAPI reader used to drop an operation written
+without an `operationId`. It now keeps it by its method and path, never by an id: requirements,
+edges and removal markers still cannot name it, and it gets no finding of its own. The checks that
+work by slot now see it:
+
+- **`openapi.op-revived` names it.** When a quote lands where such an operation lives, the message
+  says `<METHOD /path> now holds an operation with no operationId, and archiving this delta
+  replaces it there`. Its move-back remedy adds that, if that operation is to stay, the same delta
+  must define it at another address. The message no longer calls that address one "the living
+  contract no longer has". Followed as it used to read, the remedy led to an archive that deleted
+  the operation with nothing naming it.
+- **`loam rebase` and `loam validate` agree about a pin over it.** Rebase always pinned against
+  whatever stood at the slot, but validate refused that pin with `openapi.baseline-invalid` ("no
+  operation at that slot").
+- **Pins are now required at these slots.** An unpinned quote over such an operation counts into
+  `openapi.baseline-missing` (warn, gates archive), and so does an unpinned delta operation without
+  an `operationId` over a living one. Their pins are graded like any other (`-stale`, `-invalid`).
+  **Exit code:** `loam archive` now exits 1 (`not-coherent`) on either shape until `loam rebase`
+  pins it, or `--approve` merges unpinned. `openapi.baseline-missing` is a warning that gates:
+  `loam validate` exits as before on it, except `--strict` (and `--all --strict`), which fails on
+  any warning and so now exits 1; `loam status` counts it as gating, and `loam show <FEAT> --json`
+  reports `review.readyToArchive: false` until the pin is written.
+- **A pin on such an operation where nothing lives is `openapi.baseline-invalid` (error)**, as it is
+  for a named operation (rebase never writes one; a malformed pin on such an operation is refused
+  the same way). **Exit code:** `loam validate --feature`, `loam validate <FEAT>` and `loam validate
+  --all` (for every active feature carrying one) now exit 1 on it, where they exited 0 with no
+  finding; `loam archive` exits 1 (`not-coherent`) without `--approve`; `loam status` counts it as
+  gating; `loam show <FEAT> --json` reports `review.readyToArchive: false`.
+- **`openapi.remove-op-consumed`** also fires when the delta defines an operation with no
+  `operationId` where a consumed one lives. Before, a delta holding only such an operation upserted
+  over the consumed one with no finding of any kind.
+
+### Changed — `loam archive` refuses an overwrite that takes a consumed operation out of the contract
+
+No code, flag or payload key was added: an existing code covers a second shape.
+
+- **`openapi.remove-op-consumed` (error, `--approve` overrides) now also fires for an overwrite.**
+  A feature's `openapi.yaml` defines another operationId at the method and path where a living
+  operation lives, and the contract the archive would write then defines the living one nowhere.
+  The merge replaces it there with no removal marker naming it, so before this only the advisory
+  `api.op-unconsumed` fired, the archive passed without `--approve`, and the next `validate`
+  reported `spine.op-undefined` / `spec-api.op-undefined`. The consumers are a removal's — the one
+  consumer index of the entry above — including the provider's own `spec.md` requirements as the
+  merge would leave them: one the feature MODIFIES to name the new operation, or REMOVES, no longer counts. The
+  message names what replaces the operation and where, and says to define it at another address in
+  the same delta if it is to stay.
+- **Exit code:** on this shape `loam archive` now exits 1 (`not-coherent`) without `--approve`,
+  and `loam validate --feature`, `loam validate <FEAT>` and `loam validate --all` (for every active
+  feature in this shape) exit 1. `loam status` counts it as gating, and `loam show <FEAT> --json`
+  reports `review.readyToArchive: false` until it is fixed or archived past with `--approve`. With
+  `--approve` the archive merges as before and lists the finding in `overridden[]`.
+- **`c4-api.op-removing`** now also fires for a new tagged edge onto an operation the delta
+  replaces that way.
+- An overwrite of an operation nothing names is unchanged: `api.op-unconsumed` stays advisory. On
+  the event axis `asyncapi.remove-message-consumed` already graded the simulated merge's sent
+  messages, so a channel, operation or message slot redefined under another identity was caught
+  like a retirement for its OTHER consumers — but not for the provider's own `Publishes:` line,
+  which the consumer-index entry above adds.
+
 ### Changed — `loam archive` refuses a delta that would bring back an operation another feature retired
 
 Two codes, both added to the `IssueCode` union, and one additive `--json` key were added.
@@ -363,8 +579,8 @@ No code or flag was added. Existing warnings now fill a payload key that was alw
   `no current consumer names it`. The warning's `details` (until now always `[]`) list the
   consumers, in `archive --json` `warnings[]` and, when the contract merge is refused as
   `not-coherent`, in the same warning's entry in `issues[]`:
-  - landscape edges;
-  - other services' living requirements;
+  - edges of the `architecture/` project;
+  - other services' living requirements, in either spec file;
   - use-case hops;
   - and last, any consumer whose documents could not be read, or any caller drawn without an
     `op`.

@@ -36,7 +36,9 @@ export const DIFF_COMMAND = `- \`loam diff --base <ref>\` reports the fleet-mean
   over the cross-service joins — another service's requirement naming this
   service's operation or message. The two \`-consumed\` codes are the errors:
   they are the removals something in the fleet still names, with the victims
-  in \`details[]\`. The two contract \`-modified\` codes are warnings whoever
+  in \`details[]\` — the same consumers \`loam archive\` refuses a removal on
+  (edges of the \`architecture/\` project, both spec files, use-case hops; a
+  line naming its own service's operation of the same id is no victim). The two contract \`-modified\` codes are warnings whoever
   is joined: the operation or message changed — its own node or anything its
   \`$ref\`s reach — and \`details[]\` names who to check it against, but loam
   does not grade whether the change breaks them. A landscape edge into the

@@ -21,8 +21,7 @@
  * as platform — this warning only names a shape that is usually wrong.
  */
 import { existsSync } from "node:fs";
-import { type Elem, type LoadedDoc } from "../../../core/c4/likec4.js";
-import { type DeclaredService, type RawServiceId } from "../../../core/kernel/ids/service.js";
+import { type Elem } from "../../../core/c4/likec4.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
 import { type ServiceEntry } from "../../../core/repo/entries.js";
 import { permissionsPath, servicePathsAt } from "../../../core/repo/paths.js";
@@ -91,18 +90,6 @@ export function fleetShapeFindings(shape: FleetShape): Finding[] {
   return findings;
 }
 
-/**
- * The #external element that declares it PUBLISHES this message, or null —
- * the landscape-side half of the event spine's fleet question, beside the
- * other checks that read tags off the drawn map.
- *
- * Positive evidence only: an edge carrying `metadata { publishes '<msg>' }`
- * whose source element — itself or a declared ancestor, since the edge may
- * point out of a topic nested inside the broker — is tagged #external and
- * resolves to no known service directory. The resolution guard is what keeps
- * a mis-tagged internal service reading as unproduced: a tag is cheap to
- * write, and a services/<id>/ directory outranks it.
- */
 /**
  * The authorization vocabulary graded against the fleet that uses it — the half
  * of the axis no single service can answer.
@@ -245,27 +232,4 @@ export async function capabilityFleetFindings(
     ...unrealizedFindings(vocab, usedCapabilities(rows)),
     ...requirementUnrealizedFindings(unrealizedRequirements),
   ];
-}
-
-export function externalProducerOf(
-  message: string,
-  land: LoadedDoc | null,
-  landSvcOf: ((id: string) => DeclaredService) | null,
-  known: ReadonlySet<RawServiceId>,
-): string | null {
-  if (land === null || land.errors.length > 0 || landSvcOf === null) return null;
-  const knownIds: ReadonlySet<string> = known;
-  const byId = new Map(land.elements.map((e) => [e.id, e]));
-  for (const r of land.relationships) {
-    if (r.publishes !== message) continue;
-    if (knownIds.has(landSvcOf(r.source))) continue;
-    for (let id = r.source; ; ) {
-      const e = byId.get(id);
-      if (e !== undefined && e.tags.includes(EXTERNAL_TAG)) return e.title;
-      const dot = id.lastIndexOf(".");
-      if (dot === -1) break;
-      id = id.slice(0, dot);
-    }
-  }
-  return null;
 }

@@ -1,14 +1,16 @@
 /**
  * What a feature's own delta DECLARES, per service, indexed once.
  *
- * Seven indexes over the same four files (the delta spec.md, arch.spec.md,
+ * Nine indexes over the same four files (the delta spec.md, arch.spec.md,
  * openapi.yaml, and the living contract they are graded against), built in one
  * walk because every check downstream joins on the service id and would
  * otherwise re-read the delta per question. The distinctions here are the ones
  * the checks cannot make for themselves: an operation a REMOVED requirement
  * governs is being retired, so it neither claims the contract nor governs
  * anything after the merge; a removal marker that names an id also defined
- * elsewhere in the delta is a RELOCATION, not a retirement; and a marker with
+ * elsewhere in the delta is a RELOCATION, not a retirement; a living operation
+ * another one replaces at its address, with no marker naming it, leaves the
+ * contract all the same; and a marker with
  * no `operationId` at all is a shape only this walk can see. The capability
  * gate rides the same loop: both delta spec documents are graded against the
  * fleet vocabulary here, because coherence.ts and this package's file count
@@ -33,7 +35,7 @@ import type { Requirement } from "../document/spec.js";
 import { openapiBaselineIssues } from "../openapi/baseline/gate.js";
 import { readOpenapi } from "../openapi/doc.js";
 import { operationRetirements } from "./retired/retirement.js";
-import { operationArrivals, type Arrival } from "./retired/revival/arrivals.js";
+import { operationArrivals, type Arrival, type Displacement } from "./retired/revival/arrivals.js";
 import type { FleetContext } from "../fleet-context.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
@@ -42,7 +44,7 @@ export interface Declared {
   /** Per service: the operations its non-REMOVED requirements govern. */
   reqOps: Map<PathableService, string[]>;
   /** Per service: the operations its REMOVED requirements governed. */
-  removedReqOps: Map<string, Set<string>>;
+  removedReqOps: Map<PathableService, Set<string>>;
   /** Per service: operations this feature genuinely retires (markers minus relocations). */
   removingOps: Map<string, Set<string>>;
   /** Per service: every id a removal marker names, relocations included. */
@@ -67,6 +69,14 @@ export interface Declared {
    * when one of these lists is non-empty.
    */
   revivalCandidates: Map<PathableService, Arrival[]>;
+  /**
+   * Per service: every living operationId the contract the archive would
+   * write answers nowhere while no removal marker names it — replaced at its
+   * address by another operation (./retired/revival/arrivals.ts). The
+   * removal gate's consumers are asked of these too: the loss is the same,
+   * only the spelling differs.
+   */
+  displacedOps: Map<PathableService, Displacement[]>;
 }
 
 /** The three facts this walk needs about the feature it is reading. */
@@ -84,7 +94,7 @@ export async function declaredByService(
 ): Promise<Declared> {
   const { docsDir, featureDir, featureId } = scope;
     const reqOps = new Map<PathableService, string[]>();
-    const removedReqOps = new Map<string, Set<string>>();
+    const removedReqOps = new Map<PathableService, Set<string>>();
     /** Per service: operations this feature genuinely retires (markers minus relocations). */
     const removingOps = new Map<string, Set<string>>();
     /** Per service: every id a removal marker names, relocations included. */
@@ -94,6 +104,9 @@ export async function declaredByService(
     const featureApiOps = new Set<string>();
     const unreadableApis = new Set<string>();
     const revivalCandidates = new Map<PathableService, Arrival[]>();
+    const displacedOps = new Map<PathableService, Displacement[]>();
+    /** Per service read here: the operationIds its living contract holds, or null when it does not read. */
+    const livingIds = new Map<string, ReadonlySet<string> | null>();
     // The capability gate's vocabulary, once per call. Absent or invalid stays
     // SILENT here — capability.invalid is validate --all's one finding about a
     // broken file, and an absent file means the fleet never opted in — so with
@@ -224,8 +237,11 @@ export async function declaredByService(
       const livingOpenapiPath = (await locateServicePaths(docsDir, svc, context)).openapi;
       const livingDoc = await readOpenapi(livingOpenapiPath, context);
       const livingOps = livingDoc.ops;
+      livingIds.set(svc, livingDoc.unreadable ? null : new Set(livingOps.filter((op) => !op.remove).map((op) => op.id)));
       const sides = { featPath: paths.openapi, featDoc, livingPath: livingOpenapiPath, livingDoc, service: svc };
-      revivalCandidates.set(svc, await operationArrivals(sides, context));
+      const moved = await operationArrivals(sides, context);
+      revivalCandidates.set(svc, moved.operations);
+      if (moved.displaced.length > 0) displacedOps.set(svc, moved.displaced);
       for (const id of livingDoc.duplicateIds) {
         const slots = livingOps.filter((op) => op.id === id).map((op) => `${op.method} ${op.path}`);
         issues.push({
@@ -302,8 +318,29 @@ export async function declaredByService(
       // be a claim about a document nobody could open.
       if (unreadableApis.has(svc)) continue;
       const marked = allMarkerIds.get(svc) ?? new Set<string>();
+      const replaced = new Set((displacedOps.get(svc) ?? []).map((d) => d.id));
+      const living = livingIds.get(svc);
       for (const op of required) {
         if (marked.has(op)) continue;
+        // A marker is owed only while there is a living operation for it to
+        // retire — the event axis's rule (events/declared.ts) on the contract
+        // axis. An operation this delta already REPLACES at its address leaves
+        // the contract without one, and the marker could not even be written:
+        // the slot holds the replacement. So the route the overwrite's
+        // `openapi.remove-op-consumed` names — REMOVE the requirement governing
+        // the old id — ended in this error, followable only by deleting the
+        // requirement's Operations: line, which nothing said (review
+        // 2026-10-12, finding 4). And an id the service's living contract does
+        // not define is not this service's to mark at all: a REMOVED consumer
+        // requirement naming ANOTHER service's operation was told to retire it
+        // from its own contract. Both exemptions are facts about a contract
+        // loam READ: a living openapi.yaml that does not parse proves neither,
+        // so the marker stays owed — the closed direction, and the answer this
+        // check gave before either exemption existed. Skipping it there let a
+        // REMOVED requirement with no marker pass at exit 0 (the contract
+        // review, finding 3); `openapi.invalid` is still validate's finding
+        // about the file itself.
+        if (replaced.has(op) || (living !== undefined && living !== null && !living.has(op))) continue;
         // Distinguish "no marker at all" from "a marker is there but loam cannot
         // read which operation it names" — the first asks the author to write the
         // marker, the second to write the operationId, and telling somebody who
@@ -321,5 +358,6 @@ export async function declaredByService(
     }
   return {
     reqOps, removedReqOps, removingOps, allMarkerIds, anonymousMarkers, featureApiOps, unreadableApis, revivalCandidates,
+    displacedOps,
   };
 }
