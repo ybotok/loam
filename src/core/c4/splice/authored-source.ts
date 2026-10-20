@@ -8,8 +8,9 @@ export interface SourceRange {
 
 /**
  * A declaration's authored source, ready to land in the living landscape:
- * byte-verbatim except that the feature's own tag is stripped and the
- * indentation is rebased from where the block sat in the delta to where it
+ * byte-verbatim except that the feature's own tag is stripped (with the `,` or
+ * `;` that set it apart in a tag list, which would otherwise be left stray) and
+ * the indentation is rebased from where the block sat in the delta to where it
  * lands. A construct the strip leaves empty goes too — a line that held only
  * the tag disappears whole, and `x = kind 'y' { #FEAT-1 }` lands as
  * `x = kind 'y'`, not as a pair of empty braces.
@@ -95,6 +96,24 @@ function stripFeatureTag(block: string, featureId: string, cuts: ReadonlyArray<[
     if (code.slice(m.index, m.index + m[0].length) !== m[0]) continue;
     let s = m.index;
     let e = s + m[0].length;
+    // A tag list's separators go with the tag they separate. LikeC4 reads a
+    // list as `#a #b, #c;` — one or more tags first, then `,` groups, then an
+    // optional `;` — so `#FEAT-1, #x` stripped to `, #x` and `#FEAT-1;` to a
+    // bare `;`, and the parse net refused a delta LikeC4 accepts. The comma
+    // after the tag goes with it, else the comma before it; the `;` only when
+    // no tag is left in front of it.
+    const commaAfter = /^[ \t]*,[ \t]*/.exec(code.slice(e));
+    const commaBefore = /,[ \t]*$/.exec(code.slice(0, s));
+    const semi = /^[ \t]*;/.exec(code.slice(e));
+    if (commaAfter !== null) {
+      removals.push([s, e + commaAfter[0].length]);
+      continue;
+    }
+    if (commaBefore !== null) {
+      removals.push([commaBefore.index, e]);
+      continue;
+    }
+    if (semi !== null && !/#[\w-]+\s*$/.test(code.slice(0, s))) e += semi[0].length;
     // Take the whitespace on ONE side with the token — trailing first, so
     // `#FEAT-1 #critical` leaves `#critical` at its own indent, and a token at
     // the end of a line does not leave a trailing space behind.

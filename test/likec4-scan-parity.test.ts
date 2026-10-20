@@ -156,6 +156,44 @@ describe("scanModel matches loadSource on one rich source (the merge's splice ma
   });
 });
 
+describe("an edge's keys are read whole, and its spine keys only from its metadata — as the parser reads them", () => {
+  // `\b` took a hyphen for a word boundary, so a key CONTAINING `op` was `op`:
+  // `op-version 'v2'` above the real `op` made the scanned op `'v2'`, and a
+  // `#op-critical` tag made it whatever literal followed — the description.
+  // The scanned edge then matched no parsed one, and `validate --all --base`
+  // graded the branch's misspelt op nowhere (probed on main at 171555d).
+  const spec = `specification {
+  element system
+  tag op
+  tag op-critical
+  tag publishes-v2
+}
+`;
+  const edge = (body: string, head = "a -> b 'calls'"): string =>
+    `${spec}model {\n  a = system 'A'\n  b = system 'B'\n  ${head} {\n${body}  }\n}\n`;
+  /** Everything the two layers claim to read off an edge, spine keys included. */
+  const spineKey = (r: { source: string; target: string; title?: string; op?: string; publishes?: string; consumes?: string; tags: string[] }): string =>
+    JSON.stringify([r.source, r.target, r.title ?? null, r.op ?? null, r.publishes ?? null, r.consumes ?? null, [...r.tags].sort()]);
+
+  it.each([
+    ["a hyphenated metadata key above the op", "    metadata {\n      op-version 'v2'\n      op 'cancelOrdr'\n    }\n", { op: "cancelOrdr" }],
+    ["a hyphenated tag holding `op`, above a description", "    #op-critical\n    description 'calls it'\n    metadata { op 'cancelOrdr' }\n", { op: "cancelOrdr" }],
+    ["a tag NAMED op, above a description", "    #op\n    description 'calls it'\n    metadata { op 'cancelOrdr' }\n", { op: "cancelOrdr" }],
+    ["a tag named op, and no op at all", "    #op\n    description 'calls it'\n", { op: undefined }],
+    ["a hyphenated tag holding `publishes`, above the real key", "    #publishes-v2\n    technology 'kafka'\n    metadata { publishes 'OrderPlaced' }\n", { publishes: "OrderPlaced" }],
+    ["a hyphenated metadata key holding `consumes`", "    metadata {\n      consumes-from 'legacy'\n      consumes 'OrderPlaced'\n    }\n", { consumes: "OrderPlaced" }],
+    // Untitled head, so the title can only come from the body.
+    ["a hyphenated metadata key holding `title`, beside the real title", "    metadata { sub-title 'meta' }\n    title 'Real title'\n", { title: "Real title" }, "a -> b"],
+  ])("%s", async (_form, body, expected, head?: string) => {
+    const src = edge(body, head);
+    const doc = await loadSource(src);
+    expect(doc.errors.map((e) => e.message), "the form must be legal LikeC4, or the case proves nothing").toEqual([]);
+    expect(doc.relationships).toHaveLength(1);
+    expect(doc.relationships[0]).toMatchObject(expected);
+    expect(scanModel(src)!.rels.map(spineKey)).toEqual(doc.relationships.map(spineKey));
+  });
+});
+
 describe("KNOWN divergence: escape sequences beyond \\' and \\\"", () => {
   // maskSource unescapes `\x` to bare `x` for EVERY x, while Langium interprets
   // recognised sequences (`\t`, `\n`, ...) as their control characters. Harmless

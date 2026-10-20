@@ -226,6 +226,104 @@ No code, flag or payload key was added: an existing code covers a second shape.
   like a retirement for its OTHER consumers — but not for the provider's own `Publishes:` line,
   which the consumer-index entry above adds.
 
+### Fixed — `loam archive` merges into a landscape written in any form LikeC4 parses
+
+No code, flag or `--json` key was added or changed. Each case below is a landscape (or a delta)
+that `loam validate --all` called valid and that `loam archive` refused with `merge-failed`, nothing
+written — or, where the case says "exit 0", merged wrong and wrote; each now merges as LikeC4
+reads it.
+
+- **A landscape with more than one top-level `model { }` block.** The splice map read only the
+  first block, so every declaration in a later one was invisible and archive refused with
+  "declares '<id>' in a form placement cannot locate — most often two declarations sharing one
+  line" about a declaration on a line of its own. Every block is read now. An addition anchored to
+  a living element — nested in it, joining its service's neighborhood, or joining its source's
+  edges — lands in that element's block; an unanchored one lands in the first block's trailing
+  region, where it landed before. A one-block map is placed byte for byte as before, and archive
+  order still does not change the bytes. The same reading fixes three neighbours: a delta written
+  in two `model { }` blocks (its second-block additions were "cannot locate … in delta.likec4"), a
+  service `model.likec4` whose `extend <fqn> { }` frame sits in a later block (the merge minted a
+  second frame in the first block, or re-added a container the model already declares there), and
+  `loam validate --all --base`, which did not grade a call edge the branch edited in a later block.
+- **A declaration split across lines.** LikeC4's newlines are hidden tokens, so `name =` with its
+  kind on the next line, a bare name above `= kind`, a kind above the name it declares, a title on
+  the next line, a `/* … */` comment spanning a line break, an edge broken around its arrow, and an
+  edge's `#tag` on the next line are all one statement — and the splice map, reading one line per
+  statement, could not see them. Worse, `name = kind 'title'` with its `{` on the NEXT line read as
+  a bodyless element: an addition anchored after it landed between the head and its body and took
+  that body — description, children, `metadata { service }` binding — for its own, in a merge that
+  parsed and was written (exit 0). The body stays with its element now.
+- **An `extend <fqn> { }` frame written in the landscape itself, with an edge inside it.** An
+  edge the feature added, anchored to the frame's edge, was spliced INSIDE the frame — a scope, so
+  its names re-resolved there: the delta's `zulu -> beta` landed in `extend alpha { beta = … }` as
+  an edge into alpha's own `beta` container, in a merge that parsed and was written (exit 0). It
+  lands outside the frame now. Elements inside such a frame were already read correctly.
+- **A hyphenated id (`entity-service = …`) and a dot-kind edge (`a .async b`).** LikeC4's
+  identifiers may carry hyphens and a declared relationship kind may be written as `.kind`; the
+  splice map read neither, so such an element was "in a form placement cannot locate" and such an
+  edge made the relationship count disagree.
+- **A `link` (or `icon`) URI followed by more code on its line.** LikeC4 reads `https://…` and a
+  relative `./…` path as one token; the splice map read its `//` as a comment that ran to the end
+  of the line, so `x = kind 'X' { link https://… }` lost its closing brace and archive refused with
+  `landscape.likec4 has no model block`. The URI is a token wherever it sits: a `link` or `icon`
+  alone on its line ends there, and the child or edge declared on the line below is its own.
+- **A markdown string (`'''…'''` or `"""…"""`) whose prose holds an apostrophe or an odd number
+  of quotes.** The splice map read the triple as three ordinary quotes, so the first `it's` in a
+  long `description` ended the string and the rest of the file was read inside out — a map with
+  one such description above its model had no model block at all, and archive refused with
+  `landscape.likec4 has no model block`.
+- **A delta edge whose body holds a key or tag containing `op`, `publishes` or `consumes`.** The
+  splice map read those keys anywhere in the edge's body, and took a hyphen for the end of a word,
+  so `op-version 'v2'` above `op 'cancelOrder'` read as op `v2`, and a `#op-critical` or `#op` tag
+  as an op naming the description below it. The edge then matched none of the delta's statements
+  and archive refused with "cannot locate the '<a> -> <b>' relationship in delta.likec4". A key is
+  read whole now, and `op`, `publishes` and `consumes` only from `metadata { }`, which is where
+  LikeC4 reads them. The same misreading hid such an edge from `validate --all --base` (below).
+- **A bare carriage return (`\r` with no `\n`) between two statements.** LikeC4 breaks a line at
+  `\r` as well as `\n`, and the splice map broke only at `\n`. A statement therefore ran on over
+  a bare `\r` into the next one, and a `// comment` ran on over it and hid the next declaration.
+  Two elements, two edges or a property and a child on either side of a bare `\r` were refused as
+  "in a form placement cannot locate". A bare `\r` ends the statement and the comment now. A CRLF
+  map reads exactly as before.
+- **An addition anchored to a declaration whose line goes on with more code.** Placement put an
+  addition on the line after its anchor. When the next declaration opened a multi-line body on the
+  anchor's own line (`alpha = … { … }  beta = … {`), that next line was inside beta. An element
+  bound to alpha's service was then written inside beta as its child, in a merge that parsed and
+  was written (exit 0). A block comment opened on the anchor's line and closed on a later one
+  swallowed the addition the same way. The addition now lands right after its anchor whenever
+  code, or a block comment the line does not close, follows the anchor on its line. Two archives
+  anchored to the two declarations on such a line also write the same bytes in either order now;
+  before, whichever ran second landed above the other. A comment trailing the anchor changes
+  nothing: the addition lands on the next line, as before — unless a bare `\r` ends that `// comment`
+  and the next declaration follows it on the same line, which counts as code following the anchor.
+- **A bodyless declaration with a comment trailing it on its line.** A parent such as
+  `api = container 'API' // the api` that gained its first child got its `{` inside the comment,
+  and archive refused: the merged landscape "would not parse". The body now opens before the
+  comment, which then trails the new closing brace. A block comment that closes on a LATER line
+  was worse: the splice map ended the declaration inside it, so a child it gained, or an element
+  or edge anchored after it, was written inside the comment, in a merge that parsed and was
+  written (exit 0). The declaration now ends before such a comment. A comment that closes on the
+  declaration's own line keeps its place, and the bytes come out as before.
+- **A delta whose feature tag sits in a tag list with a separator.** LikeC4 reads a tag list as
+  `#a #b, #c;`: one or more tags, then comma groups, then an optional `;`. Stripping the feature's
+  own tag left `#FEAT-1, #x` as `, #x` and `#FEAT-1;` as a bare `;`, and archive refused because
+  the merged landscape "would not parse". The tag now takes the comma after it with it (or else
+  the comma before it), and takes a `;` when no tag is left in front of it. A tag after a comma no
+  longer leaves that comma behind either: `#x, #FEAT-1` lands as `#x`, where it used to land as
+  `#x,`.
+
+What the splice map still cannot locate is still refused (`merge-failed`, nothing written), and
+the message no longer guesses. It used to say "most often two declarations sharing one line"
+whatever the map held — over the reported declaration, which sat on a line of its own. It names the
+declaration (a relationship by its endpoints, where it used to give only a count) and the line
+LikeC4 parsed it on, then the cause the text shows: "it shares that line with '<other>'" only when
+other code precedes it on that line (its own kind keyword, or an edge's own source, is not other
+code); "the splice map read it as part of '<other>', which starts at line
+<n>" when the scan ran a statement on past a line break LikeC4 makes (a bare carriage return was
+the one such break until the splice map learnt to break there too, above); and otherwise that the
+splice map read nothing there, with the rewrite to make and a request to report the shape. Wording
+only; the code is unchanged.
+
 ### Changed — `loam archive` refuses a delta that would bring back an operation another feature retired
 
 Two codes, both added to the `IssueCode` union, and one additive `--json` key were added.
@@ -671,6 +769,18 @@ unchanged.
   the same way), filed on the `landscape` target. Only those edges are graded: the provider is not
   pulled into scope, so its own documents — on a seeded fleet, its `service.no-model` — stay out of
   the PR's verdict. An edge is new when its (source, target, op) is; a reformat grades nothing.
+- **An edge whose metadata or tags hold a word containing `op` is graded on the op it names.**
+  `--base` finds the branch's edges by reading the map's text, and that reading took
+  `op-version 'v2'` above `op 'cancelOrdr'` for op `v2`, and a `#op-critical` tag for an op naming
+  the description below it. The edge it read matched no edge in the parsed map, so the branch's
+  misspelt `cancelOrdr` was graded nowhere: exit 0 and `valid: true`, where the unscoped run
+  reports `spine.op-undefined`. A key is read whole now, and the op only from `metadata { }`.
+- **An edge written after a bare carriage return is graded on its own source.** After a `link`,
+  `description` or `technology` property ending in a bare `\r`, the parent's sourceless
+  `-> target` edge was read as an edge FROM `link` (or `description`, or `technology`), and an edge
+  after a `// comment` ending in a bare `\r` was not read at all. Either way the branch's op on that
+  edge was graded nowhere, with the same exit 0. LikeC4 breaks a line at a bare `\r`, and the
+  reading does too now.
 - **The landscape re-grades a fleet-wide vocabulary only when the file that carries it changed.**
   `permissions.*` rides a scoped run only when `architecture/permissions.yaml` changed,
   `capability.*` only when `architecture/capabilities.yaml` or `capabilities/` did,

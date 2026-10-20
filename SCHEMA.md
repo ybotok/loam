@@ -2499,7 +2499,8 @@ The landscape merge **splices authored source, it does not re-serialize**. Each 
 relationship is copied into the living landscape byte-for-byte from `delta.likec4` — technology,
 style, icons, links, metadata, nested children, every tag — with exactly one edit: the feature's own
 tag is stripped (the additions are baseline now — the drop above is why unarchive restores bytes),
-and a construct the strip empties goes with it (`x = kind 'y' { #FEAT-1 }` lands as `x = kind 'y'`).
+together with the `,` or `;` that set it apart in a tag list (`#FEAT-1, #x` lands as `#x`), and a
+construct the strip empties goes with it (`x = kind 'y' { #FEAT-1 }` lands as `x = kind 'y'`).
 Placement is deterministic and **service-grouped**, and never moves an authored byte — it only
 chooses where the new blocks go. A top-level element whose service the model already draws (the
 `metadata { service }` binding first, the title as fallback) lands immediately after the last
@@ -2517,22 +2518,32 @@ services) yields the byte-identical landscape to B then A, so concurrent archive
 different lines and git merges them without help. The insertions carry no marker comment — which
 archive added what is the git history's to say. A **nested** element lands inside its parent's block
 — inside the living parent when the landscape already has it, riding verbatim inside the spliced
-parent when the parent is new — never as a flat dotted id, which LikeC4 rejects at top level. LikeC4
+parent when the parent is new — never as a flat dotted id, which LikeC4 rejects at top level. A
+landscape may be written in **several top-level `model { }` blocks**, which LikeC4 reads as one
+model, and the merge reads all of them: an ANCHORED addition — nested in a parent, joining its
+service's neighborhood, or joining its source's edges — lands in its anchor's block, and an
+unanchored one lands in the trailing region of the **first** block, the one every addition went to
+before a second block was readable. The walks never cross a block boundary, so the scheme stays
+order-independent, and a one-block map places exactly as before. LikeC4
 reference resolution is not order-dependent, so a relationship placed before an element it names
 still parses — and because splicing is text surgery, the computed landscape is **parsed in memory
 before anything is written**: a result LikeC4 rejects — a splice bug, or legal inputs the living
 document cannot absorb, like an element kind or tag its `specification` block never declares —
 refuses the archive at plan time (`merge-failed`, nothing written), the same discipline as the
-unparseable delta. A living declaration sharing its line with another statement (legal LikeC4 the
-splice map cannot see around — its statement scan runs to the end of the line) refuses the same way:
-give each top-level declaration its own line, then re-run.
+unparseable delta. A living declaration the splice map cannot locate refuses the same way rather
+than be spliced around blind — most often one sharing its line with another statement, which is
+legal LikeC4 the splice map cannot see around, since it reads one statement per line. The refusal
+names the line LikeC4 parsed the declaration on and what the splice map read there instead, and
+says "shares that line" only when the line shows it: give each top-level declaration its own line,
+then re-run.
 
 **Which document an addition lands in.** The C4 merge asks it per declaration, not per feature. An
 element whose PARENT resolves to a service whose `model.likec4` extends the map is spliced into that
 model — and so is the interior a delta writes inside a service element the same archive introduces,
 since those containers carry no feature tag and would otherwise ride onto the map inside their
 parent's bytes. The parent chain has to be spelled in the map's own ids for either to happen. The
-splice goes inside the `extend <fqn> { … }` block for the parent — appended when the model has none, as
+splice goes inside the `extend <fqn> { … }` block for the parent — in whichever `model { }` block
+holds it, and appended to the first one when the model has none, as
 the `model { }` block itself is appended to a model that has none (an empty file, a `views { }`-only
 file and a tags-only `specification { }` are all extending models, and all three are legal to
 archive into). A

@@ -1,6 +1,7 @@
 import { type Elem } from "../likec4.js";
 import { elementService, serviceOf } from "../resolve/service.js";
-import type { ScannedElement, ScannedModel } from "../source-scan.js";
+import { maskSource, pastComments, tokenEnd } from "../source-mask.js";
+import type { ScannedBlock, ScannedElement, ScannedModel } from "../source-scan.js";
 import { relSortKey } from "./identity/edges.js";
 
 /* ------------------------------------------------------------------ */
@@ -35,6 +36,14 @@ import { relSortKey } from "./identity/edges.js";
  *    neighborhood it falls to the trailing region, cluster-head-key-sorted
  *    the same insertion-sort way, after the trailing elements.
  *
+ * A landscape may hold SEVERAL top-level `model { }` blocks, and LikeC4 reads
+ * them as one model. Placement keeps every rule above and adds one: an
+ * ANCHORED addition lands in its anchor's block (after the neighbor, clamped
+ * to that block's closing brace), and an UNANCHORED one — the trailing-region
+ * walks — lands in `HOME_BLOCK`, never crossing a block boundary. A same-service
+ * run and a relationship cluster are contiguous statements of ONE block: the
+ * views or the specification between two blocks are not a neighborhood.
+ *
  * LikeC4 reference resolution is not order-dependent, so a relationship
  * placed before an element it names still parses; the in-memory parse net in
  * landscape-merge.ts's planLandscapeMerge stays as the backstop regardless.
@@ -45,6 +54,23 @@ export interface Spot {
   /** True when `at` shares its line with other text (the closing brace, or a displaced statement) — the block must bring its own newlines. */
   bare: boolean;
 }
+
+/**
+ * The block an addition with no anchor lands in: the document's FIRST
+ * `model { }` block.
+ *
+ * First, because it is the block every unanchored addition already landed in
+ * before the scan could see a second one — the scan stopped at the first
+ * match — so a single-block map places byte-identically, and a map that grew
+ * a second block keeps receiving new services where its older ones went. It
+ * is also invariant under every addition this merge can make (an archive never
+ * creates or reorders a block), which is what order-independence needs of it:
+ * a block chosen by size or content would move as the archives landed, and the
+ * same two features would compose to different bytes by archive order. The
+ * service-model splice (`./model/merge.ts`) uses the same block for the same
+ * reasons.
+ */
+export const HOME_BLOCK = 0;
 
 /** A top-level statement of the living model, with everything placement asks of it. */
 export interface TopStmt {
@@ -57,11 +83,13 @@ export interface TopStmt {
   services: string[];
   start: number;
   end: number;
+  /** The `model { }` block it is written in, as `ScannedModel.blocks` indexes it. */
+  block: number;
 }
 
 /**
  * The living model as placement reads it: the text being spliced into, its
- * top-level statement layout, and the model block's closing brace. One value
+ * top-level statement layout, and the model blocks' braces. One value
  * because every spot is computed against all three at the same instant — a
  * layout paired with text a splice has since moved would place against a
  * document that no longer exists (see `modelRegion` in landscape-merge.ts's
@@ -70,7 +98,13 @@ export interface TopStmt {
 export interface ModelRegion {
   text: string;
   stmts: TopStmt[];
-  close: number;
+  /** Every top-level `model { }` block, by the index `TopStmt.block` names. */
+  blocks: readonly ScannedBlock[];
+}
+
+/** The statements of one block, in document order — what a trailing walk may step over. */
+function inBlock(stmts: TopStmt[], block: number): TopStmt[] {
+  return stmts.filter((s) => s.block === block);
 }
 
 /** The model's top-level statements in document order, joined to the parsed elements for services. */
@@ -89,11 +123,20 @@ export function topStatements(scan: ScannedModel, els: Elem[]): TopStmt[] {
     services: [bound.get(e.id) ?? e.id],
     start: e.start,
     end: e.end,
+    block: e.block,
   }));
+  // Every top-level FRAME a statement can sit inside: the elements, and the
+  // `extend` frames, which hold edges as well as children.
+  const frames = scan.elements.filter((e) => e.extend === true || !e.id.includes("."));
   for (const r of scan.rels) {
     // A rel declared inside an element's body is not a top-level statement —
-    // anchoring after it would splice into the parent's block.
-    if (topEls.some((e) => r.start > e.start && r.start < e.end)) continue;
+    // anchoring after it would splice into the parent's block. Inside an
+    // `extend` frame it is worse than misplaced: the frame is a SCOPE, so an
+    // edge spliced in after it re-resolves there, and the delta's `zulu ->
+    // beta` landed inside `extend alpha { beta = … }` as an edge into
+    // `alpha.beta` — a merge that parses, written at exit 0 (probed
+    // 2026-10-20). Only the extend frames' edges are new to this filter.
+    if (frames.some((e) => r.start > e.start && r.start < e.end)) continue;
     stmts.push({
       kind: "rel",
       id: "",
@@ -106,6 +149,7 @@ export function topStatements(scan: ScannedModel, els: Elem[]): TopStmt[] {
       services: [serviceOf(els, r.source), serviceOf(els, r.target)],
       start: r.start,
       end: r.end,
+      block: r.block,
     });
   }
   return stmts.sort((a, b) => a.start - b.start);
@@ -127,12 +171,14 @@ export function topStatements(scan: ScannedModel, els: Elem[]): TopStmt[] {
  * exact regime the scheme guarantees.
  */
 export function elementSpot(region: ModelRegion, id: string, service: string): Spot {
-  const { text, stmts, close } = region;
+  const { text, blocks } = region;
   let anchor: TopStmt | undefined;
-  for (const s of stmts) {
+  for (const s of region.stmts) {
     if (s.kind === "element" && s.services.includes(service)) anchor = s;
   }
-  if (anchor !== undefined) return spotAfter(text, close, anchor.end);
+  if (anchor !== undefined) return spotAfter(text, blocks[anchor.block]!.close, anchor.end);
+  const stmts = inBlock(region.stmts, HOME_BLOCK);
+  const close = blocks[HOME_BLOCK]!.close;
   let i = stmts.length - 1;
   let before: TopStmt | undefined;
   while (i >= 0 && stmts[i]!.kind === "rel") {
@@ -169,6 +215,12 @@ function relClusterHeads(stmts: TopStmt[]): number[] {
   let services: Set<string> | null = null;
   for (let i = 0; i < stmts.length; i += 1) {
     const s = stmts[i]!;
+    // A block boundary ends a cluster exactly as an element does: the first
+    // edge of the next block is not contiguous with the last of this one.
+    if (i > 0 && stmts[i - 1]!.block !== s.block) {
+      head = -1;
+      services = null;
+    }
     if (s.kind !== "rel") {
       head = -1;
       services = null;
@@ -186,7 +238,26 @@ function relClusterHeads(stmts: TopStmt[]): number[] {
 }
 
 export function relSpot(region: ModelRegion, sourceService: string, key: string): Spot {
-  const { text, stmts, close } = region;
+  const anchored = anchoredRelSpot(region, sourceService, key);
+  if (anchored !== null) return anchored;
+  const { text, blocks } = region;
+  const stmts = inBlock(region.stmts, HOME_BLOCK);
+  const close = blocks[HOME_BLOCK]!.close;
+  const heads = relClusterHeads(stmts);
+  let i = stmts.length - 1;
+  let before: TopStmt | undefined;
+  while (i >= 0 && stmts[i]!.kind === "rel") {
+    const j = heads[i]!;
+    if (!(stmts[j]!.key > key)) break;
+    before = stmts[j];
+    i = j - 1;
+  }
+  return before !== undefined ? beforeSpot(text, before) : closeSpot(text, close);
+}
+
+/** After the last relationship touching the source's service, in that relationship's block — null when none does. */
+function anchoredRelSpot(region: ModelRegion, sourceService: string, key: string): Spot | null {
+  const { text, stmts, blocks } = region;
   const heads = relClusterHeads(stmts);
   let anchorAt = -1;
   for (let i = 0; i < stmts.length; i += 1) {
@@ -205,17 +276,9 @@ export function relSpot(region: ModelRegion, sourceService: string, key: string)
       if (s.kind !== "rel" || heads[j] !== heads[anchorAt] || s.key >= key) break;
       last = s;
     }
-    return spotAfter(text, close, last.end);
+    return spotAfter(text, blocks[last.block]!.close, last.end);
   }
-  let i = stmts.length - 1;
-  let before: TopStmt | undefined;
-  while (i >= 0 && stmts[i]!.kind === "rel") {
-    const j = heads[i]!;
-    if (!(stmts[j]!.key > key)) break;
-    before = stmts[j];
-    i = j - 1;
-  }
-  return before !== undefined ? beforeSpot(text, before) : closeSpot(text, close);
+  return null;
 }
 
 /**
@@ -236,10 +299,35 @@ function beforeSpot(text: string, before: TopStmt): Spot {
  * brace's own spot. Exported for the service-model splice (`./model/merge.ts`),
  * which asks the same two questions of a `model { }` block it does not group by
  * service: after this statement, or last thing in the block.
+ *
+ * Unless code follows `end` on its line: then the spot is `end` itself, bare.
+ * The next line belongs to whatever is written there, and when that is a
+ * declaration whose body opens on the same line — `alpha = … { … }  beta = … {`
+ * — the line after is INSIDE beta: an addition anchored to alpha's service
+ * landed as `beta.kiwi`, in a merge that parsed and was written (exit 0,
+ * probed on main at 171555d). Right after the anchor is also what keeps two
+ * archives order-free when both anchor on that line: one anchored to alpha and
+ * one to beta used to share the next line's start, and whichever ran second
+ * landed above the other. A comment trailing the anchor is not code — the
+ * next line stays the spot, byte for byte as before — but a block comment
+ * it does not close is: its next line is inside the comment.
+ *
+ * A line comment ends where LikeC4's NL does, at `\r` as well as `\n` — the
+ * source mask agrees since the bare-CR fix — so `// note\r  beta = … {` is a
+ * comment and then code on the anchor's `\n`-line, and the spot after that
+ * line is inside beta: the same `beta.kiwi` merge, written at exit 0, which
+ * 171555d refused because it could not locate beta at all. A CRLF ending
+ * leaves nothing after the comment and keeps the next line, byte for byte.
  */
 export function spotAfter(text: string, close: number, end: number): Spot {
   const nl = text.indexOf("\n", end);
   const at = nl === -1 ? text.length : nl + 1;
+  let rest = pastComments(text.slice(end, Math.min(at, close)));
+  while (rest.startsWith("//")) {
+    const eol = rest.search(/[\r\n]/);
+    rest = eol === -1 ? "" : pastComments(rest.slice(eol));
+  }
+  if (rest !== "") return { at: end, bare: true };
   return at > close ? closeSpot(text, close) : { at, bare: false };
 }
 
@@ -261,7 +349,7 @@ function lineStartAt(text: string, at: number): number {
  */
 export function nestedInsert(text: string, parent: ScannedElement, block: string): { at: number; insert: string } {
   if (parent.bodyOpen === -1) {
-    return { at: parent.end, insert: ` {\n${block}\n${parent.indent}}` };
+    return { at: bodyAt(text, parent), insert: ` {\n${block}\n${parent.indent}}` };
   }
   const lineStart = text.lastIndexOf("\n", parent.bodyClose - 1) + 1;
   if (/^[ \t]*$/.test(text.slice(lineStart, parent.bodyClose))) {
@@ -269,4 +357,19 @@ export function nestedInsert(text: string, parent: ScannedElement, block: string
   }
   // `{ ... }` on one line — break the brace onto its own line to make room.
   return { at: parent.bodyClose, insert: `\n${block}\n${parent.indent}` };
+}
+
+/**
+ * Where a bodyless parent's new body opens: where its span ends, unless a line
+ * comment trails its last token there. The span carries that comment — it is
+ * the declaration's own authored text (`statementEnd`) — so the `{` landed
+ * INSIDE `// the api`, everything after it on the line was comment, and the
+ * parse net refused a valid map ("Expecting end of file"). It opens before the
+ * comment now, which then trails the new closing brace. A closed block comment
+ * is no such trap, and keeps the bytes it always had.
+ */
+function bodyAt(text: string, parent: ScannedElement): number {
+  const span = text.slice(parent.start, parent.end);
+  const last = parent.start + tokenEnd(maskSource(span), 0, span.length);
+  return pastComments(text.slice(last, parent.end)) === "" ? parent.end : last;
 }

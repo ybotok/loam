@@ -8,7 +8,7 @@
  * declaration physically is. A key only one of them reads is a key the merge
  * silently drops, which is why `metadata` handling is spelled out in both.
  */
-import { maskSource, matchBrace, type SourceLiteral } from "./source-mask.js";
+import { maskSource, matchBrace, statementEnd, statementHead, topLevelBlocks, type SourceLiteral } from "./source-mask.js";
 
 export interface ScannedElement {
   /** Full dotted id — `parent.child` for a nested declaration. */
@@ -21,6 +21,8 @@ export interface ScannedElement {
   bodyClose: number;
   /** Leading whitespace of the declaration's first line. */
   indent: string;
+  /** Index into `ScannedModel.blocks` of the `model { }` block it is written in. */
+  block: number;
   /**
    * The title the declaration's HEAD names — the first string literal before
    * its body, which is where both declaration forms write it (pinned against
@@ -57,12 +59,30 @@ export interface ScannedRel {
   start: number;
   end: number;
   indent: string;
+  /** Index into `ScannedModel.blocks` of the `model { }` block it is written in. */
+  block: number;
+}
+
+/** A half-open `[from, to)` run of the masked code — a body, or the metadata block inside one. */
+interface CodeRange {
+  from: number;
+  to: number;
+}
+
+/** One top-level `model { }` block: its own braces. */
+export interface ScannedBlock {
+  open: number;
+  close: number;
 }
 
 export interface ScannedModel {
-  /** The `model` block's own braces. */
-  open: number;
-  close: number;
+  /**
+   * Every top-level `model { }` block, in document order — never empty. LikeC4
+   * merges them into one model, so an id or an endpoint resolves across all of
+   * them; which block a NEW declaration is written into is placement's choice
+   * (`splice/placement.ts`, `HOME_BLOCK`), never the scan's.
+   */
+  blocks: ScannedBlock[];
   /** In document order. A nested declaration's span lies inside its parent's. */
   elements: ScannedElement[];
   rels: ScannedRel[];
@@ -70,11 +90,15 @@ export interface ScannedModel {
 
 /**
  * Locate every element and relationship declaration inside the top-level
- * `model { ... }` block of a LikeC4 source, with the byte range each one
+ * `model { ... }` blocks of a LikeC4 source, with the byte range each one
  * occupies. This is the splice map `loam archive` merges the landscape with:
  * the parsed model says WHAT exists, this says WHERE its authored text is —
  * verbatim, so nothing the parser does not model (technology, style, links)
  * can be lost by rebuilding it.
+ *
+ * Every block is read, in document order, and each declaration records which
+ * one it sits in (`block`); ids, endpoints and nesting are one namespace
+ * across all of them, because that is how LikeC4 merges them.
  *
  * Both declaration forms are recognised — `name = kind ...` always, and
  * `kind name ...` for any kind the document's own `specification` block
@@ -84,25 +108,40 @@ export interface ScannedModel {
  * element. A name that resolves nowhere is left as written — the caller's
  * match against the parsed model then fails loudly instead of guessing.
  *
- * Returns null when there is no model block. Callers only hand in documents
+ * Returns null when there is no model block at all. Callers only hand in documents
  * LikeC4 has already parsed, so the scan can trust balanced braces.
  */
 export function scanModel(text: string): ScannedModel | null {
-  const { code, literals } = maskSource(text);
-  const m = /\bmodel\s*\{/.exec(code);
-  if (!m) return null;
-  const open = m.index + m[0].length - 1;
-  const close = matchBrace(code, open);
-  if (close === -1) return null;
+  const masked = maskSource(text);
+  const { code, literals } = masked;
+  // EVERY top-level `model { }` block, and only those (`topLevelBlocks`): a
+  // document may hold any number, and LikeC4 reads them as one model. The
+  // scan used to stop at the FIRST match, so every declaration in a later
+  // block was invisible — the landscape parsed, `validate --all` was green,
+  // and archive refused with a message about two declarations sharing a line
+  // (a fleet on 0.2.0-alpha.7, 2026-10). Depth zero is the other half of the
+  // same fix: the bare first match also took a nested `model {` — a kind or a
+  // view NAMED model (`element model { … }`), written above the real block —
+  // for the model.
+  const blocks: ScannedBlock[] = [];
+  for (const { match } of topLevelBlocks(code, /\bmodel\s*\{/g)) {
+    const open = match.index + match[0].length - 1;
+    const close = matchBrace(code, open);
+    if (close === -1) break;
+    blocks.push({ open, close });
+  }
+  if (blocks.length === 0) return null;
 
   // Element kinds from the specification block(s): the `<kind> <name>`
   // declaration form is recognisable only by its first token being a kind.
+  // Relationship kinds likewise, for the `source .kind target` edge form.
   const kinds = new Set<string>();
+  const relKinds = new Set<string>();
   for (const sm of code.matchAll(/\bspecification\s*\{/g)) {
     const sClose = matchBrace(code, sm.index + sm[0].length - 1);
     if (sClose === -1) continue;
-    for (const em of code.slice(sm.index, sClose).matchAll(/\belement\s+([A-Za-z_][\w-]*)/g)) {
-      kinds.add(em[1]!);
+    for (const em of code.slice(sm.index, sClose).matchAll(/\b(element|relationship)\s+([A-Za-z_][\w-]*)/g)) {
+      (em[1] === "element" ? kinds : relKinds).add(em[2]!);
     }
   }
 
@@ -113,19 +152,39 @@ export function scanModel(text: string): ScannedModel | null {
   };
   const literalIn = (from: number, to: number): SourceLiteral | undefined =>
     literals.find((l) => l.start >= from && l.end <= to);
-  const keyedLiteral = (key: string, from: number, to: number): string | undefined => {
-    if (from === -1) return undefined;
-    const re = new RegExp(`\\b${key}\\b`, "g");
-    re.lastIndex = from;
+  // A key is a whole identifier, and LikeC4's identifiers carry hyphens. `\b`
+  // took the `-` for a boundary, so `op-version 'v2'` above `op 'cancelOrdr'`
+  // was read as op `'v2'`, a `#op-critical` tag as the key `op` naming the
+  // literal after it — the next property's — and `validate --all --base`
+  // graded neither op the branch wrote: the scanned edge matched no parsed one,
+  // so the misspelt `cancelOrdr` went green where the plain run reports
+  // `spine.op-undefined` (probed on main at 171555d; 57b33ad fixed the same
+  // hyphen for ids and not here).
+  const keyedLiteral = (key: string, range: CodeRange | null): string | undefined => {
+    if (range === null) return undefined;
+    const re = new RegExp(`(?<![\\w-])${key}(?![\\w-])`, "g");
+    re.lastIndex = range.from;
     const km = re.exec(code);
-    if (km === null || km.index >= to) return undefined;
-    return literalIn(km.index, to)?.value;
+    if (km === null || km.index >= range.to) return undefined;
+    return literalIn(km.index, range.to)?.value;
   };
-  const trimmedEnd = (from: number, to: number): number => {
-    let e = to;
-    while (e > from && /\s/.test(text[e - 1]!)) e -= 1;
-    return e;
+  // The spine keys are METADATA keys — the parsed `Rel` reads them out of
+  // `metadata { }` and nowhere else (`likec4.ts`) — so the scan reads them only
+  // there. Read from the whole body, a bare `#op` tag (a legal tag name) above a
+  // `description` was the key `op` once more, whatever the boundary rule.
+  const metadataOf = (body: CodeRange | null): CodeRange | null => {
+    if (body === null) return null;
+    const re = /(?<![\w-])metadata\s*\{/g;
+    re.lastIndex = body.from;
+    const mm = re.exec(code);
+    if (mm === null || mm.index >= body.to) return null;
+    const open = mm.index + mm[0].length - 1;
+    const shut = matchBrace(code, open);
+    return shut === -1 || shut > body.to ? null : { from: open + 1, to: shut };
   };
+  // A bodyless statement's end — its trailing comment included, unless that
+  // comment runs on past the line (`statementEnd` says why).
+  const bodylessEnd = (from: number, to: number): number => statementEnd(text, masked, { start: from, end: to });
 
   const elements: ScannedElement[] = [];
   interface RawRel {
@@ -135,6 +194,7 @@ export function scanModel(text: string): ScannedModel | null {
     start: number;
     end: number;
     indent: string;
+    block: number;
     title?: string;
     op?: string;
     publishes?: string;
@@ -144,139 +204,132 @@ export function scanModel(text: string): ScannedModel | null {
   const raw: RawRel[] = [];
   const stack: Array<{ id: string; el: ScannedElement }> = [];
 
-  let i = open + 1;
-  while (i < close) {
-    const ch = code[i]!;
-    if (/\s/.test(ch)) {
-      i += 1;
-      continue;
-    }
-    if (ch === "}") {
-      const frame = stack.pop();
-      if (frame !== undefined) {
-        frame.el.bodyClose = i;
-        frame.el.end = i + 1;
-        elements.push(frame.el);
+  for (const [block, { open, close }] of blocks.entries()) {
+    let i = open + 1;
+    while (i < close) {
+      const ch = code[i]!;
+      if (/\s/.test(ch)) {
+        i += 1;
+        continue;
       }
-      i += 1;
-      continue;
-    }
-
-    // A statement's head: up to its own `{`, the end of the line, or the
-    // enclosing block's `}` on the same line — whichever comes first.
-    const stmtStart = i;
-    let headEnd = close;
-    let opener = -1;
-    for (let j = i; j < close; j += 1) {
-      const c = code[j]!;
-      if (c === "\n" || c === "}") {
-        headEnd = j;
-        break;
+      if (ch === "}") {
+        const frame = stack.pop();
+        if (frame !== undefined) {
+          frame.el.bodyClose = i;
+          frame.el.end = i + 1;
+          elements.push(frame.el);
+        }
+        i += 1;
+        continue;
       }
-      if (c === "{") {
-        opener = j;
-        headEnd = j;
-        break;
-      }
-    }
-    const head = code.slice(stmtStart, headEnd);
-    const parentId = stack.length > 0 ? stack[stack.length - 1]!.id : "";
 
-    // `extend <fqn> { … }` — the extending model's one construct, and the only
-    // frame here whose id is not minted from the enclosing scope: it names an
-    // element the fleet map already declares, so its children are `<fqn>.<name>`
-    // and a reference inside it resolves against that scope. Without this the
-    // block fell through to the property-line arm and everything in it was
-    // invisible, which is why the archive spliced a service's interior into the
-    // map instead (verification 2026-09-04, E1).
-    const extended = opener === -1 ? null : /^extend\s+([A-Za-z_][\w.-]*)\s*$/.exec(head);
-    if (extended !== null) {
-      const id = parentId === "" ? extended[1]! : `${parentId}.${extended[1]!}`;
-      const el: ScannedElement = {
-        id,
-        start: stmtStart,
-        end: headEnd,
-        bodyOpen: opener,
-        bodyClose: -1,
-        indent: indentOf(stmtStart),
-        extend: true,
-      };
-      stack.push({ id, el });
-      i = opener + 1;
-      continue;
-    }
+      // A statement's head: up to its own `{`, the end of the line, or the
+      // enclosing block's `}` on the same line — whichever comes first, unless
+      // LikeC4 reads on past the newline (`statementHead` says when it does).
+      const stmtStart = i;
+      const { end: headEnd, opener } = statementHead(masked, i, close);
+      const head = code.slice(stmtStart, headEnd);
+      const parentId = stack.length > 0 ? stack[stack.length - 1]!.id : "";
 
-    // Classify: `name = kind` first, then a relationship (the arrow cannot hide
-    // in a string — the head is masked), then the `kind name` form, else a
-    // property/tag line that is consumed whole, nested block included.
-    let localName: string | null = null;
-    const assign = /^([A-Za-z_]\w*)\s*=\s*[A-Za-z_]/.exec(head);
-    if (assign !== null) {
-      localName = assign[1]!;
-    } else if (!head.includes("->")) {
-      const toks = head.trim().split(/\s+/);
-      if (toks.length >= 2 && kinds.has(toks[0]!) && /^[A-Za-z_]\w*$/.test(toks[1]!)) {
-        localName = toks[1]!;
-      }
-    }
-
-    if (localName !== null) {
-      const id = parentId === "" ? localName : `${parentId}.${localName}`;
-      const el: ScannedElement = {
-        id,
-        start: stmtStart,
-        end: headEnd,
-        bodyOpen: opener,
-        bodyClose: -1,
-        indent: indentOf(stmtStart),
-      };
-      const titled = literalIn(stmtStart, headEnd)?.value;
-      if (titled !== undefined) el.title = titled;
-      if (opener !== -1) {
+      // `extend <fqn> { … }` — the extending model's one construct, and the only
+      // frame here whose id is not minted from the enclosing scope: it names an
+      // element the fleet map already declares, so its children are `<fqn>.<name>`
+      // and a reference inside it resolves against that scope. Without this the
+      // block fell through to the property-line arm and everything in it was
+      // invisible, which is why the archive spliced a service's interior into the
+      // map instead (verification 2026-09-04, E1).
+      const extended = opener === -1 ? null : /^extend\s+([A-Za-z_][\w.-]*)\s*$/.exec(head);
+      if (extended !== null) {
+        const id = parentId === "" ? extended[1]! : `${parentId}.${extended[1]!}`;
+        const el: ScannedElement = {
+          id,
+          start: stmtStart,
+          end: headEnd,
+          bodyOpen: opener,
+          bodyClose: -1,
+          indent: indentOf(stmtStart),
+          block,
+          extend: true,
+        };
         stack.push({ id, el });
         i = opener + 1;
+        continue;
+      }
+
+      // Classify: `name = kind` first, then a relationship (the arrow cannot hide
+      // in a string — the head is masked), then the `kind name` form, else a
+      // property/tag line that is consumed whole, nested block included.
+      let localName: string | null = null;
+      const assign = /^([A-Za-z_][\w-]*)\s*=\s*[A-Za-z_]/.exec(head);
+      if (assign !== null) {
+        localName = assign[1]!;
+      } else if (!head.includes("->")) {
+        const toks = head.trim().split(/\s+/);
+        if (toks.length >= 2 && kinds.has(toks[0]!) && /^[A-Za-z_][\w-]*$/.test(toks[1]!)) {
+          localName = toks[1]!;
+        }
+      }
+
+      if (localName !== null) {
+        const id = parentId === "" ? localName : `${parentId}.${localName}`;
+        const el: ScannedElement = {
+          id,
+          start: stmtStart,
+          end: headEnd,
+          bodyOpen: opener,
+          bodyClose: -1,
+          indent: indentOf(stmtStart),
+          block,
+        };
+        const titled = literalIn(stmtStart, headEnd)?.value;
+        if (titled !== undefined) el.title = titled;
+        if (opener !== -1) {
+          stack.push({ id, el });
+          i = opener + 1;
+        } else {
+          el.end = bodylessEnd(stmtStart, headEnd);
+          elements.push(el);
+          i = headEnd;
+        }
+        continue;
+      }
+
+      const am = relationHead(head, relKinds);
+      if (am !== null || head.includes("->")) {
+        const bClose = opener === -1 ? -1 : matchBrace(code, opener);
+        const stmtEnd = opener === -1 ? bodylessEnd(stmtStart, headEnd) : bClose === -1 ? close : bClose + 1;
+        if (am !== null) {
+          const arrowEnd = stmtStart + am.length;
+          const body = opener === -1 ? null : { from: opener + 1, to: stmtEnd - 1 };
+          const meta = metadataOf(body);
+          const title = literalIn(arrowEnd, headEnd)?.value ?? keyedLiteral("title", body);
+          const tags: string[] = [];
+          for (const tm of code.slice(stmtStart, stmtEnd).matchAll(/#([\w-]+)/g)) tags.push(tm[1]!);
+          raw.push({
+            srcLit: am.src,
+            tgtLit: am.tgt,
+            parent: parentId,
+            start: stmtStart,
+            end: stmtEnd,
+            indent: indentOf(stmtStart),
+            block,
+            title,
+            op: keyedLiteral("op", meta),
+            publishes: keyedLiteral("publishes", meta),
+            consumes: keyedLiteral("consumes", meta),
+            tags,
+          });
+        }
+        i = Math.max(stmtEnd, headEnd);
+        continue;
+      }
+
+      if (opener !== -1) {
+        const bClose = matchBrace(code, opener);
+        i = bClose === -1 ? close : bClose + 1;
       } else {
-        el.end = trimmedEnd(stmtStart, headEnd);
-        elements.push(el);
         i = headEnd;
       }
-      continue;
-    }
-
-    if (head.includes("->")) {
-      const bClose = opener === -1 ? -1 : matchBrace(code, opener);
-      const stmtEnd = opener === -1 ? trimmedEnd(stmtStart, headEnd) : bClose === -1 ? close : bClose + 1;
-      const am = /^([A-Za-z_][\w.]*)?\s*(?:-\[[^\]]*\])?->\s*([A-Za-z_][\w.]*)/.exec(head);
-      if (am !== null) {
-        const arrowEnd = stmtStart + am[0].length;
-        const bodyFrom = opener === -1 ? -1 : opener + 1;
-        const bodyTo = opener === -1 ? -1 : stmtEnd - 1;
-        const title = literalIn(arrowEnd, headEnd)?.value ?? keyedLiteral("title", bodyFrom, bodyTo);
-        const tags: string[] = [];
-        for (const tm of code.slice(stmtStart, stmtEnd).matchAll(/#([\w-]+)/g)) tags.push(tm[1]!);
-        raw.push({
-          srcLit: am[1],
-          tgtLit: am[2]!,
-          parent: parentId,
-          start: stmtStart,
-          end: stmtEnd,
-          indent: indentOf(stmtStart),
-          title,
-          op: keyedLiteral("op", bodyFrom, bodyTo),
-          publishes: keyedLiteral("publishes", bodyFrom, bodyTo),
-          consumes: keyedLiteral("consumes", bodyFrom, bodyTo),
-          tags,
-        });
-      }
-      i = Math.max(stmtEnd, headEnd);
-      continue;
-    }
-
-    if (opener !== -1) {
-      const bClose = matchBrace(code, opener);
-      i = bClose === -1 ? close : bClose + 1;
-    } else {
-      i = headEnd;
     }
   }
 
@@ -316,8 +369,30 @@ export function scanModel(text: string): ScannedModel | null {
     start: r.start,
     end: r.end,
     indent: r.indent,
+    block: r.block,
   }));
 
   elements.sort((a, b) => a.start - b.start);
-  return { open, close, elements, rels };
+  return { blocks, elements, rels };
+}
+
+/**
+ * A relationship head's endpoints as written, and where its arrow form ends —
+ * null for any other head. Three forms, each with the source omittable inside
+ * an element: `a -> b`, `a -[kind]-> b`, and `a .kind b` for a relationship
+ * kind the specification declares, which the scan used to skip as a property
+ * line, so archive refused a valid map on a relationship count.
+ *
+ * Ids carry hyphens (`entity-service`): LikeC4's identifier is
+ * `[a-zA-Z_][-\w]*`, and the `\w`-only spelling here made such an element, or
+ * an edge naming one, invisible. The lexer's greed is why `a->b` without a
+ * space is not a form worth reading — LikeC4 takes `a-` for the id and rejects
+ * the document.
+ */
+function relationHead(head: string, relKinds: ReadonlySet<string>): { src: string | undefined; tgt: string; length: number } | null {
+  const arrow = /^([A-Za-z_][\w.-]*)?\s*(?:-\[[^\]]*\])?->\s*([A-Za-z_][\w.-]*)/.exec(head);
+  if (arrow !== null) return { src: arrow[1], tgt: arrow[2]!, length: arrow[0].length };
+  const dotted = /^(?:([A-Za-z_][\w.-]*)\s+)?\.([A-Za-z_][\w-]*)\s+([A-Za-z_][\w.-]*)/.exec(head);
+  if (dotted === null || !relKinds.has(dotted[2]!)) return null;
+  return { src: dotted[1], tgt: dotted[3]!, length: dotted[0].length };
 }

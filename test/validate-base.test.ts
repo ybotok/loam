@@ -290,6 +290,83 @@ describe("loam validate --all --base — a call edge the branch edited is graded
     }
   });
 
+  it("a misspelt op on an edge written right after a bare `link` line fails too — the link does not swallow the edge", async () => {
+    // The splice map read the URI as blank, so `link https://…` was the bare
+    // word `link` and ran on into the next line: the edge below it was scanned
+    // as `link -> marketplace.orderService`, matched no parsed edge, and the
+    // branch's one-letter typo was graded nowhere — exit 0, `valid: true`,
+    // where main reported it (probed at 23f1578).
+    const p = await exampleFleet();
+    try {
+      const map = "architecture/landscape.likec4";
+      const anchor = "      metadata {\n        service 'checkout-web'\n      }\n";
+      const link = "      link https://wiki.example.com/checkout-web\n";
+      const before = await p.read(map);
+      expect(before).toContain(anchor);
+      await p.write(map, before.replace(anchor, anchor + link));
+      commitBase(p.docsDir);
+      const edge = "      -> marketplace.orderService 'Calls cancelOrder' {\n        metadata { op 'cancelOrdr' }\n      }\n";
+      await p.write(map, before.replace(anchor, anchor + link + edge));
+      const { code, payload } = await validateJson(p, "--all", "--base", "main");
+      expect(code).toBe(1);
+      const spine = raised(payload).filter((f) => f.code === "spine.op-undefined");
+      expect(spine.map((f) => f.message).join("\n")).toContain("cancelOrdr");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a misspelt op on an edge written after a `link` and a bare carriage return fails too — LikeC4's line break is the scan's", async () => {
+    // LikeC4's `NL` is `[\r\n]+`; the statement head ended at `\n` alone, so
+    // `link https://…` ran on over the bare `\r` and the edge after it was
+    // scanned as `link -> marketplace.orderService` — the counts agreed, the
+    // key matched no parsed edge, and `cancelOrdr` was graded nowhere: exit 0,
+    // `valid: true` (probed on main at 171555d).
+    const p = await exampleFleet();
+    try {
+      const map = "architecture/landscape.likec4";
+      const anchor = "      metadata {\n        service 'checkout-web'\n      }\n";
+      const before = await p.read(map);
+      expect(before).toContain(anchor);
+      commitBase(p.docsDir);
+      const edge = "      -> marketplace.orderService 'Calls cancelOrder' {\n        metadata { op 'cancelOrdr' }\n      }\n";
+      await p.write(map, before.replace(anchor, `${anchor}      link https://wiki.example.com/checkout-web\r${edge}`));
+      const { code, payload } = await validateJson(p, "--all", "--base", "main");
+      expect(code).toBe(1);
+      const spine = raised(payload).filter((f) => f.code === "spine.op-undefined");
+      expect(spine.map((f) => f.message).join("\n")).toContain("cancelOrdr");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  // The splice map read `op` with `\b`, which takes a hyphen for a word
+  // boundary: a key or tag CONTAINING `op` was the key, the scanned edge
+  // carried that key's literal for its op, matched no parsed edge, and the
+  // branch's `cancelOrdr` was graded nowhere — exit 0, `valid: true`, where the
+  // unscoped run reports it (probed on main at 171555d).
+  it.each([
+    ["a hyphenated metadata key above the op", "{\n        metadata {\n          op-version 'v2'\n          op 'cancelOrdr'\n        }\n      }"],
+    ["a hyphenated tag holding `op`, above a description", "{\n        #op-critical\n        description 'calls it'\n        metadata { op 'cancelOrdr' }\n      }"],
+  ])("a misspelt op beside %s fails too — the key is read whole, and only from metadata", async (_form, body) => {
+    const p = await exampleFleet();
+    try {
+      const map = "architecture/landscape.likec4";
+      const anchor = "      metadata {\n        service 'checkout-web'\n      }\n";
+      const before = (await p.read(map)).replace("  tag external\n", "  tag external\n  tag op-critical\n");
+      expect(before).toContain(anchor);
+      await p.write(map, before);
+      commitBase(p.docsDir);
+      await p.write(map, before.replace(anchor, `${anchor}      -> marketplace.orderService 'Calls cancelOrder' ${body}\n`));
+      const { code, payload } = await validateJson(p, "--all", "--base", "main");
+      expect(code).toBe(1);
+      const spine = raised(payload).filter((f) => f.code === "spine.op-undefined");
+      expect(spine.map((f) => f.message).join("\n")).toContain("cancelOrdr");
+    } finally {
+      await p.destroy();
+    }
+  });
+
   it("the same misspelling on a freshly seeded spine-first fleet fails — even under --strict it used to be green", async () => {
     const p = await seededFleet();
     try {

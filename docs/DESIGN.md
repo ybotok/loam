@@ -117,7 +117,7 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/document/` | `frontmatter` `spec` `parse` `apply` `scenarios` | kernel, vocabulary |
 | `core/staging/` | the write path; `staging/recovery/` is the crash half, `staging/snapshot/` the undo snapshot (taking one in `snapshot.ts`, its layout in `manifest.ts`, which a read-only command may import) | envelope, kernel |
 | `core/repo/` | `entries` `paths` `state` `repo` `service-target` | c4, document, kernel, provenance |
-| `core/c4/` | `likec4` `arch` `source-mask` `source-scan`, with `parsed/` `project/` `resolve/` beneath | envelope, kernel, repo, vocabulary |
+| `core/c4/` | `likec4` `arch` `source-mask` `source-scan`, with `parsed/` `project/` `resolve/` `locate/` beneath | envelope, kernel, repo, vocabulary |
 | `core/c4/splice/` | `contract` `landscape-merge` `authored-source` `placement` | c4 |
 | `core/c4/seed/` | `loam seed`'s file grammar and templater: `fleet-file` (`items` reads one node) `template` `stamp` | c4, kernel |
 | `core/gherkin/` | the generated `.feature` files and the step catalogue over them | kernel, repo, vocabulary |
