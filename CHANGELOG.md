@@ -10,6 +10,16 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Fixed — on Windows, a rolled-back write takes back the directories it created
+
+No code, flag or payload key was added. On Windows under Node 24, a command that failed and rolled
+back — `loam archive` most visibly — answered `merge-failed` ("rolled back, nothing was merged")
+and still left the directories it had made standing: an empty `features/archive/`, or an empty
+`services/<new-service>/` that names a service the merge never added. Node reports the directory
+`mkdir` created in the `\\?\C:\…` spelling, and the rollback, comparing that with the plain
+spelling, found nothing inside it to remove. Those directories are now removed on Windows as they
+already were on Linux and macOS; a directory something else has put a file in is still left alone.
+
 ## [0.2.0-alpha.9] - 2026-10-20
 
 The first publish since `0.2.0-alpha.7`. `0.2.0-alpha.8` was tagged but never reached npm (its

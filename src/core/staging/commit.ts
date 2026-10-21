@@ -16,7 +16,7 @@
 import { existsSync } from "node:fs";
 import { link, mkdir, readFile, rename, rm, rmdir, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
-import { isPathInside } from "../kernel/path-safety.js";
+import { isPathInside, withoutNamespacePrefix } from "../kernel/path-safety.js";
 import { sameBytes, toBytes, type PlannedWrite, type StagedWrite } from "./writes.js";
 
 /**
@@ -49,9 +49,7 @@ export async function stageWrites(writes: PlannedWrite[]): Promise<StagedWrite[]
   const staged: StagedWrite[] = [];
   try {
     for (const [i, write] of writes.entries()) {
-      // mkdir(recursive) reports the topmost directory it had to create — the
-      // handle a rollback needs to put the tree back the way it found it.
-      const createdDir = (await mkdir(dirname(write.path), { recursive: true })) ?? null;
+      const createdDir = await mkdirReportingCreated(dirname(write.path));
       const before = existsSync(write.path) ? await readFile(write.path) : null;
       const content = toBytes(write.content);
       let tmp: string | null = null;
@@ -134,6 +132,22 @@ export async function rollbackStaged(staged: StagedWrite[]): Promise<string[]> {
   }
   await discardStaged(staged);
   return failures;
+}
+
+/**
+ * `mkdir -p`, reporting the topmost directory it had to create — the handle a
+ * rollback needs to put the tree back the way it found it — or null when every
+ * one already existed.
+ *
+ * The report is never handed on raw. On Windows, Node spells it with a `\\?\`
+ * prefix that no other path loam holds carries, and a rollback comparing the
+ * two spellings found nothing to prune (`withoutNamespacePrefix` has the
+ * measurement). Every caller that keeps a created directory for its rollback
+ * takes it from here, so the plain spelling is decided once.
+ */
+export async function mkdirReportingCreated(dir: string): Promise<string | null> {
+  const created = await mkdir(dir, { recursive: true });
+  return created === undefined ? null : withoutNamespacePrefix(created);
 }
 
 /** Write `content` to `path` through a temp file in the same directory. */
