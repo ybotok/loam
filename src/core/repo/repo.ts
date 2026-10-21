@@ -201,6 +201,40 @@ export async function fleetAdrCount(docsDir: DocsDir): Promise<number> {
   return countMarkdown(fleetAdrsDir(docsDir));
 }
 
+/**
+ * What a feature is CALLED, for a person: intent.md's `title:`, else its first
+ * `# ` heading with the feature id peeled off the front, else null.
+ *
+ * Every row that names a feature used to print the id alone, and an id is a
+ * key, not a name — a newcomer looking at `ready  FEAT-101` could not tell
+ * which change it was without opening the directory. Read on demand rather
+ * than carried on `FeatureEntry`, because the enumeration runs under every
+ * command and only the views a person reads need the words. A missing or
+ * unreadable intent.md is simply no title: the row still prints its id, and
+ * whether intent.md is owed is `status`'s question, not this one's.
+ */
+export async function featureTitle(feature: FeatureEntry): Promise<string | null> {
+  let fm: Frontmatter;
+  try {
+    fm = await readFrontmatter(featurePaths(feature.dir).intent);
+  } catch {
+    // A directory in intent.md's place, a permission: unreadable is no title.
+    // `readFrontmatter` folds only the encoding failure into a flag, and before
+    // this read the views that print a title never opened intent.md at all —
+    // so letting the error escape would hand `loam status` and `loam list`
+    // whole to `repository-unavailable` over a label. Whether intent.md is
+    // fine is the intent row's and `validate`'s question.
+    return null;
+  }
+  const declared = stringField(fm, "title")?.trim();
+  if (declared !== undefined && declared !== "") return declared;
+  const heading = fm.body.split(/\r?\n/).find((l) => l.startsWith("# "));
+  if (heading === undefined) return null;
+  const words = heading.slice(2).trim();
+  const bare = words.startsWith(feature.id) ? words.slice(feature.id.length).replace(/^[\s:—–-]+/, "") : words;
+  return bare === "" ? null : bare;
+}
+
 async function readFeature(dir: FeatureDir, dirName: string, archived: boolean): Promise<FeatureEntry> {
   const p = featurePaths(dir);
   return {

@@ -4,7 +4,9 @@ import { configOrRefuse, fail } from "../../core/envelope/json.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { listServices, resolveFeature } from "../../core/repo/repo.js";
 import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "../policy/gate.js";
+import { introducingFeatures } from "../../core/projection/introduced.js";
 import { showFeature } from "./feature.js";
+import { showIntroduced } from "./introduced.js";
 import { showService } from "./service.js";
 
 type TargetType = "service" | "feature";
@@ -61,6 +63,18 @@ export function registerShow(program: Command): void {
           forced === "feature" ? undefined : (await listServices(docsDir, context)).find((s) => s.id === target);
         if (entry !== undefined) {
           await showService(docsDir, entry.id, json, context);
+          return;
+        }
+        // Third, and still a service reading: a service an active feature
+        // INTRODUCES has no `services/` directory until that feature archives,
+        // so the enumeration above cannot answer for it — and "no such service"
+        // was the answer `show` gave for the newest service in the fleet while
+        // `loam tasks` listed work for it. The id that travels on is the
+        // feature's own readdir spelling, for the reason given above.
+        const introducing = forced === "feature" ? [] : await introducingFeatures(docsDir, target, context);
+        const introduced = introducing[0]?.services.find((s) => s === target);
+        if (introduced !== undefined) {
+          await showIntroduced(docsDir, { id: introduced, features: introducing }, json, context);
           return;
         }
 

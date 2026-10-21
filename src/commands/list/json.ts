@@ -4,11 +4,10 @@
  */
 import { repoPath } from "../../core/envelope/json.js";
 import { type CapabilityRow } from "../../core/capabilities/rollup.js";
-import { type FeatureEntry } from "../../core/repo/entries.js";
 import { servicesUnder } from "../../core/repo/tree/find.js";
 import type { FleetTree } from "../../core/repo/tree/walk.js";
 import type { OwnersJoin } from "./campaign/owners.js";
-import { type ServiceView, type VerificationCell } from "./views.js";
+import { type FeatureRow, type ServiceView } from "./views.js";
 
 /**
  * The `services[]` rows: ranked and decorated under `--review-order`, plain
@@ -136,19 +135,18 @@ export function capabilityJson(row: CapabilityRow): Record<string, unknown> {
   };
 }
 
-export function featureJson(
-  docsDir: string,
-  f: FeatureEntry,
-  verification: VerificationCell | null,
-): Record<string, unknown> {
+export function featureJson(docsDir: string, row: FeatureRow): Record<string, unknown> {
+  const f = row.feature;
   return {
     id: f.id,
+    // Additive (core/envelope/json.ts): intent.md's title, or null.
+    title: row.title,
     dirName: f.dirName,
     path: repoPath(docsDir, f.dir),
     archived: f.archived,
     services: f.services,
     has: f.has,
-    verification,
+    verification: row.cell,
   };
 }
 

@@ -17,7 +17,8 @@ import { repoPath } from "../../envelope/json.js";
 import { FleetContext } from "../../fleet-context.js";
 import { featureProvenance } from "../../provenance/findings.js";
 import type { FeatureEntry } from "../../repo/entries.js";
-import { featureSpecServices } from "../../repo/repo.js";
+import { featureSpecServices, featureTitle } from "../../repo/repo.js";
+import { featureChecklist } from "../../verify/checklist.js";
 import { enumeratedServices } from "../../repo/service-target.js";
 import { useCaseBlastRadius } from "../../usecases/touch.js";
 import { issueFinding, type Issue } from "../../vocabulary/issue.js";
@@ -50,8 +51,16 @@ export async function featureStatus(
   const inView = narrowed === undefined ? services : services.filter((s) => s === narrowed);
 
   const scans = feature.archived ? [] : await scanDeltas(docsDir, feature, services, context);
-  const read = await verificationState(docsDir, feature);
+  // Through the context, so the checklist below and the one this read derives
+  // to grade a record share one parse of the delta.
+  const read = await verificationState(docsDir, feature, { fleet: context });
   const verification = read.state;
+  // What the feature asks, for "0 of 19 claims answered". Only in flight: an
+  // archived feature's checklist cannot be re-derived honestly (its operations
+  // are living now), which is why `verificationState` refuses to as well.
+  const checklist = feature.archived
+    ? null
+    : { claims: (await featureChecklist(docsDir, feature.dir, feature.id, context)).claims.length };
   // An archived feature is history: its delta is already folded into the living
   // docs, so coherence would grade the change against a world that has absorbed
   // it and report contradictions that are only the merge having happened. The
@@ -115,6 +124,7 @@ export async function featureStatus(
     interrupted,
     feature: {
       id: feature.id,
+      title: await featureTitle(feature),
       dirName: feature.dirName,
       path: repoPath(docsDir, feature.dir),
       archived: feature.archived,
@@ -136,6 +146,7 @@ export async function featureStatus(
       issues: findings,
     },
     verification,
+    checklist,
     useCases,
     next: featureNext(
       { feature, services: inView, artifacts, findings, blockedBy, verification, scans, interrupted },

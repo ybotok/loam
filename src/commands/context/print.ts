@@ -11,15 +11,30 @@
  * `#### Scenario:` heading levels; the in-flight blocks print the same lines
  * one level deeper, because each sits under its feature's own `###` heading.
  */
-import { type ContextPack } from "../../core/pack/pack.js";
+import { type ContextPack, type IntroducedPack } from "../../core/pack/pack.js";
 import { type PackRequirement } from "../../core/pack/living.js";
 import { type PackFeature } from "../../core/pack/features.js";
 
-export function printPack(pack: ContextPack): void {
+export function printPack(pack: ContextPack | IntroducedPack): void {
   console.log(`# ${pack.service} — context pack\n`);
-  const badge = [pack.frontmatter.status, pack.frontmatter.owner].filter((s) => s !== null);
-  console.log(`${pack.path} · ${pack.maturity}${badge.length > 0 ? ` · ${badge.join(" · ")}` : ""}`);
-  if (pack.missing.length > 0) console.log(`missing: ${pack.missing.join(", ")}`);
+  if ("introducedBy" in pack) {
+    // Said FIRST, in place of the maturity line, because every living section
+    // below is about to print "(none)" — and a reader who has not been told why
+    // takes that for a documented service with nothing in it. `missing` is not
+    // printed: it names the living artifacts (`spec.md`, `model.likec4`) that
+    // the feature's archive writes, and an agent told they are missing writes
+    // them under services/ by hand, which forks the service before it exists.
+    console.log(
+      `${pack.path} · introduced by ${pack.introducedBy.join(", ")} (in flight) — not in the living docs until it archives`,
+    );
+    console.log(
+      `the living sections below are empty because nothing about ${pack.service} has merged yet; its documents are ${pack.feature ?? "the feature"}'s delta, under In flight`,
+    );
+  } else {
+    const badge = [pack.frontmatter.status, pack.frontmatter.owner].filter((s) => s !== null);
+    console.log(`${pack.path} · ${pack.maturity}${badge.length > 0 ? ` · ${badge.join(" · ")}` : ""}`);
+    if (pack.missing.length > 0) console.log(`missing: ${pack.missing.join(", ")}`);
+  }
   if (pack.frontmatter.last_verified !== null) console.log(`last_verified: ${pack.frontmatter.last_verified}`);
   // Under the date it qualifies: that vouch read the sections this names and
   // no others, so `verified` above covers less of the document than it looks.

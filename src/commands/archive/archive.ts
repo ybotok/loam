@@ -45,7 +45,7 @@ export function registerArchive(program: Command): void {
   program
     .command("archive")
     .argument("<featureId>", "feature id, e.g. FEAT-101")
-    .description("Merge a shipped feature's deltas into the living specs + model, then archive it")
+    .description("Merge a finished feature's deltas into the living specs + model, then archive it (checks the documents, not the code)")
     .option("--approve", "archive despite GATING coherence issues (may corrupt the living docs); advisory warnings never block")
     .option("--dry-run", "print the whole merge plan and write nothing")
     .option("--json", "emit the machine contract instead of the human view")

@@ -16,10 +16,12 @@
 import { FleetContext } from "../fleet-context.js";
 import { repoPath } from "../envelope/json.js";
 import { type FeatureEntry, type ServiceEntry } from "../repo/entries.js";
+import { featureSpecPaths, unfiledServicePaths } from "../repo/paths.js";
 import { buildLiving, type LivingSlice } from "./living.js";
 import { buildJoins, type JoinsSlice } from "./joins.js";
 import { buildFeatures, type PackFeature } from "./features.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
+import type { RawServiceId } from "../kernel/ids/service.js";
 
 export interface PackRequest {
   docsDir: DocsDir;
@@ -68,6 +70,80 @@ export async function assemblePack(req: PackRequest): Promise<ContextPack> {
     ...living,
     ...joins,
     features,
+  };
+}
+
+/**
+ * The pack of a service an active feature INTRODUCES — one `services/` does not
+ * hold yet, because the directory is created when that feature archives.
+ *
+ * Every key a living pack carries, so a consumer indexing one reads this one
+ * too, plus the two that say what it is. `living: false` is the marker to branch
+ * on; it is absent from a living pack rather than `true` there, because that
+ * payload is already published and stays byte-identical. `path` is the
+ * introducing feature's `specs/<service>/` — the one directory where this
+ * service's documents exist — and NOT `services/<service>/`, which an agent
+ * would open and find empty. The living sections are empty because the living
+ * docs hold nothing for the service, and the maturity is the ladder's own
+ * `empty`; the briefing itself is `features[0]`, the chosen feature's delta.
+ * `missing` is that ladder's answer too, left as derived so the key means one
+ * thing everywhere — beside `living: false` it names what the archive will
+ * write, which is why the Markdown view does not print it as work owed.
+ */
+export interface IntroducedPack extends ContextPack {
+  living: false;
+  /** Every active feature whose `specs/` introduces the service, by id — `feature` names the one briefed. */
+  introducedBy: string[];
+}
+
+export interface IntroducedPackRequest {
+  docsDir: DocsDir;
+  /** The service as the introducing feature's own `specs/` readdir spelled it. */
+  service: RawServiceId;
+  /** The feature the briefing is read from — one of `introducedBy`, chosen by the caller. */
+  feature: FeatureEntry;
+  /** `introducingFeatures`' whole answer, so the pack can name the features it did NOT brief from. */
+  introducedBy: FeatureEntry[];
+  context: FleetContext;
+}
+
+/**
+ * Assemble the pack of an introduced service through the SAME assembly as a
+ * living one, narrowed to the chosen feature, rather than through a second
+ * builder that would have to keep agreeing with the first about every section.
+ *
+ * Before this, `loam context <service>` refused such a service as unknown on
+ * the very tree where `loam tasks` listed work for it — and an implementer
+ * following the implement protocol on a NEW service was refused at step 1.
+ */
+export async function assembleIntroducedPack(req: IntroducedPackRequest): Promise<IntroducedPack> {
+  const { docsDir, service, feature, introducedBy, context } = req;
+  // The living slice is read at the unfiled spelling — where `archive`
+  // materialises a new service, and `unfiledServicePaths`' stated fallback for
+  // a service the enumeration does not answer. Nothing exists there (a
+  // directory there would make the service living, and `introducingFeatures`
+  // would have answered empty), so every living section comes back empty by
+  // reading, not by a branch that skipped it.
+  const landing: ServiceEntry = {
+    id: service,
+    dir: unfiledServicePaths(docsDir, service).dir,
+    subsystem: [],
+    has: { model: false, spec: false, openapi: false, asyncapi: false, runbook: false, health: false },
+    adrs: 0,
+    status: null,
+    sources: { declared: false, stamped: false },
+    vouchScope: null,
+    contentStale: [],
+  };
+  const { service: id, ...pack } = await assemblePack({ docsDir, entry: landing, feature, context });
+  // The marker leads, straight after the id, so a person reading the JSON sees
+  // it before the empty living sections it explains.
+  return {
+    service: id,
+    living: false,
+    introducedBy: introducedBy.map((f) => f.id),
+    ...pack,
+    path: repoPath(docsDir, featureSpecPaths(feature.dir, service).dir),
   };
 }
 

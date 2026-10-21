@@ -31,11 +31,13 @@ import { type Finding } from "../../../core/vocabulary/report.js";
 export interface HealthDeps {
   service: string;
   /**
-   * The resolved path of the service's own `model.likec4` — the file this
-   * check reads and the one its message names. Handed in rather than joined
-   * from the id: `services/<id>/model.likec4` is right only for an unfiled
-   * service, and every sibling finding in this command prints the resolved
-   * path of the file it means.
+   * The resolved path of the service's own `model.likec4`, repo-relative and
+   * `/`-separated — the file this check grades and the one its message names.
+   * Handed in rather than joined from the id: `services/<id>/model.likec4` is
+   * right only for an unfiled service, and every sibling finding in this
+   * command prints the resolved path of the file it means. Relative because a
+   * message is read beside other people's runs: an absolute path names the
+   * machine that ran the check, not the file in the repository.
    */
   modelPath: string;
   /** `dependencies:` ids, already muted by the caller when health.yaml is unreadable. */

@@ -135,6 +135,15 @@ silent precedence rule is a report about a target nobody asked for. The
 positional together with \`--all\`, \`--service\` or \`--feature\` is refused
 (\`invalid-option\`).
 
+A bare \`loam validate\` grades the service \`loam.json\` binds — unless no
+\`services/<id>/\` holds it and an active feature introduces it, which is the
+state of every new service's repository until that feature archives. There is
+no service to grade then: the run validates each introducing feature instead
+(the grade \`--feature\` gives, target for target), says so above the report,
+and \`--json\` carries \`boundService\` — \`{ id, living: false, introducedBy }\`.
+Naming the service, with \`--service <id>\` or the positional, still reads a
+service: that is \`service.unknown\`, and its message names the feature.
+
 Two rendering levers change nothing else: \`loam validate --errors-only\` drops
 the confirmations from the TEXT view (the \`--json\` payload is byte-identical),
 and \`loam list --needs-work\` narrows the service list to the ones with

@@ -1,12 +1,14 @@
 /**
- * `next[]` — the whole repository: adoption gaps first, then every feature in
- * flight, most-unblocking first, capped so the list stays navigation rather
- * than inventory.
+ * `next[]` — the whole repository: the steps about the repository itself
+ * first, then every feature in flight, then each service's adoption gaps,
+ * most-unblocking first, capped so the list stays navigation rather than
+ * inventory.
  */
 import type { DependencyGraph } from "../../dependencies/facts.js";
 import { serviceTreePath } from "../../kernel/ids/dirs.js";
 import { compareIds, type ServiceEntry } from "../../repo/entries.js";
 import { recoverStep } from "../interrupted.js";
+import { featureLabel, fleetStageWords } from "../feature/words.js";
 import {
   undocumented,
   vouched,
@@ -39,8 +41,9 @@ const STAGE_RANK: Record<ArtifactStatus, number> = {
 export const FLEET_NEXT_LIMIT = 10;
 
 /**
- * Fleet-level steps, most-unblocking first. A feature ready to ship comes
- * before one that still needs authoring, because archiving it is what releases
+ * Fleet-level steps, most-unblocking first. A verified feature, ready to
+ * archive, comes before one that still needs authoring, because archiving it
+ * is what releases
  * everything queued behind it; a blocked feature comes last, because there is
  * nothing to do about it from here — its prerequisite is already higher up the
  * list under its own entry.
@@ -87,6 +90,12 @@ export interface Binding {
   id: string;
   /** Whether the fleet has a `services/<id>/` for it. */
   adopted: boolean;
+  /**
+   * The active features whose `specs/` introduce it (`introducingFeatures`) —
+   * empty unless `adopted` is false. A service a feature in flight introduces
+   * has no code to adopt yet: the work in its repository IS that feature.
+   */
+  introducedBy: string[];
 }
 
 export function fleetNext(fleet: Fleet, binding: Binding | null): NextStep[] {
@@ -97,6 +106,11 @@ export function fleetNext(fleet: Fleet, binding: Binding | null): NextStep[] {
   // is unchanged; the second is the fact that used to be thrown away.
   const unadoptedBinding = binding !== null && !binding.adopted ? binding.id : null;
   const adoptedBinding = binding !== null && binding.adopted ? binding.id : null;
+  // The features that bring the bound service into being, when any in flight
+  // do. Their steps lead and the feature loop below skips them, so a feature
+  // this repository exists for is named once, first — EVERY one of them, since
+  // whichever archives first is the one that makes the service living.
+  const introducing = unadoptedBinding === null ? [] : features.filter((f) => binding!.introducedBy.includes(f.id));
 
   // The repository this command is standing in names a service the fleet has no
   // directory for. First, ahead of every other service's partial adoption,
@@ -109,7 +123,25 @@ export function fleetNext(fleet: Fleet, binding: Binding | null): NextStep[] {
   // right answer (`doctor.service-unknown`) at the same moment, and the
   // documented agent loop reads `status`: an agent following it was sent to
   // start a feature instead of adopting the service under its feet.
-  if (unadoptedBinding !== null) {
+  //
+  // Unless a feature in flight INTRODUCES the service. Then there is no code
+  // yet for `loam adopt` to read — the feature's own specs/ ARE its documents
+  // until it archives — and telling its first developer to adopt it sent them
+  // to describe an empty repository. The step is the feature's, under the code
+  // the feature loop already emits, so nothing new needs branching on.
+  for (const f of introducing) {
+    const others = introducing.filter((o) => o !== f).map((o) => o.id);
+    steps.push({
+      code: "next.feature",
+      statement:
+        `This repository's loam.json says it is '${unadoptedBinding}', which ${f.id} introduces` +
+        (others.length > 0 ? ` (so does ${others.join(", ")})` : "") +
+        ` — it is not in the living docs until ${others.length > 0 ? "one of them" : f.id} archives, so there is ` +
+        `nothing to adopt; ${f.id}'s own status says what this repository owes it.`,
+      command: `loam status ${f.id} --json`,
+    });
+  }
+  if (unadoptedBinding !== null && introducing.length === 0) {
     steps.push({
       code: "next.adopt-bound",
       statement:
@@ -177,11 +209,107 @@ export function fleetNext(fleet: Fleet, binding: Binding | null): NextStep[] {
     }
   }
 
-  // The per-service rungs are collected into their own list rather than pushed
-  // straight onto `steps`, because the partition below acts on them as a group
-  // — and only on them. Nothing here may float above `next.adopt-bound` or the
-  // first-hour ladder, both of which are about the repository rather than about
-  // any one service in the fleet.
+  // Features BEFORE the per-service rungs. The rungs used to lead, on the
+  // reading that an adoption gap blocks grading — and on a fleet mid-adoption
+  // that put a page of `next.adopt` lines ahead of the one feature anybody was
+  // working on, and the cap below elided that feature as "more step(s) of the
+  // same kinds": the only change in flight, invisible under the heading
+  // "next". A feature is work somebody started; an undocumented service is
+  // backlog. The rungs still follow, and still in full where it matters —
+  // `serviceSteps` beside this list carries every one of them uncapped.
+  const ordered = [...features].sort(
+    (a, b) =>
+      STAGE_RANK[a.stage] - STAGE_RANK[b.stage] ||
+      graph.order.indexOf(a.id) - graph.order.indexOf(b.id) ||
+      compareIds(a.id, b.id),
+  );
+  for (const f of ordered) {
+    if (introducing.includes(f)) continue;
+    const label = featureLabel(f);
+    if (f.stage === "done") {
+      steps.push({
+        code: "next.archive",
+        statement: `${label} is authored and verified — archive it to fold its deltas into the living docs, and everything waiting on it is released.`,
+        command: `loam archive ${f.id} --dry-run --json`,
+      });
+      continue;
+    }
+    steps.push({
+      code: "next.feature",
+      statement:
+        // The list, not the stage, is what this sentence names. `blocked` has
+        // two causes now — another feature in flight, and an interrupted commit
+        // that stalls the whole repository — and the second one names no
+        // feature, so keying off the stage alone printed "FEAT-1 is waiting
+        // on ." The recover step above already says what the repository is
+        // waiting on.
+        //
+        // And never the bare stage word: "FEAT-1 is at 'ready'" over a feature
+        // with nothing built read as ready to ship. `stageWords` is the one
+        // place the human sentence for a stage lives (../feature/words.ts).
+        f.stage === "blocked" && interrupted === null && f.blockedBy.length > 0
+          ? `${label} is waiting on ${f.blockedBy.join(", ")}.`
+          : `${label}: ${fleetStageWords(f, interrupted !== null)}.`,
+      command: `loam status ${f.id} --json`,
+    });
+  }
+
+  steps.push(...perServiceSteps(services, adoptedBinding));
+
+  const left = steps.slice(FLEET_NEXT_LIMIT);
+  // Outside the cap, not merely first inside it: the one step that must never
+  // be the one this list left out.
+  const out = [...(interrupted === null ? [] : [recoverStep(interrupted)]), ...steps.slice(0, FLEET_NEXT_LIMIT)];
+  if (left.length > 0) {
+    // Which kinds, counted: "of the same kinds" told a reader nothing about
+    // whether the feature they came for was among the missing.
+    const kinds = [...new Set(left.map((s) => s.code))].map((code) => `${left.filter((s) => s.code === code).length} ${code}`);
+    out.push({
+      code: "next.elided",
+      statement: `${left.length} more step(s) were left out (${kinds.join(", ")}) — this list is ordered most-unblocking first, so work down it and run status again.`,
+      command: "loam list --json",
+    });
+  }
+
+  out.push(
+    steps.length === 0
+      ? {
+          code: "next.fleet-clean",
+          statement:
+            "Nothing is in flight and every service is written down — keep the fleet green, then start the next feature.",
+          command: "loam validate --all --json",
+        }
+      : {
+          code: "next.fleet-gate",
+          // `loam validate --all` inside the backticks, not the bare
+          // `validate --all` this sentence carried for a year: a span without
+          // the binary name is invisible to every check that reads a
+          // backticked `loam <verb>` as an instruction — the parse check in
+          // test/agent-commands-runnable.test.ts, and the statement/command
+          // invariant in test/status.test.ts. A prefix is cheaper than an
+          // exemption, and the exemption is what lets a wrong command through.
+          statement:
+            `${features.length} feature(s) in flight over ${services.length} service(s) — ` +
+            "status grades none of them; `loam validate --all` is the gate this repository has to pass, and it is what CI runs.",
+          command: "loam validate --all --json",
+        },
+  );
+  return out;
+}
+
+/**
+ * Every per-service rung, in the order the list prints them: the bound
+ * service's own first, then the rest alphabetically. Exported because the
+ * same list, uncapped and grouped (`groupServiceSteps`), rides beside `next[]`
+ * as `serviceSteps` — one derivation, so the two can never disagree about
+ * what a service owes.
+ */
+export function perServiceSteps(services: ServiceEntry[], adoptedBinding: string | null): NextStep[] {
+  // The per-service rungs are collected as one list because the partition
+  // below acts on them as a group — and only on them. Where the list goes is
+  // the caller's: `fleetNext` puts it after every feature, and nothing here may
+  // float above `next.adopt-bound` or the first-hour ladder, both of which are
+  // about the repository rather than about any one service in the fleet.
   const perService: NextStep[] = [];
   for (const s of services.filter(undocumented)) {
     perService.push({
@@ -232,88 +360,35 @@ export function fleetNext(fleet: Fleet, binding: Binding | null): NextStep[] {
   // docs repo, CI, `loam validate --all`'s scorecard — is byte-for-byte the one
   // it saw before.
   //
-  // The cap is why this is ordering and not cosmetics. Ten rungs print, and in
+  // The cap is why this is ordering and not cosmetics. Ten steps print, and in
   // the ten-repo case WORKFLOW.md describes every developer's `loam status`
-  // opened with nine other services' adoption work; past ten services the one
-  // rung this developer can actually act on was elided entirely, leaving a list
-  // of nothing but other people's boundaries under the heading "next". No new
-  // code is emitted for any of this — `next[]` has always been documented as
-  // most-unblocking first, and this is the line that makes the claim true from
-  // where the reader is standing.
-  steps.push(
-    ...(adoptedBinding === null
-      ? perService
-      : [
-          ...perService.filter((s) => s.service === adoptedBinding),
-          ...perService.filter((s) => s.service !== adoptedBinding),
-        ]),
-  );
+  // listed nine other services' adoption work ahead of their own; past ten
+  // services the one rung this developer can actually act on was elided
+  // entirely, leaving a list of nothing but other people's boundaries under
+  // the heading "next". No new code is emitted for any of this — `next[]` has
+  // always been documented as most-unblocking first, and this is the line that
+  // makes the claim true from where the reader is standing.
+  return adoptedBinding === null
+    ? perService
+    : [
+        ...perService.filter((s) => s.service === adoptedBinding),
+        ...perService.filter((s) => s.service !== adoptedBinding),
+      ];
+}
 
-  const ordered = [...features].sort(
-    (a, b) =>
-      STAGE_RANK[a.stage] - STAGE_RANK[b.stage] ||
-      graph.order.indexOf(a.id) - graph.order.indexOf(b.id) ||
-      compareIds(a.id, b.id),
-  );
-  for (const f of ordered) {
-    if (f.stage === "done") {
-      steps.push({
-        code: "next.archive",
-        statement: `${f.id} is authored and verified — ship it, and everything waiting on it is released.`,
-        command: `loam archive ${f.id} --dry-run --json`,
-      });
-      continue;
-    }
-    steps.push({
-      code: "next.feature",
-      statement:
-        // The list, not the stage, is what this sentence names. `blocked` has
-        // two causes now — another feature in flight, and an interrupted commit
-        // that stalls the whole repository — and the second one names no
-        // feature, so keying off the stage alone printed "FEAT-1 is waiting
-        // on ." The recover step above already says what the repository is
-        // waiting on.
-        f.stage === "blocked" && f.blockedBy.length > 0
-          ? `${f.id} is waiting on ${f.blockedBy.join(", ")}.`
-          : `${f.id} is at '${f.stage}'${f.missing.length > 0 ? ` — missing ${f.missing.join(", ")}` : ""}.`,
-      command: `loam status ${f.id} --json`,
-    });
+/**
+ * `perServiceSteps` grouped by code, in first-appearance order — the
+ * `serviceSteps` payload. `command` is the FIRST service's step command, so a
+ * reader folding forty rungs into one line still gets a literal to run rather
+ * than a second spelling of it.
+ */
+export function groupServiceSteps(steps: NextStep[]): Array<{ code: string; services: string[]; command: string }> {
+  const groups = new Map<string, { code: string; services: string[]; command: string }>();
+  for (const step of steps) {
+    if (step.service === undefined) continue;
+    const group = groups.get(step.code) ?? { code: step.code, services: [], command: step.command };
+    group.services.push(step.service);
+    groups.set(step.code, group);
   }
-
-  const elided = Math.max(0, steps.length - FLEET_NEXT_LIMIT);
-  // Outside the cap, not merely first inside it: the one step that must never
-  // be the one this list left out.
-  const out = [...(interrupted === null ? [] : [recoverStep(interrupted)]), ...steps.slice(0, FLEET_NEXT_LIMIT)];
-  if (elided > 0) {
-    out.push({
-      code: "next.elided",
-      statement: `${elided} more step(s) of the same kinds were left out — this list is ordered most-unblocking first, so work down it and run status again.`,
-      command: "loam list --json",
-    });
-  }
-
-  out.push(
-    steps.length === 0
-      ? {
-          code: "next.fleet-clean",
-          statement:
-            "Nothing is in flight and every service is written down — keep the fleet green, then start the next feature.",
-          command: "loam validate --all --json",
-        }
-      : {
-          code: "next.fleet-gate",
-          // `loam validate --all` inside the backticks, not the bare
-          // `validate --all` this sentence carried for a year: a span without
-          // the binary name is invisible to every check that reads a
-          // backticked `loam <verb>` as an instruction — the parse check in
-          // test/agent-commands-runnable.test.ts, and the statement/command
-          // invariant in test/status.test.ts. A prefix is cheaper than an
-          // exemption, and the exemption is what lets a wrong command through.
-          statement:
-            `${features.length} feature(s) in flight over ${services.length} service(s) — ` +
-            "status grades none of them; `loam validate --all` is the gate this repository has to pass, and it is what CI runs.",
-          command: "loam validate --all --json",
-        },
-  );
-  return out;
+  return [...groups.values()];
 }

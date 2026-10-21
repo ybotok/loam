@@ -213,7 +213,10 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   \`doctor.inventory-unreadable\`, \`doctor.landscape-missing\`,
   \`doctor.service-unbound\` (never raised inside the docs repo itself, where
   having no service binding is the correct state), \`doctor.service-unknown\`
-  (the same state \`loam status\` reports as \`next.adopt-bound\`),
+  (the same state \`loam status\` reports as \`next.adopt-bound\` — or, when an
+  active feature introduces the service, as that feature's \`next.feature\`, and
+  then the finding names the feature and \`currentService.introducedBy\` lists
+  it: there is nothing to adopt),
   \`doctor.likec4-config-missing\`, and the two about this repo's own generated
   command and skill files: \`doctor.agent-files-missing\` and
   \`doctor.agent-files-stale\`.

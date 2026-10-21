@@ -833,7 +833,8 @@ loam makes no network call, so it syncs with no tracker, dashboard or catalog �
 to. Every command's `--json` is a stable contract, and the integrations are a few lines of shell
 over it, owned by whoever runs them. Four recipes, each run against `examples/docs`.
 
-**Feature work into a tracker.** `loam tasks <FEAT> --json` lists every open unit of a feature:
+**Feature work into a tracker.** `loam tasks <FEAT> --json`, run from the docs repo, lists every
+open unit of a feature (from a service repository it lists that service's, when the feature touches it):
 `id`, `subject` (the owning service), `claim`, `done` (its `check` is the fact that closes it) and
 `dependsOn` (unit ids to finish first). The unit id is the idempotency key — prefixed with the
 feature id, so one tracker holds every feature's units and each title says which — and a re-run

@@ -87,13 +87,15 @@ async function verdicts(p: Project, feature = FEAT): Promise<Verdicts> {
   const status = JSON.parse(statusRun.stdout) as StatusPayload;
   // `next[]` is never empty and its last entry is always `next.archive`, so
   // "nothing outstanding" is the archive step standing ALONE — the branch that
-  // prints "ship it". Reading the stage alone would miss a feature reported
-  // `done` that still lists work above it.
+  // says the feature is "authored, coherent and verified" (it said "ship it"
+  // until archive's step stopped promising checks archive never makes).
+  // Reading the stage alone would miss a feature reported `done` that still
+  // lists work above it.
   const only = status.next.length === 1 ? status.next[0] : undefined;
   return {
     status,
     shipsIt:
-      status.feature.stage === "done" && only?.code === "next.archive" && only.statement.includes("ship it"),
+      status.feature.stage === "done" && only?.code === "next.archive" && only.statement.includes("authored, coherent and verified"),
     validateAccepts: validate.code === 0,
     archiveAccepts: archive.code === 0,
     codes: status.next.map((s) => s.code),

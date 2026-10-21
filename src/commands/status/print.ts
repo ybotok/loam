@@ -4,17 +4,26 @@
  * Separate from `./json.ts` because the two answer different readers and only
  * one of them is a contract. This side may be reworded freely; the payload
  * beside it may not.
+ *
+ * Which is also why no bare stage word leads a line here any more. `stage` is a
+ * value an agent branches on, and `ready` printed alone over a feature with
+ * nothing built read to a person as "ready to ship". The sentence comes from
+ * `stageWords` (core/status/feature/words.ts) — the same one the `next[]`
+ * statements quote — with the counts that make it true, and the machine value
+ * rides in its own row for whoever needs to map the two.
  */
 import { answeredSplit } from "../../core/verify/record.js";
 import { SEVERITY_MARK } from "../../core/vocabulary/report.js";
+import { unshippable } from "../../core/status/feature/next.js";
+import { featureLabel, fleetStageWords, stageWords } from "../../core/status/feature/words.js";
 import type {
   ArtifactState,
   FeatureStatusReport,
   FleetStatusReport,
   InterruptedCommit,
-  NextStep,
   VerificationState,
 } from "../../core/status/report.js";
+import { printFleetNext, printNext } from "./fleet-next.js";
 
 function pad(values: string[]): number {
   return Math.max(0, ...values.map((v) => v.length));
@@ -43,6 +52,28 @@ function artifactLabel(a: ArtifactState): string {
 }
 
 /**
+ * An artifact row's status, in words. The machine value is `done` for a file
+ * that is written AND for one the feature does not owe, and `ready` for a
+ * verification record whose claims are still open — three readings a person
+ * cannot tell apart from one word, and the reason a table of `done` rows read
+ * as finished work over a feature nobody had built.
+ */
+function artifactWord(a: ArtifactState, v: VerificationState): string {
+  if (a.id === "verification") {
+    if (a.status === "missing") return "none yet";
+    // An attested record is complete and rests on an agent's word; "open"
+    // over it contradicted the header that says every claim is answered.
+    if (a.status === "ready") return v.verdict === "attested" ? "attested" : "open";
+    if (a.status === "done") return "verified";
+    if (a.status === "draft") return v.state === "stale" ? "stale" : "unreadable";
+    return a.status;
+  }
+  if (a.status === "done") return a.exists ? "written" : "not owed";
+  if (a.status === "draft") return "has errors";
+  return a.status;
+}
+
+/**
  * The counts come from the record's `claims:` array (verify's `tallyRecord`),
  * never from its `summary:` block. The verdict is printed beside the state
  * because they answer different questions and only together are they honest:
@@ -52,9 +83,12 @@ function artifactLabel(a: ArtifactState): string {
  * reason one step further: `verified` turns on the scenario claims alone, and
  * `verified 19/19 confirmed` read as nineteen runs over a record where six
  * answers were an agent's word about a permission or an edge.
+ *
+ * With no record, the line says how many claims there ARE to answer, when the
+ * report knows (`checklist`): "none" alone read as "nothing to do".
  */
-function verificationLine(v: VerificationState): string {
-  if (v.state === "absent") return "none";
+function verificationLine(v: VerificationState, asked: number | null): string {
+  if (v.state === "absent") return asked === null ? "none — no record" : `none yet — ${asked} claim(s) to answer`;
   if (v.state === "unreadable") return "unreadable";
   return (
     `${v.state} · ${v.verdict}  ${v.confirmed}/${v.claims} confirmed` +
@@ -63,20 +97,6 @@ function verificationLine(v: VerificationState): string {
     (v.attested > 0 ? ` · ${v.attested} scenario(s) on an agent's word, not a test run` : "") +
     `  (recorded ${v.recorded ?? "?"})`
   );
-}
-
-/**
- * The steps, numbered, with the command on its own indented line — doctor's
- * layout, for doctor's reason: what to do and what to type are two different
- * sentences, and someone scanning a half-built feature reads down the `run:`
- * column.
- */
-function printNext(steps: NextStep[]): void {
-  console.log("\n  next");
-  for (const [i, step] of steps.entries()) {
-    console.log(`    ${i + 1}. ${step.code}: ${step.statement}`);
-    console.log(`       run: ${step.command}`);
-  }
 }
 
 /**
@@ -107,7 +127,23 @@ function printUseCases(u: FeatureStatusReport["useCases"]): void {
 export function printFeature(r: FeatureStatusReport, ambiguous: string[]): void {
   if (r.interrupted !== null) printInterrupted(r.interrupted);
   const f = r.feature;
-  console.log(`loam status ${f.id} — ${f.stage}${f.archived ? " (archived)" : ""}`);
+  // `unshippable`'s count, not `gating`'s: archive's pre-plan refusals carry no
+  // `gates`, so "N would stop archive" read 0 over a feature archive refuses.
+  const blocking = r.checks.issues.filter(unshippable).length;
+  const words = stageWords({
+    stage: f.stage,
+    archived: f.archived,
+    verification: r.verification,
+    asked: r.checklist?.claims ?? null,
+    missing: r.artifacts.filter((a) => a.status === "missing" && a.id !== "verification").map(artifactLabel),
+    narrowed: r.service !== null,
+    services: f.services.length,
+    blockedBy: f.blockedBy,
+    interrupted: r.interrupted !== null,
+    blocking,
+  });
+  console.log(`loam status ${featureLabel(f)}: ${words}`);
+  console.log(`  stage         ${f.stage}  (\`loam explain ${f.stage}\` says what it promises and what it does not)`);
   console.log(`  feature       ${f.dirName}  ${f.path}`);
   console.log(`  services      ${f.services.length > 0 ? f.services.join(", ") : "(none)"}`);
   if (r.service !== null) console.log(`  narrowed to   ${r.service}`);
@@ -115,11 +151,11 @@ export function printFeature(r: FeatureStatusReport, ambiguous: string[]): void 
   console.log(
     `  coherence     ${
       r.checks.ran
-        ? `${r.checks.errors} error(s) · ${r.checks.warnings} warning(s) · ${r.checks.gating} gate archive`
-        : "not run (archived)"
+        ? `${r.checks.errors} error(s) · ${r.checks.warnings} warning(s) · ${blocking} stop it (validate --feature or archive refuses on each)`
+        : "not run — an archived feature is history, already merged"
     }`,
   );
-  console.log(`  verification  ${verificationLine(r.verification)}`);
+  console.log(`  verification  ${verificationLine(r.verification, r.checklist?.claims ?? null)}`);
   if (ambiguous.length > 0) {
     console.log(`  note          '${f.id}' also names ${ambiguous.filter((d) => d !== f.dirName).join(", ")}`);
   }
@@ -127,20 +163,21 @@ export function printFeature(r: FeatureStatusReport, ambiguous: string[]): void 
   console.log("\n  artifacts");
   const labels = r.artifacts.map(artifactLabel);
   const labelWidth = pad(labels);
-  const statusWidth = pad(r.artifacts.map((a) => a.status));
+  const statuses = r.artifacts.map((a) => artifactWord(a, r.verification));
+  const statusWidth = pad(statuses);
   for (const [i, a] of r.artifacts.entries()) {
-    // `done` on a file that is not there is the one row a reader misreads: it
-    // means the feature owes no such artifact, not that one was written. The
-    // JSON contract says it with `exists`; the human view has to say it in
+    // A row for a file that is not there is the one a reader misreads: `not
+    // owed` means the feature owes no such artifact, not that one was written.
+    // The JSON contract says it with `exists`; the human view says it in
     // words, or the table quietly claims files that do not exist.
     const note =
       a.blockedBy.length > 0
         ? `  (needs ${a.blockedBy.join(", ")})`
         : !a.exists && a.status === "done"
-          ? "  (not written — none owed)"
+          ? "  (not written)"
           : "";
     console.log(
-      `    ${a.status.padEnd(statusWidth)}  ${labels[i]!.padEnd(labelWidth)}  ${a.path}${note}`.trimEnd(),
+      `    ${statuses[i]!.padEnd(statusWidth)}  ${labels[i]!.padEnd(labelWidth)}  ${a.path}${note}`.trimEnd(),
     );
   }
 
@@ -172,20 +209,18 @@ export function printFleet(r: FleetStatusReport): void {
   if (r.service !== null) console.log(`  narrowed to   ${r.service}`);
   if (r.order.length > 1) console.log(`  order         ${r.order.join(" → ")}`);
 
+  // Two lines a feature: the id and what it is CALLED, then where it stands in
+  // words. The fleet form grades nothing (no coherence run, no checklist), so
+  // its sentence can only count what a record already says — and says so.
   if (r.features.length > 0) {
     console.log("\n  features");
     const ids = pad(r.features.map((f) => f.id));
-    const stages = pad(r.features.map((f) => f.stage));
     for (const f of r.features) {
-      const detail =
-        f.blockedBy.length > 0
-          ? `waiting on ${f.blockedBy.join(", ")}`
-          : f.missing.length > 0
-            ? `missing ${f.missing.join(", ")}`
-            : f.services.join(", ");
-      console.log(`    ${f.stage.padEnd(stages)}  ${f.id.padEnd(ids)}  ${detail}`.trimEnd());
+      console.log(`    ${f.id.padEnd(ids)}  ${f.title ?? ""}`.trimEnd());
+      const where = fleetStageWords(f, r.interrupted !== null);
+      console.log(`    ${" ".repeat(ids)}  ${where} · ${f.services.length > 0 ? f.services.join(", ") : "no service yet"}`);
     }
   }
 
-  printNext(r.next);
+  printFleetNext(r);
 }

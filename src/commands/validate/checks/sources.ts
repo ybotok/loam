@@ -55,11 +55,16 @@ export async function sourceScopeFindings(
       // `code:` slots. This used to be a shared constant, which kept the two
       // spellings equal but hid the emission itself from the collector — the
       // code was guarded only because the rollup's text marker spelled it.
+      //
+      // `ok` still, but never PRINTED as ✓: the check above did not run, and
+      // a check mark beside "nothing here can resolve them" read as a pass.
+      // The hint changes the glyph and nothing a machine or an exit code reads.
       out.push({
         severity: "ok",
         code: "sources.unverifiable-from-here",
         subject: service,
         message: `${label}: ${sources.length} source(s) declared, but this is not ${service}'s repository — nothing here can resolve them. Run \`loam validate --service ${service}\` from inside it.`,
+        text: { marker: "not-checked" },
       });
       continue;
     }

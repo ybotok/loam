@@ -7,12 +7,12 @@
  */
 import { MATURITY_LADDER, maturityRollup } from "../../core/vocabulary/maturity.js";
 import { type CapabilityRow } from "../../core/capabilities/rollup.js";
-import { compareIds, type FeatureEntry } from "../../core/repo/entries.js";
+import { compareIds } from "../../core/repo/entries.js";
 import type { PromisesKept } from "../../core/usecases/capability.js";
 import { answeredSplit } from "../../core/verify/record.js";
 import type { FleetTree } from "../../core/repo/tree/walk.js";
 import type { OwnedRow, OwnersJoin } from "./campaign/owners.js";
-import { type ServiceView, type VerificationCell } from "./views.js";
+import { type FeatureRow, type ServiceView, type VerificationCell } from "./views.js";
 
 /**
  * Fixed-width presence flags. `a` and `A` are deliberately the same letter in
@@ -336,7 +336,11 @@ function verificationMark(v: VerificationCell | null): string {
   return `${v.confirmed}/${v.claims}${v.verdict === "attested" ? " attested" : ""}${split}`;
 }
 
-export function printFeatures(features: FeatureEntry[], verification: (VerificationCell | null)[]): void {
+/** How wide the title column may grow before a title is cut with an ellipsis. */
+const TITLE_WIDTH = 40;
+
+export function printFeatures(rows: FeatureRow[]): void {
+  const features = rows.map((r) => r.feature);
   const active = features.filter((f) => !f.archived).length;
   const archived = features.length - active;
   const counts = `${active} active${archived > 0 ? `, ${archived} archived` : ""}`;
@@ -345,13 +349,21 @@ export function printFeatures(features: FeatureEntry[], verification: (Verificat
   // read as it.
   console.log(`features (${counts})  [I]ntent [D]elta  verification`);
   const width = Math.max(0, ...features.map((f) => f.id.length));
-  const cells = verification.map(verificationMark);
+  // The title beside the id: an id is a key, and a table of keys told a
+  // newcomer which rows existed but not which change any of them was.
+  const titles = rows.map((r) => {
+    const t = r.title ?? "";
+    return t.length > TITLE_WIDTH ? `${t.slice(0, TITLE_WIDTH - 1)}…` : t;
+  });
+  const titleWidth = Math.max(0, ...titles.map((t) => t.length));
+  const cells = rows.map((r) => verificationMark(r.cell));
   const cellWidth = Math.max(0, ...cells.map((c) => c.length));
   for (const [i, f] of features.entries()) {
     const flags = `${f.has.intent ? "I" : "-"} ${f.has.delta ? "D" : "-"}`;
     const svcs = f.services.length > 0 ? f.services.join(", ") : "—";
     const tag = f.archived ? "  (archived)" : "";
-    console.log(`  ${flags}  ${f.id.padEnd(width)}  ${cells[i]!.padEnd(cellWidth)}  ${svcs}${tag}`);
+    const title = titleWidth === 0 ? "" : `${titles[i]!.padEnd(titleWidth)}  `;
+    console.log(`  ${flags}  ${f.id.padEnd(width)}  ${title}${cells[i]!.padEnd(cellWidth)}  ${svcs}${tag}`);
   }
 }
 

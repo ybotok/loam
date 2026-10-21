@@ -409,6 +409,120 @@ describe("service mode: graded absences", () => {
   });
 });
 
+/**
+ * A repository whose loam.json binds a service an ACTIVE feature introduces —
+ * the feature carries `specs/<svc>/`, and `services/<svc>/` does not exist
+ * until it archives. A bare `loam validate` there refused with
+ * `service.unknown` and "Did you mean: payment-service?", reading the newest
+ * service in the fleet as a typo, while `loam status` and `loam doctor` in the
+ * same repository named the feature. It now validates the introducing feature,
+ * which holds every document that service has, and says so first. An explicit
+ * `--service` or positional reading still targets a service, so it keeps
+ * `service.unknown` — naming the feature rather than a near-miss.
+ *
+ * coherentFixture: FEAT-1 introduces payment-split-service; payment-service is living.
+ */
+describe("service mode: a bound service a feature in flight introduces", () => {
+  const NEW = "payment-split-service";
+  type Target = { kind: string; id: string; findings: { code: string; severity: string; message: string }[] };
+  const ids = (targets: Target[]): string[] => targets.map((t) => `${t.kind}:${t.id}`);
+
+  it("a bare `loam validate` validates the introducing feature instead of refusing the binding as a typo", async () => {
+    await withProject(coherentFixture(), { service: NEW }, async (p) => {
+      const res = await runLoam(p.workDir, "validate");
+      expect(res.code).toBe(0);
+      const [first, second] = res.out.split("\n");
+      expect(first).toBe(`${NEW}   introduced by FEAT-1 (in flight) — not in the living docs until it archives`);
+      expect(second).toBe(`  validating FEAT-1 instead: its specs/${NEW}/ are this service's documents until then`);
+      expect(res.out).toContain("\nFEAT-1\n");
+      expect(res.out).not.toContain("No service directory");
+      expect(res.out).not.toContain("Did you mean");
+      expect(res.out).not.toContain("loam adopt");
+
+      const json = JSON.parse((await runLoam(p.workDir, "validate", "--json")).stdout);
+      expect(json.boundService).toEqual({ id: NEW, living: false, introducedBy: ["FEAT-1"] });
+      expect(ids(json.targets)).toEqual(["feature:FEAT-1"]);
+      expect(json.summary).toEqual({ services: 0, features: 1, errors: 0, warnings: json.summary.warnings });
+      expect(json.fixes).not.toHaveProperty(["service.unknown"]);
+      // The grade `--feature` gives, finding for finding — not a lenient slice of it.
+      const asFeature = JSON.parse((await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json")).stdout);
+      expect(json.targets).toEqual(asFeature.targets);
+      expect(json.valid).toBe(asFeature.valid);
+    });
+  });
+
+  it("names and validates every introducer when two features in flight introduce the service", async () => {
+    const files = {
+      ...coherentFixture(),
+      "features/FEAT-2-split-again/intent.md":
+        "---\nfeature: FEAT-2\nstatus: proposed\n---\n\n# Split again\n\nA rival take on splitting.\n",
+      [`features/FEAT-2-split-again/specs/${NEW}/spec.md`]: FEATURE_SPEC,
+    };
+    await withProject(files, { service: NEW }, async (p) => {
+      const res = await runLoam(p.workDir, "validate");
+      const [first, second] = res.out.split("\n");
+      expect(first).toBe(
+        `${NEW}   introduced by FEAT-1, FEAT-2 (in flight) — not in the living docs until one of them archives`,
+      );
+      expect(second).toBe(
+        `  validating FEAT-1 and FEAT-2 instead: their specs/${NEW}/ are this service's documents until then`,
+      );
+      const json = JSON.parse((await runLoam(p.workDir, "validate", "--json")).stdout);
+      expect(json.boundService.introducedBy).toEqual(["FEAT-1", "FEAT-2"]);
+      expect(ids(json.targets)).toEqual(["feature:FEAT-1", "feature:FEAT-2"]);
+      expect(json.targets.flatMap((t: Target) => t.findings.map((f) => f.code))).not.toContain("service.unknown");
+    });
+  });
+
+  it("`--service` and the positional still read a service: service.unknown names the feature, not a near-miss", async () => {
+    // Bound to the same service, so the redirect is shown to be the binding's
+    // alone: naming the service explicitly asks for a service target.
+    await withProject(coherentFixture(), { service: NEW }, async (p) => {
+      for (const args of [["--service", NEW], [NEW]]) {
+        const res = await runLoam(p.workDir, "validate", ...args, "--json");
+        expect(res.code, args.join(" ")).toBe(1);
+        const json = JSON.parse(res.stdout);
+        expect(json).not.toHaveProperty("boundService");
+        expect(ids(json.targets)).toEqual([`service:${NEW}`]);
+        expect(json.targets[0].findings).toMatchObject([
+          {
+            severity: "error",
+            code: "service.unknown",
+            message:
+              `No service directory at services/${NEW}: FEAT-1 introduces it, and it is not in the living docs ` +
+              `until FEAT-1 archives. Until then its documents are FEAT-1's specs/${NEW}/ — run ` +
+              "`loam validate --feature FEAT-1` to validate them.",
+          },
+        ]);
+        const human = await runLoam(p.workDir, "validate", ...args);
+        expect(human.out).not.toContain("Did you mean");
+        expect(human.out).not.toContain("loam adopt");
+      }
+    });
+  });
+
+  it("a bound service nothing introduces keeps today's refusal, and a living one's payload gains no key", async () => {
+    await withProject(coherentFixture(), { service: "paymnt-service" }, async (p) => {
+      const res = await runLoam(p.workDir, "validate");
+      expect(res.code).toBe(1);
+      expect(res.out.split("\n")[0]).toBe(
+        "✗ No service directory at services/paymnt-service. Did you mean: payment-service?  (service.unknown)",
+      );
+      const json = JSON.parse((await runLoam(p.workDir, "validate", "--json")).stdout);
+      expect(json).not.toHaveProperty("boundService");
+      expect(ids(json.targets)).toEqual(["service:paymnt-service"]);
+      expect(json.targets[0].findings.map((f: Target["findings"][number]) => [f.code, f.message])).toEqual([
+        ["service.unknown", "No service directory at services/paymnt-service. Did you mean: payment-service?"],
+      ]);
+    });
+    await withProject(coherentFixture(), { service: SVC }, async (p) => {
+      const json = JSON.parse((await runLoam(p.workDir, "validate", "--json")).stdout);
+      expect(json).not.toHaveProperty("boundService");
+      expect(ids(json.targets)).toEqual([`service:${SVC}`]);
+    });
+  });
+});
+
 describe("service mode: api.ops-unlinked (migration debt)", () => {
   /** The living spec with its `Operations:` line dropped — requirements and API never meet. */
   const UNLINKED_SPEC = LIVING_SPEC.replace("Operations: authorizePayment\n\n", "");

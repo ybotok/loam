@@ -74,8 +74,12 @@ export function printScorecard(card: Scorecard): void {
     `  axes          adopted: ${adopted.length === 0 ? "none" : adopted.join(", ")}` +
       (notStarted.length === 0 ? "" : ` · not started: ${notStarted.join(", ")}`),
   );
+  // The stage values are `loam status`'s branching vocabulary, and `ready` read
+  // alone as "ready to ship" — so the two that mislead are glossed in place
+  // (`loam explain ready` has the long form).
   console.log(
     `  features      ${f.active} active — ` +
-      ARTIFACT_STATUSES.map((stage) => `${f.stages[stage]} ${stage}`).join(" · "),
+      ARTIFACT_STATUSES.map((stage) => `${f.stages[stage]} ${stage}`).join(" · ") +
+      (f.active > 0 ? "  (ready = docs written, not yet verified; done = verified)" : ""),
   );
 }

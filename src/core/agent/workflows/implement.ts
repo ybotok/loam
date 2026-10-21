@@ -123,8 +123,9 @@ repository, which needs its own committed ./loam.json — if there is none,
    read (\`read\`, \`unknown\`); an \`unknown\` makes every \`generate\` verdict a guess,
    so fix the binding before acting on one. \`contracts\` restates step 6 as data
    (\`expose[]\` and \`call[]\`), \`size\` the shape of the packet, \`review[]\` what a
-   reviewer of it will read, and \`waitingOn\` — \`--service\` runs only — what another
-   service still owes before your frontier can move.
+   reviewer of it will read, and \`waitingOn\` — whenever the packet is narrowed to one
+   service: by \`--service\`, or without it to this repo's own service when the feature
+   touches it — what another service still owes before your frontier can move.
    Exit 1 with \`ok: true\` is step 2's rule again: delta.likec4 or one of the
    contract axes did not parse, so the projection is SHORT by everything that
    document would have contributed. Fix the document; do not work the units that

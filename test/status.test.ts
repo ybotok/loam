@@ -252,7 +252,9 @@ describe("the feature payload", () => {
       cwd: "configured-repo",
       command: "loam archive FEAT-1 --dry-run --json",
     });
-    expect(payload.next[0].statement).toContain("ship it");
+    // Archive, not "ship it": archive merges documents and checks no code, so
+    // the sentence names what it does rather than what it never verifies.
+    expect(payload.next[0].statement).toContain("authored, coherent and verified — archive it");
     await p.destroy();
   });
 });
@@ -621,10 +623,10 @@ describe("the honestly-small change — WORKFLOW.md's walkthrough, pinned", () =
       // nothing), nothing about coherence, nothing left to author.
       expect(codes(payload.next)).toEqual(["next.generate-tests", "next.verify", "next.archive"]);
 
-      // The human view says "none owed" in words, per row, which is the
+      // The human view says "not owed" in words, per row, which is the
       // walkthrough's proof that skipping the artifact was legitimate.
       const human = await runLoam(p.workDir, "status", "FEAT-9");
-      expect(human.stdout).toContain("(not written — none owed)");
+      expect(human.stdout).toMatch(/not owed\s+arch-spec \(payment-service\).*\(not written\)/);
     } finally {
       await p.destroy();
     }
@@ -815,10 +817,15 @@ describe("the fleet payload", () => {
     expect(payload.order).toEqual(["FEAT-1"]);
 
     // `next.fleet-gate` is always last while anything is in flight: it names
-    // the command CI runs, which the fleet form never used to mention.
-    expect(codes(payload.next)).toEqual(["next.adopt", "next.feature", "next.fleet-gate"]);
-    expect((payload.next as NextStep[])[0]!.command).toBe("loam adopt --service orphan-service --json");
-    expect((payload.next as NextStep[])[1]!.command).toBe("loam status FEAT-1 --json");
+    // the command CI runs, which the fleet form never used to mention. The
+    // feature leads the adoption backlog — the other order is how a fleet
+    // mid-adoption buried its one feature in flight under ten adopt rungs.
+    expect(codes(payload.next)).toEqual(["next.feature", "next.adopt", "next.fleet-gate"]);
+    expect((payload.next as NextStep[])[0]!.command).toBe("loam status FEAT-1 --json");
+    expect((payload.next as NextStep[])[1]!.command).toBe("loam adopt --service orphan-service --json");
+    expect(payload.serviceSteps).toEqual([
+      { code: "next.adopt", services: ["orphan-service"], command: "loam adopt --service orphan-service --json" },
+    ]);
     expect((payload.next as NextStep[]).at(-1)!.command).toBe("loam validate --all --json");
     await p.destroy();
   });
@@ -1296,7 +1303,8 @@ describe("an interrupted commit outranks every other answer", () => {
     // on, and the recover step above already says so. Keying this sentence off
     // the stage alone printed "FEAT-1 is waiting on ."
     const line = (fleet.next as NextStep[]).find((s) => s.code === "next.feature")!;
-    expect(line.statement).toBe("FEAT-1 is at 'blocked'.");
+    expect(line.statement).toContain("blocked — an interrupted archive or unarchive has to be recovered first");
+    expect(line.statement).not.toContain("waiting on");
     await p.destroy();
   });
 
@@ -1441,12 +1449,15 @@ describe("the human view", () => {
     const run = await runLoam(p.workDir, "status", "FEAT-1");
 
     expect(run.code).toBe(0);
-    expect(run.stdout).toContain("loam status FEAT-1 — draft");
+    // The stage in words with the machine value on its own row: a bare
+    // `draft` led this line, and a bare `ready` read as "ready to ship".
+    expect(run.stdout).toMatch(/^loam status FEAT-1\b.*: the docs need fixing — \d+ finding\(s\) stop it\r?$/m);
+    expect(run.stdout).toMatch(/^  stage +draft /m);
     expect(run.stdout).toContain("artifacts");
     expect(run.stdout).toContain(`${FEAT_DIR}/intent.md`);
     // An artifact that is `done` because none is owed says so — `done` beside a
     // path that does not exist is the one row a reader misreads.
-    expect(run.stdout).toContain("(not written — none owed)");
+    expect(run.stdout).toMatch(/not owed .*\(not written\)/);
     expect(run.stdout).toContain("findings");
     expect(run.stdout).toContain("✗ delta.invalid:");
     // The command sits on its own line under the statement, doctor's layout.

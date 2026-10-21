@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { coherentFixture, makeProject, makeTmpDir, runLoam, treeHashes } from "./helpers/harness.js";
+import { FEATURE_SPEC, coherentFixture, makeProject, makeTmpDir, runLoam, treeHashes } from "./helpers/harness.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -213,6 +213,101 @@ describe("status and doctor agree about the repo they are standing in", () => {
     cleanups.push(() => svc.destroy());
     const svcReport = JSON.parse((await runLoam(svc.workDir, "doctor", "--json")).stdout);
     expect(svcReport.findings.map((f: { code: string }) => f.code)).toContain("doctor.service-unbound");
+  });
+});
+
+/**
+ * A binding to a service a feature in flight INTRODUCES — the feature carries
+ * `specs/<svc>/` and the living docs have no `services/<svc>/` until it archives.
+ *
+ * `status` learned to lead with that feature's `next.feature` here, while
+ * `doctor`, on the same repo at the same moment, still filed
+ * `doctor.service-unknown` with "Run `loam adopt --service <svc>` to onboard
+ * it": the service's first developer was sent to describe code the feature has
+ * not built yet, and to write the `services/<svc>/` that the feature's own
+ * archive is meant to write. The code and the severity stay; the binding line,
+ * the message and the fix name the feature. The last case is the
+ * counterfactual — a binding nothing introduces is still told to adopt.
+ */
+describe("doctor on a service a feature in flight introduces", () => {
+  const SVC = "payment-split-service";
+
+  interface Finding { code: string; severity: string; message: string; fix: string }
+  function unknownFindings(report: { findings: Finding[] }): Finding[] {
+    return report.findings.filter((f) => f.code === "doctor.service-unknown");
+  }
+
+  it("names the introducing feature instead of sending the developer to adopt", async () => {
+    // coherentFixture: FEAT-1 introduces payment-split-service; services/ holds payment-service.
+    const project = await makeProject(coherentFixture(), { service: SVC });
+    cleanups.push(() => project.destroy());
+
+    const res = await runLoam(project.workDir, "doctor", "--json");
+    expect(res.code).toBe(0);
+    const report = JSON.parse(res.stdout);
+    expect(report.healthy).toBe(true);
+    // `status` is still what loam could match under services/ — nothing — and
+    // the additive key says why that is not an adoption gap.
+    expect(report.currentService).toEqual({ configured: SVC, status: "unknown", introducedBy: ["FEAT-1"] });
+    const findings = unknownFindings(report);
+    expect(findings).toHaveLength(1);
+    const [finding] = findings;
+    expect(finding!.severity).toBe("warning");
+    expect(finding!.message).toBe(
+      `Configured service '${SVC}' is not under services/ yet: FEAT-1 introduces it, `
+      + "and it is not in the living docs until FEAT-1 archives.",
+    );
+    expect(finding!.fix).toContain("Nothing to adopt");
+    expect(finding!.fix).toContain("Run `loam status FEAT-1`");
+    expect(finding!.fix).not.toContain("loam adopt");
+
+    const human = await runLoam(project.workDir, "doctor");
+    expect(human.out).toContain(`binding       ${SVC} · introduced by FEAT-1 (in flight)`);
+    expect(human.out).not.toContain("loam adopt");
+
+    // and `status`, on the same repo, names the same feature first
+    const status = JSON.parse((await runLoam(project.workDir, "status", "--json")).stdout);
+    expect(status.next[0]).toMatchObject({ code: "next.feature", command: "loam status FEAT-1 --json" });
+  });
+
+  it("names every introducer when two features in flight introduce the service", async () => {
+    const project = await makeProject(
+      {
+        ...coherentFixture(),
+        "features/FEAT-2-split-again/intent.md":
+          "---\nfeature: FEAT-2\nstatus: proposed\n---\n\n# Split again\n\nA rival take on splitting.\n",
+        "features/FEAT-2-split-again/specs/payment-split-service/spec.md": FEATURE_SPEC,
+      },
+      { service: SVC },
+    );
+    cleanups.push(() => project.destroy());
+
+    const report = JSON.parse((await runLoam(project.workDir, "doctor", "--json")).stdout);
+    expect(report.currentService.introducedBy).toEqual(["FEAT-1", "FEAT-2"]);
+    const [finding] = unknownFindings(report);
+    expect(finding!.message).toContain(
+      "FEAT-1 introduces it (so does FEAT-2), and it is not in the living docs until one of them archives.",
+    );
+    expect(finding!.fix).toContain(`until one of them archives, the specs/${SVC}/ of FEAT-1, FEAT-2 are`);
+    expect(finding!.fix).toContain("Run `loam status FEAT-1`, and likewise for FEAT-2, to see what this repository owes each.");
+    expect(finding!.fix).not.toContain("loam adopt");
+    expect((await runLoam(project.workDir, "doctor")).out).toContain(
+      `binding       ${SVC} · introduced by FEAT-1, FEAT-2 (in flight)`,
+    );
+  });
+
+  it("still sends a bound service nothing introduces to adopt", async () => {
+    const project = await makeProject(coherentFixture(), { service: "billing-service" });
+    cleanups.push(() => project.destroy());
+
+    const report = JSON.parse((await runLoam(project.workDir, "doctor", "--json")).stdout);
+    // no `introducedBy` key at all — absent, not empty, as on `show`'s living service
+    expect(report.currentService).toEqual({ configured: "billing-service", status: "unknown" });
+    const findings = unknownFindings(report);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.message).toBe("Configured service 'billing-service' is not present under services/.");
+    expect(findings[0]!.fix).toContain("Run `loam adopt --service billing-service` to onboard it");
+    expect((await runLoam(project.workDir, "doctor")).out).toContain("binding       billing-service · unknown");
   });
 });
 

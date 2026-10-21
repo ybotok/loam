@@ -175,6 +175,213 @@ states the rules.
   renames now recovers a relinked document from where the rename took it instead of refusing it as
   edited.
 
+### Changed — `loam status` says where a feature stands in words, with the claims counted
+
+No code was added or renamed, and no exit code changed. The `stage` values (`missing`, `blocked`,
+`draft`, `ready`, `done`) are untouched; what changed is that the human view no longer prints them
+bare. `ready` means the documents are written and pass the shared checks — nothing about code or
+evidence — and `loam status FEAT-101 — ready` over a feature nobody had built or verified read as
+"ready to ship"; `done (archived)` over a feature that was never verified read as "shipped and
+checked", when archive checks documents and nothing else.
+
+- **The header is a sentence:** `loam status FEAT-101 (Payment splitting): docs ready — nothing
+  verified yet (0 of 19 claim(s) answered)`; for an archived feature `archived — never verified (no
+  verification record)`, `archived — verified (…)` or `archived — attested, not verified: …`. The
+  machine value moves to its own `stage` row, which names `loam explain <stage>`.
+- **The artifact table says what each row means:** `written`, `not owed`, `missing`, `has errors`,
+  `blocked`; the verification row `none yet`, `open`, `attested`, `verified`, `stale`,
+  `unreadable`. The `verification` row with no record says how many claims there are to answer.
+  `coherence` ends with `N stop it (validate --feature or archive refuses on each)` — every error
+  and every gating warning — instead of `N gate archive`, which counted only findings carrying
+  `gates` and so read 0 over a feature archive refuses for an unknown service. The `checks.gating`
+  payload value is unchanged.
+- **The fleet form says less than the feature form, on purpose:** it grades nothing, so a verified
+  feature reads "its own status says whether archive will take it", not "ready to archive"; and a
+  feature behind an interrupted commit reads as blocked by the commit even when it also waits on
+  another feature.
+- **`next[]` statements (prose, not codes):** `next.archive` no longer says a feature "ships once
+  everything above is done" — it says archive checks only the documents, not the code and not the
+  verification record; its clean form says "archive it" instead of "ship it". `next.archived` no
+  longer says the feature "shipped": it says what archiving did and whether it was verified. The
+  fleet form's `next.feature` says the stage in the same words (`FEAT-101 (Payment splitting): docs
+  ready — nothing verified yet (no verification record).`) instead of `FEAT-101 is at 'ready'.`, and
+  `next.elided` counts what it left out by code.
+- **Additive payload keys:** `feature.title` and `checklist` (`{claims}` — how many claims the
+  feature's checklist asks now; `null` for an archived feature) on `loam status <FEAT> --json`;
+  `features[].title` and `serviceSteps[]` on `loam status --json`; `title` on
+  `loam show <FEAT> --json` and on `loam list --json`'s `features[]`. The title is intent.md's
+  `title:`, else its first `# ` heading without the feature id, else `null`.
+- **Feature rows name the change:** `loam status`, `loam list` and `loam show <FEAT>` print the
+  intent title beside the id. An intent.md loam cannot read is no title, never a refusal.
+- **Help text:** `loam verify` is described as "Check a feature against its own promises: derive the
+  claims, record the answers with evidence" and `loam archive` as "Merge a finished feature's deltas
+  into the living specs + model, then archive it (checks the documents, not the code)" — neither
+  says "shipped" any more. The `validate --all` scorecard's features row glosses `ready` and `done`.
+
+### Changed — `loam status` lists the features in flight before any service's adoption work
+
+No code, flag or exit code changed; the ORDER of the fleet form's `next[]` did, and one payload
+key was added. The per-service rungs (`next.adopt`, `next.complete-service`, `next.revouch`) used
+to lead the list, so on a fleet mid-adoption the cap of ten filled with them and elided the one
+feature in flight as "more step(s) of the same kinds".
+
+- **Order:** `next.recover-commit` (outside the cap), then `next.adopt-bound` or the first-hour
+  ladder, then every feature (`next.feature`, `next.archive`), then the per-service rungs — the
+  bound service's own still first among them — then `next.elided` and `next.fleet-gate`. An agent
+  reading `next[0]` in a docs repo with a feature in flight now gets that feature, not an adopt.
+- **`serviceSteps[]`** (additive, `loam status --json`): every per-service rung, uncapped, grouped
+  by code — `{code, services, command}`, `command` being the first service's.
+- **The human view folds each per-service code into one counted line** under the features —
+  `next.adopt ×12: 12 services with no spec.md — …: a, b, c, …, +6 more.` — and only says
+  something was left out when features were.
+
+### Changed — a repository bound to a service its feature introduces is not told to adopt it
+
+No code was added. In a service repository whose `loam.json` names a service that exists only in
+an active feature's `specs/<service>/`, `loam status` led with `next.adopt-bound` →
+`loam adopt --service <id>` — adopting code that does not exist yet. It now leads with that
+feature's `next.feature` (`loam status <FEAT> --json`) — one per feature that introduces it —
+saying the service joins the living docs when one of them archives, and does not list those
+features again. A bound service no feature
+introduces gets `next.adopt-bound` as before.
+
+### Changed — `loam doctor` agrees: a service a feature introduces is not something to adopt
+
+No code was added and no exit code changed. In the same state — a service repository whose
+`loam.json` binds a service that exists only in an active feature's `specs/<service>/` — `loam
+doctor` still filed `doctor.service-unknown` with "Run `loam adopt --service <id>` to onboard it".
+The finding keeps its code and its `warning` severity (the binding still names nothing under
+`services/`, and `healthy` does not move), and now says which feature introduces the service and
+that it is not in the living docs until that feature archives. Its `fix` names `loam status <FEAT>`
+and no longer tells anyone to adopt.
+
+- **Human view:** the `binding` row reads `payment-split-service · introduced by FEAT-101 (in
+  flight)` instead of `· unknown`, listing every introducer when more than one feature introduces
+  the service.
+- **`--json` (additive):** `currentService.introducedBy` — the introducing features' ids, ordered
+  by id — present only when an active feature introduces the configured service.
+  `currentService.status` stays `unknown`.
+- `loam explain doctor.service-unknown` and the `loam-codes` page of `loam instructions` describe
+  both states and both fixes.
+- A bound service no feature introduces gets the adopt advice, byte for byte, as before.
+
+### Changed — `loam validate` in that repository validates the feature that introduces its service
+
+No code was added. In the same state, a bare `loam validate` refused with `✗ No service directory
+at services/payment-split-service. Did you mean: payment-service?  (service.unknown)` and exited 1.
+It treated the newest service in the fleet as a typo of an older one, so that repository's CI could
+not pass until the feature archived. A service a feature introduces has no `services/<id>/` yet.
+Its documents are the feature's `specs/<id>/`, so the run now validates each introducing feature
+instead. That is the same grade `loam validate --feature <FEAT>` gives, target for target, and the
+exit code follows it: `0` when the feature is valid, `1` when it has errors. `--strict` and
+`--errors-only` work as before.
+
+- **Human view:** two lines above the report say what was validated and why —
+  `payment-split-service   introduced by FEAT-101 (in flight) — not in the living docs until it
+  archives` (the header `loam show payment-split-service` prints), then `validating FEAT-101
+  instead: its specs/payment-split-service/ are this service's documents until then`.
+- **`--json` (additive):** `boundService` — `{ id, living: false, introducedBy }`, the same keys
+  `show` and `steps` use for this state — present only on such a run. `targets` then holds the
+  features and no service, and the `summary` counts no services.
+- **Naming the service** with `--service <id>` or the positional still targets a service, so it is
+  still `service.unknown` at error and exits 1. The message now names the feature in place of a
+  near-miss: ``No service directory at services/payment-split-service: FEAT-101 introduces it, and
+  it is not in the living docs until FEAT-101 archives. Until then its documents are FEAT-101's
+  specs/payment-split-service/ — run `loam validate --feature FEAT-101` to validate them.``
+- `loam explain service.unknown`, its row in the `loam-check` fix table (the text `--json`'s
+  `fixes` carries) and the `loam-codes` page describe both states.
+- A name no active feature introduces keeps today's `service.unknown` message and near-miss,
+  unchanged.
+
+### Added — `loam explain` defines the words loam prints, and a finding page says which command reports it
+
+No code was added. `loam explain` knew six concept terms and answered `unknown-target` for the
+words a person meets first in loam's own output.
+
+- **Seventeen new concept terms** (23 in all), with aliases: the stages — `stage` (`missing`,
+  `blocked`, `draft`), `ready`, `done`, each saying what it does NOT mean (`ready` is documents
+  only; an archived feature is `done` whether or not anybody verified it); `claim` and each claim
+  kind — `service.exists`, `api.exposes`, `event.declares`, `c4.calls`, `scenario.tested`; the
+  verdicts — `verified` (`unverified`), beside the existing `attested`; the `loam tasks` words —
+  `unit`, `frontier`, `describe`, `generate`, `implement`; `coherence` (`gates`, `gating`); and the
+  maturity ladder — `maturity` (`empty`, `partial`, `documented`, `sourced`). An alias names the entry
+  that answered it. **Exit code:** 0 where it was 1 (`unknown-target`) for each new term and alias.
+- **The bare `loam explain` listing groups the terms** under four headings (feature stages, the
+  done-check, the work packet, the documents). `--json` `terms[]` keeps its row shape; it has 23
+  rows instead of 6, in the listing's grouped order, so the six existing terms are at new positions.
+  `loam explain --help` and the MCP `explain` tool's `subject` description list the new terms.
+- **A finding page's header says which command reports the code** — "when `loam validate --feature
+  <FEAT-id>` reports it — warn" — instead of `[--feature <FEAT-id>] (warn)`, which read as an
+  optional flag. `--json` `entries[].scope` is unchanged. The `next.*` entries say what the steps
+  now say: archive checks documents only, and the fleet list leads with the features.
+
+### Changed — `loam show`, `loam context` and `loam steps` answer for a service a feature introduces
+
+No code was added. A service an active feature introduces (`features/<FEAT>/specs/<svc>/` exists,
+`services/<svc>/` does not yet) was refused by all three as unknown, while `loam tasks` listed work
+for it on the same tree.
+
+- **`loam show <svc>`** prints the introduced-service view: which feature introduces it, its delta
+  documents, requirement counts, operations, and the `loam show`/`delta`/`tasks` commands to run.
+  `--json` is `{type: "service", id, living: false, introducedBy[], introductions[]}`, each
+  introduction carrying the keys of `show <FEAT>`'s `services[]` plus `requirements`, `archSpec` and
+  `next[]`. **Exit code:** 0 where it was 1 (`unknown-target`).
+- **`loam context <svc>`** briefs from the introducing feature's delta, saying the service is not in
+  the living docs yet. `--json` adds `living: false` and `introducedBy[]`, and `path` is the
+  feature's `specs/<svc>/`. `--feature` naming a feature that does not introduce it refuses
+  `unknown-service`. **Exit code:** 0 where it was 1 (`unknown-service`, or `invalid-option` when the
+  feature's `specs/` directory name is not a legal service id). **Code change:** with two
+  introducing features and no `--feature`, the refusal is now `invalid-option` naming both, where it
+  was `unknown-service` — a script that read `unknown-service` as "no such service" sees the new
+  code for this one case. Its "did you mean" hint now includes introduced services.
+- **`loam steps --service <svc>`** (or the bound service) inventories the step phrases of the
+  feature's spec deltas. `--json` adds `living: false`, `introducedBy[]` and `specs[]`. **Exit
+  code:** 0 where it was 1 (`unknown-target`, or `invalid-option` when the feature's `specs/`
+  directory name is not a legal service id).
+- Payloads for living services, and the refusals for a name nothing introduces, are unchanged.
+
+### Changed — `loam tasks` reads as a to-do list, and a service repository sees its own slice
+
+No code or flag was added.
+
+- **The human view** groups units by service and then by requirement (its file printed once), and
+  says each unit as an action — "make scenario '…' pass, then record the run", "generate the test
+  for scenario '…' (loam gherkin <FEAT>)", "expose operation '…'", "call '…' on <svc>" — keeping the
+  unit id on every row. The header says in words what `record` and `stamps` mean, and the frontier
+  line leads with the next unit's action. `--next` leads with the action and warns when this
+  repository cannot see whether the scenario's test was generated; the Given/When/Then lines are
+  unchanged.
+- **`--service` lists every unit**; the whole-feature view still caps each service at 12, and now
+  points at `loam tasks <FEAT> --service <id>` instead of `--json`.
+- **Behaviour change:** in a repository whose `loam.json` names a `service`, `loam tasks <FEAT>`
+  without `--service` narrows to that service when the feature touches it. Under `--json`, `service`
+  is the bound id; `units`, `counts`, `frontier`/`frontierElided`, `contracts` and `size.calls`
+  cover that service only; and `waitingOn` appears. The generated-suite stamps that tell `generate`
+  from `implement` are read from this repository alone, so other services' steps in a whole-feature
+  view were never about their repositories. Pass `--service <id>` for another service; a docs repo,
+  and a feature that does not touch the bound service, get the whole feature as before.
+
+### Changed — `loam validate`'s human report marks every error, names files relatively, and leads with what matters
+
+No code, severity, subject, payload key or exit code changed; `--strict` and the summary counts are
+the same.
+
+- **`service.no-model` and `service.unknown` print with ✗** — they printed with no marker.
+- **Messages name files by repo-relative `/` paths** instead of the absolute path of the machine
+  that ran the check: `service.unknown`, no-model, no-spec, no-openapi, no-asyncapi, an unreadable artifact
+  (`service.unreadable` / `feature.unreadable`) and `health.dependency-unmodelled`. The same
+  `message` strings in `--json` change with them. A path outside the docs repo keeps its absolute
+  spelling.
+- **`sources.unverifiable-from-here` prints ○, not ✓** — that check did not run here. It stays
+  severity `ok`.
+- **On `--all`, a warning or error more than three services raise once each prints once**,
+  followed by one line counting them (`same code ×N on M services: …`, capped, `+K more`). A
+  service raising the code more than once, and a finding carrying details, still print in full;
+  every finding is still in `--json`.
+- **`--all` opens with the counts and an "errors by code" index, then the feature blocks**, then the
+  landscape and per-service findings; an interrupted-commit finding still leads and the footer still
+  closes the report.
+
 ## [0.2.0-alpha.9] - 2026-10-20
 
 The first publish since `0.2.0-alpha.7`. `0.2.0-alpha.8` was tagged but never reached npm (its

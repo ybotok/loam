@@ -24,6 +24,7 @@ import { type Requirement } from "../../../core/document/spec.js";
 import { type CoverageScope } from "../../../core/c4/arch.js";
 import { hasDeployment, type DeploymentModel } from "../../../core/c4/parsed/deployment.js";
 import { type DocsDir } from "../../../core/kernel/ids/dirs.js";
+import { repoPath } from "../../../core/envelope/json.js";
 import { readHealth } from "../../../core/vocabulary/health.js";
 import { documentConflictFinding } from "../../../core/conflict-markers.js";
 import { FleetContext } from "../../../core/fleet-context.js";
@@ -52,11 +53,12 @@ export interface ServiceSpecs {
 }
 
 export async function readServiceSpecs(input: {
+  docsDir: DocsDir;
   service: PathableService;
   paths: ServicePaths;
   fleet: FleetContext;
 }): Promise<ServiceSpecs> {
-  const { service, paths, fleet } = input;
+  const { docsDir, service, paths, fleet } = input;
   const findings: Finding[] = [];
 
   // Requirement coverage.
@@ -106,7 +108,7 @@ export async function readServiceSpecs(input: {
     findings.push({
       severity: "warn",
       code: "service.no-spec",
-      message: `No living spec at ${paths.spec} — requirement coverage and API governance are unchecked`,
+      message: `No living spec at ${repoPath(docsDir, paths.spec)} — requirement coverage and API governance are unchecked`,
     });
   }
 
@@ -343,7 +345,7 @@ export async function archAxisFindings(axis: ArchAxis): Promise<Finding[]> {
   }
   // The other direction health.yaml is read in: its dependencies must be the
   // model's dependencies. `deps` is already muted on an unreadable file above.
-  findings.push(...healthDependencyFindings({ service, dependencies: deps, elements, modelPath: paths.model }));
+  findings.push(...healthDependencyFindings({ service, dependencies: deps, elements, modelPath: repoPath(docsDir, paths.model) }));
 
   return findings;
 }

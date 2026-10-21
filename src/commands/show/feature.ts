@@ -22,6 +22,7 @@ import { type Elem } from "../../core/c4/likec4.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { type FeatureEntry } from "../../core/repo/entries.js";
 import { featurePaths, featureSpecPaths } from "../../core/repo/paths.js";
+import { featureTitle } from "../../core/repo/repo.js";
 import { parseRequirements } from "../../core/document/parse.js";
 import { featureCapabilityDeltas } from "../../core/capabilities/delta/tree.js";
 import { capabilityDeltaSummaries } from "../../core/capabilities/delta/summary.js";
@@ -32,7 +33,7 @@ import { executableNext } from "../../core/status/actions/execution.js";
 import { findingJson } from "../../core/vocabulary/report.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import { plural } from "../policy/format.js";
-import { mark } from "./marks.js";
+import { kindCounts, mark } from "./marks.js";
 import { errorText } from "../../core/c4/likec4.js";
 
 const REVIEW_INTENT_LIMIT = 1_200;
@@ -70,9 +71,7 @@ export async function showFeature(
     const reqs = existsSync(specPath) ? parseRequirements(await readFile(specPath, "utf8")) : [];
     services.push({
       id: svc,
-      added: reqs.filter((r) => r.kind === "ADDED").length,
-      modified: reqs.filter((r) => r.kind === "MODIFIED").length,
-      removed: reqs.filter((r) => r.kind === "REMOVED").length,
+      ...kindCounts(reqs),
       operations: [...new Set(reqs.flatMap((r) => r.operations))],
       api: await apiChanges(servicePaths.openapi),
       events: await eventChanges(servicePaths.asyncapi),
@@ -87,6 +86,9 @@ export async function showFeature(
     async (path) => parseRequirements(await readFile(path, "utf8")),
   );
 
+  // intent.md's title, so the header names the change and not only its key.
+  const title = await featureTitle(feature);
+
   if (json) {
     const status = await featureStatus(docsDir, feature, { context });
     const issues = status.checks.issues.map((finding) =>
@@ -100,6 +102,8 @@ export async function showFeature(
       command: "show",
       type: "feature",
       id: feature.id,
+      // Additive (core/envelope/json.ts).
+      title,
       dirName: feature.dirName,
       path: repoPath(docsDir, feature.dir),
       archived: feature.archived,
@@ -159,7 +163,7 @@ export async function showFeature(
   }
 
   const state = feature.archived ? "archived" : "active";
-  console.log(`${feature.id}   ${repoPath(docsDir, feature.dir)}   ${state}\n`);
+  console.log(`${feature.id}${title === null ? "" : ` · ${title}`}   ${repoPath(docsDir, feature.dir)}   ${state}\n`);
 
   console.log("  artifacts");
   console.log(`    ${mark(feature.has.intent)} intent.md`);

@@ -1283,7 +1283,11 @@ A missing `openapi.yaml` is graded on what already points into it, under one cod
 And `loam validate --service <id>` for a directory that does not exist at all is an **error**
 (`service.unknown`) that suggests close ids — never `loam adopt`, which would steer an agent into
 adopting the typo. Only a legal id earns that grading: a name that is neither an existing directory
-nor a legal service id is refused as `invalid-option` before any path is built from it. A
+nor a legal service id is refused as `invalid-option` before any path is built from it. A service
+an active feature introduces is not a typo: its only documents are that feature's `specs/<svc>/`
+until it archives, so the same error names the feature and `loam validate --feature <FEAT>` instead
+of a near-miss, and a bare `loam validate` in a repository bound to that service validates the
+introducing features in its place (`--json` says so in `boundService`). A
 `features/<FEAT>/specs/<svc>/` directory addressing a service that neither exists as
 `services/<svc>/` nor is introduced by that feature's own tagged `delta.likec4` is the same class of
 mistake and gets its own **error**, `delta.service-unknown`, naming close ids: archiving would
@@ -3371,7 +3375,11 @@ left as a shape to fill in.
 
 **`--service <id>` is a pure lens.** It narrows the units to one service's without binding a
 repository, and adds `waitingOn[]`: the open units in OTHER services that this service's units
-depend on. A team learns what it is blocked by from the same run that tells it what to do.
+depend on. A team learns what it is blocked by from the same run that tells it what to do. In a
+service repository (`loam.json` names a `service`) the lens defaults to that service when the
+feature touches it, because the generated-suite stamps that tell `generate` from `implement` are
+read from that repository alone; the docs repo, and a feature that does not touch the bound
+service, get the whole feature.
 
 **What the payload says about what it could not see.** `stamps` is `read` or `unknown`, and
 `unknown` means the bound service repo's generated suite could not be read — could-not-look, never
@@ -3491,8 +3499,15 @@ repairing anything:
   `needs` and (for authored files) the grading command in `after`. It is a **projection over the gates, never
   a second opinion**: `stage` is taken from the union of what `validate --feature` errors on and
   what `archive` refuses to merge (severity *or* `gates`), so status may be more pessimistic than
-  either and is never greener than both — an invariant with a test behind it. The fleet form is
-  capped at ten substantive steps plus a `next.elided` notice saying how many were left out, and
+  either and is never greener than both — an invariant with a test behind it. The stage values are
+  for branching, not progress words: `ready` means the documents are written and clean, nothing
+  about code or evidence, and an archived feature is `done` whatever its record says — so the human
+  view prints the stage as a sentence with the claims counted, and the payload carries
+  `feature.title` (intent.md's title) and `checklist.claims` (what the checklist asks now; null once
+  archived). The fleet form lists every feature in flight before any service's adoption rung — and
+  carries every rung uncapped in `serviceSteps[]` (`{code, services, command}` per code), which the
+  human view folds into one counted line per code. It is
+  capped at ten substantive steps plus a `next.elided` notice saying how many of which codes were left out, and
   whenever anything is outstanding its **last** entry is `next.fleet-gate` →
   `loam validate --all --json` (a repository with work in it must never get a list that omits the
   command CI runs; a fleet whose services exist and owe nothing says so instead, with

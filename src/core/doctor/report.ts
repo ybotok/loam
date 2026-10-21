@@ -52,6 +52,16 @@ export interface DoctorReport {
   currentService: {
     configured: string | null;
     status: "unbound" | "matched" | "unknown";
+    /**
+     * The active features whose `specs/` introduce the configured service
+     * (`introducingFeatures`), ordered by id — present only when `status` is
+     * `unknown` and at least one does. `status` stays `unknown` then, because
+     * it says what loam could match under `services/`, and that is still
+     * nothing; this key says why that is not a gap anybody should adopt into.
+     * Additive: absent everywhere it would be empty, as `show`'s is on a
+     * living service.
+     */
+    introducedBy?: string[];
   };
   /** The agent surface of this repo — see `inspectAgentSurface`. */
   agents: AgentSurface;

@@ -79,9 +79,9 @@ parsed. If a second reader of the same claims appears, that is the seam to move.
 | L2 | `agent/` `document/` `staging/` | Parse one document kind into a record; the write path |
 | L3 | `repo/` | The read model over the docs tree, and the fan-in hub of the whole layer stack |
 | L4 | `c4/` `gherkin/` `glossary/` `openapi/` `openspec/` `provenance/` `workspace/` | Read and write one artifact family. Not "cheap": `c4/likec4.ts` is the most expensive module in the repo and sits here |
-| L5 | `asyncapi/` `brief/` `capabilities/` `deployment/` `doctor/` `links/` | One artifact family that needs another one first |
+| L5 | `asyncapi/` `brief/` `capabilities/` `deployment/` `links/` | One artifact family that needs another one first |
 | L6 | `explain/` `projection/` `usecases/` | One flow, projected onto the model |
-| L7 | `consumers/` `delta/` `dependencies/` `explore/` `mcp/` `pack/` `verify/` | One feature, and the whole-fleet reads |
+| L7 | `consumers/` `delta/` `dependencies/` `doctor/` `explore/` `mcp/` `pack/` `verify/` | One feature, and the whole-fleet reads |
 | L8 | `coherence/` `diff/` | Cross-artifact rules producing `Issue[]` / `Finding[]` |
 | L9 | `status/` | Aggregate answers for a feature or a fleet |
 | L10 | `gate/` | The deploy-time query over everything above |
@@ -130,11 +130,11 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/brief/` | the `loam adopt` brief: the deterministic half of adoption — which files, in which grammar, bound to which existing elements, and what will be checked; `map/` beneath is the write the fleet map is still owed | c4, kernel, obligations, repo, vocabulary |
 | `core/capabilities/` | the declared-capability vocabulary and the fleet rollup joined by `Capability:` | c4, document, kernel, repo |
 | `core/deployment/` | the fleet TOPOLOGY axis: which deployment objects carry an obligation and who owns each, the `deployment/` document a FEATURE brings, and the slice of it one service runs in | c4, repo |
-| `core/doctor/` | the repository's own health: conflict markers, interrupted writes, a stale AGENTS.md | agent, c4, conflict-markers, docs, envelope, gherkin, kernel, repo, staging |
+| `core/doctor/` | the repository's own health: conflict markers, interrupted writes, a stale AGENTS.md | agent, c4, conflict-markers, docs, envelope, gherkin, kernel, projection, repo, staging |
 | `core/delta/` | does the diff apply | capabilities, document, repo, usecases |
 | `core/explain/` | `loam explain`'s lookup — a finding code, a refusal code or a concept term in, one discriminated explanation out | agent, brief |
 | `core/links/` | the corpus of authored documents loam reads links out of, and whether each link resolves | envelope, glossary, kernel, repo |
-| `core/projection/` | one feature projected onto one service — the API, event and C4 slices `loam delta` and `loam context` share | asyncapi, c4, kernel, openapi, repo |
+| `core/projection/` | one feature projected onto one service — the API, event and C4 slices `loam delta` and `loam context` share, and which feature in flight introduces a service not yet living (`status`, `show`, `context`, `steps`, `doctor`) | asyncapi, c4, kernel, openapi, repo |
 | `core/usecases/` | the fleet's declared use cases and the join from a flow's steps onto the model, with `delta/` beneath for the flows one FEATURE brings, `service/` beneath for the flows one SERVICE keeps beside its model, `grade/` beneath for the grades a flow earns (validate's, run over a feature's own flows before the archive too), and `suites/` beneath for the journeys grouped by `#suite-` tag and the participant union a test stand is provisioned from (the one subpackage its parent imports, so it imports nothing of the parent's but types) | c4, capabilities, kernel, repo, vocabulary |
 | `core/consumers/` | the one consumer index — who in the living fleet still calls an operation or consumes a message (edges, requirements, use-case hops), over the fleet read in `loam diff`'s `ServiceState` shape | c4, document, envelope, fleet-context, kernel, openapi, repo, usecases |
 | `core/coherence/` | do the three axes agree; `retired/` beneath reads what archived features took out of the living contracts | asyncapi, c4, capabilities, conflict-markers, consumers, delta, deployment, document, envelope, glossary, kernel, openapi, repo, staging, usecases, vocabulary |
@@ -144,7 +144,7 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/mcp/` | the MCP facade's pure half: stdio framing, JSON-RPC routing and resources, the read-only plus opt-in authoring tool tables, output schema and argv boundary | agent, envelope, explain, kernel |
 | `core/pack/` | the context pack — one service's whole docs slice as one deterministic briefing | c4, capabilities, document, envelope, fleet-context, kernel, permissions, projection, provenance, repo, usecases, vocabulary |
 | `core/verify/` | the done-check: questions, answers, the record | asyncapi, c4, conflict-markers, document, envelope, fleet-context, gherkin, kernel, openapi, repo, staging, vocabulary |
-| `core/status/` | aggregate answers for a feature (`feature/`) or a fleet (`fleet/`) | coherence, dependencies, document, envelope, fleet-context, kernel, provenance, repo, scaffold, staging, usecases, verify, vocabulary |
+| `core/status/` | aggregate answers for a feature (`feature/`) or a fleet (`fleet/`) | coherence, dependencies, document, envelope, fleet-context, kernel, projection, provenance, repo, scaffold, staging, usecases, verify, vocabulary |
 | `core/gate/` | the deploy-time query — `loam gate`'s partner scan and its four checks over recorded evidence | c4, kernel, provenance, repo, staging, status, vocabulary |
 
 Four modules stay loose in `core/`: `conflict-markers.ts`, `docs.ts`, `fleet-context.ts` and
@@ -376,9 +376,9 @@ the workspace layout differs, and that part is already isolated.
     nothing else — no `package.json`, no workspace, no separate publish. That layout tracks how many
     artifacts you publish; you publish one `bin`, and `scripts/release-check.mjs` hard-asserts it.
     It is also the one option here that is not cheaply reversible.
-23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 73 of the 167
+23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 79 of the 174
     modules in `commands/` — the entry module of every command among them; `core/envelope/config.ts`
-    and `core/repo/repo.ts` by 3 and 31 of them. Slices would duplicate the hubs or produce a
+    and `core/repo/repo.ts` by 3 and 34 of them. Slices would duplicate the hubs or produce a
     `shared/` folder — which is what `src/core/` already is.
 24. **Do not add a dependency to express structure.** No `madge`, no `dependency-cruiser`, no
     boundaries plugin. `oxlint` already ships the one rule that matters.

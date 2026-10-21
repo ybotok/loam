@@ -40,7 +40,9 @@ import { printScorecard } from "./fleet/scorecard/print.js";
 import { validateFeature } from "./feature.js";
 import { validateService } from "./service/service.js";
 import { scopedLandscapeFindings } from "./scope.js";
-import { ambiguousTarget, capDetails, guarded, renderText, summary, unverifiableSubjects } from "./report.js";
+import { introducedBinding, introducedJson, introducedLead, type IntroducedBinding } from "./checks/introduced.js";
+import { ambiguousTarget, capDetails, guarded, summary, unverifiableSubjects } from "./report.js";
+import { renderText } from "./render/text.js";
 
 interface ValidateOptions {
   service?: string;
@@ -133,7 +135,7 @@ export function registerValidate(program: Command): void {
        * with no details, and the parser output was reported nowhere.
        */
       const serviceTarget = (id: RawServiceId, land?: LoadedDoc | null, landscapeReported = false): Promise<TargetReport> =>
-        guarded({ kind: "service", id }, () =>
+        guarded({ kind: "service", id }, docsDir, () =>
           validateService({
             docsDir, service: id, repoDir: repoOf(id), loamOwned, gherkinDir: config.gherkinDir, contracts: config.contracts, fleet,
             ...(land === undefined ? {} : { preloaded: land }),
@@ -142,13 +144,15 @@ export function registerValidate(program: Command): void {
         );
       /** One feature target; `land` as above, and left undefined it means "load it if you need it". */
       const featureTarget = (feature: FeatureEntry, land?: LoadedDoc | null): Promise<TargetReport> =>
-        guarded({ kind: "feature", id: feature.id }, () => validateFeature(docsDir, feature, land, fleet));
+        guarded({ kind: "feature", id: feature.id }, docsDir, () => validateFeature(docsDir, feature, land, fleet));
 
       const targets: TargetReport[] = [];
       /** What the positional argument turned out to name, for the JSON payload. */
       let resolvedKind: "service" | "feature" | undefined;
       /** The `--base` narrowing, once it is known. Null on every unscoped run — including every run without --base. */
       let scope: ValidateScope | null = null;
+      /** The features a bare run validated in place of a bound service they introduce. Null on every other run. */
+      let introduced: IntroducedBinding | null = null;
 
       try {
         if (opts.all) {
@@ -248,13 +252,14 @@ export function registerValidate(program: Command): void {
           }
         } else {
           const service = opts.service ?? config.service;
-          if (!service) {
-            fail(json, "invalid-option", NO_SERVICE_MESSAGE);
-            return;
-          }
+          if (!service) return fail(json, "invalid-option", NO_SERVICE_MESSAGE);
           const resolved = await resolveServiceTarget(docsDir, service, "--service", fleet);
           if (!resolved.ok) return fail(json, "invalid-option", resolved.problem);
-          targets.push(await serviceTarget(resolved.id));
+          // A bound service a feature in flight introduces has no services/ directory yet, so its documents are
+          // validated where they are — the binding's reading only, since `--service` forces a service target.
+          introduced = opts.service === undefined ? await introducedBinding(docsDir, resolved, fleet) : null;
+          if (introduced === null) targets.push(await serviceTarget(resolved.id));
+          else targets.push(...(await inOrder(introduced.features, (feat) => featureTarget(feat))));
         }
       } catch (err) {
         // The docs repo went away between the gate above and the enumeration.
@@ -283,9 +288,14 @@ export function registerValidate(program: Command): void {
       // A journal in the repo outranks everything graded above: the docs may
       // be half-merged, and in CI a green over them merges. Led, not appended
       // — it is the reason nothing below can be trusted — and attached to the
-      // first target because a finding lives in one.
+      // first target because a finding lives in one. `lead` keeps it leading
+      // in the fleet report too, which orders targets by kind rather than by
+      // position (render/text.ts) and would otherwise print it wherever the
+      // first target landed.
       const interrupted = await interruptedCommitFinding(docsDir);
-      if (interrupted !== null && targets.length > 0) targets[0]!.findings.unshift(interrupted);
+      if (interrupted !== null && targets.length > 0) {
+        targets[0]!.findings.unshift({ ...interrupted, text: { ...interrupted.text, lead: true } });
+      }
 
       // The fleet scorecard, --all only: recomputed per invocation off the same
       // memoized reads this run already made — loam stores no history — and it
@@ -302,16 +312,21 @@ export function registerValidate(program: Command): void {
 
       const valid = reportValid(targets);
       const capped = targets.map(capDetails);
+      // One rollup for both views: the --json summary and the text footer
+      // print this object, never a count of their own.
+      const totals = summary(targets);
       if (json) {
         emitJson({
           command: "validate",
           valid,
-          summary: summary(targets),
+          summary: totals,
           ...(resolvedKind === undefined ? {} : { resolvedKind }),
           // What this run looked at. Only under `--base`, so an unscoped payload
           // is today's document and its ABSENCE says `summary` counts the whole
           // fleet — scopeJson has why a scoped one may not stay silent.
           ...(scope === null ? {} : { scope: scopeJson(scope) }),
+          // Only when a bare run validated the features introducing the bound service: why `targets` holds no service.
+          ...(introduced === null ? {} : { boundService: introducedJson(introduced) }),
           // Emitted in every mode now that it is derived per service: a
           // single-service run knows exactly as much about its own blind spot
           // as `--all` knows about the fleet's.
@@ -359,9 +374,12 @@ export function registerValidate(program: Command): void {
         // all — printed after the findings, the one run that most needs words
         // would read as a green over the whole system.
         if (scope !== null) console.log(scopeLine(scope));
+        // First for the same reason: what follows is a feature's report, not the service's.
+        if (introduced !== null) console.log(`${introducedLead(introduced).join("\n")}\n`);
         renderText(capped, {
           all: opts.all === true,
           errorsOnly: opts.errorsOnly === true,
+          summary: totals,
           unverifiable,
           scorecard,
         });

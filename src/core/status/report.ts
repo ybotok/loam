@@ -54,7 +54,13 @@
  *   `ready`    it is on disk and clean, but its obligation is not discharged —
  *              something outside the documents (code, a test run, a recording)
  *              still has to answer it.
- *   `done`     nothing is owed here.
+ *   `done`     nothing is owed here — and for an ARCHIVED feature, only that:
+ *              archive checks documents, never code or evidence, so whether
+ *              it was verified is `verification`'s answer, not this one.
+ *
+ * These are branching values, not sentences: the human view prints them in
+ * words with the counts beside them (`feature/words.ts`), because a bare
+ * `ready` over a feature with nothing built read as "ready to ship".
  *
  * The two pairs that look alike are the point of the set. `missing` and
  * `blocked` both mean "not written", and they are different instructions: one
@@ -250,6 +256,8 @@ export interface FeatureStatusReport {
   interrupted: InterruptedCommit | null;
   feature: {
     id: string;
+    /** intent.md's title, for a person (`featureTitle`); null when it names none. Additive. */
+    title: string | null;
     dirName: string;
     path: string;
     archived: boolean;
@@ -282,7 +290,10 @@ export interface FeatureStatusReport {
     coherent: boolean;
     errors: number;
     warnings: number;
-    /** How many findings would stop `loam archive` without `--approve`. */
+    /**
+     * Findings carrying `gates: true` — archive's judgement calls, which `--approve` overrides. Not
+     * every refusal: its pre-plan ones (unknown service, bad specs/ name, conflict markers) are errors.
+     */
     gating: number;
     /**
      * Findings, not Issues: the set is wider than coherence now, and `gates` is
@@ -293,6 +304,13 @@ export interface FeatureStatusReport {
     issues: Finding[];
   };
   verification: VerificationState;
+  /**
+   * How many claims the feature's checklist asks NOW, or null for an archived
+   * feature (frozen history: nothing is re-derived). Additive. With no record
+   * every count in `verification` is zero, and "0 of 0" is not what an
+   * unverified feature with nineteen promises is.
+   */
+  checklist: { claims: number } | null;
   /**
    * The declared business flows the services IN VIEW are hops of — blast
    * radius, and the only field here that is a fact about the fleet rather than
@@ -314,6 +332,8 @@ export interface FeatureStatusReport {
 
 export interface FleetFeatureState {
   id: string;
+  /** See {@link FeatureStatusReport.feature}'s `title`. */
+  title: string | null;
   dirName: string;
   path: string;
   stage: ArtifactStatus;
@@ -358,6 +378,14 @@ export interface FleetStatusReport {
   order: string[];
   service: string | null;
   next: NextStep[];
+  /**
+   * Every per-service rung (`next.adopt`, `next.complete-service`,
+   * `next.revouch`), UNCAPPED and grouped by code, services in `next[]` order.
+   * Additive. `next[]` stops at ten, so mid-adoption it cannot say how much
+   * adoption work there is; this can, and the human view folds it into one
+   * counted line under the features.
+   */
+  serviceSteps: Array<{ code: string; services: string[]; command: string }>;
 }
 
 /** Nothing is written down: no living spec at all. Every other absence is partial adoption. */

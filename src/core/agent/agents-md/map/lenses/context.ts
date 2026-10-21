@@ -31,8 +31,15 @@ export const CONTEXT_COMMAND = `- \`loam context <service>\` assembles the docs 
   narrows the in-flight section to that one feature and is echoed back as the
   \`feature\` key, so a narrowed pack says it is one; a known feature that does
   not touch the service still projects, with empty sections and its own
-  services list. Exit 1 with \`ok: true\` means a document behind the pack did
-  not parse — the fleet map, a living contract, a fleet vocabulary, another
+  services list. A service an active feature INTRODUCES (its
+  \`features/<FEAT>/specs/<svc>/\` exists, \`services/<svc>/\` does not yet) is
+  briefed from that feature's delta: the payload carries \`living: false\` and
+  \`introducedBy\`, the living sections are empty, and \`path\` is the feature's
+  \`specs/<svc>/\`. Two features introducing the same service refuse with
+  \`invalid-option\` until \`--feature\` names one. \`loam show <svc>\` and
+  \`loam steps --service <svc>\` answer for such a service the same way, from
+  the delta and marked \`living: false\`. Exit 1 with \`ok: true\` means a
+  document behind the pack did not parse — the fleet map, a living contract, a fleet vocabulary, another
   service's spec during the capability join, or an included feature's document
   (a feature whose delta.likec4 does not parse is still INCLUDED, its errors
   in the payload, because a change nobody can read is in flight, not absent)

@@ -52,7 +52,36 @@ async function unwiredDir(): Promise<string> {
   return dir;
 }
 
-const TERM_NAMES = ["vouch", "attested", "spine", "delta", "axis", "baseline"];
+/**
+ * Every concept term, in listing order — the subject groups of
+ * src/core/explain/terms/, stages first. Spelled out rather than read from
+ * TERMS so the order the listing prints is pinned, not merely echoed.
+ */
+const TERM_NAMES = [
+  "stage",
+  "ready",
+  "done",
+  "claim",
+  "service.exists",
+  "api.exposes",
+  "event.declares",
+  "c4.calls",
+  "scenario.tested",
+  "attested",
+  "verified",
+  "unit",
+  "frontier",
+  "describe",
+  "generate",
+  "implement",
+  "delta",
+  "baseline",
+  "spine",
+  "axis",
+  "coherence",
+  "vouch",
+  "maturity",
+];
 
 describe("the fix-table parser reads the shipped /loam-check body", () => {
   const rows = parseFixRows(LOAM_CHECK.body);
@@ -593,7 +622,8 @@ describe("the CLI, in a directory with nothing to read", () => {
     const dir = await unwiredDir();
     const res = await runLoam(dir, "explain", "spine.op-undefined");
     expect(res.code, res.out).toBe(0);
-    expect(res.out).toContain("spine.op-undefined (error)");
+    expect(res.out).toContain("spine.op-undefined — a finding code");
+    expect(res.out).toContain("when `loam validate --service <id>` reports it — error");
     expect(res.out).toContain("what it means:");
     expect(res.out).toContain("what to do:");
   });
@@ -633,7 +663,7 @@ describe("the CLI, in a directory with nothing to read", () => {
     expect(JSON.parse(baseline.stdout).term).toBe("baseline");
   });
 
-  it("lists the six terms when asked for nothing", async () => {
+  it("lists every term when asked for nothing", async () => {
     const dir = await unwiredDir();
     const res = await runLoam(dir, "explain");
     expect(res.code, res.out).toBe(0);
