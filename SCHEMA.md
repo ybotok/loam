@@ -936,6 +936,25 @@ request. A term the archive copies gets the same treatment as the requirements: 
 links are re-expressed for `glossary/`, two directories up from where it was written — the one
 change to an otherwise byte-for-byte copy.
 
+**The documents that stay in the feature keep links that resolve from `features/archive/<FEAT>/`.**
+The archive is a directory rename, and every markdown document it carries — the intent, the
+feature's ADRs, its deltas, the archived copy of a term, any other `.md` under the feature — was
+written one directory shallower than where it now sits: `../../services/x/spec.md` in
+`features/<FEAT>/intent.md` would name `features/services/x/spec.md` from the archive. So the archive
+re-expresses their links for the move, in the same commit, under the rename's own rule: a target
+inside the feature moves with it, so a link from the intent to its own ADR or its own term is left
+exactly as written (the archived record keeps citing the archived copy it was reviewed against, not a
+living one that goes on changing), and every other target stays put, so only the routes the rename
+broke change. The plan lists each one as an `update` before the `move`, and the text output says
+`feature documents: N relinked for features/archive/<FEAT>/`; the snapshot parks each pre-image like
+any other write, so `loam unarchive` puts the authored bytes back and archive-then-unarchive stays a
+byte-for-byte round trip — and, like any file the archive wrote, one edited under
+`features/archive/<FEAT>/` since is a later change `unarchive` will not discard without `--force`
+(`snapshot-stale`). A document that is not UTF-8 is left as written, and the text output says so. The
+links are true **as of the archive**, and that is the whole promise: archived features stay out of
+`link.unresolved` and out of `subsystem move`'s rewrite, because a later rename is a later commit and
+the archive is history — what the archive owes is not to break them itself.
+
 **`loam subsystem move` and `rename` keep the same promise.** A move is a directory rename and a
 relative link is a route between directories, so the move rewrites every relative link it would
 break, in the same transaction as the renames: the links out of every markdown document under a
@@ -2533,7 +2552,12 @@ naming the pre-image under `.loam-before/files/`. At restore time the write targ
 the **current services enumeration**: the bytes land wherever the service lives *today*, not
 wherever it lived on the day of the archive, and an id the enumeration no longer answers falls back
 to the literal path (an absent service restores as a create, exactly as before). Entries under
-`architecture/` and `features/` stay literal-path-only — they do not move. Version 4 stores each
+`architecture/` stay literal-path-only — they do not move. Entries for the feature's own documents
+(the ones the archive relinks for its move, Conventions above) are literal too, recorded where the
+move leaves them — `features/archive/<FEAT>/…`, which is where `unarchive` restores them before it
+moves the directory back — so they needed no layout version of their own; the two readers that meet
+a snapshot before its feature moved, the clobber guard below and the crash repair, look for them
+across the move. Version 4 stores each
 pre-image as **`files/<path>.before`** rather than under its living name. A pre-image kept as
 `files/architecture/landscape.likec4` was a second copy of the map inside the archived feature, and
 every tool that reads by extension took it for a document: a feature with its own

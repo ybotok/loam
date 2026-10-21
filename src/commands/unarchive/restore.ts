@@ -11,6 +11,7 @@ import { existsSync } from "node:fs";
 import { readFile, rename } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { CodedFailure, emitJson, fail, repoPath } from "../../core/envelope/json.js";
+import { acrossRename } from "../../core/kernel/path-safety.js";
 import { archiveDir as archiveRoot, featuresDir as featuresRoot } from "../../core/repo/paths.js";
 import { listServices, resolveFeature } from "../../core/repo/repo.js";
 import { docsRepoState } from "../../core/repo/state.js";
@@ -194,8 +195,12 @@ export async function unarchiveLocked(
   for (const w of writes) if (w.content === null) await pruneBelowRoot(docsDir, dirname(w.path));
   await pruneBelowRoot(docsDir, archiveDir);
 
-  const restored = writes.filter((w) => w.content !== null).map((w) => repoPath(docsDir, w.path));
-  const removed = writes.filter((w) => w.content === null).map((w) => repoPath(docsDir, w.path));
+  // Named where each file IS now: the feature's own documents were restored
+  // inside the archived directory and the rename just carried them out of it,
+  // so their write paths name a directory that no longer exists.
+  const landed = (path: string): string => repoPath(docsDir, acrossRename(path, feature.dir, dest));
+  const restored = writes.filter((w) => w.content !== null).map((w) => landed(w.path));
+  const removed = writes.filter((w) => w.content === null).map((w) => landed(w.path));
   // The undo puts back what the archive WROTE, and the two generated views
   // files were never among it: `loam subsystem sync` owns them, and a sync run
   // between the archive and this undo rewrote them against the merged map. So
@@ -213,7 +218,11 @@ export async function unarchiveLocked(
       path: repoPath(docsDir, dest),
       restored,
       removed,
-      discarded: drifted,
+      // Docs-relative as the manifest spells them, then named where they landed —
+      // the same file must not answer to two names across `discarded` and
+      // `restored`. The refusal and the `--force` warning above print the
+      // pre-move name, because they are said before the move.
+      discarded: drifted.map((rel) => landed(join(docsDir, ...rel.split("/")))),
       // Additive, and omitted when nothing is stale — `archive --json`'s key, same meaning.
       ...(staleViews.length === 0 ? {} : { staleViews }),
       ...(recovered === null ? {} : { recovered }),

@@ -11,6 +11,7 @@
 import { existsSync, lstatSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { repoPath } from "../../core/envelope/json.js";
 import { resolveInside, resolvePortableFileInside } from "../../core/kernel/path-safety.js";
 import { isRecord } from "../../core/kernel/records.js";
 import {
@@ -82,6 +83,8 @@ export async function readManifest(request: ManifestRequest): Promise<ValidatedS
     if (!Array.isArray(parsed.files)) return null;
 
     const seen = new Set<string>();
+    // Where the archived feature sits, as the rows spell paths (`repoPath`).
+    const featureRel = repoPath(docsDir, featureDir);
     const files: ValidatedSnapshotEntry[] = [];
     for (const raw of parsed.files) {
       if (!isRecord(raw)) return null;
@@ -126,7 +129,21 @@ export async function readManifest(request: ManifestRequest): Promise<ValidatedS
       // second. Restoring is the write; `staging.ts` only reads and compares a
       // digest, which is why its resolution of this same field can be lexical
       // and this one cannot.
-      const target = resolvePortableFileInside(docsDir, targetRel, `snapshot path '${raw.path}'`);
+      //
+      // A row of the feature's OWN documents — the ones archive relinked for
+      // its move, recorded inside `features/archive/<FEAT>/` — is held to the
+      // same test with the feature directory as the root, which is where its
+      // pre-image below is anchored too: that directory is the thing this
+      // command restores and moves back. Anchored at the docs root instead, a
+      // feature mounted by symlink from outside the repo — a layout every walk
+      // follows — resolved outside it and was refused as `snapshot-missing`,
+      // over rows inside the very directory being restored. A row that leaves
+      // the feature is still refused.
+      const inFeature = raw.path.startsWith(`${featureRel}/`) ? raw.path.slice(featureRel.length + 1) : null;
+      const target =
+        inFeature === null
+          ? resolvePortableFileInside(docsDir, targetRel, `snapshot path '${raw.path}'`)
+          : resolvePortableFileInside(featureDir, inFeature, `snapshot path '${raw.path}'`);
       let snapshot: string | null = null;
       // Where THIS manifest's layout stores the pre-image — suffixed from
       // version 4 on, under the living name before it (`preImageRel`).

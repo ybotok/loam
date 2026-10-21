@@ -21,6 +21,7 @@ import { existsSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { repoPath } from "../../envelope/json.js";
+import { acrossRename } from "../../kernel/path-safety.js";
 import { sha256 } from "../writes.js";
 import { atomicWrite, quietRmdir } from "../commit.js";
 import { PRE_IMAGE_SUFFIX, SNAPSHOT_DIR } from "../snapshot/manifest.js";
@@ -104,18 +105,30 @@ export async function recoverInterruptedCommit(docsDir: string): Promise<CommitR
   // the two ends of the move depending on how far the interrupted run got.
   // Deliberately NOT the snapshot's (service, artifact) re-keying: the journal
   // and the snapshot were written seconds apart under the same docs lock, so
-  // the journal's literal paths and the pre-image keys cannot have diverged —
-  // a service directory moved by hand between the crash and this repair leaves
-  // its files "in neither recorded state", which is the refusal below, not a
-  // resolution question.
+  // no service directory can have moved between the journal's literal paths
+  // and the pre-image keys — one moved by hand between the crash and this
+  // repair leaves its files "in neither recorded state", which is the refusal
+  // below, not a resolution question. The one directory that DOES move between
+  // them is the commit's own, and that is the second path tried below.
   //
   // Both pre-image NAMES are tried, the suffixed one first: a snapshot this
   // loam wrote stores `<path>` + PRE_IMAGE_SUFFIX (version 4), while a commit
   // an older loam was killed in left one under the living name. Trying both is
   // safe for the same reason the two ends are: whichever is found must still
   // hash to the digest the journal recorded, or the repair refuses below.
+  //
+  // And both PATHS: the literal one and its image across the move. The
+  // feature's own documents are the one place the journal and the snapshot do
+  // disagree, by construction — archive journals them where it writes them,
+  // inside the feature as it stands, and the snapshot records them where the
+  // move leaves them (`../snapshot/snapshot.ts`, `movesTo`), because that is
+  // where an undo finds them. A killed archive whose relinked intent was
+  // already swapped is therefore repaired from `features/archive/<FEAT>/…`'s
+  // pre-image, and refusing it as "gone" made the retry impossible.
   const roots = [join(moveFrom, SNAPSHOT_DIR, "files"), join(moveTo, SNAPSHOT_DIR, "files")];
-  const names = (path: string): string[] => [`${path}${PRE_IMAGE_SUFFIX}`, path];
+  const across = (path: string): string => repoPath(docsDir, acrossRename(target(path), moveFrom, moveTo));
+  const names = (path: string): string[] =>
+    [...new Set([path, across(path)])].flatMap((p) => [`${p}${PRE_IMAGE_SUFFIX}`, p]);
   const repaired: string[] = [];
   for (const f of pending) {
     const file = target(f.path);

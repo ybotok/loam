@@ -19,7 +19,7 @@
  * because a caller has to know which of them re-running could ever fix.
  */
 import { describe, it, expect, vi } from "vitest";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { readManifest } from "../src/commands/unarchive/manifest.js";
 import { parseRequirements } from "../src/core/document/parse.js";
@@ -634,6 +634,71 @@ describe("refusals", () => {
       await rm(join(p.workDir, "loam.json"));
       const res = await runLoam(p.workDir, "unarchive", "FEAT-1", "--json");
       expect(JSON.parse(res.stdout)).toMatchObject({ ok: false, error: { code: "no-config" } });
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("a feature directory mounted from outside the docs repo", () => {
+  /**
+   * A feature whose directory is a link to a checkout beside the docs repo —
+   * the layout every walk follows (`entryIs`). A JUNCTION, not a symlink:
+   * Windows grants one without the symlink privilege and every other platform
+   * reads the type as an ordinary directory link, so this runs everywhere.
+   * The archive relinks the intent through the link, so the snapshot holds
+   * rows inside the feature, and resolved from the docs root those rows
+   * landed outside it: the undo of a perfectly intact archive was refused as
+   * `snapshot-missing`.
+   */
+  async function mounted(): Promise<{ p: Project; real: string }> {
+    const p = await makeProject({
+      ...coherentFixture(),
+      "features/FEAT-1-split/intent.md":
+        "---\nfeature: FEAT-1\nstatus: proposed\n---\n\n# Split payments\n\n" +
+        "Split a payment; the payer is [payment-service](../../services/payment-service/spec.md).\n",
+    });
+    const real = join(p.docsDir, "..", "feature-checkout", "FEAT-1-split");
+    await mkdir(dirname(real), { recursive: true });
+    await rename(join(p.docsDir, "features/FEAT-1-split"), real);
+    await symlink(real, join(p.docsDir, "features/FEAT-1-split"), "junction");
+    return { p, real };
+  }
+
+  it("archives and unarchives it, putting the authored bytes back through the link", async () => {
+    const { p, real } = await mounted();
+    try {
+      const authored = await readFile(join(real, "intent.md"), "utf8");
+      const archived = await runLoam(p.workDir, "archive", "FEAT-1");
+      expect(archived.code, archived.out).toBe(0);
+      expect(await readFile(join(real, "intent.md"), "utf8")).toContain("(../../../services/payment-service/spec.md)");
+      const res = await runLoam(p.workDir, "unarchive", "FEAT-1", "--json");
+      expect(res.code, res.out).toBe(0);
+      expect(JSON.parse(res.stdout).restored).toContain("features/FEAT-1-split/intent.md");
+      expect(await readFile(join(real, "intent.md"), "utf8")).toBe(authored);
+      expect(p.exists("features/FEAT-1-split/intent.md")).toBe(true);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("still refuses a row that leaves the feature, and writes nothing outside it", async () => {
+    const { p, real } = await mounted();
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+      const outside = join(p.docsDir, "..", "outside");
+      await mkdir(outside, { recursive: true });
+      await writeFile(join(outside, "owned.txt"), "must survive\n", "utf8");
+      await symlink(outside, join(real, "escape"), "junction");
+      const manifestFile = join(real, ".loam-before", "manifest.json");
+      const manifest = JSON.parse(await readFile(manifestFile, "utf8")) as { files: Array<Record<string, unknown>> };
+      manifest.files[0] = { ...manifest.files[0], path: "features/archive/FEAT-1-split/escape/owned.txt", existed: false, before: null };
+      await writeFile(manifestFile, JSON.stringify(manifest, null, 2) + "\n", "utf8");
+      const res = await runLoam(p.workDir, "unarchive", "FEAT-1", "--force", "--json");
+      expect(res.code).toBe(1);
+      expect(JSON.parse(res.stdout).error.code).toBe("snapshot-missing");
+      expect(await readFile(join(outside, "owned.txt"), "utf8")).toBe("must survive\n");
+      expect(p.exists("features/archive/FEAT-1-split/delta.likec4")).toBe(true);
     } finally {
       await p.destroy();
     }

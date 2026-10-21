@@ -14,7 +14,9 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
 
 No code or flag was added. Two additive `--json` keys (`unarchive`'s `staleViews`, `subsystem
 move`/`rename`'s `relinked`), one new snapshot layout (version 4) and one refusal that is new
-(`move-uncommitted` over a document outside the move). SCHEMA.md "Conventions" states the rules.
+(`move-uncommitted` over a document outside the move). Archive's `plan` gains `update` rows for the
+feature's own documents it relinks, and `unarchive`'s existing `snapshot-stale` refusal now covers
+those documents too. SCHEMA.md "Conventions" states the rules.
 
 - **A living document archive CREATES carries what the delta marked as its own.** A new
   `services/<svc>/spec.md` or `arch.spec.md` used to be a fixed header — `service`,
@@ -39,6 +41,25 @@ move`/`rename`'s `relinked`), one new snapshot layout (version 4) and one refusa
   for `glossary/` too, so a term citing a service spec or the feature's ADR no longer lands broken;
   the copy is otherwise byte-for-byte, as before. A link whose text still reaches its target from
   where it lands keeps its exact spelling.
+- **The documents that stay in the feature keep links that resolve.** The archive moves
+  `features/<FEAT>/` to `features/archive/<FEAT>/` as a plain directory rename, so every relative
+  link out of the feature in the intent, the feature's ADRs, its deltas — any markdown document the
+  rename carried — was one directory short afterwards, and a reader who followed a living
+  document's link into an archived ADR landed on a decision whose own links led nowhere (nothing
+  grades archived features, so nothing said so). The archive now re-expresses those links for the
+  move, in the same commit; a link to another file of the same feature, and any link whose text
+  still reaches its target, is left exactly as written. Each relinked document is an `update` row
+  in `plan`, at its path before the move (`features/<FEAT>/…`), ahead of the `move` row
+  (`--dry-run` included); the text output adds `feature documents: N relinked for
+  features/archive/<FEAT>/` with one line per document, and the snapshot parks each pre-image where
+  the move leaves it (`features/archive/<FEAT>/…`), so `loam unarchive` puts the authored bytes
+  back — archive then unarchive is still a byte-for-byte round trip — and lists them in `restored`
+  (and `discarded`, under `--force`) where they land (`features/<FEAT>/…`). A retried archive and the crash repair find those
+  pre-images across the move. No code, flag or payload key was added, and the snapshot stays
+  version 4: the new rows are literal paths every version-4 reader already restores. **Exit
+  code:** `loam unarchive` now also refuses with `snapshot-stale` (exit 1) when a document the
+  archive relinked was edited under `features/archive/<FEAT>/` since; `--force` puts the authored
+  text back over that edit. Those documents used to move back as they stood.
 - **The undo snapshot no longer breaks a feature's LikeC4 project.** `.loam-before/` stored each
   pre-image under its living name, so the archived feature held a second `landscape.likec4`: a
   feature with its own `likec4.config.json`, or rendered alone, failed on duplicate elements, and so

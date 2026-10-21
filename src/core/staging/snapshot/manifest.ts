@@ -88,17 +88,29 @@ export function preImageRel(version: ReadableSnapshotVersion, path: string): str
 
 export interface SnapshotEntry {
   /**
-   * Docs-repo-relative path, forward slashes, AS ARCHIVED. Load-bearing even
-   * beside the key below: it names the pre-image under `.loam-before/files/`
-   * (through {@link preImageRel}), and it is the literal fallback when the id
-   * stops being enumerated.
+   * Docs-repo-relative path, forward slashes, AS ARCHIVED — where the archive
+   * left the bytes. Load-bearing even beside the key below: it names the
+   * pre-image under `.loam-before/files/` (through {@link preImageRel}), and
+   * it is the literal fallback when the id stops being enumerated.
+   *
+   * For the feature's OWN documents — the ones the archive relinks for the
+   * move (`commands/archive/plan/document/links.ts`) — that is inside
+   * `features/archive/<FEAT>/`, not where they were written: the rename
+   * carried them there, and that is where `unarchive` finds and restores them
+   * before it moves the directory back. Recorded that way, every reader of
+   * this layout restores them by its literal-path rule with nothing new to
+   * learn, which is why the rows needed no version of their own; the two
+   * readers that meet a snapshot before its feature moved — the clobber guard
+   * and the crash repair — look across the move for them.
    */
   path: string;
   /**
    * For a `services/` entry: the service id (the leaf directory name — the one
    * thing a re-cut never changes) and the artifact's path inside its directory,
    * resolved through the CURRENT enumeration at restore time. Absent on
-   * landscape and `features/` entries, which do not move.
+   * landscape and `features/` entries: the landscape does not move, and a
+   * feature's own documents move only with the feature, which `path` already
+   * says.
    */
   service?: string;
   artifact?: string;

@@ -33,10 +33,8 @@
  * A document that cannot be decoded is left as it is: rewriting means writing
  * the whole file back, and `link.unreadable` already names it.
  */
-import type { Dirent } from "node:fs";
-import { readdir } from "node:fs/promises";
-import { dirname, join, relative, resolve } from "node:path";
-import { allAuthoredDocuments } from "../../../core/links/corpus.js";
+import { dirname, resolve } from "node:path";
+import { allAuthoredDocuments, movedMarkdown } from "../../../core/links/corpus.js";
 import { rebaseLinks } from "../../../core/links/parse.js";
 import { FleetContext } from "../../../core/fleet-context.js";
 import { movedUnderVouch, parseFrontmatter } from "../../../core/document/frontmatter.js";
@@ -45,7 +43,7 @@ import { requirementDigest } from "../../../core/document/spec.js";
 import { repoPath } from "../../../core/envelope/json.js";
 import { featuresDir } from "../../../core/repo/paths.js";
 import { inOrder } from "../../../core/kernel/concurrency.js";
-import { isPathInside } from "../../../core/kernel/path-safety.js";
+import { acrossRename, isPathInside } from "../../../core/kernel/path-safety.js";
 import { planWrite, readUtf8, type PlannedWrite } from "../../../core/staging/writes.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 
@@ -76,7 +74,7 @@ export interface MovedLinks {
 export async function movedLinks(docsDir: DocsDir, moves: readonly DirectoryMove[]): Promise<MovedLinks> {
   const retarget = (target: string): string => {
     for (const move of moves) {
-      if (isPathInside(move.from, target)) return join(move.to, relative(move.from, target));
+      if (isPathInside(move.from, target)) return acrossRename(target, move.from, move.to);
     }
     return target;
   };
@@ -85,7 +83,7 @@ export async function movedLinks(docsDir: DocsDir, moves: readonly DirectoryMove
   // one list, deduplicated in order, because the order is what `relinked`
   // reports and a person reads it top to bottom.
   const candidates: string[] = [];
-  for (const move of moves) candidates.push(...(await markdownUnder(move.from)));
+  for (const move of moves) candidates.push(...(await movedMarkdown(move.from)));
   try {
     const corpus = await allAuthoredDocuments(docsDir, new FleetContext());
     candidates.push(...corpus.filter((path) => !moves.some((move) => isPathInside(move.from, path))));
@@ -151,29 +149,4 @@ export async function movedLinks(docsDir: DocsDir, moves: readonly DirectoryMove
  */
 export function outside(links: MovedLinks, moves: readonly DirectoryMove[]): string[] {
   return links.writes.map((w) => w.path).filter((path) => !moves.some((move) => isPathInside(move.from, path)));
-}
-
-/**
- * Every `.md` file under `dir`, at any depth, sorted. Real directories and
- * files only: a symlink is not followed — what it points at is not moved by
- * the rename — and dot-directories and `node_modules` are machinery, never
- * authored documents, exactly as every other walk in loam treats them.
- */
-async function markdownUnder(dir: string): Promise<string[]> {
-  let entries: Dirent[];
-  try {
-    entries = await readdir(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  const out: string[] = [];
-  for (const entry of entries) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (!entry.name.startsWith(".") && entry.name !== "node_modules") out.push(...(await markdownUnder(path)));
-    } else if (entry.isFile() && entry.name.endsWith(".md")) {
-      out.push(path);
-    }
-  }
-  return out.sort();
 }

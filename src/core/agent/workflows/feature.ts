@@ -132,7 +132,10 @@ export const LOAM_FEATURE: CommandContent = {
      anything else (an ADR in \`adrs/\` above all) inside
      \`features/archive/\`, because a feature ADR is never copied into the living
      tree. A decision meant to outlive this change belongs in
-     \`architecture/adrs/\` or the service's own \`adrs/\` instead
+     \`architecture/adrs/\` or the service's own \`adrs/\` instead. The same
+     holds inside this feature: its own documents (the intent, its ADRs) move
+     to \`features/archive/\` with it, and the archive re-expresses their links
+     for the move — never write them for the archived location yourself
 4b. **Analyze before you pin.** Nothing grades this step, which is why it is here:
    every check after it is a join between exact tokens, so two services that
    agree on every operationId and disagree on what it means validate, archive

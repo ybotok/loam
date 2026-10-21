@@ -376,7 +376,7 @@ the workspace layout differs, and that part is already isolated.
     nothing else — no `package.json`, no workspace, no separate publish. That layout tracks how many
     artifacts you publish; you publish one `bin`, and `scripts/release-check.mjs` hard-asserts it.
     It is also the one option here that is not cheaply reversible.
-23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 71 of the 169
+23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 73 of the 169
     modules in `commands/` — the entry module of every command among them; `core/envelope/config.ts`
     and `core/repo/repo.ts` by 3 and 30 of them. Slices would duplicate the hubs or produce a
     `shared/` folder — which is what `src/core/` already is.

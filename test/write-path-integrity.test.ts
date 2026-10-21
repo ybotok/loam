@@ -115,6 +115,20 @@ function archOnlyFixture(): Record<string, string> {
   };
 }
 
+/**
+ * The canonical fixture with an intent that links OUT of the feature — the one
+ * kind of feature document the archive relinks for its move — and the bytes
+ * that relink produces, spelled out so a test can stage it by hand.
+ */
+const LINKED_INTENT =
+  "---\nfeature: FEAT-1\nstatus: proposed\n---\n\n# Split payments\n\n" +
+  "Split a payment; the payer is [payment-service](../../services/payment-service/spec.md).\n";
+const RELINKED_INTENT = LINKED_INTENT.replace("../../services/", "../../../services/");
+
+function relinkableFixture(): Record<string, string> {
+  return { ...coherentFixture(), "features/FEAT-1-split/intent.md": LINKED_INTENT };
+}
+
 function json(out: string): Record<string, unknown> {
   return JSON.parse(out) as Record<string, unknown>;
 }
@@ -124,11 +138,13 @@ function json(out: string): Record<string, unknown> {
  * resolver pair the command builds today (src/commands/archive/run.ts): a
  * `services/<id>/<artifact>` path decomposes into its (service, artifact) key,
  * and a service's current directory is the flat spelling. Tests that model a
- * MOVED service override `serviceDirOf` per call.
+ * MOVED service override `serviceDirOf` per call. The feature moves where
+ * archive moves it, `features/archive/<dirName>/`.
  */
 function snapshotRequest(featureDir: string, docsDir: string, staged: StagedWrite[]): SnapshotRequest {
   return {
     featureDir,
+    movesTo: join(docsDir, "features/archive/FEAT-1-split"),
     docsDir,
     feature: { featureId: "FEAT-1", dirName: "FEAT-1-split" },
     staged,
@@ -577,6 +593,71 @@ describe("a commit killed between two renames", () => {
       expect(res.out).toContain("the living docs are back to what they said before the archive.");
       expect(p.exists(COMMIT_INTENT)).toBe(false);
       expect(await treeHashes(p.docsDir)).toEqual(clean);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("repairs a relinked feature document from the pre-image recorded across the move, and the retry completes", async () => {
+    // The feature's own documents are journalled where archive writes them —
+    // inside the feature as it stands — and parked in the snapshot where the
+    // move leaves them, because that is where an undo finds them. A kill after
+    // the intent's relink swapped and before the move is the one state where
+    // the two disagree, and both the repair and the retry's clobber guard have
+    // to look across the move to get past it.
+    const p = await makeProject(relinkableFixture());
+    try {
+      const clean = await treeHashes(p.docsDir);
+      const featureDir = join(p.docsDir, "features/FEAT-1-split");
+      const intent = join(featureDir, "intent.md");
+      const staged = await stageWrites([planWrite(intent, RELINKED_INTENT)]);
+      await writeSnapshot(snapshotRequest(featureDir, p.docsDir, staged));
+      await writeCommitIntent(
+        p.docsDir,
+        {
+          command: "archive",
+          restore: "before",
+          feature: "FEAT-1",
+          moveFrom: featureDir,
+          moveTo: join(p.docsDir, "features/archive/FEAT-1-split"),
+        },
+        staged,
+      );
+      await swapStaged(staged);
+      expect(
+        existsSync(join(featureDir, SNAPSHOT_DIR, `files/features/archive/FEAT-1-split/intent.md${PRE_IMAGE_SUFFIX}`)),
+      ).toBe(true);
+
+      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(res.code, res.out).toBe(0);
+      expect(json(res.stdout).recovered).toMatchObject({ outcome: "repaired", repaired: ["features/FEAT-1-split/intent.md"] });
+      expect(await p.read("features/archive/FEAT-1-split/intent.md")).toContain(
+        "[payment-service](../../../services/payment-service/spec.md)",
+      );
+      // And the undo of the completed archive puts back the authored bytes.
+      expect((await runLoam(p.workDir, "unarchive", "FEAT-1")).code).toBe(0);
+      expect(await treeHashes(p.docsDir)).toEqual(clean);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("names a feature document that carries the merge where it is, not where the move would have left it", async () => {
+    // A rollback that left the relinked intent as found: the snapshot records
+    // the row at features/archive/<FEAT>/, the bytes sit in the feature that
+    // never moved, and the refusal sends a person to restore that file from
+    // version control — so it must name the path that exists.
+    const p = await makeProject(relinkableFixture());
+    try {
+      const featureDir = join(p.docsDir, "features/FEAT-1-split");
+      const staged = await stageWrites([planWrite(join(featureDir, "intent.md"), RELINKED_INTENT)]);
+      await writeSnapshot(snapshotRequest(featureDir, p.docsDir, staged));
+      await swapStaged(staged);
+      const retry = await stageWrites([planWrite(join(p.docsDir, "architecture/landscape.likec4"), "rewritten\n")]);
+      const refused: unknown = await writeSnapshot(snapshotRequest(featureDir, p.docsDir, retry)).catch((err: unknown) => err);
+      expect(refused).toBeInstanceOf(SnapshotClobberError);
+      expect((refused as Error).message).toContain("1 file(s) already carry that merge: features/FEAT-1-split/intent.md");
+      expect((refused as Error).message).not.toContain("features/archive/FEAT-1-split/intent.md");
     } finally {
       await p.destroy();
     }

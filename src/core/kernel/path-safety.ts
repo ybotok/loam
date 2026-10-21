@@ -27,6 +27,19 @@ export function isPathInside(root: string, target: string): boolean {
 }
 
 /**
+ * Where `target` is once the directory `from` has been renamed to `to`: its
+ * image under `to` when it is inside `from`, `target` itself when it is not.
+ * Absolute paths in and out. The question every reader of a directory move
+ * asks of one path: the link rewrites of both renames loam makes (`subsystem
+ * move`, and `archive` for the feature's own documents), and the archive's
+ * snapshot, crash repair and `unarchive`'s report, which meet those documents
+ * on either side of the move.
+ */
+export function acrossRename(target: string, from: string, to: string): string {
+  return isPathInside(from, target) ? resolve(to, relative(resolve(from), resolve(target))) : target;
+}
+
+/**
  * Resolve a relative path beneath `root`, rejecting absolute paths, explicit
  * parent traversal, and symlink escape. The final path may be absent: its
  * nearest existing ancestor is checked in that case.

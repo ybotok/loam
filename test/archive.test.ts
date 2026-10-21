@@ -26,14 +26,17 @@
  *    and `--dry-run` must leave them untouched down to the byte.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { join } from "node:path";
-import { rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { parse } from "yaml";
 import { loadFile, type LoadedDoc } from "../src/core/c4/likec4.js";
 import { parseRequirements } from "../src/core/document/parse.js";
 import { applyRequirementDelta } from "../src/core/document/apply.js";
 import { contentDigest } from "../src/core/document/frontmatter.js";
 import { rewriteRequirementsRun } from "../src/commands/archive/plan/document/run.js";
+import { movedMarkdown } from "../src/core/links/corpus.js";
+import { documentLinks } from "../src/core/links/parse.js";
 import {
   coherentFixture,
   makeProject,
@@ -4481,6 +4484,133 @@ Should a split survive a partial refund? Decide before FEAT-2.
       expect(after).not.toContain("A rewritten purpose nobody merges");
       expect(after.startsWith(before.slice(0, before.indexOf("## Requirements")))).toBe(true);
       expect(res.out).toContain("the delta's ## Purpose was not merged");
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("the documents that stay in the feature still resolve from features/archive/<FEAT>/", () => {
+  /**
+   * The intent and one ADR, each linking out of the feature (the living spec,
+   * the living contract), into it (each other) and off-site. The archive is a
+   * directory rename, and it used to carry all of them byte for byte: every
+   * link out of the feature then named a directory under `features/`, one level
+   * short — and the living documents link INTO archived feature ADRs, so a
+   * reader who followed one found a decision whose own links led nowhere.
+   */
+  const INTENT =
+    "---\nfeature: FEAT-1\nstatus: proposed\n---\n\n# Split payments\n\n" +
+    "Let a payment be split across payees. The payer is [payment-service](../../services/payment-service/spec.md); " +
+    "why splitting is a service of its own is [ADR 0001](./adrs/0001-own-service.md). " +
+    "Background: [the brief](https://example.test/brief).\n";
+  const ADR =
+    "# 0001 — Splitting is a service of its own\n\n" +
+    "Splitting stays out of [payment-service](../../../services/payment-service/spec.md) and calls " +
+    "[its contract](<../../../services/payment-service/openapi.yaml>); [the intent](../intent.md) says why the change exists.\n";
+
+  function linkedFixture(): Record<string, string> {
+    const files = coherentFixture();
+    files["features/FEAT-1-split/intent.md"] = INTENT;
+    files["features/FEAT-1-split/adrs/0001-own-service.md"] = ADR;
+    return files;
+  }
+
+  it("re-expresses the links out of the feature, keeps the ones inside it, and every relative link resolves", async () => {
+    const p = await makeProject(linkedFixture());
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-1");
+      expect(res.code, res.out).toBe(0);
+      const intent = await p.read("features/archive/FEAT-1-split/intent.md");
+      expect(intent).toContain("[payment-service](../../../services/payment-service/spec.md)");
+      expect(intent).toContain("[ADR 0001](./adrs/0001-own-service.md)");
+      expect(intent).toContain("[the brief](https://example.test/brief)");
+      const adr = await p.read("features/archive/FEAT-1-split/adrs/0001-own-service.md");
+      expect(adr).toContain("[payment-service](../../../../services/payment-service/spec.md)");
+      expect(adr).toContain("[its contract](<../../../../services/payment-service/openapi.yaml>)");
+      expect(adr).toContain("[the intent](../intent.md)");
+      // Only the routes the rename broke: everything else in the two
+      // documents is the author's, byte for byte.
+      expect(intent.replace("../../../services/", "../../services/")).toBe(INTENT);
+      expect(adr.split("../../../../services/").join("../../../services/")).toBe(ADR);
+      // The general claim, over every markdown document the rename carried.
+      const archived = join(p.docsDir, "features/archive/FEAT-1-split");
+      const broken: string[] = [];
+      for (const doc of await movedMarkdown(archived)) {
+        for (const link of documentLinks(await readFile(doc, "utf8"))) {
+          if (!existsSync(resolve(dirname(doc), link.path))) broken.push(`${doc}: ${link.raw}`);
+        }
+      }
+      expect(broken).toEqual([]);
+      expect(res.out).toContain("feature documents: 2 relinked for features/archive/FEAT-1-split/");
+      // The snapshot records each where the move left it — the path `unarchive`
+      // restores through, under rules every reader of this layout already has.
+      const manifest = JSON.parse(
+        await p.read("features/archive/FEAT-1-split/.loam-before/manifest.json"),
+      ) as { files: Array<{ path: string; existed: boolean; service?: string }> };
+      expect(manifest.files.filter((f) => f.path.startsWith("features/"))).toEqual([
+        expect.objectContaining({ path: "features/archive/FEAT-1-split/adrs/0001-own-service.md", existed: true }),
+        expect.objectContaining({ path: "features/archive/FEAT-1-split/intent.md", existed: true }),
+      ]);
+      expect(manifest.files.some((f) => f.path.startsWith("features/") && f.service !== undefined)).toBe(false);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("lists them in the plan before the move, and a dry run writes none of them", async () => {
+    const p = await makeProject(linkedFixture());
+    try {
+      const before = await treeHashes(p.docsDir);
+      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--dry-run", "--json");
+      expect(res.code, res.out).toBe(0);
+      const plan = (JSON.parse(res.stdout) as { plan: Array<{ path: string; action: string }> }).plan;
+      const at = (path: string): number => plan.findIndex((row) => row.path === path);
+      expect(plan[at("features/FEAT-1-split/intent.md")]).toEqual({ path: "features/FEAT-1-split/intent.md", action: "update" });
+      expect(at("features/FEAT-1-split/adrs/0001-own-service.md")).toBeGreaterThan(-1);
+      expect(at("features/FEAT-1-split/intent.md")).toBeLessThan(at("features/FEAT-1-split"));
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("leaves a document that is not UTF-8 exactly as written, and the text output says so", async () => {
+    // Nothing grades a feature's notes, so nothing refused them before the
+    // archive; the relink only corrects links, and refusing the archive over
+    // such a document would be the larger harm. UTF-16 with a byte-order
+    // mark is how PowerShell's `>` writes a file.
+    const p = await makeProject(linkedFixture());
+    try {
+      const utf16 = Buffer.concat([
+        Buffer.from([0xff, 0xfe]),
+        Buffer.from("# Notes\n\nSee [the payer](../../../services/payment-service/spec.md).\n", "utf16le"),
+      ]);
+      await mkdir(join(p.docsDir, "features/FEAT-1-split/notes"), { recursive: true });
+      await writeFile(join(p.docsDir, "features/FEAT-1-split/notes/history.md"), utf16);
+      const res = await runLoam(p.workDir, "archive", "FEAT-1");
+      expect(res.code, res.out).toBe(0);
+      expect(res.out).toContain("⚠ features/archive/FEAT-1-split/notes/history.md is not UTF-8 — its links were left as written");
+      expect((await readFile(join(p.docsDir, "features/archive/FEAT-1-split/notes/history.md"))).equals(utf16)).toBe(true);
+      // The other documents were still relinked.
+      expect(res.out).toContain("feature documents: 2 relinked for features/archive/FEAT-1-split/");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("archive then unarchive is still a byte round trip, and the restore names each document where it lands", async () => {
+    const p = await makeProject(linkedFixture());
+    try {
+      const before = await treeHashes(p.docsDir);
+      expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+      const res = await runLoam(p.workDir, "unarchive", "FEAT-1", "--json");
+      expect(res.code, res.out).toBe(0);
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+      const restored = (JSON.parse(res.stdout) as { restored: string[] }).restored;
+      expect(restored).toContain("features/FEAT-1-split/intent.md");
+      expect(restored).toContain("features/FEAT-1-split/adrs/0001-own-service.md");
+      expect(restored.some((path) => path.startsWith("features/archive/"))).toBe(false);
     } finally {
       await p.destroy();
     }
