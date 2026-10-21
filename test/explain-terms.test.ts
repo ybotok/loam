@@ -216,7 +216,7 @@ describe("a finding page's headers read as words, not as CLI syntax", () => {
     expect(res.stdout.split("\n")[0]).toBe("service.no-model — a finding code, reported in 2 places");
     expect(res.stdout).not.toContain("(error; warn)");
     expect(res.stdout).toContain("when `loam validate --service <id>` reports it — error");
-    expect(res.stdout).toContain("when `loam archive` reports it — warn");
+    expect(res.stdout).toContain("when `loam archive` reports it — error, never gates archive");
   });
 
   it("spells a phrase-labelled table as the `loam validate` run it belongs to, keeping the brief's invocation", async () => {
