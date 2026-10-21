@@ -80,7 +80,8 @@ export interface StagedWrite {
   /**
    * Topmost directory this write had to create, if any — a rollback owes the repo
    * its directories back too. An empty `services/<svc>/` left standing is the
-   * fleet claiming a service that was never merged.
+   * fleet claiming a service that was never merged. Spelled as
+   * `mkdirReportingCreated` returns it, never as Node's raw `mkdir` report.
    */
   createdDir: string | null;
   swapped: boolean;

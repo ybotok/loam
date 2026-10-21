@@ -40,6 +40,32 @@ export function acrossRename(target: string, from: string, to: string): string {
 }
 
 /**
+ * `path` in the spelling every other path here has: the Win32 file-namespace
+ * prefix taken off a drive or UNC path (`\\?\C:\x` → `C:\x`,
+ * `\\?\UNC\host\share\x` → `\\host\share\x`), anything else unchanged.
+ *
+ * Measured 2026-10-21 on Node 24.13.0, Windows 11: `mkdir(dir, { recursive:
+ * true })` — and `mkdirSync` — reports the first directory it created as
+ * `\\?\C:\…\features\archive` for a `dir` of `C:\…\features\archive`, at short
+ * and long path lengths alike; `mkdtemp` and `realpath` return the plain
+ * spelling. `resolve()` keeps the prefix and `relative()` between the two
+ * spellings is an absolute path, so `isPathInside` judged
+ * `C:\…\features\archive` to lie outside `\\?\C:\…\features\archive` — and every
+ * rollback that pruned "up to the directory mkdir created" pruned nothing,
+ * leaving an empty `features/archive/` or `services/<new-service>/` behind at a
+ * clean `merge-failed`. Linux never reports the prefix, so CI could not see it.
+ *
+ * Only the drive and UNC forms are taken off: `\\?\Volume{…}\` and
+ * `\\?\GLOBALROOT\…` have no plain spelling, and stripping theirs would leave a
+ * relative path. A POSIX absolute path starts with `/` and never matches.
+ */
+export function withoutNamespacePrefix(path: string): string {
+  const unc = /^\\\\\?\\UNC\\/i.exec(path);
+  if (unc !== null) return `\\\\${path.slice(unc[0].length)}`;
+  return /^\\\\\?\\[A-Za-z]:(?:\\|$)/.test(path) ? path.slice(4) : path;
+}
+
+/**
  * Resolve a relative path beneath `root`, rejecting absolute paths, explicit
  * parent traversal, and symlink escape. The final path may be absent: its
  * nearest existing ancestor is checked in that case.

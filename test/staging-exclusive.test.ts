@@ -1,14 +1,23 @@
 /**
  * The two things a staged write must never do to a CONCURRENT writer: replace
  * bytes it did not read, and clean up by deleting directories that are no
- * longer only ours.
+ * longer only ours — and the one thing it owes the repo on its own failure:
+ * the directories it did create, taken back.
  */
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { quietPruneEmptyParents, rollbackStaged, stageWrites, StagingRaceError, swapStaged } from "../src/core/staging/commit.js";
+import { withoutNamespacePrefix } from "../src/core/kernel/path-safety.js";
+import {
+  mkdirReportingCreated,
+  quietPruneEmptyParents,
+  rollbackStaged,
+  stageWrites,
+  StagingRaceError,
+  swapStaged,
+} from "../src/core/staging/commit.js";
 import { planWrite } from "../src/core/staging/writes.js";
 
 describe("exclusive staged writes", () => {
@@ -115,5 +124,76 @@ describe("quietPruneEmptyParents", () => {
     } finally {
       await rm(scratch, { recursive: true, force: true });
     }
+  });
+});
+
+// On Windows, Node 24 reports mkdir(recursive)'s created directory as
+// `\\?\C:\…`. Compared with the plain spelling every write path carries, the
+// rollback found nothing inside it to prune, and a clean merge-failed left an
+// empty services/<new-service>/ or features/archive/ standing. The three
+// filesystem cases can only fail on a host whose Node reports that prefix; the
+// last pins the spelling rule itself where Linux CI can see it.
+describe("the directories staging created, taken back", () => {
+  it("a rollback before any swap leaves no directory the staging made", async () => {
+    const scratch = await mkdtemp(join(tmpdir(), "loam-staged-dirs-"));
+    try {
+      const target = join(scratch, "services", "new-service", "spec.md");
+      const staged = await stageWrites([planWrite(target, "spec\n")]);
+      expect(existsSync(dirname(target))).toBe(true);
+
+      expect(await rollbackStaged(staged)).toEqual([]);
+
+      expect(await readdir(scratch)).toEqual([]);
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it("a rollback after the swap takes the file and both directories it needed back", async () => {
+    const scratch = await mkdtemp(join(tmpdir(), "loam-swapped-dirs-"));
+    try {
+      const target = join(scratch, "services", "new-service", "spec.md");
+      const staged = await stageWrites([planWrite(target, "spec\n")]);
+      await swapStaged(staged);
+      expect(await readFile(target, "utf8")).toBe("spec\n");
+
+      expect(await rollbackStaged(staged)).toEqual([]);
+
+      expect(await readdir(scratch)).toEqual([]);
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it("prunes up to the directory mkdirReportingCreated reported, and not past it", async () => {
+    const scratch = await mkdtemp(join(tmpdir(), "loam-reported-dir-"));
+    try {
+      // archive's shape: features/ exists, features/archive/ is this run's.
+      await mkdir(join(scratch, "features"));
+      const archiveDir = join(scratch, "features", "archive");
+      const created = await mkdirReportingCreated(archiveDir);
+      expect(created).toBe(archiveDir);
+      expect(await mkdirReportingCreated(archiveDir)).toBeNull();
+
+      await quietPruneEmptyParents(archiveDir, created!);
+
+      expect(existsSync(archiveDir)).toBe(false);
+      expect(existsSync(join(scratch, "features"))).toBe(true);
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it("withoutNamespacePrefix takes the prefix off a drive or UNC path and leaves every other spelling alone", () => {
+    expect(withoutNamespacePrefix("\\\\?\\C:\\docs\\features\\archive")).toBe("C:\\docs\\features\\archive");
+    expect(withoutNamespacePrefix("\\\\?\\c:")).toBe("c:");
+    expect(withoutNamespacePrefix("\\\\?\\UNC\\host\\share\\docs")).toBe("\\\\host\\share\\docs");
+    expect(withoutNamespacePrefix("\\\\?\\unc\\host\\share")).toBe("\\\\host\\share");
+    // No plain spelling exists for a volume GUID path; stripping would leave a
+    // relative one, so it stays as Node gave it.
+    expect(withoutNamespacePrefix("\\\\?\\Volume{0}\\docs")).toBe("\\\\?\\Volume{0}\\docs");
+    expect(withoutNamespacePrefix("C:\\docs")).toBe("C:\\docs");
+    expect(withoutNamespacePrefix("\\\\host\\share\\docs")).toBe("\\\\host\\share\\docs");
+    expect(withoutNamespacePrefix("/tmp/docs")).toBe("/tmp/docs");
   });
 });

@@ -9,10 +9,11 @@
  * and swapped. `--dry-run` returns between the second and the third.
  */
 import { existsSync } from "node:fs";
-import { mkdir, rename } from "node:fs/promises";
+import { rename } from "node:fs/promises";
 import { CodedFailure, emitJson, repoPath, sayExplain } from "../../core/envelope/json.js";
 import {
   message,
+  mkdirReportingCreated,
   quietPruneEmptyParents,
   quietRm,
   rollbackError,
@@ -202,7 +203,7 @@ export async function archiveLocked(
     throw new CodedFailure("merge-failed", `${message(err)} — nothing was written`);
   }
   let snapshot = false;
-  let createdArchiveDir: string | undefined;
+  let createdArchiveDir: string | null = null;
   try {
     // The snapshot's resolver pair: how a docs-relative path decomposes into a
     // service identity, and where that identity lives NOW. Built here — the
@@ -251,7 +252,7 @@ export async function archiveLocked(
       staged,
     );
     await swapStaged(staged);
-    createdArchiveDir = await mkdir(archiveDir, { recursive: true });
+    createdArchiveDir = await mkdirReportingCreated(archiveDir);
     await rename(featureDir, archiveDest);
     // Last: while it exists, the commit is in flight.
     await clearCommitIntent(config.docsDir);
@@ -266,7 +267,7 @@ export async function archiveLocked(
     }
     // Everything this run made, unmade: the swapped files, the snapshot inside the
     // feature that is staying put, and features/archive/ if we are the ones who
-    // created it (mkdir reports nothing when it was already there).
+    // created it (mkdirReportingCreated reports null when it was already there).
     const failures = await rollbackStaged(staged);
     // The rollback decided the outcome, so the journal has nothing left to
     // describe — including on rollback-incomplete, where the files it names are
@@ -283,7 +284,7 @@ export async function archiveLocked(
     // and a recursive remove of "the directory we created" took that feature —
     // snapshot and all — with it, on OUR failure path, in silence. Empty
     // directories only, stopping at the first that is not.
-    if (createdArchiveDir !== undefined) await quietPruneEmptyParents(archiveDir, createdArchiveDir);
+    if (createdArchiveDir !== null) await quietPruneEmptyParents(archiveDir, createdArchiveDir);
     // The code is a caller's answer to "can I trust the repo?": merge-failed
     // means yes (rolled back), rollback-incomplete means look at it by hand.
     const wrapped = rollbackError(err, failures);

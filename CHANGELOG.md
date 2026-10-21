@@ -382,6 +382,16 @@ the same.
   landscape and per-service findings; an interrupted-commit finding still leads and the footer still
   closes the report.
 
+### Fixed — on Windows, a rolled-back write takes back the directories it created
+
+No code, flag or payload key was added. On Windows under Node 24, a command that failed and rolled
+back — `loam archive` most visibly — answered `merge-failed` ("rolled back, nothing was merged")
+and still left the directories it had made standing: an empty `features/archive/`, or an empty
+`services/<new-service>/` that names a service the merge never added. Node reports the directory
+`mkdir` created in the `\\?\C:\…` spelling, and the rollback, comparing that with the plain
+spelling, found nothing inside it to remove. Those directories are now removed on Windows as they
+already were on Linux and macOS; a directory something else has put a file in is still left alone.
+
 ## [0.2.0-alpha.9] - 2026-10-20
 
 The first publish since `0.2.0-alpha.7`. `0.2.0-alpha.8` was tagged but never reached npm (its
