@@ -2,11 +2,16 @@
  * WHICH documents loam reads links out of — the corpus, spelled once.
  *
  * Two readers need it and must not disagree. `commands/validate/links/` grades
- * each target's own documents for `link.unresolved`; `core/glossary/backlinks.ts`
+ * each target's own documents for `link.unresolved`; `core/links/backlinks.ts`
  * reads the WHOLE fleet's, because "which documents use this term" is a question
  * no single target can answer. A corpus that differed between them would report
  * a term as unused while the very document citing it was being graded one target
- * over.
+ * over. The two directory renames read it too — `subsystem move`
+ * (`commands/subsystem/txn/links.ts`) and `archive`
+ * (`commands/archive/plan/document/links.ts`) rewrite the links INTO what they
+ * move from every document here — for the same reason from the other side: a
+ * document `validate` grades that a rename did not relink is `link.unresolved`
+ * the commit after.
  *
  * THE CORPUS IS EVERY AUTHORED MARKDOWN DOCUMENT, and the word doing the work is
  * authored. `AGENTS.md` and the scaffolded `README.md` are excluded because loam
@@ -24,6 +29,9 @@
  * The one thing a delta holds that addresses another file — `metadata { op }` —
  * has its own resolution and its own findings.
  */
+import type { Dirent } from "node:fs";
+import { readdir } from "node:fs/promises";
+import { join } from "node:path";
 import type { FleetContext } from "../fleet-context.js";
 import { featureGlossary } from "../glossary/delta.js";
 import { readGlossary } from "../glossary/tree.js";
@@ -90,7 +98,11 @@ export async function fleetDocuments(docsDir: DocsDir, fleet: FleetContext): Pro
  * describe a change that already shipped, its links point at whatever the tree
  * looked like then, and grading them would make every directory rename a
  * retroactive error against a record nobody may edit. `listFeatures` excludes
- * them by default, which is the same judgement one enumeration up.
+ * them by default, which is the same judgement one enumeration up. "Then" is
+ * the commit that archived the feature, and not the one before it: the archive
+ * re-expresses the links in the documents it moves (`movedMarkdown` below,
+ * `commands/archive/plan/document/links.ts`), because its own rename is the one
+ * change to the tree it knows exactly and makes in the same breath.
  */
 export async function allAuthoredDocuments(docsDir: DocsDir, fleet: FleetContext): Promise<string[]> {
   const docs = await fleetDocuments(docsDir, fleet);
@@ -101,4 +113,41 @@ export async function allAuthoredDocuments(docsDir: DocsDir, fleet: FleetContext
     docs.push(...(await featureDocuments(feature.dir, fleet)));
   }
   return docs;
+}
+
+/**
+ * Every `.md` file under `dir`, at any depth, sorted — the documents a rename
+ * of `dir` carries with it, which is a different list from the corpus above:
+ * a rename moves a runbook, a subsystem's own notes, a feature's
+ * `legacy/proposal.md` exactly as it moves an ADR, and owes them all the same
+ * link correction whether or not anything grades them.
+ *
+ * Real directories and files only: a symlink is not followed — what it points
+ * at is not moved by the rename — and dot-directories and `node_modules` are
+ * machinery, never authored documents, exactly as every other walk in loam
+ * treats them. The archive's own `.loam-before/` is one of them: its
+ * pre-images are bytes to put back, not documents to correct.
+ *
+ * Two callers, the two directory renames loam makes: `subsystem move`
+ * (`commands/subsystem/txn/links.ts`) and `archive`
+ * (`commands/archive/plan/document/links.ts`). Here, below both, because the
+ * rule for "what does the rename carry" is one rule.
+ */
+export async function movedMarkdown(dir: string): Promise<string[]> {
+  let entries: Dirent[];
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const out: string[] = [];
+  for (const entry of entries) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (!entry.name.startsWith(".") && entry.name !== "node_modules") out.push(...(await movedMarkdown(path)));
+    } else if (entry.isFile() && entry.name.endsWith(".md")) {
+      out.push(path);
+    }
+  }
+  return out.sort();
 }

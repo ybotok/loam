@@ -59,12 +59,13 @@ export interface LinkScope {
    * Absolute paths that do not exist yet but WILL once an in-flight feature
    * archives — today, the glossary terms that feature introduces.
    *
-   * A feature cites the word it is adding at the word's FUTURE living path,
-   * because that is where the link has to point once the change lands; citing
-   * the delta's own path would resolve now and rot on the day it ships. Without
-   * this set, the axis would refuse its own headline case — which is exactly
-   * the overlay the capability axis had to add to `Realizes:` after shipping
-   * without one.
+   * A feature may cite the word it is adding at the word's FUTURE living path,
+   * because that is where the link points once the change lands. Without this
+   * set, the axis would refuse its own headline case — which is exactly the
+   * overlay the capability axis had to add to `Realizes:` after shipping
+   * without one. (Citing the term inside the feature resolves without it, and
+   * archive re-points that spelling when it merges the text that carries it —
+   * SCHEMA "Conventions" states the rule.)
    */
   overlay?: ReadonlySet<string>;
 }

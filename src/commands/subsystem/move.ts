@@ -1,17 +1,19 @@
 /**
  * `subsystem move` and `subsystem rename` — ONE transaction over N directory
  * renames plus BOTH generated views files, the first real consumer of the
- * journaled txn's moves half (`core/staging/txn/`). The planning lives in
+ * journaled txn's moves half (`core/staging/txn/`), plus every markdown link
+ * the renames would otherwise break (`./txn/links.ts`). The planning lives in
  * this module; the commit window itself is `./txn/txn.ts`, shared with
  * `new` and `rm`.
  *
  * The ONLY move-specific refusal is `move-uncommitted` — git reports
- * uncommitted changes under a directory being moved — and only on positive
- * evidence: where git will not say, the move proceeds. After a landed move
- * loam performs the roadmap's one blessed git write, a best-effort `git add`
- * of the rename pairs and of BOTH regenerated views files, so git records the
- * renames as renames and `subsystem history` stays answerable once the user
- * commits. Nothing is ever committed.
+ * uncommitted changes under a directory being moved, or in a document outside
+ * it whose links the move rewrites — and only on positive evidence: where git
+ * will not say, the move proceeds. After a landed move loam performs the
+ * roadmap's one blessed git write, a best-effort `git add` of the rename
+ * pairs, of the relinked documents and of BOTH regenerated views files, so git
+ * records the renames as renames and `subsystem history` stays answerable once
+ * the user commits. Nothing is ever committed.
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -29,6 +31,7 @@ import type { FleetTree } from "../../core/repo/tree/walk.js";
 import { SNAPSHOT_COMPAT_VERSION, SNAPSHOT_MANIFEST, snapshotDir } from "../../core/staging/snapshot/manifest.js";
 import { commitWindow, reportViews, type SubsystemTxn, type ViewsActions } from "./txn/txn.js";
 import { movedTree } from "./txn/views.js";
+import { movedLinks, outside } from "./txn/links.js";
 
 /** What one name resolved to for a move: where it is, and where it goes. */
 interface Moved {
@@ -94,24 +97,29 @@ export async function runMove(docsDir: DocsDir, names: string[], into: string, j
         return null;
       }
     }
-    if (await refuseUncommitted(docsDir, moved.map((m) => m.dir), json)) return null;
-    const notices = await v2SnapshotNotices(docsDir, moved.map((m) => m.dir));
     const renames = moved.map((m) => ({ from: m.dir, to: join(target.dir, m.name) }));
+    // The links the renames would break, rewritten in the same commit
+    // (`./txn/links.ts`) — and the documents outside the moved directories
+    // that rewrite touches are asked the same uncommitted-work question.
+    const links = await movedLinks(docsDir, renames);
+    if (await refuseUncommitted(docsDir, [...moved.map((m) => m.dir), ...outside(links, renames)], json)) return null;
+    const notices = [...(await v2SnapshotNotices(docsDir, moved.map((m) => m.dir))), ...links.notices];
     return {
       target: names.join(", "),
-      writes: [],
+      writes: links.writes,
       tree: movedTree(tree, renames, servicesDir(docsDir)),
       moves: renames,
       failedCode: "move-failed",
       what: "moved",
       report: async (views, recovered) => {
-        await stageInGit(docsDir, renames, views);
+        await stageInGit(docsDir, { renames, relinked: outside(links, renames) }, views);
         const rows = moved.map((m, i) => ({
           name: m.name,
           kind: m.kind,
           from: repoPath(docsDir, renames[i]!.from),
           to: repoPath(docsDir, renames[i]!.to),
         }));
+        const relinked = links.relinked.map((path) => repoPath(docsDir, path));
         if (json) {
           emitJson({
             command: "subsystem",
@@ -119,12 +127,14 @@ export async function runMove(docsDir: DocsDir, names: string[], into: string, j
             moved: rows,
             views: views.subsystems,
             serviceViews: views.services,
+            relinked,
             ...(notices.length === 0 ? {} : { warnings: notices }),
             ...(recovered === null ? {} : { recovered }),
           });
           return;
         }
         for (const row of rows) console.log(`moved ${row.from} -> ${row.to}`);
+        for (const path of relinked) console.log(`relinked ${path}`);
         for (const n of notices) console.log(`note: ${n}`);
         console.log(`Renames staged where git answers; nothing committed${reportViews(views)}.`);
       },
@@ -164,18 +174,21 @@ export async function runRename(docsDir: DocsDir, names: [string, string], json:
       fail(json, "already-exists", `'${to}' is already a ${taken.kind} (${repoPath(docsDir, where)}) — the namespace is flat at any depth.`);
       return null;
     }
-    if (await refuseUncommitted(docsDir, [hit.subsystem.dir], json)) return null;
-    const notices = await v2SnapshotNotices(docsDir, [hit.subsystem.dir]);
     const rename = { from: hit.subsystem.dir, to: subsystemPathUnder(dirname(hit.subsystem.dir), parsed.name) };
+    // A rename is a one-rename move, and owes the same link rewrite.
+    const links = await movedLinks(docsDir, [rename]);
+    if (await refuseUncommitted(docsDir, [hit.subsystem.dir, ...outside(links, [rename])], json)) return null;
+    const notices = [...(await v2SnapshotNotices(docsDir, [hit.subsystem.dir])), ...links.notices];
     return {
       target: `${from} -> ${to}`,
-      writes: [],
+      writes: links.writes,
       tree: movedTree(tree, [rename], servicesDir(docsDir)),
       moves: [rename],
       failedCode: "move-failed",
       what: "renamed",
       report: async (views, recovered) => {
-        await stageInGit(docsDir, [rename], views);
+        await stageInGit(docsDir, { renames: [rename], relinked: outside(links, [rename]) }, views);
+        const relinked = links.relinked.map((path) => repoPath(docsDir, path));
         if (json) {
           emitJson({
             command: "subsystem",
@@ -184,12 +197,14 @@ export async function runRename(docsDir: DocsDir, names: [string, string], json:
             path: repoPath(docsDir, rename.to),
             views: views.subsystems,
             serviceViews: views.services,
+            relinked,
             ...(notices.length === 0 ? {} : { warnings: notices }),
             ...(recovered === null ? {} : { recovered }),
           });
           return;
         }
         console.log(`renamed subsystem '${from}' -> '${to}' (${repoPath(docsDir, rename.to)}/)${reportViews(views)}`);
+        for (const path of relinked) console.log(`relinked ${path}`);
         for (const n of notices) console.log(`note: ${n}`);
       },
     };
@@ -218,11 +233,13 @@ function resolveTarget(tree: FleetTree, into: string, at: { docsDir: DocsDir; js
 
 /**
  * The one move-specific refusal, on positive evidence only: git names
- * uncommitted work under a directory about to be renamed. Null (git will not
- * say) proceeds — a fleet that does not use git must not be refused over it.
+ * uncommitted work under a directory about to be renamed — or in a document
+ * outside it whose links the move rewrites (`./txn/links.ts`), which it then
+ * stages exactly as it stages the renames. Null (git will not say) proceeds —
+ * a fleet that does not use git must not be refused over it.
  */
-async function refuseUncommitted(docsDir: DocsDir, dirs: string[], json: boolean): Promise<boolean> {
-  const dirty = await gitDirtyPaths(docsDir, dirs.map((d) => repoPath(docsDir, d)));
+async function refuseUncommitted(docsDir: DocsDir, paths: string[], json: boolean): Promise<boolean> {
+  const dirty = await gitDirtyPaths(docsDir, paths.map((d) => repoPath(docsDir, d)));
   if (dirty === null || dirty.length === 0) return false;
   fail(
     json,
@@ -231,7 +248,7 @@ async function refuseUncommitted(docsDir: DocsDir, dirs: string[], json: boolean
     // porcelain entry, untracked files included, and plain `git stash` does
     // not stash those — advice that said "stash" sent the user in a loop,
     // refused again with the same sentence after doing what it asked.
-    `git reports ${dirty.length} uncommitted or untracked path(s) under the directory(ies) being moved: ${dirty.join(", ")}. ` +
+    `git reports ${dirty.length} uncommitted or untracked path(s) this move would rename or relink: ${dirty.join(", ")}. ` +
       "Renaming now would sweep them into a move nobody reviewed — commit them, `git stash -u`, or remove them, then re-run. " +
       "Nothing was moved.",
   );
@@ -240,7 +257,9 @@ async function refuseUncommitted(docsDir: DocsDir, dirs: string[], json: boolean
 
 /**
  * Stage the move's whole delta, silently: the rename pairs (both ends — the
- * delete side and the add side) AND BOTH regenerated views files. They ride
+ * delete side and the add side; a moved document whose links this commit
+ * rewrote is inside them), every document OUTSIDE the renames whose links it
+ * rewrote, AND BOTH regenerated views files. They ride
  * along for the same reason the transaction writes them in the same commit: a
  * user whose next `git commit` captured the renames without them would commit
  * a tree `validate --all` fails (`subsystem.views-stale`) — the exact "failing
@@ -270,16 +289,24 @@ async function refuseUncommitted(docsDir: DocsDir, dirs: string[], json: boolean
  * `ViewsActions` is what says which file that was, so no second guess about disk
  * is needed.
  *
- * TWO INVOCATIONS, not one, and the split is what makes the `removed` arm safe
- * to add: a generated file that was never committed and is deleted here is in
- * neither the worktree nor the index, and folded into one pathspec it would take
- * the renames down with it — the failure this function's first rule exists to
- * refuse. Staging in two calls costs one extra best-effort spawn and cannot
- * cost the renames. git records a rename from the index state at commit time,
+ * SEPARATE INVOCATIONS, not one, and the split is what makes the `removed` arm
+ * safe to add: a generated file that was never committed and is deleted here is
+ * in neither the worktree nor the index, and folded into one pathspec it would
+ * take the renames down with it — the failure this function's first rule exists
+ * to refuse. The relinked documents get a call of their own for the same
+ * reason, though each of them is on disk: one bad pathspec must never cost the
+ * renames. Each extra call costs one best-effort spawn. git records a rename from the index state at commit time,
  * never from which `git add` put the two ends there.
  */
-async function stageInGit(docsDir: DocsDir, renames: { from: string; to: string }[], views: ViewsActions): Promise<void> {
-  await gitStageRenames(docsDir, renames.flatMap((r) => [repoPath(docsDir, r.from), repoPath(docsDir, r.to)]));
+async function stageInGit(
+  docsDir: DocsDir,
+  change: { renames: { from: string; to: string }[]; relinked: string[] },
+  views: ViewsActions,
+): Promise<void> {
+  await gitStageRenames(docsDir, change.renames.flatMap((r) => [repoPath(docsDir, r.from), repoPath(docsDir, r.to)]));
+  // The documents outside the renames whose links this commit rewrote — their
+  // own invocation, for the pathspec reason above; every one is on disk.
+  await gitStageRenames(docsDir, change.relinked.map((path) => repoPath(docsDir, path)));
   const generated = [
     [subsystemViewsPath(docsDir), views.subsystems] as const,
     [serviceViewsPath(docsDir), views.services] as const,
@@ -299,8 +326,8 @@ async function stageInGit(docsDir: DocsDir, renames: { from: string; to: string 
  * literal `services/<id>/…` paths, so after this move an `unarchive --force`
  * of that feature restores into the OLD path, resurrecting the pre-move
  * directory beside the moved one (two claimants, `subsystem.name-collision`
- * — loud, but avoidable by being told now). Version-3 manifests key rows by
- * service id and follow the enumeration, so they are not named. Every
+ * — loud, but avoidable by being told now). Keyed manifests (version 3 or 4)
+ * key rows by service id and follow the enumeration, so they are not named. Every
  * failure to read reads as "nothing to warn about": a warning needs positive
  * evidence exactly as the move's one refusal does.
  */

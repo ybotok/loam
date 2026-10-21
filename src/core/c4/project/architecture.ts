@@ -24,7 +24,9 @@ import { excludingPath, readRootExclude } from "../root-project/exclude.js";
 import { architectureDocuments } from "./documents.js";
 import { asLoadedDoc, loadProject } from "./load.js";
 import type { DocsDir } from "../../kernel/ids/dirs.js";
-import { GENERATED_ARCHITECTURE_FILES, landscapePath } from "../../repo/paths.js";
+import { GENERATED_ARCHITECTURE_FILES, landscapePath, serviceViewsPath, subsystemViewsPath } from "../../repo/paths.js";
+import { listFleetTree } from "../../repo/repo.js";
+import { serviceViewsState, viewsState } from "../../repo/tree/render/stale.js";
 
 /** `<docsDir>/architecture` — the LikeC4 project root, spelled once. */
 export function architectureDir(docsDir: DocsDir): string {
@@ -116,4 +118,46 @@ export async function architectureProjectDocuments(docsDir: DocsDir): Promise<st
  */
 export async function loadArchitecture(docsDir: DocsDir): Promise<LoadedDoc> {
   return asLoadedDoc(await loadProject(architectureDir(docsDir), await architectureProjectDocuments(docsDir)));
+}
+
+/**
+ * Which generated documents would the next `validate --all` report
+ * `subsystem.views-stale` on? Docs-relative paths, sorted, empty for none.
+ *
+ * Asked by the two writers that change the map without owning these files —
+ * `archive` merges into it, `unarchive` puts the pre-archive map back — so
+ * neither reports a repo as current when the very next `validate --all` will
+ * call it stale. Here, beside the list of generated documents, because it is
+ * the second caller that made it shared (docs/DESIGN.md rule 8), and an undo
+ * importing it from the merge would be the second command-to-command import
+ * rule 5 forbids. `commands/archive/run.ts` still carries its own copy of these
+ * lines, and is the one caller left to point here.
+ *
+ * Asked through validate's OWN state functions (`repo/tree/render/stale.ts`,
+ * the ones `commands/validate/fleet/views/stale.ts` grades with) rather than a
+ * second compare, so the warning a writer prints and the error validate raises
+ * can never disagree — including about the gate validate holds: a map that does
+ * not parse is `landscape.invalid`'s business, and grading a generated file
+ * against a map nobody can read would cascade a second complaint behind the
+ * first. An unreadable map therefore answers "no claim", exactly as validate
+ * does.
+ *
+ * Tolerant to the last byte: it is asked AFTER a commit that already
+ * succeeded, so nothing here may turn a landed write into a non-zero exit — a
+ * docs repo with no `services/` at all still archives a landscape-only feature.
+ */
+export async function staleGeneratedViews(docsDir: DocsDir): Promise<string[]> {
+  try {
+    const doc = await loadArchitecture(docsDir);
+    if (doc.errors.length > 0) return [];
+    const tree = await listFleetTree(docsDir);
+    const stale: string[] = [];
+    if (!(await viewsState(subsystemViewsPath(docsDir), tree, doc)).agrees) stale.push("architecture/subsystems.likec4");
+    if (!(await serviceViewsState(serviceViewsPath(docsDir), tree, doc)).agrees) {
+      stale.push("architecture/services.likec4");
+    }
+    return stale.sort();
+  } catch {
+    return [];
+  }
 }

@@ -385,13 +385,23 @@ describe("archive merges the business corpus", () => {
     expect(run.stdout).toContain("opts the fleet into the business axis");
     const created = await p.read("capabilities/refunds/spec.md");
     // The preamble is what THIS merge decides, byte for byte: the id as the
-    // heading and nothing else. No frontmatter, deliberately — nothing reads a
-    // capability document's, and a `status:` invented here would be a second
-    // list nothing keeps current. The requirement run below it is
-    // `serializeRequirements`' framing, checked by re-parsing rather than
-    // re-encoded here.
-    expect(created.startsWith("# refunds\n\n## Requirements\n\n")).toBe(true);
+    // heading — the delta's own H1 names the feature, so it is the change's
+    // title, not the document's — the line that says where the delta's prose
+    // went, and no narrative the delta did not mark as the document's own. No
+    // frontmatter, deliberately — nothing reads a capability document's, and a
+    // `status:` invented here would be a second list nothing keeps current.
+    // The requirement run below it is `serializeRequirements`' framing, checked
+    // by re-parsing rather than re-encoded here.
+    expect(
+      created.startsWith(
+        "# refunds\n\nCreated when FEAT-1 was archived; " +
+          "[its delta](../../features/archive/FEAT-1-split/capabilities/refunds/spec.md) keeps the prose written for that change.\n\n" +
+          "## Requirements\n\n",
+      ),
+      created,
+    ).toBe(true);
     expect(created).not.toContain("---");
+    expect(run.stdout).toContain("the delta's prose stays in features/archive/FEAT-1-split/capabilities/refunds/spec.md");
     const reparsed = parseRequirements(created);
     expect(reparsed.map((r) => [r.name, r.id, r.kind])).toEqual([
       ["Refund within five days", "REF-1", "BASE"],
@@ -400,6 +410,38 @@ describe("archive merges the business corpus", () => {
     // And the document is now a real declaration the rest of loam can see.
     const list = await runLoam(p.workDir, "list", "capabilities", "--json");
     expect((JSON.parse(list.stdout).capabilities as Array<{ id: string }>).map((c) => c.id)).toEqual(["refunds"]);
+  });
+
+  it("a CREATED capability carries the delta's own title and its marked ## Purpose, and nothing about the change", async () => {
+    // The title and the narrative ARE the document — `capabilities/<id>/spec.md`
+    // is where a capability's prose lives — and archive used to write the id
+    // and the requirements and drop both.
+    const authored =
+      "# Refunds\n\nThis delta adds the refund promise for FEAT-1; reviewers, see the intent.\n\n" +
+      "## Purpose\n\nA customer can get their money back, and can see that it happened.\n\n" +
+      "## ADDED Requirements\n\n" +
+      requirement("REF-1", "Refund within five days") +
+      "\n## Open questions\n\nShould partial refunds be in scope for this change?\n";
+    const p = await project({
+      ...coherentFixture(),
+      [SPLIT_SPEC]: realizing("refunds#REF-1"),
+      [`${FEAT_DIR}/capabilities/refunds/spec.md`]: authored,
+    });
+    const run = await runLoam(p.workDir, "archive", "FEAT-1");
+    expect(run.code, run.out).toBe(0);
+    const created = await p.read("capabilities/refunds/spec.md");
+    expect(created.startsWith("# Refunds\n\n")).toBe(true);
+    expect(created).toContain(
+      "## Purpose\n\nA customer can get their money back, and can see that it happened.\n\n## Requirements\n",
+    );
+    // What the delta said about the CHANGE stays with the change, one link away.
+    expect(created).not.toContain("reviewers, see the intent");
+    expect(created).not.toContain("Open questions");
+    expect(p.exists("features/archive/FEAT-1-split/capabilities/refunds/spec.md")).toBe(true);
+    expect(created).toContain("(../../features/archive/FEAT-1-split/capabilities/refunds/spec.md)");
+    expect(run.stdout).toContain("carried from the delta: its title, its ## Purpose");
+    expect(parseRequirements(created).map((r) => r.id)).toEqual(["REF-1"]);
+    expect(await findings(p, "link.unresolved", "--all")).toEqual([]);
   });
 
   it("a nested id merges into its nested living path, and unarchive is a byte-exact round trip", async () => {

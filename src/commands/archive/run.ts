@@ -36,6 +36,7 @@ import { planOpenapiContracts } from "./plan/contracts/openapi.js";
 import { planAsyncapiContracts } from "./plan/contracts/asyncapi.js";
 import { contractConsumers } from "./plan/contracts/consumers.js";
 import { planDeployments, planFlows, planLandscape } from "./plan/landscape.js";
+import { planFeatureLinks, planInboundLinks } from "./plan/document/links.js";
 import { emptyPlan } from "./plan/state.js";
 import { checklistAtArchive } from "./shipped.js";
 import { outstandingLines } from "./closing.js";
@@ -96,6 +97,15 @@ export async function archiveLocked(
   // on it.
   await planFlows(config, gated, planned, say);
   await planDeployments(config, gated, planned, say);
+  // After the merges, because it is the move rather than a merge: the feature's own
+  // documents ride the rename into features/archive/, and their links out of
+  // the feature are re-expressed for it in this same commit
+  // (./plan/document/links.ts) — planned at their current paths, swapped before
+  // the rename carries them, and parked in the snapshot like every other write.
+  await planFeatureLinks(config, gated, planned, say);
+  // And the links the rest of the corpus holds INTO the feature, after every
+  // merge so a document the merge rewrites is relinked from its merged text.
+  await planInboundLinks(read, gated, planned, say);
   const { writes, planWarns, planGates, openapiRemovals, asyncapiRemovals } = planned;
   const revouchOwed = planned.revouchOwed.map((r) => ({ ...r, path: repoPath(config.docsDir, r.path) }));
 
@@ -221,6 +231,7 @@ export async function archiveLocked(
     const serviceDirOf = (service: string): string | null => dirOf.get(service) ?? null;
     await writeSnapshot({
       featureDir,
+      movesTo: archiveDest,
       docsDir: config.docsDir,
       feature: { featureId: id, dirName },
       staged,

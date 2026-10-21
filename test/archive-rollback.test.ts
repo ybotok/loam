@@ -262,7 +262,7 @@ describe("rollback under mid-write failure", () => {
       // the message above sends a human off to restore by hand.
       expect(p.exists("features/FEAT-30-capture/.loam-before/manifest.json")).toBe(true);
       expect(
-        await p.read("features/FEAT-30-capture/.loam-before/files/services/payment-service/spec.md"),
+        await p.read("features/FEAT-30-capture/.loam-before/files/services/payment-service/spec.md.before"),
         "the pre-image must be byte-identical to the living spec before the merge",
       ).toBe(LIVING_SPEC);
       // and the message says where the pre-images live, so the repairer finds them
@@ -271,6 +271,36 @@ describe("rollback under mid-write failure", () => {
       // repo has been looked at.
       expect(p.exists("features/FEAT-30-capture/delta.likec4")).toBe(true);
       expect(p.exists("features/archive/FEAT-30-capture")).toBe(false);
+    } finally {
+      fsFault.onRename = undefined;
+      await p.destroy();
+    }
+  });
+
+  it("the final move fails after the feature's own documents were relinked → those are rolled back too", async () => {
+    // The relinks are swapped inside the feature BEFORE the rename that would
+    // make them right, so a move that fails leaves documents whose links point
+    // one directory too deep — unless the rollback takes them back with the
+    // living files, which is what being staged writes buys them.
+    const files = threeSwapFixture();
+    files["features/FEAT-30-capture/intent.md"] =
+      "---\nfeature: FEAT-30\nstatus: proposed\n---\n\n# Capture payments\n\n" +
+      "Let an authorized payment be captured exactly once, by [payment-service](../../services/payment-service/spec.md).\n";
+    const p = await makeProject(files);
+    try {
+      const before = await treeHashes(p.docsDir);
+      let relinkSwapped = false;
+      fsFault.onRename = (_from, to) => {
+        if (to.endsWith(join("features", "FEAT-30-capture", "intent.md"))) relinkSwapped = true;
+        if (to.endsWith(join("features", "archive", "FEAT-30-capture"))) throw new Error("injected: the final move failed");
+      };
+      const res = await runLoam(p.workDir, "archive", "FEAT-30", "--json");
+      fsFault.onRename = undefined;
+
+      expect(relinkSwapped, "the relink must be swapped before the move").toBe(true);
+      expect(res.code).toBe(1);
+      expect(JSON.parse(res.stdout).error.code).toBe("merge-failed");
+      expect(await treeHashes(p.docsDir), "the rollback must be byte-identical, relinks included").toEqual(before);
     } finally {
       fsFault.onRename = undefined;
       await p.destroy();

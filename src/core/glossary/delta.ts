@@ -52,13 +52,16 @@ export function featureGlossary(featureDir: FeatureDir): Promise<Glossary> {
  * Where each of this feature's terms WILL live once the archive merges — the
  * overlay a feature's own documents are allowed to cite.
  *
- * A feature that introduces a word cites it at its future living path
- * (`../../glossary/order.md`), because that is where the link has to point once
- * the feature ships; citing the delta path instead would resolve today and rot
- * on the day it lands. So while a feature is in flight, `link.unresolved` treats
- * these paths as resolved — the same overlay the capability axis needed for
- * `Realizes:`, and for the same reason: an index built from the LIVING tree
- * alone refuses the feature's own headline flow.
+ * A feature that introduces a word may cite it at its future living path
+ * (`../../glossary/order.md` from `intent.md`), because that is where the link
+ * points once the feature ships. So while a feature is in flight,
+ * `link.unresolved` treats these paths as resolved — the same overlay the
+ * capability axis needed for `Realizes:`, and for the same reason: an index
+ * built from the LIVING tree alone refuses the feature's own headline flow.
+ * Citing the term at its path INSIDE the feature is the other legal spelling,
+ * and it no longer rots on the day the feature lands: archive re-points every
+ * merged link into the feature at the file's new home
+ * (`commands/archive/plan/document/links.ts`).
  */
 export async function featureGlossaryOverlay(docsDir: DocsDir, featureDir: FeatureDir): Promise<Set<string>> {
   const glossary = await featureGlossary(featureDir);

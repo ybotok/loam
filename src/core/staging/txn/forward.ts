@@ -24,18 +24,7 @@ import { COMMIT_INTENT, type CommitRecovery, InterruptedCommitError, sweepPidTem
 import { clearTxnIntent, type TxnIntent, type TxnIntentFile, type TxnIntentMove } from "./journal.js";
 
 export async function recoverForward(root: string, intent: TxnIntent): Promise<CommitRecovery> {
-  const target = (f: TxnIntentFile): string => join(root, ...f.path.split("/"));
   const abs = (rel: string): string => join(root, ...rel.split("/"));
-  const done: TxnIntentFile[] = [];
-  const pending: TxnIntentFile[] = [];
-  const unknown: string[] = [];
-  for (const f of intent.files) {
-    const file = target(f);
-    const now = existsSync(file) ? sha256(await readFile(file)) : null;
-    if (now === f.after) done.push(f);
-    else if (now === f.before) pending.push(f);
-    else unknown.push(f.path);
-  }
   // A directory rename is classified by pure existence — a rename moves the
   // inode, so "which end exists" is exactly as discriminating as a digest is
   // for a file. Both ends existing (or neither) is a state no step of the
@@ -50,6 +39,27 @@ export async function recoverForward(root: string, intent: TxnIntent): Promise<C
     if (toExists && !fromExists) movesDone.push(m);
     else if (fromExists && !toExists) movesPending.push(m);
     else unknownMoves.push(`${m.from} -> ${m.to}`);
+  }
+  // Where a recorded file IS now. The journal records a file at the path its
+  // swap wrote — and a `subsystem move` swaps the documents whose links it
+  // rewrites INSIDE a directory it then renames, so once that rename has
+  // landed the file is under the moved directory, not at the recorded path.
+  // Looked for there, it would read as absent: "edited since", a refusal over
+  // a commit that only needed its journal cleared. Classified moves first for
+  // exactly this; a file under a move still pending is where it was recorded.
+  const target = (f: TxnIntentFile): string => {
+    const landed = movesDone.find((m) => f.path.startsWith(`${m.from}/`));
+    return landed === undefined ? abs(f.path) : abs(`${landed.to}${f.path.slice(landed.from.length)}`);
+  };
+  const done: TxnIntentFile[] = [];
+  const pending: TxnIntentFile[] = [];
+  const unknown: string[] = [];
+  for (const f of intent.files) {
+    const file = target(f);
+    const now = existsSync(file) ? sha256(await readFile(file)) : null;
+    if (now === f.after) done.push(f);
+    else if (now === f.before) pending.push(f);
+    else unknown.push(f.path);
   }
   if (unknown.length > 0 || unknownMoves.length > 0) {
     // Two vocabularies on purpose: a FILE in neither recorded state holds

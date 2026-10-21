@@ -11,13 +11,16 @@
 import { existsSync, lstatSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { repoPath } from "../../core/envelope/json.js";
 import { resolveInside, resolvePortableFileInside } from "../../core/kernel/path-safety.js";
 import { isRecord } from "../../core/kernel/records.js";
 import {
-  SNAPSHOT_COMPAT_VERSION,
+  isReadableSnapshotVersion,
+  keysServiceRows,
+  preImageRel,
   SNAPSHOT_DIR,
   SNAPSHOT_MANIFEST,
-  SNAPSHOT_VERSION,
+  type ReadableSnapshotVersion,
   type SnapshotManifest,
 } from "../../core/staging/snapshot/manifest.js";
 
@@ -39,7 +42,7 @@ export interface ValidatedSnapshotManifest extends Omit<SnapshotManifest, "files
 
 /**
  * `readManifest`'s inputs, as one object. `serviceDirOf` is the restore-time
- * half of the version-3 re-keying: a service id → its CURRENT docs-relative
+ * half of the (service, artifact) re-keying: a service id → its CURRENT docs-relative
  * directory per the enumeration, or null when no such service is enumerated.
  * Injected by the caller (which holds the enumeration) rather than resolved
  * here, so this module keeps validating one file against one repo state.
@@ -68,17 +71,20 @@ export async function readManifest(request: ManifestRequest): Promise<ValidatedS
     if (!existsSync(path)) return null;
     const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
     if (!isRecord(parsed)) return null;
-    // Version 3 is what archive writes; version 2 is read forever under its own
-    // literal-path rules, because version-2 snapshots already sit in archived
-    // features and travel with them across loam upgrades. Version 1 stays
-    // refused: it records nothing about its restore source.
-    if (typeof parsed.version !== "number") return null;
-    if (parsed.version !== SNAPSHOT_VERSION && parsed.version !== SNAPSHOT_COMPAT_VERSION) return null;
+    // Version 4 is what archive writes; versions 3 and 2 are read forever under
+    // their own rules — 3 keyed but storing pre-images under their living
+    // names, 2 by literal path — because snapshots an older loam wrote already
+    // sit in archived features and travel with them across loam upgrades.
+    // Version 1 stays refused: it records nothing about its restore source.
+    const version = parsed.version;
+    if (!isReadableSnapshotVersion(version)) return null;
     if (parsed.feature !== featureId || parsed.dirName !== dirName) return null;
     if (typeof parsed.archivedAt !== "string" || !isCanonicalIsoDate(parsed.archivedAt)) return null;
     if (!Array.isArray(parsed.files)) return null;
 
     const seen = new Set<string>();
+    // Where the archived feature sits, as the rows spell paths (`repoPath`).
+    const featureRel = repoPath(docsDir, featureDir);
     const files: ValidatedSnapshotEntry[] = [];
     for (const raw of parsed.files) {
       if (!isRecord(raw)) return null;
@@ -95,12 +101,13 @@ export async function readManifest(request: ManifestRequest): Promise<ValidatedS
       if (seen.has(raw.path)) return null;
       seen.add(raw.path);
 
-      // The version-3 shape rule, exact in both directions: a `services/` row
-      // carries its (service, artifact) key — that key is what version 3 IS,
-      // and a row without one is not a manifest this loam wrote — while a row
-      // anywhere else carries none, because nothing outside `services/` moves.
-      // Version-2 rows never carry the fields and are not asked to.
-      const key = readServiceKey(parsed.version, raw);
+      // The keyed shape rule (versions 3 and 4), exact in both directions: a
+      // `services/` row carries its (service, artifact) key — that key is what
+      // version 3 introduced, and a row without one is not a manifest this
+      // loam wrote — while a row anywhere else carries none, because nothing
+      // outside `services/` moves. Version-2 rows never carry the fields and
+      // are not asked to.
+      const key = readServiceKey(version, raw);
       if (key === undefined) return null;
 
       // Where the file lives NOW. A re-keyed row resolves through the current
@@ -122,9 +129,25 @@ export async function readManifest(request: ManifestRequest): Promise<ValidatedS
       // second. Restoring is the write; `staging.ts` only reads and compares a
       // digest, which is why its resolution of this same field can be lexical
       // and this one cannot.
-      const target = resolvePortableFileInside(docsDir, targetRel, `snapshot path '${raw.path}'`);
+      //
+      // A row of the feature's OWN documents — the ones archive relinked for
+      // its move, recorded inside `features/archive/<FEAT>/` — is held to the
+      // same test with the feature directory as the root, which is where its
+      // pre-image below is anchored too: that directory is the thing this
+      // command restores and moves back. Anchored at the docs root instead, a
+      // feature mounted by symlink from outside the repo — a layout every walk
+      // follows — resolved outside it and was refused as `snapshot-missing`,
+      // over rows inside the very directory being restored. A row that leaves
+      // the feature is still refused.
+      const inFeature = raw.path.startsWith(`${featureRel}/`) ? raw.path.slice(featureRel.length + 1) : null;
+      const target =
+        inFeature === null
+          ? resolvePortableFileInside(docsDir, targetRel, `snapshot path '${raw.path}'`)
+          : resolvePortableFileInside(featureDir, inFeature, `snapshot path '${raw.path}'`);
       let snapshot: string | null = null;
-      const snapshotRel = `${SNAPSHOT_DIR}/files/${raw.path}`;
+      // Where THIS manifest's layout stores the pre-image — suffixed from
+      // version 4 on, under the living name before it (`preImageRel`).
+      const snapshotRel = `${SNAPSHOT_DIR}/files/${preImageRel(version, raw.path)}`;
       if (raw.existed) {
         // Resolve from the feature directory, which always exists. The `files/`
         // directory legitimately does not exist when every archive write was a
@@ -145,7 +168,7 @@ export async function readManifest(request: ManifestRequest): Promise<ValidatedS
     return {
       // The version as WRITTEN, not as preferred: a caller looking at a
       // validated manifest deserves to know which rules it was read under.
-      version: parsed.version,
+      version,
       feature: featureId,
       dirName,
       archivedAt: parsed.archivedAt,
@@ -165,10 +188,10 @@ export async function readManifest(request: ManifestRequest): Promise<ValidatedS
  * wrote and nothing can say what else in the file to distrust.
  */
 function readServiceKey(
-  version: number,
+  version: ReadableSnapshotVersion,
   raw: Record<string, unknown>,
 ): { service: string; artifact: string } | null | undefined {
-  if (version !== SNAPSHOT_VERSION) return null;
+  if (!keysServiceRows(version)) return null;
   const under = typeof raw.path === "string" && raw.path.startsWith("services/");
   if (!under) return raw.service === undefined && raw.artifact === undefined ? null : undefined;
   // The id is a lookup key into the enumeration and the artifact is joined

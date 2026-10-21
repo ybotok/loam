@@ -215,9 +215,13 @@ export const LOAM_SHIP: CommandContent = {
    dry run in step 3 refuses on them too — and the only way past without the
    pins is a human's \`--approve\`.
 3. \`loam archive $1 --dry-run --json\` first. \`plan[]\` is every file the merge would
-   write (\`create\` / \`update\`, then the final \`move\` into \`features/archive/\`), and
-   none of them are written — read it before letting the merge touch the source of
-   truth, and stop if a file you did not expect is on it. \`warnings[]\` is what the
+   write (\`create\` / \`update\`, then the final \`move\` into \`features/archive/\`) —
+   including an \`update\` for each of the feature's own documents whose links the
+   move re-expresses, at its path before the move, and for each document outside
+   the feature (another feature in flight, a living ADR) whose links into it the
+   archive rewrites — and none of them are written —
+   read it before letting the merge touch the source of truth, and stop if a file
+   you did not expect is on it. \`warnings[]\` is what the
    merge will do that is legal but lossy — advisory warnings never block, which is
    exactly why you read them now: \`openapi.op-modified\` means an operation the living
    contract already defines gets overwritten wholesale, and its \`details\` name the

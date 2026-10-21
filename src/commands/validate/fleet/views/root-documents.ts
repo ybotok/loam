@@ -38,9 +38,13 @@
  *    is still there; `loam validate --feature` is where a delta is graded.
  *
  * Dot-directories and `node_modules` are not walked at all. Those are loam's own
- * machinery (`.loam-before` holds a verbatim copy of the landscape, which would
- * read as the map declared twice) and a package tree, never authored documents —
- * the same thing the scaffold's own `node_modules` glob says.
+ * machinery and a package tree, never authored documents — the same thing the
+ * scaffold's own `node_modules` glob says. `.loam-before` is the case that
+ * proved it: a snapshot written before layout version 4 holds a verbatim copy
+ * of the landscape under its living name, which would read as the map declared
+ * twice. Version 4 suffixes every pre-image so the RENDERER cannot take one for
+ * a document either (`core/staging/snapshot/manifest.ts`), but the older
+ * snapshots are read forever and never migrated, so this walk keeps the rule.
  */
 import { relative, resolve, sep } from "node:path";
 import { excludingPath, readRootExclude } from "../../../../core/c4/root-project/exclude.js";

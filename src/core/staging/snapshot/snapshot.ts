@@ -12,7 +12,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { repoPath } from "../../envelope/json.js";
-import { resolvePortableFileInsideLexically, UnsafePathError } from "../../kernel/path-safety.js";
+import { acrossRename, resolvePortableFileInsideLexically, UnsafePathError } from "../../kernel/path-safety.js";
 // Every `isRecord` below guards the manifest loam itself wrote, read back inside
 // a REFUSAL path — `../lock.ts` records why that is where a thrown `TypeError`
 // costs the most.
@@ -20,7 +20,8 @@ import { isRecord } from "../../kernel/records.js";
 import { isDigest, sha256, type StagedWrite } from "../writes.js";
 import { message, quietRm } from "../commit.js";
 import {
-  SNAPSHOT_COMPAT_VERSION,
+  isReadableSnapshotVersion,
+  preImageRel,
   SNAPSHOT_DIR,
   SNAPSHOT_MANIFEST,
   SNAPSHOT_VERSION,
@@ -57,6 +58,18 @@ export interface ServiceKey {
  */
 export interface SnapshotRequest {
   featureDir: string;
+  /**
+   * Where the archive moves `featureDir` — the directory this snapshot is
+   * about to travel into. A staged write INSIDE `featureDir` is one of the
+   * feature's own documents (the archive re-expresses their links for the
+   * move), and it is recorded at its image under here: that is where its bytes
+   * sit whenever an undo can be asked for, so `unarchive` restores it by its
+   * literal path before moving the directory back, exactly as it restores
+   * every other row. The other reader, the clobber guard below, meets a
+   * snapshot BEFORE its feature moved and grades such a row at its image back
+   * under `featureDir`.
+   */
+  movesTo: string;
   docsDir: string;
   feature: { featureId: string; dirName: string };
   staged: StagedWrite[];
@@ -76,13 +89,15 @@ export async function writeSnapshot(request: SnapshotRequest): Promise<void> {
   const { featureDir, docsDir, staged } = request;
   const { featureId, dirName } = request.feature;
   const dir = snapshotDir(featureDir);
-  await assertSnapshotReplaceable(dir, docsDir, request.serviceDirOf);
+  await assertSnapshotReplaceable(request);
   // A leftover from a rolled-back run would describe a merge that never happened.
   await quietRm(dir);
 
   const files: SnapshotEntry[] = [];
   for (const s of staged) {
-    const rel = repoPath(docsDir, s.write.path);
+    // The feature's own documents by where the move leaves them; everything
+    // else by where it is written (`SnapshotRequest.movesTo` says why).
+    const rel = repoPath(docsDir, acrossRename(s.write.path, featureDir, request.movesTo));
     // services/ entries are re-keyed by (service, artifact) so they survive the
     // service directory moving between archive and unarchive; the literal path
     // is still recorded — it keys the pre-image below, and it is the fallback.
@@ -95,7 +110,10 @@ export async function writeSnapshot(request: SnapshotRequest): Promise<void> {
       before: s.before === null ? null : sha256(s.before),
     });
     if (s.before !== null) {
-      const dest = join(dir, "files", rel);
+      // Under the suffixed name (`./manifest.ts`, version 4): a pre-image kept
+      // under its living name is a second living document to every tool that
+      // reads by extension.
+      const dest = join(dir, "files", preImageRel(SNAPSHOT_VERSION, rel));
       await mkdir(dirname(dest), { recursive: true });
       await writeFile(dest, s.before);
     }
@@ -127,15 +145,16 @@ export async function writeSnapshot(request: SnapshotRequest): Promise<void> {
  * clear turned a repairable half-merge into a permanent one — after which
  * `unarchive` restored the half-merged text and said the docs were back.
  *
- * Version 2 manifests are graded by the same staleness question over their
- * literal paths — refusing them as "a different loam" would turn every leftover
- * version-2 snapshot into a permanent archive refusal on upgrade.
+ * Version 2 and 3 manifests are graded by the same staleness question — version
+ * 2 over its literal paths — because refusing them as "a different loam" would
+ * turn every leftover snapshot an older loam wrote into a permanent archive
+ * refusal on upgrade. The question reads only the manifest and the living docs,
+ * never a pre-image, so where each layout stores its pre-images does not enter
+ * into it.
  */
-async function assertSnapshotReplaceable(
-  dir: string,
-  docsDir: string,
-  serviceDirOf: (service: string) => string | null,
-): Promise<void> {
+async function assertSnapshotReplaceable(request: SnapshotRequest): Promise<void> {
+  const { docsDir, serviceDirOf } = request;
+  const dir = snapshotDir(request.featureDir);
   const manifestPath = join(dir, SNAPSHOT_MANIFEST);
   // The manifest is written LAST, so a `files/` tree without one is a snapshot
   // whose run died before it could swap anything: it describes no merge.
@@ -155,10 +174,7 @@ async function assertSnapshotReplaceable(
   if (!isRecord(manifest)) {
     throw new SnapshotClobberError(dir, `${SNAPSHOT_MANIFEST} cannot be read, so nothing can say whether it is stale`);
   }
-  if (
-    (manifest.version !== SNAPSHOT_VERSION && manifest.version !== SNAPSHOT_COMPAT_VERSION) ||
-    !Array.isArray(manifest.files)
-  ) {
+  if (!isReadableSnapshotVersion(manifest.version) || !Array.isArray(manifest.files)) {
     throw new SnapshotClobberError(dir, `it was written by a different loam and cannot be checked against the living docs`);
   }
   // `Array.isArray` narrows to `any[]`; naming the element type here is what
@@ -197,11 +213,20 @@ async function assertSnapshotReplaceable(
       if (!(err instanceof UnsafePathError)) throw err;
       throw new SnapshotClobberError(dir, `${message(err)}, so nothing can say whether it is stale`);
     }
-    const now = existsSync(target) ? sha256(await readFile(target)) : null;
+    // A row of the feature's own documents names where the move WOULD have
+    // left it, and a snapshot found here is one whose feature never moved: the
+    // bytes to grade are still under this feature directory. Graded at the
+    // literal path instead, every such row read as absent — a landed merge —
+    // and an archive that a crash or a rollback interrupted could never be
+    // retried over its own leftover. Named where it was graded, too: the
+    // refusal sends a person to restore the file from version control, and
+    // the archived path names a directory that does not exist yet.
+    const graded = acrossRename(target, request.movesTo, request.featureDir);
+    const now = existsSync(graded) ? sha256(await readFile(graded)) : null;
     // `existed: false` means archive created the file, so "nothing landed"
     // means it is still absent.
     const untouched = entry.existed ? now === entry.before : now === null;
-    if (!untouched) landed.push(entry.path);
+    if (!untouched) landed.push(graded === target ? entry.path : repoPath(docsDir, graded));
   }
   if (landed.length > 0) throw new SnapshotClobberError(dir, `${landed.length} file(s) already carry that merge: ${landed.join(", ")}`);
 }
@@ -222,7 +247,7 @@ async function assertSnapshotReplaceable(
  * (`after`, `archivedAt`, the feature name, no duplicates) because it is about
  * to write THROUGH it; that check stays where it is, with its own refusals.
  *
- * `service`/`artifact` are read when present (a version-3 `services/` row) and
+ * `service`/`artifact` are read when present (a keyed `services/` row) and
  * must arrive as a pair: half a key is a manifest that does not say where the
  * file lives, and grading through the literal path anyway would be a guess.
  */

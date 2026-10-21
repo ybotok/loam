@@ -2,7 +2,10 @@
  * The requirements merge: the feature's ADDED/MODIFIED/REMOVED requirements
  * applied into each living service spec. The contract merges live beside it in
  * `./contracts/` — one file per axis, split out when the OpenAPI half made
- * this one carry two merges.
+ * this one carry two merges. What happens to the TEXT of one document lives in
+ * `./document/`: the in-place rewrite of an existing requirements run, the
+ * head of a document this merge creates, and where a merged link points once
+ * the feature has moved.
  *
  * ONE code path for the pair of requirement-carrying files — the business
  * spec.md and the architecture arch.spec.md ride the same delta algebra, the
@@ -20,17 +23,15 @@ import { featureSpecPaths, SPEC_AXES } from "../../../core/repo/paths.js";
 import { capabilityDocsDir, glossaryDir, livingCapabilityPaths } from "../../../core/repo/authored/paths.js";
 import { featureGlossary, livingTermPath } from "../../../core/glossary/delta.js";
 import { locateServicePaths } from "../../../core/repo/service-target.js";
-import {
-  isRequirementsHeading,
-  parseRequirements,
-  sectionHeadings,
-  splitRequirementsSection,
-} from "../../../core/document/parse.js";
+import { isRequirementsHeading, parseRequirements, sectionHeadings } from "../../../core/document/parse.js";
 import { applyRequirementDelta } from "../../../core/document/apply.js";
-import { serializeRequirements, type Requirement } from "../../../core/document/spec.js";
+import { type Requirement } from "../../../core/document/spec.js";
 import { movedUnderVouch, parseFrontmatter, stringField } from "../../../core/document/frontmatter.js";
 import { CodedFailure } from "../../../core/envelope/json.js";
 import { type Gated, type Plan } from "./state.js";
+import { featureRetarget } from "./document/links.js";
+import { createdDocument, hasPurpose } from "./document/head.js";
+import { rewriteRequirementsRun } from "./document/run.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 import type { FleetContext } from "../../../core/fleet-context.js";
 
@@ -42,6 +43,9 @@ export async function planSpecs(
 ): Promise<void> {
   const { featureDir, deltaServices } = gated;
   const { writes } = plan;
+  // Where every file of the feature will be once this archive lands — the
+  // glossary terms it copies out, everything else under features/archive/.
+  const retarget = await featureRetarget(config.docsDir, gated);
   // Requirements merge — apply ADDED/MODIFIED/REMOVED into each living service
   // spec. ONE code path for the pair of requirement-carrying files: the business
   // spec.md and the architecture arch.spec.md ride the same delta algebra, the
@@ -61,21 +65,33 @@ export async function planSpecs(
       // `core/links/parse.ts`'s `rebaseLinks` states the defect; the ordering
       // here is what lets the fix see both ends of the move, including a
       // service filed under a subsystem, whose living directory is deeper still.
-      const deltaReqs = parseRequirements(
-        rebaseLinks(await readUtf8(deltaPath), { from: dirname(deltaPath), to: dirname(livingPath) }),
-      );
+      // `retarget` is the other half: a link INTO the feature points at a file
+      // this same archive moves (`./document/links.ts`).
+      const delta = rebaseLinks(await readUtf8(deltaPath), { from: dirname(deltaPath), to: dirname(livingPath), retarget });
+      const deltaReqs = parseRequirements(delta);
       if (!existsSync(livingPath)) {
         // New service (or first arch spec) — create the living file from the
-        // ADDED/MODIFIED requirements.
+        // ADDED/MODIFIED requirements, under the head `./document/head.ts` writes:
+        // what the delta marked as the document's own, and a link to the rest.
         const created = applyRequirementDelta([], deltaReqs);
         if (created.length === 0) {
           say(`  ${axis.label}: ${svc} — nothing to merge (delta leaves no requirements), no living ${axis.file} created`);
           continue;
         }
-        const heading = axis.key === "spec" ? svc : `${svc} — architecture`;
-        const frontmatter = `---\nservice: ${svc}\nstatus: draft\n---\n\n# ${heading}\n\n`;
-        writes.push(planWrite(livingPath, `${frontmatter}## Requirements\n\n${serializeRequirements(created)}`));
+        const doc = createdDocument({
+          docsDir: config.docsDir,
+          featureId: gated.id,
+          deltaPath,
+          delta,
+          livingPath,
+          retarget,
+          fallbackTitle: axis.key === "spec" ? svc : `${svc} — architecture`,
+          service: svc,
+          requirements: created,
+        });
+        writes.push(planWrite(livingPath, doc.text));
         say(`  ${axis.label}: ${svc} — created living ${axis.file} (${created.length} requirement(s))`);
+        say(`      ${doc.note}`);
         continue;
       }
       const livingText = await readUtf8(livingPath);
@@ -109,18 +125,29 @@ export async function planSpecs(
 
       const c = summarize(deltaReqs);
       say(`  ${axis.label}: ${svc} ← +${c.ADDED} ~${c.MODIFIED} -${c.REMOVED} (now ${merged.length} total)`);
+      if (hasPurpose(delta)) say(`      ${PURPOSE_NOT_MERGED}`);
     }
   }
 }
+
+/**
+ * A `## Purpose` in a delta against a document that already exists merges as
+ * nothing — the living narrative is edited in place, never replaced by a merge
+ * — and the author who wrote one expected it to land. Said, not refused: the
+ * requirements are still exactly what they meant.
+ */
+const PURPOSE_NOT_MERGED =
+  "the delta's ## Purpose was not merged — the living document keeps its own narrative; edit it there in this change";
 
 /**
  * The BUSINESS corpus's merge: a feature's `capabilities/<id>/spec.md` deltas
  * applied into the living `capabilities/<id>/spec.md`.
  *
  * Here rather than in a sixth file in this package because this module already
- * owns "requirements merged into a living document" — it owns
- * `rewriteRequirementsRun`, the two-headings refusal and the `applyRequirementDelta`
- * call, and the business corpus needs all three unchanged. What differs from
+ * owns "requirements merged into a living document" — it owns the two-headings
+ * refusal and the `applyRequirementDelta` call, and calls the same
+ * `./document/` rewrite and head, and the business corpus needs all of them
+ * unchanged. What differs from
  * `planSpecs` above is only where the living document lives and what a CREATED
  * one says at the top.
  *
@@ -156,27 +183,42 @@ export async function planCapabilities(
   // run whose every capability delta merged into a document already there.
   const adopting = !existsSync(capabilityDocsDir(config.docsDir));
   let creating = false;
+  const retarget = await featureRetarget(config.docsDir, gated);
   for (const doc of gated.capabilityDeltas) {
     const livingPath = livingCapabilityPaths(config.docsDir, doc.id).spec;
     // Same move, same rewrite: `features/<FEAT>/capabilities/<id>/` is two
     // directories deeper than `capabilities/<id>/`, so a citation of a glossary
-    // term or an ADR would land pointing above the repository.
-    const deltaReqs = parseRequirements(
-      rebaseLinks(await readUtf8(doc.spec), { from: dirname(doc.spec), to: dirname(livingPath) }),
-    );
+    // term or an ADR would land pointing above the repository — or, aimed into
+    // the feature itself, at a file this archive moves.
+    const delta = rebaseLinks(await readUtf8(doc.spec), { from: dirname(doc.spec), to: dirname(livingPath), retarget });
+    const deltaReqs = parseRequirements(delta);
     if (!existsSync(livingPath)) {
       const created = applyRequirementDelta([], deltaReqs);
       if (created.length === 0) {
         say(`  capability: ${doc.id} — nothing to merge (delta leaves no requirements), no living spec.md created`);
         continue;
       }
-      // The heading is the id and nothing else. loam merges requirements and
-      // never prose, so it must not fabricate the narrative that is the whole
-      // point of the document — the line below tells the author it is theirs.
-      writes.push(planWrite(livingPath, `# ${doc.id}\n\n## Requirements\n\n${serializeRequirements(created)}`));
+      // The heading is the id unless the delta titled the capability, and the
+      // narrative is the delta's `## Purpose` or nothing: loam merges
+      // requirements and never prose, so it must not fabricate the narrative
+      // that is the whole point of the document — it carries only what the
+      // author marked as the document's own (`./document/head.ts`), and the note
+      // below tells them where the rest is.
+      const living = createdDocument({
+        docsDir: config.docsDir,
+        featureId: gated.id,
+        deltaPath: doc.spec,
+        delta,
+        livingPath,
+        retarget,
+        fallbackTitle: doc.id,
+        service: null,
+        requirements: created,
+      });
+      writes.push(planWrite(livingPath, living.text));
       creating = true;
       say(`  capability: ${doc.id} — created capabilities/${doc.id}/spec.md (${created.length} requirement(s))`);
-      say(`      write the narrative above '## Requirements' — loam merges requirements, not prose`);
+      say(`      ${living.note}`);
       continue;
     }
     const livingText = await readUtf8(livingPath);
@@ -194,136 +236,11 @@ export async function planCapabilities(
     writes.push(planWrite(livingPath, rewriteRequirementsRun(livingText, livingReqs, merged)));
     const c = summarize(deltaReqs);
     say(`  capability: ${doc.id} ← +${c.ADDED} ~${c.MODIFIED} -${c.REMOVED} (now ${merged.length} total)`);
+    if (hasPurpose(delta)) say(`      ${PURPOSE_NOT_MERGED}`);
   }
   if (adopting && creating) {
     say(`  capabilities/ did not exist — this archive opts the fleet into the business axis, and \`loam validate --all\` grades it from now on`);
   }
-}
-
-/**
- * Rewrite ONLY what the delta touched inside a living spec's requirements run.
- * Byte-for-byte preserved: everything before the first requirement inside
- * `## Requirements` (the intro, the heading line, prose under the heading) and
- * everything from the section's end onward (the next `## ` heading to EOF) —
- * the old cut was a substring `indexOf("\n## Requirements")`, a prefix match
- * that also hit `## Requirements Extra` and silently destroyed every section
- * after the requirements. `living` must be every living requirement — the gate's
- * stray guard refuses any document whose requirements sit outside the section,
- * using the same heading definition, before this output is ever written.
- *
- * Inside the run the unit is one requirement, and an untouched one is written
- * back as its raw slice (`spliceRun`). The whole run used to be re-serialized,
- * and `serializeRequirements` writes a blank line under every
- * `### Requirement:` heading — so a living spec written without one, the shape
- * the adopt brief's own examples taught, had that line inserted under every
- * requirement the feature never mentioned. The diff, the vouch pack and the
- * re-vouch all widened from the delta to the whole section.
- *
- * Exported for test/archive.test.ts alone: the slice-to-requirement join
- * (`verbatimSlices`) can only be handed a disagreeing pair directly, because
- * the gate refuses every document that would produce one through the CLI.
- */
-export function rewriteRequirementsRun(text: string, living: Requirement[], merged: Requirement[]): string {
-  const s = splitRequirementsSection(text);
-  // No `## Requirements` at all: the stray guard has already refused any doc
-  // whose requirements live elsewhere, so this one has none — open the section.
-  if (s === null) return `${text.trimEnd()}\n\n## Requirements\n\n${serializeRequirements(merged)}`;
-  if (s.run !== "") return s.head + spliceRun(s, living, merged) + s.tail;
-  // The section held no requirements yet: head and tail are raw slices, and the
-  // glue supplies the blank lines the author never had reason to write.
-  const headGlue = s.head.endsWith("\n\n") ? "" : s.head.endsWith("\n") ? "\n" : "\n\n";
-  const tailGlue = s.tail === "" ? "" : "\n";
-  return s.head + headGlue + serializeRequirements(merged) + tailGlue + s.tail;
-}
-
-/** The line breaks (and blank lines) a slice ends with — what separates it from whatever follows. */
-const TRAILING_BREAKS = /(?:\r?\n[ \t]*)*$/;
-
-/**
- * The merged run: every living requirement the delta left alone as its raw
- * slice, every one it added or replaced serialized, in `merged`'s order.
- *
- * Keyed on object identity, which `applyRequirementDelta` keeps for exactly the
- * requirements it did not touch — so there is no second reading here of what
- * the delta changed, and no way for the splice and the algebra to disagree.
- * Which slice belongs to which living requirement is `verbatimSlices`' join.
- *
- * Prose BETWEEN requirements rides in the slice of the requirement above it,
- * which is where parseRequirements attributes it too: it survives verbatim
- * beside an untouched requirement and goes with a replaced one, as it always
- * did — a MODIFIED carries its full new text.
- */
-function spliceRun(
-  section: { run: string; requirements: string[] },
-  living: Requirement[],
-  merged: Requirement[],
-): string {
-  const verbatim = verbatimSlices(section.requirements, living);
-  let out = "";
-  let previousVerbatim = true;
-  for (const requirement of merged) {
-    const raw = verbatim.get(requirement);
-    // Two untouched neighbours keep whatever the author put between them. Next
-    // to a serialized requirement the canonical blank line is ADDED after the
-    // untouched text, never by rewriting it.
-    if (out !== "" && (raw === undefined || !previousVerbatim)) out = withBlankLine(out);
-    out += raw ?? serializeRequirements([requirement]);
-    previousVerbatim = raw !== undefined;
-  }
-  if (out === "") return "";
-  // The run ends as it ended: whatever separated the old last requirement from
-  // the next heading (or EOF) now follows the new last one — and at least a
-  // newline when a merged requirement lands where the file used to stop without one.
-  const ending = section.run.slice(section.run.search(TRAILING_BREAKS));
-  const body = out.slice(0, out.search(TRAILING_BREAKS));
-  return body + (ending === "" && merged.at(-1) !== living.at(-1) ? "\n" : ending);
-}
-
-/** A requirement's identity as the merge selects it: `Requirement-ID:` when authored, the exact heading otherwise. */
-const identity = (r: Pick<Requirement, "id" | "name">): string => (r.id === undefined ? `name:${r.name}` : `id:${r.id}`);
-
-/**
- * Each living requirement's raw slice, joined on its IDENTITY — the slice read
- * back through the same parser that produced `living`, so a slice can only
- * land in place of the requirement it actually is.
- *
- * The join used to be by position, guarded by a count. The two walks agree in
- * order today (one heading-and-fence definition, core/document/parse.ts, and
- * the gate's stray guard refusing any requirement outside the section), but
- * nothing declared that, and equal counts paired differently would have written
- * one requirement's bytes where another belongs — under its vouch stamp, with
- * nothing to say so.
- *
- * Fails closed to the empty map, which serializes every requirement — the old
- * whole-run rewrite, still a correct merge and only a wider diff: when the
- * counts differ, when a slice does not read as exactly one requirement, when
- * two slices claim one identity, or when a living requirement finds no slice
- * of its own.
- */
-function verbatimSlices(slices: string[], living: Requirement[]): Map<Requirement, string> {
-  const none = new Map<Requirement, string>();
-  if (slices.length !== living.length) return none;
-  const byIdentity = new Map<string, string>();
-  for (const slice of slices) {
-    const [only, ...more] = parseRequirements(slice);
-    if (only === undefined || more.length > 0 || byIdentity.has(identity(only))) return none;
-    byIdentity.set(identity(only), slice);
-  }
-  const verbatim = new Map<Requirement, string>();
-  for (const requirement of living) {
-    const slice = byIdentity.get(identity(requirement));
-    if (slice === undefined) return none;
-    // Taken once: a second living requirement of the same identity finds nothing.
-    byIdentity.delete(identity(requirement));
-    verbatim.set(requirement, slice);
-  }
-  return verbatim;
-}
-
-/** `text` ending in a blank line: line breaks appended to make one, nothing rewritten. */
-function withBlankLine(text: string): string {
-  const breaks = text.slice(text.search(TRAILING_BREAKS)).split("\n").length - 1;
-  return breaks >= 2 ? text : text + "\n".repeat(2 - breaks);
 }
 
 function summarize(reqs: Requirement[]): { ADDED: number; MODIFIED: number; REMOVED: number } {
@@ -344,9 +261,15 @@ function summarize(reqs: Requirement[]): { ADDED: number; MODIFIED: number; REMO
  * is folded into a living document by the requirement algebra because the two
  * documents share identified parts; a term document has one part, and merging
  * two definitions of one word is not something a machine may attempt. So the
- * definition the author wrote in the feature IS the definition that lands,
- * verbatim — loam re-encodes it as UTF-8 through `readUtf8` and changes nothing
- * else, not even the trailing newline.
+ * definition the author wrote in the feature IS the definition that lands —
+ * loam re-encodes it as UTF-8 through `readUtf8` and changes nothing else, not
+ * even the trailing newline, but the ROUTE of each relative link. That one
+ * exception is the requirement merge's, for the requirement merge's reason: the
+ * term moves from `features/<FEAT>/glossary/` to `glossary/`, two directories
+ * up, so a definition citing a service spec or the feature's own ADR landed
+ * pointing at nothing (`link.unresolved` on the very next `validate --all`,
+ * against a document graded at fleet scope). Same `rebaseLinks`, same
+ * `retarget`: the target is unchanged, only the way there.
  *
  * CREATE-ONLY, which is why this loop has no other branch. A term the living
  * glossary already defines was refused at the gate (`glossary.term-exists`,
@@ -371,8 +294,11 @@ export async function planGlossary(
   if (!glossary.present || glossary.terms.length === 0) return;
   // Asked BEFORE the loop, because the loop is what would create it.
   const adopting = !existsSync(glossaryDir(config.docsDir));
+  const retarget = await featureRetarget(config.docsDir, gated);
   for (const term of glossary.terms) {
-    plan.writes.push(planWrite(livingTermPath(config.docsDir, term.id), await readUtf8(term.path)));
+    const livingPath = livingTermPath(config.docsDir, term.id);
+    const text = rebaseLinks(await readUtf8(term.path), { from: dirname(term.path), to: dirname(livingPath), retarget });
+    plan.writes.push(planWrite(livingPath, text));
     say(`  glossary: ${term.id} — created glossary/${term.id}.md`);
   }
   if (adopting) {

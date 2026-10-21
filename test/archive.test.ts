@@ -26,14 +26,17 @@
  *    and `--dry-run` must leave them untouched down to the byte.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { join } from "node:path";
-import { rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { parse } from "yaml";
 import { loadFile, type LoadedDoc } from "../src/core/c4/likec4.js";
 import { parseRequirements } from "../src/core/document/parse.js";
 import { applyRequirementDelta } from "../src/core/document/apply.js";
 import { contentDigest } from "../src/core/document/frontmatter.js";
-import { rewriteRequirementsRun } from "../src/commands/archive/plan/specs.js";
+import { rewriteRequirementsRun } from "../src/commands/archive/plan/document/run.js";
+import { movedMarkdown } from "../src/core/links/corpus.js";
+import { documentLinks } from "../src/core/links/parse.js";
 import {
   coherentFixture,
   makeProject,
@@ -4375,6 +4378,443 @@ model {
       // The additive key is resolved on EVERY issue in the envelope, so a
       // consumer branches on data rather than keeping its own code list.
       for (const i of issues) expect(typeof i.overridable).toBe("boolean");
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("a CREATED living spec keeps what the delta marked as the document's own", () => {
+  /**
+   * A delta written as the service's first document — the shape a domain
+   * migrated into one feature arrives in: an owner, a real title, a Purpose,
+   * prose for the reviewer, the requirements, and a section after them. Archive
+   * used to keep the requirements and write a fixed header over the rest.
+   */
+  const AUTHORED_DELTA = `---
+owner: team-payments
+---
+
+# Payment splitting
+
+Reviewers: this delta is the first cut of the service; see the intent for why it is separate.
+
+## Purpose
+
+Splits one payment across several payees, so a marketplace order can pay each seller
+their share. See [the payer](../../../../services/payment-service/spec.md).
+
+## ADDED Requirements
+
+### Requirement: Split a payment
+The service SHALL split a payment across payees summing to the total.
+
+Operations: createSplit
+
+#### Scenario: Split across two payees
+- **Given** a payment of 100.00
+- **When** it is split 60/40
+- **Then** two shares are recorded
+
+## Open questions
+
+Should a split survive a partial refund? Decide before FEAT-2.
+`;
+
+  it("carries the owner, the title and ## Purpose, links back to the delta for the rest, and says so", async () => {
+    const files = coherentFixture();
+    files["features/FEAT-1-split/specs/payment-split-service/spec.md"] = AUTHORED_DELTA;
+    const p = await makeProject(files, { service: "payment-service" });
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-1");
+      expect(res.code, res.out).toBe(0);
+      const text = await p.read("services/payment-split-service/spec.md");
+      expect(text.startsWith("---\nservice: payment-split-service\nstatus: draft\nowner: team-payments\n---\n\n# Payment splitting\n\n")).toBe(
+        true,
+      );
+      expect(text).toContain(
+        "## Purpose\n\nSplits one payment across several payees, so a marketplace order can pay each seller\n" +
+          "their share. See [the payer](../payment-service/spec.md).\n\n## Requirements\n",
+      );
+      // Prose about the CHANGE stays with the change — one link away, and the
+      // link resolves into the archived feature.
+      expect(text).not.toContain("Reviewers: this delta");
+      expect(text).not.toContain("Open questions");
+      expect(text).toContain("[its delta](../../features/archive/FEAT-1-split/specs/payment-split-service/spec.md)");
+      expect(p.exists("features/archive/FEAT-1-split/specs/payment-split-service/spec.md")).toBe(true);
+      expect(parseRequirements(text).map((r) => [r.name, r.kind])).toEqual([["Split a payment", "BASE"]]);
+      expect(res.out).toContain("carried from the delta: owner, its title, its ## Purpose");
+      const validated = JSON.parse((await runLoam(p.workDir, "validate", "--all", "--json")).stdout) as {
+        targets: Array<{ findings: Array<{ code: string; message: string }> }>;
+      };
+      const unresolved = validated.targets.flatMap((t) => t.findings).filter((f) => f.code === "link.unresolved");
+      expect(unresolved, JSON.stringify(unresolved)).toEqual([]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a delta titled for the change keeps the id as the title and carries none of its prose", async () => {
+    // The canonical fixture's H1 names the feature, which is what loam's own
+    // scaffold writes: "<svc> — delta for FEAT-1" is the change's title.
+    const p = await makeProject(coherentFixture(), { service: "payment-service" });
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-1");
+      expect(res.code, res.out).toBe(0);
+      const text = await p.read("services/payment-split-service/spec.md");
+      expect(text).toContain("\n# payment-split-service\n\nCreated when FEAT-1 was archived; [its delta](");
+      expect(text).not.toContain("delta for FEAT-1");
+      expect(text).not.toContain("## Purpose");
+      expect(res.out).toContain("the delta's prose stays in features/archive/FEAT-1-split/specs/payment-split-service/spec.md");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a ## Purpose in a delta against an EXISTING spec merges as nothing, and the plan says so", async () => {
+    const files = coherentFixture();
+    files["features/FEAT-1-split/specs/payment-service/spec.md"] =
+      "# payment-service — delta for FEAT-1\n\n## Purpose\n\nA rewritten purpose nobody merges.\n\n## ADDED Requirements\n\n" +
+      "### Requirement: Report a split\nThe service SHALL report each split it initiates.\n\n" +
+      "#### Scenario: A split is reported\n- **Given** a split\n- **When** it is initiated\n- **Then** it is reported\n";
+    const p = await makeProject(files, { service: "payment-service" });
+    try {
+      const before = await p.read("services/payment-service/spec.md");
+      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--approve");
+      expect(res.code, res.out).toBe(0);
+      const after = await p.read("services/payment-service/spec.md");
+      expect(after).not.toContain("A rewritten purpose nobody merges");
+      expect(after.startsWith(before.slice(0, before.indexOf("## Requirements")))).toBe(true);
+      expect(res.out).toContain("the delta's ## Purpose was not merged");
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("the documents that stay in the feature still resolve from features/archive/<FEAT>/", () => {
+  /**
+   * The intent and one ADR, each linking out of the feature (the living spec,
+   * the living contract), into it (each other) and off-site. The archive is a
+   * directory rename, and it used to carry all of them byte for byte: every
+   * link out of the feature then named a directory under `features/`, one level
+   * short — and the living documents link INTO archived feature ADRs, so a
+   * reader who followed one found a decision whose own links led nowhere.
+   */
+  const INTENT =
+    "---\nfeature: FEAT-1\nstatus: proposed\n---\n\n# Split payments\n\n" +
+    "Let a payment be split across payees. The payer is [payment-service](../../services/payment-service/spec.md); " +
+    "why splitting is a service of its own is [ADR 0001](./adrs/0001-own-service.md). " +
+    "Background: [the brief](https://example.test/brief).\n";
+  const ADR =
+    "# 0001 — Splitting is a service of its own\n\n" +
+    "Splitting stays out of [payment-service](../../../services/payment-service/spec.md) and calls " +
+    "[its contract](<../../../services/payment-service/openapi.yaml>); [the intent](../intent.md) says why the change exists.\n";
+
+  function linkedFixture(): Record<string, string> {
+    const files = coherentFixture();
+    files["features/FEAT-1-split/intent.md"] = INTENT;
+    files["features/FEAT-1-split/adrs/0001-own-service.md"] = ADR;
+    return files;
+  }
+
+  it("re-expresses the links out of the feature, keeps the ones inside it, and every relative link resolves", async () => {
+    const p = await makeProject(linkedFixture());
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-1");
+      expect(res.code, res.out).toBe(0);
+      const intent = await p.read("features/archive/FEAT-1-split/intent.md");
+      expect(intent).toContain("[payment-service](../../../services/payment-service/spec.md)");
+      expect(intent).toContain("[ADR 0001](./adrs/0001-own-service.md)");
+      expect(intent).toContain("[the brief](https://example.test/brief)");
+      const adr = await p.read("features/archive/FEAT-1-split/adrs/0001-own-service.md");
+      expect(adr).toContain("[payment-service](../../../../services/payment-service/spec.md)");
+      expect(adr).toContain("[its contract](<../../../../services/payment-service/openapi.yaml>)");
+      expect(adr).toContain("[the intent](../intent.md)");
+      // Only the routes the rename broke: everything else in the two
+      // documents is the author's, byte for byte.
+      expect(intent.replace("../../../services/", "../../services/")).toBe(INTENT);
+      expect(adr.split("../../../../services/").join("../../../services/")).toBe(ADR);
+      // The general claim, over every markdown document the rename carried.
+      const archived = join(p.docsDir, "features/archive/FEAT-1-split");
+      const broken: string[] = [];
+      for (const doc of await movedMarkdown(archived)) {
+        for (const link of documentLinks(await readFile(doc, "utf8"))) {
+          if (!existsSync(resolve(dirname(doc), link.path))) broken.push(`${doc}: ${link.raw}`);
+        }
+      }
+      expect(broken).toEqual([]);
+      expect(res.out).toContain("feature documents: 2 relinked for features/archive/FEAT-1-split/");
+      // The snapshot records each where the move left it — the path `unarchive`
+      // restores through, under rules every reader of this layout already has.
+      const manifest = JSON.parse(
+        await p.read("features/archive/FEAT-1-split/.loam-before/manifest.json"),
+      ) as { files: Array<{ path: string; existed: boolean; service?: string }> };
+      expect(manifest.files.filter((f) => f.path.startsWith("features/"))).toEqual([
+        expect.objectContaining({ path: "features/archive/FEAT-1-split/adrs/0001-own-service.md", existed: true }),
+        expect.objectContaining({ path: "features/archive/FEAT-1-split/intent.md", existed: true }),
+      ]);
+      expect(manifest.files.some((f) => f.path.startsWith("features/") && f.service !== undefined)).toBe(false);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("lists them in the plan before the move, and a dry run writes none of them", async () => {
+    const p = await makeProject(linkedFixture());
+    try {
+      const before = await treeHashes(p.docsDir);
+      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--dry-run", "--json");
+      expect(res.code, res.out).toBe(0);
+      const plan = (JSON.parse(res.stdout) as { plan: Array<{ path: string; action: string }> }).plan;
+      const at = (path: string): number => plan.findIndex((row) => row.path === path);
+      expect(plan[at("features/FEAT-1-split/intent.md")]).toEqual({ path: "features/FEAT-1-split/intent.md", action: "update" });
+      expect(at("features/FEAT-1-split/adrs/0001-own-service.md")).toBeGreaterThan(-1);
+      expect(at("features/FEAT-1-split/intent.md")).toBeLessThan(at("features/FEAT-1-split"));
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("leaves a document that is not UTF-8 exactly as written, and the text output says so", async () => {
+    // Nothing grades a feature's notes, so nothing refused them before the
+    // archive; the relink only corrects links, and refusing the archive over
+    // such a document would be the larger harm. UTF-16 with a byte-order
+    // mark is how PowerShell's `>` writes a file.
+    const p = await makeProject(linkedFixture());
+    try {
+      const utf16 = Buffer.concat([
+        Buffer.from([0xff, 0xfe]),
+        Buffer.from("# Notes\n\nSee [the payer](../../../services/payment-service/spec.md).\n", "utf16le"),
+      ]);
+      await mkdir(join(p.docsDir, "features/FEAT-1-split/notes"), { recursive: true });
+      await writeFile(join(p.docsDir, "features/FEAT-1-split/notes/history.md"), utf16);
+      const res = await runLoam(p.workDir, "archive", "FEAT-1");
+      expect(res.code, res.out).toBe(0);
+      expect(res.out).toContain("⚠ features/archive/FEAT-1-split/notes/history.md is not UTF-8 — its links were left as written");
+      expect((await readFile(join(p.docsDir, "features/archive/FEAT-1-split/notes/history.md"))).equals(utf16)).toBe(true);
+      // The other documents were still relinked.
+      expect(res.out).toContain("feature documents: 2 relinked for features/archive/FEAT-1-split/");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("archive then unarchive is still a byte round trip, and the restore names each document where it lands", async () => {
+    const p = await makeProject(linkedFixture());
+    try {
+      const before = await treeHashes(p.docsDir);
+      expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+      const res = await runLoam(p.workDir, "unarchive", "FEAT-1", "--json");
+      expect(res.code, res.out).toBe(0);
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+      const restored = (JSON.parse(res.stdout) as { restored: string[] }).restored;
+      expect(restored).toContain("features/FEAT-1-split/intent.md");
+      expect(restored).toContain("features/FEAT-1-split/adrs/0001-own-service.md");
+      expect(restored.some((path) => path.startsWith("features/archive/"))).toBe(false);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("a document outside the feature that links into it still resolves once the feature is archived", () => {
+  /**
+   * The rest of the corpus citing the feature: another change in flight that
+   * builds on its decision and its word, a living service's ADR and a fleet ADR
+   * citing the decision taken for it. The archive renamed the directory under
+   * all of them, and every such link was `link.unresolved` on the first
+   * `validate --all` after a clean archive — correct the moment before it, so
+   * no gate could say so, and fixable by no edit made in advance: the archived
+   * path does not exist until the archive does.
+   */
+  const ADR = "# 0001 — Splitting is a service of its own\n\nDecided for the split.\n";
+  const PAYEE = "# Payee\n\nWho receives a share of a split payment.\n";
+  const OTHER_INTENT =
+    "---\nfeature: FEAT-2\nstatus: proposed\n---\n\n# Refund a split\n\n" +
+    "Builds on [the split decision](../FEAT-1-split/adrs/0001-own-service.md); a [payee](../FEAT-1-split/glossary/payee.md) " +
+    "is refunded their share by [payment-service](../../services/payment-service/spec.md). " +
+    "Context: [FEAT-1](../FEAT-1-split/intent.md).\n";
+  const SERVICE_ADR =
+    "# 0001 — payment-service stays small\n\n" +
+    "Splitting went elsewhere: [the decision](../../../features/FEAT-1-split/adrs/0001-own-service.md).\n";
+  const FLEET_ADR =
+    "# 0001 — Money moves through services\n\nSee [the split](../../features/FEAT-1-split/adrs/0001-own-service.md#context).\n";
+
+  function inboundFixture(): Record<string, string> {
+    const files = coherentFixture();
+    files["features/FEAT-1-split/adrs/0001-own-service.md"] = ADR;
+    files["features/FEAT-1-split/glossary/payee.md"] = PAYEE;
+    files["features/FEAT-2-refunds/intent.md"] = OTHER_INTENT;
+    files["services/payment-service/adrs/0001-stay-small.md"] = SERVICE_ADR;
+    files["architecture/adrs/0001-money-moves.md"] = FLEET_ADR;
+    return files;
+  }
+
+  async function unresolvedLinks(p: Project): Promise<Array<{ code: string; message: string }>> {
+    const validated = JSON.parse((await runLoam(p.workDir, "validate", "--all", "--json")).stdout) as {
+      targets: Array<{ findings: Array<{ code: string; message: string }> }>;
+    };
+    return validated.targets.flatMap((t) => t.findings).filter((f) => f.code === "link.unresolved");
+  }
+
+  it("re-expresses every link into the feature, cites a term at its living copy, and validate --all finds none unresolved", async () => {
+    const p = await makeProject(inboundFixture());
+    try {
+      expect(await unresolvedLinks(p), "every link resolves before the archive").toEqual([]);
+      const res = await runLoam(p.workDir, "archive", "FEAT-1");
+      expect(res.code, res.out).toBe(0);
+      // The decision and the intent stay with the change, so they are cited
+      // where it now lives; the word went into the living glossary, and the
+      // living copy is the one a reader of a living document is meant to find.
+      // The link to a file nothing moved keeps its spelling.
+      expect(await p.read("features/FEAT-2-refunds/intent.md")).toBe(
+        OTHER_INTENT.replace("../FEAT-1-split/adrs/", "../archive/FEAT-1-split/adrs/")
+          .replace("../FEAT-1-split/glossary/payee.md", "../../glossary/payee.md")
+          .replace("../FEAT-1-split/intent.md", "../archive/FEAT-1-split/intent.md"),
+      );
+      expect(await p.read("services/payment-service/adrs/0001-stay-small.md")).toBe(
+        SERVICE_ADR.replace("/features/FEAT-1-split/", "/features/archive/FEAT-1-split/"),
+      );
+      expect(await p.read("architecture/adrs/0001-money-moves.md")).toBe(
+        FLEET_ADR.replace("/features/FEAT-1-split/", "/features/archive/FEAT-1-split/"),
+      );
+      expect(await unresolvedLinks(p)).toEqual([]);
+      expect(res.out).toContain("links into the feature: 3 document(s) relinked for features/archive/FEAT-1-split/");
+      for (const path of [
+        "architecture/adrs/0001-money-moves.md",
+        "services/payment-service/adrs/0001-stay-small.md",
+        "features/FEAT-2-refunds/intent.md",
+      ]) {
+        expect(res.out).toContain(`      ${path}\n`);
+      }
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("plans them before the move, a dry run writes none, and archive then unarchive is a byte round trip", async () => {
+    const p = await makeProject(inboundFixture());
+    try {
+      const before = await treeHashes(p.docsDir);
+      const dry = await runLoam(p.workDir, "archive", "FEAT-1", "--dry-run", "--json");
+      expect(dry.code, dry.out).toBe(0);
+      const plan = (JSON.parse(dry.stdout) as { plan: Array<{ path: string; action: string }> }).plan;
+      const at = (path: string): number => plan.findIndex((row) => row.path === path);
+      expect(plan[at("features/FEAT-2-refunds/intent.md")]).toEqual({ path: "features/FEAT-2-refunds/intent.md", action: "update" });
+      expect(at("services/payment-service/adrs/0001-stay-small.md")).toBeLessThan(at("features/FEAT-1-split"));
+      expect(at("architecture/adrs/0001-money-moves.md")).toBeGreaterThan(-1);
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+
+      expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+      // Each is an ordinary row of the undo, at the path it was written — a
+      // service's keyed by (service, artifact) like any other services/ row.
+      const manifest = JSON.parse(await p.read("features/archive/FEAT-1-split/.loam-before/manifest.json")) as {
+        files: Array<{ path: string; existed: boolean }>;
+      };
+      expect(manifest.files).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ path: "features/FEAT-2-refunds/intent.md", existed: true }),
+          expect.objectContaining({
+            path: "services/payment-service/adrs/0001-stay-small.md",
+            service: "payment-service",
+            artifact: "adrs/0001-stay-small.md",
+            existed: true,
+          }),
+          expect.objectContaining({ path: "architecture/adrs/0001-money-moves.md", existed: true }),
+        ]),
+      );
+      const back = await runLoam(p.workDir, "unarchive", "FEAT-1", "--json");
+      expect(back.code, back.out).toBe(0);
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+      expect((JSON.parse(back.stdout) as { restored: string[] }).restored).toContain("features/FEAT-2-refunds/intent.md");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("unarchive leaves a relinked document whose own feature moved on, rather than recreating it", async () => {
+    // The other change has a lifecycle of its own — abandoned in one run,
+    // archived in the other. Its row in this feature's undo then names a
+    // directory that no longer exists: not drift, since nobody edited it, and
+    // putting the pre-image back revived it as a one-file change in flight.
+    for (const movesOn of ["removed", "archived"] as const) {
+      const p = await makeProject(inboundFixture());
+      try {
+        expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+        if (movesOn === "removed") await rm(join(p.docsDir, "features/FEAT-2-refunds"), { recursive: true });
+        else {
+          const other = await runLoam(p.workDir, "archive", "FEAT-2");
+          expect(other.code, other.out).toBe(0);
+        }
+        const back = await runLoam(p.workDir, "unarchive", "FEAT-1");
+        expect(back.code, `${movesOn}: ${back.out}`).toBe(0);
+        expect(back.out).toContain("left:     features/FEAT-2-refunds/intent.md — its feature is no longer in flight");
+        expect(p.exists("features/FEAT-2-refunds"), movesOn).toBe(false);
+        // The rest of the undo still happened.
+        expect(p.exists("features/FEAT-1-split/intent.md")).toBe(true);
+        expect(await p.read("services/payment-service/adrs/0001-stay-small.md")).toBe(SERVICE_ADR);
+      } finally {
+        await p.destroy();
+      }
+    }
+  });
+
+  it("relinks the text the merge composed rather than the bytes on disk, and owes one re-vouch for the document", async () => {
+    // The living spec FEAT-9 merges into also cites FEAT-9's decision in its
+    // own narrative. Two plans write the one document; the second must start
+    // from the first's text, or the relink would undo the merge.
+    const body = ORDERS_BODY.replace(
+      "Takes orders.",
+      "Takes orders; [splitting them](../../features/FEAT-9-split/adrs/0001-split.md) was decided for FEAT-9.",
+    );
+    const header = "---\nservice: orders-api\nstatus: verified\nowner: orders-team\n";
+    const living = `${header}content_digest: ${contentDigest(`${header}---\n${body}`)}\n---\n${body}`;
+    const files = ordersFixture(living, ORDERS_ADD_ONLY);
+    files["features/FEAT-9-split/adrs/0001-split.md"] = "# 0001 — Split bills\n\nA bill may be split.\n";
+    const p = await makeProject(files);
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-9", "--json");
+      expect(res.code, res.out).toBe(0);
+      const after = await p.read(ORDERS_SPEC);
+      expect(parseRequirements(after).map((r) => r.id)).toEqual(["ORD-1", "ORD-2", "ORD-3", "ORD-4", "ORD-5"]);
+      expect(after).toContain("[splitting them](../../features/archive/FEAT-9-split/adrs/0001-split.md)");
+      const payload = JSON.parse(res.stdout) as { plan: Array<{ path: string }>; revouchOwed: unknown[] };
+      expect(payload.plan.filter((row) => row.path === ORDERS_SPEC)).toHaveLength(1);
+      expect(payload.revouchOwed).toEqual([{ service: "orders-api", path: ORDERS_SPEC, owner: "orders-team" }]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a vouched spec only the relink moves is owed its re-vouch too, and a moved requirement says what its pins cost", async () => {
+    // The route sits inside a requirement: the vouch's content_digest and a
+    // Based-On pin both hash it. Neither is softened — the archive names the
+    // document, as it does for a spec its merge moves.
+    const header = "---\nservice: payment-service\nstatus: verified\n";
+    const body = LIVING_SPEC.slice(LIVING_SPEC.indexOf("---\n", 4) + 4).replace(
+      "before capture.",
+      "before capture; a split payment is [someone else's](../../features/FEAT-1-split/adrs/0001-own-service.md).",
+    );
+    const files = inboundFixture();
+    files["services/payment-service/spec.md"] = `${header}content_digest: ${contentDigest(`${header}---\n${body}`)}\n---\n${body}`;
+    const p = await makeProject(files);
+    try {
+      const dry = await runLoam(p.workDir, "archive", "FEAT-1", "--dry-run");
+      expect(dry.code, dry.out).toBe(0);
+      expect(dry.out).toContain("re-vouch owed");
+      expect(dry.out).toContain(
+        "services/payment-service/spec.md: links this archive rewrote sit inside requirements, so a feature in flight that pins one with Based-On: reports delta.baseline-stale until `loam rebase` re-pins it.",
+      );
+      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(res.code, res.out).toBe(0);
+      expect((JSON.parse(res.stdout) as { revouchOwed: unknown[] }).revouchOwed).toEqual([
+        { service: "payment-service", path: "services/payment-service/spec.md", owner: null },
+      ]);
+      expect(await p.read("services/payment-service/spec.md")).toContain(
+        "[someone else's](../../features/archive/FEAT-1-split/adrs/0001-own-service.md)",
+      );
     } finally {
       await p.destroy();
     }

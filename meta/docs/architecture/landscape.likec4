@@ -438,8 +438,11 @@ model {
 
   loam.commands.subsystem -> loam.commands.policy
   loam.commands.subsystem -> loam.core.c4
+  loam.commands.subsystem -> loam.core.document
   loam.commands.subsystem -> loam.core.envelope
+  loam.commands.subsystem -> loam.core.fleet_context
   loam.commands.subsystem -> loam.core.kernel
+  loam.commands.subsystem -> loam.core.links
   loam.commands.subsystem -> loam.core.provenance
   loam.commands.subsystem -> loam.core.repo
   loam.commands.subsystem -> loam.core.staging
@@ -451,6 +454,7 @@ model {
   loam.commands.tasks -> loam.core.tasks
 
   loam.commands.unarchive -> loam.commands.archive
+  loam.commands.unarchive -> loam.core.c4
   loam.commands.unarchive -> loam.core.envelope
   loam.commands.unarchive -> loam.core.kernel
   loam.commands.unarchive -> loam.core.repo

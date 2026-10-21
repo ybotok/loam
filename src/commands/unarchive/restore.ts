@@ -11,6 +11,7 @@ import { existsSync } from "node:fs";
 import { readFile, rename } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { CodedFailure, emitJson, fail, repoPath } from "../../core/envelope/json.js";
+import { acrossRename, isPathInside } from "../../core/kernel/path-safety.js";
 import { archiveDir as archiveRoot, featuresDir as featuresRoot } from "../../core/repo/paths.js";
 import { listServices, resolveFeature } from "../../core/repo/repo.js";
 import { docsRepoState } from "../../core/repo/state.js";
@@ -28,6 +29,7 @@ import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js
 import { SNAPSHOT_DIR } from "../../core/staging/snapshot/manifest.js";
 import { planWrite, sha256, type PlannedWrite } from "../../core/staging/writes.js";
 import { readManifest } from "./manifest.js";
+import { staleGeneratedViews } from "../../core/c4/project/architecture.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 export async function unarchiveLocked(
@@ -67,7 +69,7 @@ export async function unarchiveLocked(
   }
 
   // The restore-time half of the snapshot's (service, artifact) re-keying: a
-  // version-3 entry restores into wherever its service lives TODAY, and the
+  // keyed entry restores into wherever its service lives TODAY, and the
   // enumeration is the only thing that may say where that is. Built once here,
   // as a map, so the manifest validation stays a pure question of one file
   // against one repo state. "no-services" is tolerated the way `listFeatures`
@@ -104,7 +106,21 @@ export async function unarchiveLocked(
   // whole, then refused together: "which files" is what makes the message
   // actionable, and no destination is staged until every one is accounted for.
   const corrupt: string[] = [];
+  // Rows written into ANOTHER change in flight — a document whose links into
+  // this feature the archive rewrote — whose feature directory is gone. That
+  // feature has a lifecycle of its own: archived since, it is history with its
+  // own snapshot; removed, it was abandoned. Putting the pre-image back would
+  // recreate a one-file `features/<other>/` that every reader then lists as a
+  // change in flight, beside the archived one or in place of the one somebody
+  // deleted — and calling the row drift would send the reader to `--force`,
+  // which does exactly that. Nothing edited it: it is left as it is, and said.
+  const left: string[] = [];
   for (const entry of manifest.files) {
+    const owner = inFlightFeatureDir(featuresDir, archiveDir, entry.target);
+    if (owner !== null && owner !== dest && !existsSync(owner)) {
+      left.push(entry.path);
+      continue;
+    }
     const current = existsSync(entry.target) ? await readFile(entry.target) : null;
     const now = current === null ? null : sha256(current);
     // Drift is "restoring this would destroy something", so a file already
@@ -193,8 +209,20 @@ export async function unarchiveLocked(
   for (const w of writes) if (w.content === null) await pruneBelowRoot(docsDir, dirname(w.path));
   await pruneBelowRoot(docsDir, archiveDir);
 
-  const restored = writes.filter((w) => w.content !== null).map((w) => repoPath(docsDir, w.path));
-  const removed = writes.filter((w) => w.content === null).map((w) => repoPath(docsDir, w.path));
+  // Named where each file IS now: the feature's own documents were restored
+  // inside the archived directory and the rename just carried them out of it,
+  // so their write paths name a directory that no longer exists.
+  const landed = (path: string): string => repoPath(docsDir, acrossRename(path, feature.dir, dest));
+  const restored = writes.filter((w) => w.content !== null).map((w) => landed(w.path));
+  const removed = writes.filter((w) => w.content === null).map((w) => landed(w.path));
+  // The undo puts back what the archive WROTE, and the two generated views
+  // files were never among it: `loam subsystem sync` owns them, and a sync run
+  // between the archive and this undo rewrote them against the merged map. So
+  // the map just went back and they did not — the services overview naming
+  // a service the map no longer draws — and "the living docs are back" would
+  // be said over a repo whose next `validate --all` is red. Graded after the
+  // commit through validate's own function, as archive grades its own result.
+  const staleViews = await staleGeneratedViews(docsDir);
 
   if (json) {
     emitJson({
@@ -204,15 +232,47 @@ export async function unarchiveLocked(
       path: repoPath(docsDir, dest),
       restored,
       removed,
-      discarded: drifted,
+      // Docs-relative as the manifest spells them, then named where they landed —
+      // the same file must not answer to two names across `discarded` and
+      // `restored`. The refusal and the `--force` warning above print the
+      // pre-move name, because they are said before the move.
+      discarded: drifted.map((rel) => landed(join(docsDir, ...rel.split("/")))),
+      // Additive, and omitted when nothing is stale — `archive --json`'s key, same meaning.
+      ...(staleViews.length === 0 ? {} : { staleViews }),
       ...(recovered === null ? {} : { recovered }),
     });
     return;
   }
   for (const p of restored) console.log(`  restored: ${p}`);
   for (const p of removed) console.log(`  removed:  ${p}`);
+  for (const p of left) console.log(`  left:     ${p} — its feature is no longer in flight, so its pre-archive text is not put back`);
   console.log(`\n  reopened: features/archive/${feature.dirName} → features/${feature.dirName}`);
-  console.log("  the living docs are back to what they said before the archive.");
+  if (staleViews.length === 0) {
+    console.log("  the living docs are back to what they said before the archive.");
+    return;
+  }
+  // The narrower claim, true whether the views went stale after the archive or
+  // were stale before it — the closing line is a claim about the whole docs
+  // repo, and `archive` withholds its own for the same files.
+  console.log("  the documents the archive wrote are back to what they said before it.");
+  for (const path of staleViews) {
+    console.log(`  ⚠ ${path} no longer matches the tree and this map — run \`loam subsystem sync\`.`);
+  }
+}
+
+/**
+ * The in-flight feature directory a row's target sits in — `features/<dir>/`
+ * for a file below it, never under `features/archive/` — or null for a row
+ * anywhere else. The caller tells this feature's own destination apart.
+ *
+ * `--json` has no key for the rows the caller leaves: the payload's lists name
+ * files the undo wrote, and these it deliberately did not touch. The text
+ * output says each one.
+ */
+function inFlightFeatureDir(featuresDir: string, archiveDir: string, target: string): string | null {
+  if (!isPathInside(featuresDir, target) || isPathInside(archiveDir, target)) return null;
+  const [dir, ...below] = relative(featuresDir, target).split(sep);
+  return dir === undefined || below.length === 0 ? null : join(featuresDir, dir);
 }
 
 /**

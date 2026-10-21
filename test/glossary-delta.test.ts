@@ -22,6 +22,7 @@
  * point of a glossary.
  */
 import { describe, expect, it, afterEach } from "vitest";
+import { join, relative, resolve, sep } from "node:path";
 import { rebaseLinks } from "../src/core/links/parse.js";
 import { coherentFixture, makeProject, runLoam, type Project } from "./helpers/harness.js";
 
@@ -146,6 +147,65 @@ describe("a feature may cite the word it is introducing", () => {
     expect(await findings(p, "link.unresolved", "--all")).toEqual([]);
   });
 
+  it("a citation of the term at its path INSIDE the feature lands on the living term", async () => {
+    // Two levels up from specs/<svc>/ is the feature itself, so this is the
+    // feature's own copy of the term — the link that resolves where it was
+    // written. Archive used to re-express it against that OLD place, and the
+    // same archive then copied the term to glossary/ and moved the feature:
+    // `link.unresolved` on the first `validate --all` after a clean archive.
+    const p = await project({
+      ...coherentFixture(),
+      "features/FEAT-1-split/glossary/order.md": ORDER,
+      "features/FEAT-1-split/specs/payment-split-service/spec.md": deltaCiting("../../glossary/order.md"),
+    });
+    expect(await findings(p, "link.unresolved", "--all")).toEqual([]);
+
+    expect((await runLoam(p.workDir, "archive", "FEAT-1", "--approve")).code).toBe(0);
+    // The LIVING term, not the archived copy: that is the definition readers
+    // are meant to find, and the one `glossary.unlinked` counts citations of.
+    expect(await p.read("services/payment-split-service/spec.md")).toContain("[Order](../../glossary/order.md)");
+    expect(await findings(p, "link.unresolved", "--all")).toEqual([]);
+    expect(await findings(p, "glossary.unlinked", "--all")).toEqual([]);
+  });
+
+  it("a citation of a feature ADR lands on the ADR where the archived feature keeps it", async () => {
+    const p = await project({
+      ...coherentFixture(),
+      "features/FEAT-1-split/adrs/0001-split-service.md": "# 1. A dedicated split service\n\nAccepted.\n",
+      "features/FEAT-1-split/specs/payment-split-service/spec.md": deltaCiting("../../adrs/0001-split-service.md"),
+    });
+    expect(await findings(p, "link.unresolved", "--all")).toEqual([]);
+
+    expect((await runLoam(p.workDir, "archive", "FEAT-1", "--approve")).code).toBe(0);
+    // Nothing copies a feature ADR anywhere: it records a decision taken for
+    // this change, so it stays with the change and the link follows it there.
+    expect(await p.read("services/payment-split-service/spec.md")).toContain(
+      "[Order](../../features/archive/FEAT-1-split/adrs/0001-split-service.md)",
+    );
+    expect(p.exists("features/archive/FEAT-1-split/adrs/0001-split-service.md")).toBe(true);
+    expect(await findings(p, "link.unresolved", "--all")).toEqual([]);
+  });
+
+  it("a term's OWN links are re-expressed as it moves two directories up into glossary/", async () => {
+    // The copy is otherwise byte-for-byte; a definition citing a living spec or
+    // the feature's ADR landed pointing at nothing, graded at fleet scope.
+    const term =
+      "# Split\n\nA payment divided across payees — see [the decision](../adrs/0001-split-service.md) " +
+      "and [the payer](../../../services/payment-service/spec.md).\n";
+    const p = await project({
+      ...coherentFixture(),
+      "features/FEAT-1-split/adrs/0001-split-service.md": "# 1. A dedicated split service\n\nAccepted.\n",
+      "features/FEAT-1-split/glossary/split.md": term,
+      "features/FEAT-1-split/specs/payment-split-service/spec.md": deltaCiting("../../glossary/split.md"),
+    });
+    expect((await runLoam(p.workDir, "archive", "FEAT-1", "--approve")).code).toBe(0);
+    expect(await p.read("glossary/split.md")).toBe(
+      "# Split\n\nA payment divided across payees — see [the decision](../features/archive/FEAT-1-split/adrs/0001-split-service.md) " +
+        "and [the payer](../services/payment-service/spec.md).\n",
+    );
+    expect(await findings(p, "link.unresolved", "--all")).toEqual([]);
+  });
+
   it("a citation the feature does NOT introduce is still broken, overlay or not", async () => {
     // The overlay must admit exactly the feature's own terms. A set built from
     // "anything under glossary/" would make every typo resolve.
@@ -206,6 +266,39 @@ describe("rebaseLinks re-expresses a route without touching anything else", () =
   it("preserves a document's own mixture of line endings", () => {
     const md = "[a](../../../../glossary/order.md)\r\n[b](../../../../glossary/order.md)\n";
     expect(rebaseLinks(md, { from, to })).toBe("[a](../../glossary/order.md)\r\n[b](../../glossary/order.md)\n");
+  });
+
+  // `retarget` speaks absolute paths, which `node:path` spells per platform.
+  const at = (path: string): string => resolve(path);
+
+  it("points a link at wherever `retarget` says the target itself will be", () => {
+    const retarget = (target: string): string =>
+      target === at("/docs/features/F/glossary/order.md") ? at("/docs/glossary/order.md") : target;
+    expect(rebaseLinks("[a](../../glossary/order.md) [b](../../intent.md)", { from, to, retarget })).toBe(
+      "[a](../../glossary/order.md) [b](../../features/F/intent.md)",
+    );
+  });
+
+  it("keeps the exact spelling of a link whose route did not change", () => {
+    // A document that stays put, linking at a target that stays put, under a
+    // retarget that moves something else: nothing to re-express, so the author's
+    // `x.md` must not come back normalised to `./x.md`.
+    const moved = (target: string): string =>
+      target.startsWith(at("/docs/services/a") + sep) ? join(at("/docs/services/g/a"), relative(at("/docs/services/a"), target)) : target;
+    const md = "[x](x.md) [y](../b/spec.md) [a](../a/spec.md)";
+    expect(rebaseLinks(md, { from: "/docs/services/b", to: "/docs/services/b", retarget: moved })).toBe(
+      "[x](x.md) [y](../b/spec.md) [a](../g/a/spec.md)",
+    );
+    // A link that climbs above the moved directory and back down through its
+    // OLD name computes the same route either side of the move — and its text
+    // names a directory that is gone, so it is rewritten.
+    expect(
+      rebaseLinks("[s](../../services/a/spec.md)", { from: "/docs/services/a", to: "/docs/services/g/a", retarget: moved }),
+    ).toBe("[s](./spec.md)");
+    // And a sibling that moves WITH its document keeps its spelling too.
+    expect(rebaseLinks("[s](arch.spec.md)", { from: "/docs/services/a", to: "/docs/services/g/a", retarget: moved })).toBe(
+      "[s](arch.spec.md)",
+    );
   });
 
   it("writes a sibling as `./name`, which is what an author writes", () => {

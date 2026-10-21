@@ -45,7 +45,7 @@ export const REFUSAL_MEANINGS = {
   "snapshot-missing":
     "`loam unarchive` refuses: the archive carries no snapshot of what it overwrote (it predates snapshots, or was written by a different loam) — restore the living docs from version control instead.",
   "snapshot-stale":
-    "`loam unarchive` refuses: the living docs changed after the archive, so restoring is no longer an undo — re-run with `--force` to restore anyway, deliberately discarding those later changes.",
+    "`loam unarchive` refuses: a file the archive wrote changed after it — a living document, another feature's document whose links into this one it rewrote, or one of the feature's own documents it relinked under `features/archive/` — so restoring is no longer an undo; re-run with `--force` to restore anyway, deliberately discarding those later changes.",
   "snapshot-corrupt":
     "`loam unarchive` refuses: a snapshot pre-image no longer matches the digest the archive recorded for it, so restoring would write text nobody wrote — `--force` does not override this one; restore from version control.",
   "commit-interrupted":
@@ -89,7 +89,7 @@ export const REFUSAL_MEANINGS = {
   "subsystem-not-empty":
     "`loam subsystem` rm refuses a subsystem that still holds members — services or child subsystems, named in the message — because a destructive command never picks targets the caller did not name; move them out first, then re-run.",
   "move-uncommitted":
-    "A subsystem move/rename refuses because git reports uncommitted or untracked paths under a directory being moved — the rename would sweep them into a move nobody reviewed; commit, `git stash -u`, or remove them, then re-run.",
+    "A subsystem move/rename refuses because git reports uncommitted or untracked paths under a directory being moved, or in a document outside it whose links the move would rewrite — the move would sweep them into a change nobody reviewed; commit, `git stash -u`, or remove them, then re-run.",
   "move-failed":
     "A subsystem move/rename failed and was rolled back cleanly — every rename undone, the generated views file restored, the docs unchanged; re-running can work.",
   "no-members":

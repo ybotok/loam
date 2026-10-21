@@ -171,11 +171,28 @@ function decodePath(raw: string): string {
  * It is a positional rewrite, never a re-render: the matched target's own span
  * is replaced and every other byte of the line — the link text, the title, the
  * prose around it — is left exactly as written.
+ *
+ * WHEN THE TARGET MOVES TOO, `retarget` says where to. The same archive that
+ * moves a requirement two directories up moves the rest of the feature as
+ * well: a term the feature defines is copied into `glossary/`, and the feature
+ * directory itself — its ADRs, its intent — goes to `features/archive/<FEAT>/`.
+ * A link into the feature re-expressed against the target's OLD place was
+ * therefore re-expressed correctly and still rotted on the commit that made it.
+ * And a document that does not move at all can still need rewriting, when the
+ * directory it links into does (`subsystem move`) — which is why `from === to`
+ * is no longer a reason to stop when a `retarget` is given.
+ *
+ * A LINK WHOSE TEXT STILL REACHES ITS TARGET FROM THE NEW PLACE KEEPS ITS
+ * SPELLING: a sibling that moves with its document, or a target nothing moved
+ * under a document that stays, comes out of the rewrite exactly as the author
+ * wrote it rather than normalised into `./` form by a commit that had no
+ * reason to touch it.
  */
-export function rebaseLinks(md: string, move: { from: string; to: string }): string {
+export function rebaseLinks(md: string, move: LinkMove): string {
   const from = resolve(move.from);
   const to = resolve(move.to);
-  if (from === to) return md;
+  if (from === to && move.retarget === undefined) return md;
+  const route: Route = { from, to, retarget: move.retarget ?? ((target) => target) };
   const fenced = fenceTracker();
   // `split` with a capturing group keeps the separators, so a document's own
   // mixture of CRLF and LF survives a rewrite that touches neither.
@@ -183,19 +200,40 @@ export function rebaseLinks(md: string, move: { from: string; to: string }): str
   for (let i = 0; i < parts.length; i += 2) {
     const rawLine = parts[i]!;
     if (fenced(rawLine)) continue;
-    parts[i] = rebaseLine(rawLine, from, to);
+    parts[i] = rebaseLine(rawLine, route);
   }
   return parts.join("");
 }
 
+/** Where a document's text is moving, and where each file it links to will be. */
+export interface LinkMove {
+  /** The directory the text was written in. */
+  from: string;
+  /** The directory the text will be read from. */
+  to: string;
+  /**
+   * Where a link's target will be once the same change lands: an absolute path
+   * in, an absolute path out, the input itself for a target that stays put.
+   * Omitted, every target stays put — the requirement merge's original case.
+   */
+  retarget?: (target: string) => string;
+}
+
+/** `LinkMove` with both directories resolved and the retarget defaulted — what each line is rewritten against. */
+interface Route {
+  from: string;
+  to: string;
+  retarget: (target: string) => string;
+}
+
 /** One line's links re-expressed, right to left so earlier spans keep their offsets. */
-function rebaseLine(rawLine: string, from: string, to: string): string {
+function rebaseLine(rawLine: string, route: Route): string {
   const blanked = rawLine.replace(CODE_SPAN_RE, (m) => " ".repeat(m.length));
   const spans: Array<[number, number, string]> = [];
   const collect = (m: RegExpExecArray): void => {
     const at = m.indices?.[2];
     if (at === undefined) return;
-    const rebased = rebaseTarget(m[2]!, from, to);
+    const rebased = rebaseTarget(m[2]!, route);
     if (rebased !== null) spans.push([at[0], at[1], rebased]);
   };
   const definition = DEFINITION_RE.exec(blanked);
@@ -212,16 +250,18 @@ function rebaseLine(rawLine: string, from: string, to: string): string {
 }
 
 /**
- * One target, re-expressed from `to` instead of `from`, or null when there is
- * nothing to re-express.
+ * One target, re-expressed from `to` instead of `from` — and pointed at wherever
+ * `retarget` says the file itself will be — or null when there is nothing to
+ * re-express.
  *
  * The exclusions are `push`'s exactly — an absolute URL, a site-root path and a
  * bare fragment mean the same thing from every directory — and the ANGLE-BRACKET
  * and PERCENT-ESCAPE forms are preserved rather than normalised: a rewrite that
  * silently changed `<a b.md>` into `a%20b.md` would be editing the author's
- * spelling under cover of moving their file.
+ * spelling under cover of moving their file. A route that comes out unchanged
+ * is null for the same reason (`rebaseLinks` says when that happens).
  */
-function rebaseTarget(target: string, from: string, to: string): string | null {
+function rebaseTarget(target: string, route: Route): string | null {
   const angled = target.startsWith("<") && target.endsWith(">");
   const raw = angled ? target.slice(1, -1) : target;
   if (raw === "" || raw.startsWith("#") || raw.startsWith("/")) return null;
@@ -231,7 +271,16 @@ function rebaseTarget(target: string, from: string, to: string): string | null {
   const fragment = hash === -1 ? "" : raw.slice(hash);
   if (pathPart === "") return null;
   const encoded = pathPart.includes("%");
-  let rebased = relative(to, resolve(from, decodePath(pathPart))).split(sep).join("/");
+  const was = resolve(route.from, decodePath(pathPart));
+  const will = resolve(route.retarget(was));
+  // The author's TEXT, read from the new place, still reaching the target —
+  // not two computed routes compared. A link that climbs above a moved
+  // directory and comes back down through its old name
+  // (`../../../services/payment-service/spec.md` from inside that service)
+  // normalises to the same route either side of the move, and comparing
+  // routes kept a spelling that names a directory the move just removed.
+  if (resolve(route.to, decodePath(pathPart)) === will) return null;
+  let rebased = relative(route.to, will).split(sep).join("/");
   // `relative` returns a bare name for a sibling, which markdown reads as a
   // path relative to the file anyway — but `./` is what an author writes and
   // what keeps the link distinguishable from a reference label.
