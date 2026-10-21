@@ -608,6 +608,7 @@ model {
   loam.core.doctor -> loam.core.envelope
   loam.core.doctor -> loam.core.gherkin
   loam.core.doctor -> loam.core.kernel
+  loam.core.doctor -> loam.core.projection
   loam.core.doctor -> loam.core.repo
   loam.core.doctor -> loam.core.staging
 

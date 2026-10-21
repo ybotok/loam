@@ -56,6 +56,19 @@ function writePathLabel(residue: DoctorReport["writePath"]): string {
 }
 
 /**
+ * How the binding resolved, as a reader standing in the repo would say it.
+ * `unknown` alone read as "loam has never heard of this service" for one a
+ * feature in flight introduces — the service whose repository is most likely to
+ * be brand new — so that case names the feature, in the words `show` uses for
+ * the same fact. The JSON keeps `status: "unknown"` and carries `introducedBy`.
+ */
+function bindingLabel(current: DoctorReport["currentService"]): string {
+  const introducedBy = current.introducedBy ?? [];
+  if (introducedBy.length === 0) return current.status;
+  return `introduced by ${introducedBy.join(", ")} (in flight)`;
+}
+
+/**
  * The order the statuses are printed in — the lifecycle a report walks, so the
  * row reads left to right the way the corpus drains.
  *
@@ -110,7 +123,7 @@ function printDoctor(report: DoctorReport): void {
     `  fleet         services/ ${yesNo(report.docs.servicesDir)} · landscape ${yesNo(report.docs.landscape)} · ${report.counts.services} services · ${report.counts.activeFeatures} active features`,
   );
   console.log(
-    `  binding       ${report.currentService.configured ?? "(none)"} · ${report.currentService.status}`,
+    `  binding       ${report.currentService.configured ?? "(none)"} · ${bindingLabel(report.currentService)}`,
   );
   // The agent surface is reported whether or not it has drifted — like every
   // line above it, this is state, not a complaint. Only the findings block is

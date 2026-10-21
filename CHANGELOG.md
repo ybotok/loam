@@ -80,6 +80,26 @@ saying the service joins the living docs when one of them archives, and does not
 features again. A bound service no feature
 introduces gets `next.adopt-bound` as before.
 
+### Changed — `loam doctor` agrees: a service a feature introduces is not something to adopt
+
+No code was added and no exit code changed. In the same state — a service repository whose
+`loam.json` binds a service that exists only in an active feature's `specs/<service>/` — `loam
+doctor` still filed `doctor.service-unknown` with "Run `loam adopt --service <id>` to onboard it".
+The finding keeps its code and its `warning` severity (the binding still names nothing under
+`services/`, and `healthy` does not move), and now says which feature introduces the service and
+that it is not in the living docs until that feature archives. Its `fix` names `loam status <FEAT>`
+and no longer tells anyone to adopt.
+
+- **Human view:** the `binding` row reads `payment-split-service · introduced by FEAT-101 (in
+  flight)` instead of `· unknown`, listing every introducer when more than one feature introduces
+  the service.
+- **`--json` (additive):** `currentService.introducedBy` — the introducing features' ids, ordered
+  by id — present only when an active feature introduces the configured service.
+  `currentService.status` stays `unknown`.
+- `loam explain doctor.service-unknown` and the `loam-codes` page of `loam instructions` describe
+  both states and both fixes.
+- A bound service no feature introduces gets the adopt advice, byte for byte, as before.
+
 ### Added — `loam explain` defines the words loam prints, and a finding page says which command reports it
 
 No code was added. `loam explain` knew six concept terms and answered `unknown-target` for the

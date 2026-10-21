@@ -15,6 +15,7 @@ import { LOAM_VERSION } from "../envelope/version.js";
 import { landscapePath, LIKEC4_PROJECT_FILENAME } from "../repo/paths.js";
 import { docsRepoState } from "../repo/state.js";
 import { listFeatures, listServices } from "../repo/repo.js";
+import { introducingFeatures } from "../projection/introduced.js";
 import { LIKEC4_PROJECT_CONFIG } from "../docs.js";
 import { gherkinRoot } from "../gherkin/stamp.js";
 import { UnsafePathError } from "../kernel/path-safety.js";
@@ -192,8 +193,12 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
     }
   }
 
+  const configuredService = inspected.config?.service ?? null;
   let services: Awaited<ReturnType<typeof listServices>> = [];
   let activeFeatures: Awaited<ReturnType<typeof listFeatures>> = [];
+  // The active features that introduce the bound service, when the living docs
+  // do not hold it — see the `doctor.service-unknown` finding below.
+  let introducedBy: string[] = [];
   // Whether the fleet was actually READ, which is a narrower question than
   // whether reading it was attempted — hence set inside the try and not from
   // the guard, so an enumeration that threw leaves this false alongside its own
@@ -205,6 +210,13 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
         listServices(docsDir),
         listFeatures(docsDir),
       ]);
+      // Through the shared resolver, not a filter over the two lists just read,
+      // so `doctor` and `status`/`show`/`context`/`steps` agree on what
+      // "introduced" means. Inside the try because it reads the same two
+      // directories: if they throw here, they threw for the inventory too.
+      if (configuredService !== null && !services.some((service) => service.id === configuredService)) {
+        introducedBy = (await introducingFeatures(docsDir, configuredService)).map((f) => f.id);
+      }
       inventoried = true;
     } catch (error) {
       findings.push({
@@ -216,12 +228,13 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
     }
   }
 
-  const configuredService = inspected.config?.service ?? null;
   const currentService: DoctorReport["currentService"] = configuredService === null
     ? { configured: null, status: "unbound" }
     : services.some((service) => service.id === configuredService)
       ? { configured: configuredService, status: "matched" }
-      : { configured: configuredService, status: "unknown" };
+      : introducedBy.length > 0
+        ? { configured: configuredService, status: "unknown", introducedBy }
+        : { configured: configuredService, status: "unknown" };
   // Standing INSIDE the docs repo, an absent service binding is the correct
   // state, not a gap: the docs repo is the fleet, it is not any one service, and
   // the fix this finding prints — `loam init --service <id>` — would bind the
@@ -234,12 +247,41 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
   // filename, is the test.
   const inDocsRepo = configRoot !== undefined && docsDir !== null
     && resolve(configRoot) === resolve(docsDir);
+  const [lead, ...others] = introducedBy;
   if (currentService.status === "unbound" && !inDocsRepo) {
     findings.push({
       severity: "warning",
       code: "doctor.service-unbound",
       message: "loam.json has no service binding; service-repo checks need `service`.",
       fix: `Run \`loam init --docs ${inspected.config?.docsDirAsWritten ?? "<dir>"} --service <id>\` here.`,
+    });
+  } else if (currentService.status === "unknown" && inventoried && lead !== undefined) {
+    // A service a feature in flight INTRODUCES: its only documents are that
+    // feature's `specs/<service>/` until it archives, and `services/` learns
+    // the name at the merge. The finding used to send this repository's first
+    // developer to `loam adopt` — to describe code the feature has not built
+    // yet, and to write a `services/<service>/` that would make the service
+    // living ahead of the merge, so the feature no longer introduced it. The
+    // same code and severity: the binding still names nothing under services/,
+    // so a check that reads the living docs for it has nothing to read, which
+    // is worth knowing before trusting one. Only the advice was wrong.
+    const several = others.length > 0;
+    const alsoBy = several ? ` (so does ${others.join(", ")})` : "";
+    const until = several ? "one of them" : lead;
+    const documents = several
+      ? `the specs/${configuredService}/ of ${introducedBy.join(", ")} are`
+      : `${lead}'s specs/${configuredService}/ are`;
+    const likewise = several ? `, and likewise for ${others.join(", ")},` : "";
+    findings.push({
+      severity: "warning",
+      code: "doctor.service-unknown",
+      message:
+        `Configured service '${configuredService}' is not under services/ yet: ${lead} introduces it${alsoBy}, `
+        + `and it is not in the living docs until ${until} archives.`,
+      fix:
+        `Nothing to adopt — until ${until} archives, ${documents} this service's documents, and that archive `
+        + `is what clears this warning. Run \`loam status ${lead}\`${likewise} to see what this repository owes `
+        + `${several ? "each" : lead}. If this repository is a different service, fix "service" in ${path}.`,
     });
   } else if (currentService.status === "unknown" && inventoried) {
     // Only when there was an inventory to be absent from. This finding is a
