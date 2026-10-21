@@ -11,7 +11,7 @@ import { existsSync } from "node:fs";
 import { readFile, rename } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { CodedFailure, emitJson, fail, repoPath } from "../../core/envelope/json.js";
-import { acrossRename } from "../../core/kernel/path-safety.js";
+import { acrossRename, isPathInside } from "../../core/kernel/path-safety.js";
 import { archiveDir as archiveRoot, featuresDir as featuresRoot } from "../../core/repo/paths.js";
 import { listServices, resolveFeature } from "../../core/repo/repo.js";
 import { docsRepoState } from "../../core/repo/state.js";
@@ -106,7 +106,21 @@ export async function unarchiveLocked(
   // whole, then refused together: "which files" is what makes the message
   // actionable, and no destination is staged until every one is accounted for.
   const corrupt: string[] = [];
+  // Rows written into ANOTHER change in flight — a document whose links into
+  // this feature the archive rewrote — whose feature directory is gone. That
+  // feature has a lifecycle of its own: archived since, it is history with its
+  // own snapshot; removed, it was abandoned. Putting the pre-image back would
+  // recreate a one-file `features/<other>/` that every reader then lists as a
+  // change in flight, beside the archived one or in place of the one somebody
+  // deleted — and calling the row drift would send the reader to `--force`,
+  // which does exactly that. Nothing edited it: it is left as it is, and said.
+  const left: string[] = [];
   for (const entry of manifest.files) {
+    const owner = inFlightFeatureDir(featuresDir, archiveDir, entry.target);
+    if (owner !== null && owner !== dest && !existsSync(owner)) {
+      left.push(entry.path);
+      continue;
+    }
     const current = existsSync(entry.target) ? await readFile(entry.target) : null;
     const now = current === null ? null : sha256(current);
     // Drift is "restoring this would destroy something", so a file already
@@ -231,6 +245,7 @@ export async function unarchiveLocked(
   }
   for (const p of restored) console.log(`  restored: ${p}`);
   for (const p of removed) console.log(`  removed:  ${p}`);
+  for (const p of left) console.log(`  left:     ${p} — its feature is no longer in flight, so its pre-archive text is not put back`);
   console.log(`\n  reopened: features/archive/${feature.dirName} → features/${feature.dirName}`);
   if (staleViews.length === 0) {
     console.log("  the living docs are back to what they said before the archive.");
@@ -243,6 +258,21 @@ export async function unarchiveLocked(
   for (const path of staleViews) {
     console.log(`  ⚠ ${path} no longer matches the tree and this map — run \`loam subsystem sync\`.`);
   }
+}
+
+/**
+ * The in-flight feature directory a row's target sits in — `features/<dir>/`
+ * for a file below it, never under `features/archive/` — or null for a row
+ * anywhere else. The caller tells this feature's own destination apart.
+ *
+ * `--json` has no key for the rows the caller leaves: the payload's lists name
+ * files the undo wrote, and these it deliberately did not touch. The text
+ * output says each one.
+ */
+function inFlightFeatureDir(featuresDir: string, archiveDir: string, target: string): string | null {
+  if (!isPathInside(featuresDir, target) || isPathInside(archiveDir, target)) return null;
+  const [dir, ...below] = relative(featuresDir, target).split(sep);
+  return dir === undefined || below.length === 0 ? null : join(featuresDir, dir);
 }
 
 /**

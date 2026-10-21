@@ -83,7 +83,9 @@ states the rules.
   ordinary row, so `loam unarchive` puts the authored bytes back and archive-then-unarchive stays a
   byte-for-byte round trip. **Exit code:** `loam unarchive` now also refuses with `snapshot-stale`
   (exit 1) when such a document — another in-flight feature's intent among them — was edited since
-  the archive; `--force` puts the pre-archive text back over that edit.
+  the archive; `--force` puts the pre-archive text back over that edit. A document whose own feature
+  has been archived or removed since is not drift: `unarchive` leaves it as it is, with a `left:`
+  line in the text output (no `--json` key), rather than recreating a one-file `features/<other>/`.
 - **The undo snapshot no longer breaks a feature's LikeC4 project.** `.loam-before/` stored each
   pre-image under its living name, so the archived feature held a second `landscape.likec4`: a
   feature with its own `likec4.config.json`, or rendered alone, failed on duplicate elements, and so

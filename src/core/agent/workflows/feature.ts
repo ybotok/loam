@@ -127,9 +127,9 @@ export const LOAM_FEATURE: CommandContent = {
      else in the delta is read as being about the change and stays with it in
      \`features/archive/\`, linked from the new document
    - links: write each one so it resolves where you write it, relative to the
-     file. A link into this feature — from its deltas, or from any document
-     elsewhere that cites it — is re-pointed by \`loam archive\` to wherever
-     the file ends up — a term in \`glossary/<term>.md\` at the living glossary,
+     file. A link into this feature — from its deltas, or from any other
+     document whose links validate grades — is re-pointed by \`loam archive\`
+     to wherever the file ends up — a term in \`glossary/<term>.md\` at the living glossary,
      anything else (an ADR in \`adrs/\` above all) inside
      \`features/archive/\`, because a feature ADR is never copied into the living
      tree. A decision meant to outlive this change belongs in

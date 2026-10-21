@@ -32,11 +32,11 @@
  * to copy them; a `Gated` field would be one more value the gate computes for
  * a phase it does not own.
  *
- * THE OTHER TWO HALVES ARE THE DOCUMENTS THAT DO NOT MERGE. The feature's own
- * (`planFeatureLinks` below) stay in the feature and ride the rename, so their
- * links out of it are one directory short the moment it lands. Every other
- * document in the corpus (`planInboundLinks` below) stays where it is while
- * the files it cites inside the feature move away from under it.
+ * THE OTHER TWO HALVES ARE THE LINKS NO MERGE CARRIES. The feature's own
+ * documents (`planFeatureLinks` below) stay in the feature and ride the rename,
+ * so their links out of it are one directory short the moment it lands. Every
+ * other document in the corpus (`planInboundLinks` below) stays where it is
+ * while the files it cites inside the feature move away from under it.
  */
 import { dirname, resolve } from "node:path";
 import { repoPath } from "../../../../core/envelope/json.js";
@@ -159,8 +159,8 @@ export async function planFeatureLinks(
  * before the archive, so no gate could say otherwise; `link.unresolved` the
  * moment after, because the rename took the directory away from under the
  * link. And no edit the author could make in advance would have helped: the
- * archived path does not exist until the archive does. `subsystem move` has
- * rewritten the links into the directories it renames since it shipped
+ * archived path does not exist until the archive does. `subsystem move`
+ * rewrites the links into the directories it renames
  * (`commands/subsystem/txn/links.ts`); this is the archive's rename owing the
  * same correction.
  *
@@ -186,8 +186,16 @@ export async function planFeatureLinks(
  * `Based-On:` pin holds, and the plan names the document. No git refusal of the
  * kind `subsystem move` holds (`move-uncommitted`): archive never stages in
  * git, and its undo is the snapshot — every write here is one of its rows, so
- * `loam unarchive` puts the authored bytes back, and a document edited since
- * is `snapshot-stale` like any other.
+ * `loam unarchive` puts the authored bytes back, a document edited since is
+ * `snapshot-stale` like any other, and one whose feature has been archived or
+ * removed since is left as it is (`commands/unarchive/restore.ts`).
+ *
+ * The two notes are the text output's alone — the walk that could not be made
+ * and the `Based-On:` cost. `--json` has no key for either: its `warnings` are
+ * coherence issues with codes, and a new key for an advisory the next
+ * `validate --all` grades in full was not worth a contract change. What an
+ * agent acts on is in the payload already: every relinked document is a `plan`
+ * row and every re-vouch it owes is on `revouchOwed`.
  */
 export async function planInboundLinks(
   config: { docsDir: DocsDir; fleet: FleetContext },
@@ -217,7 +225,7 @@ export async function planInboundLinks(
     vouchable.set(resolve(paths.spec), service.id);
     vouchable.set(resolve(paths.archSpec), service.id);
   }
-  const plannedAt = new Map(planned.writes.map((w, i) => [resolve(w.path), i]));
+  const plannedAt = new Map(planned.writes.map((write, at) => [resolve(write.path), { at, write }]));
   const seen = new Set<string>();
   const candidates = corpus.filter((path) => {
     const key = resolve(path);
@@ -226,30 +234,32 @@ export async function planInboundLinks(
     return true;
   });
   const documents = await inOrder(candidates, async (path) => {
-    const at = plannedAt.get(resolve(path));
-    if (at !== undefined) {
+    const composed = plannedAt.get(resolve(path));
+    if (composed !== undefined) {
       // A delete or a Buffer is not text this rewrite may compose onto; no
       // markdown planner hands over either.
-      const content = planned.writes[at]!.content;
-      return { path, at, text: typeof content === "string" ? content : null };
+      const { content } = composed.write;
+      return { path, composed, text: typeof content === "string" ? content : null };
     }
     try {
-      return { path, at, text: await readUtf8(path) };
+      return { path, composed, text: await readUtf8(path) };
     } catch {
       // Absent (the corpus names every slot a service MAY fill) or not UTF-8,
       // which `link.unreadable` already names: nothing loam could write back.
-      return { path, at, text: null };
+      return { path, composed, text: null };
     }
   });
   const pinned = (md: string): string => parseRequirements(md).map(requirementDigest).join(",");
   const relinked: string[] = [];
   const notes: string[] = [];
-  for (const { path, at, text } of documents) {
+  for (const { path, composed, text } of documents) {
     if (text === null) continue;
     const next = rebaseLinks(text, { from: dirname(path), to: dirname(path), retarget });
     if (next === text) continue;
-    if (at === undefined) planned.writes.push(planWrite(path, next));
-    else planned.writes[at] = { ...planned.writes[at]!, content: next };
+    // In place, at the index the merge's write already holds: nothing between
+    // here and the map above adds, removes or reorders a planned write.
+    if (composed === undefined) planned.writes.push(planWrite(path, next));
+    else planned.writes[composed.at] = { ...composed.write, content: next };
     const where = repoPath(docsDir, path);
     relinked.push(where);
     // The merge's own question (`../specs.ts`), asked of the bytes about to be

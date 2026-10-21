@@ -2,7 +2,7 @@
  * WHICH documents loam reads links out of — the corpus, spelled once.
  *
  * Two readers need it and must not disagree. `commands/validate/links/` grades
- * each target's own documents for `link.unresolved`; `core/glossary/backlinks.ts`
+ * each target's own documents for `link.unresolved`; `core/links/backlinks.ts`
  * reads the WHOLE fleet's, because "which documents use this term" is a question
  * no single target can answer. A corpus that differed between them would report
  * a term as unused while the very document citing it was being graded one target

@@ -976,7 +976,10 @@ a living requirement whose route it rewrote moves the digest a feature in flight
 is no `move-uncommitted` refusal: archive does not stage in git, and its undo is the snapshot, where
 each relinked document is an ordinary row. `loam unarchive` puts the authored bytes back, and a
 document edited since — another feature's intent included — is a later change it will not discard
-without `--force` (`snapshot-stale`).
+without `--force` (`snapshot-stale`). A document whose own feature has been archived or removed since
+is neither: `unarchive` leaves it as it is and says so (`left:` in the text output; `--json` has no
+key for it), because putting it back would recreate a one-file `features/<other>/` that every reader
+lists as a change in flight — beside the archived one, or in place of the one somebody abandoned.
 
 **`loam subsystem move` and `rename` keep the same promise.** A move is a directory rename and a
 relative link is a route between directories, so the move rewrites every relative link it would

@@ -96,7 +96,7 @@ export async function archiveLocked(
   // on it.
   await planFlows(config, gated, planned, say);
   await planDeployments(config, gated, planned, say);
-  // Last, because it is the move rather than a merge: the feature's own
+  // After the merges, because it is the move rather than a merge: the feature's own
   // documents ride the rename into features/archive/, and their links out of
   // the feature are re-expressed for it in this same commit
   // (./plan/document/links.ts) — planned at their current paths, swapped before

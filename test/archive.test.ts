@@ -4732,6 +4732,33 @@ describe("a document outside the feature that links into it still resolves once 
     }
   });
 
+  it("unarchive leaves a relinked document whose own feature moved on, rather than recreating it", async () => {
+    // The other change has a lifecycle of its own — abandoned in one run,
+    // archived in the other. Its row in this feature's undo then names a
+    // directory that no longer exists: not drift, since nobody edited it, and
+    // putting the pre-image back revived it as a one-file change in flight.
+    for (const movesOn of ["removed", "archived"] as const) {
+      const p = await makeProject(inboundFixture());
+      try {
+        expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+        if (movesOn === "removed") await rm(join(p.docsDir, "features/FEAT-2-refunds"), { recursive: true });
+        else {
+          const other = await runLoam(p.workDir, "archive", "FEAT-2");
+          expect(other.code, other.out).toBe(0);
+        }
+        const back = await runLoam(p.workDir, "unarchive", "FEAT-1");
+        expect(back.code, `${movesOn}: ${back.out}`).toBe(0);
+        expect(back.out).toContain("left:     features/FEAT-2-refunds/intent.md — its feature is no longer in flight");
+        expect(p.exists("features/FEAT-2-refunds"), movesOn).toBe(false);
+        // The rest of the undo still happened.
+        expect(p.exists("features/FEAT-1-split/intent.md")).toBe(true);
+        expect(await p.read("services/payment-service/adrs/0001-stay-small.md")).toBe(SERVICE_ADR);
+      } finally {
+        await p.destroy();
+      }
+    }
+  });
+
   it("relinks the text the merge composed rather than the bytes on disk, and owes one re-vouch for the document", async () => {
     // The living spec FEAT-9 merges into also cites FEAT-9's decision in its
     // own narrative. Two plans write the one document; the second must start
