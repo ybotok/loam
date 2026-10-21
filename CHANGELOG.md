@@ -10,6 +10,45 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+## [0.2.0-alpha.10] - 2026-10-21
+
+Everything on `main` since `0.2.0-alpha.9`. Still a prerelease on the `alpha` line.
+
+Most of it closes the gap between a feature called clean and the fleet its archive leaves:
+`validate --feature`, `loam status <FEAT>` and the archive gate now raise, before the archive, what
+`validate --all` raises after it. `loam archive` keeps a created document's title, owner and
+`## Purpose`, re-expresses every link it moves — out of the archived feature, and into it from any
+other document — and its undo snapshot no longer breaks a feature's LikeC4 project;
+`loam subsystem move` and `rename` rewrite the links their renames would break. A repository bound
+to a service a feature introduces is pointed at that feature instead of being told to adopt it, by
+`loam status`, `loam doctor`, `loam validate`, `loam show`, `loam context` and `loam steps` alike.
+`loam status`, `loam tasks` and `loam validate` say in words where work stands, `loam explain`
+defines the words they print, and on Windows a rolled-back write takes back the directories it
+created.
+
+Several entries change an exit code, listed in each. Refusals that are new: four feature-scope
+errors (`spine.message-unproduced`, `usecase.step-unbacked`, `usecase.requirement-unresolved`,
+`usecase.capability-unresolved`) fail `validate --feature`, `validate --all` for an active feature
+carrying one, and `loam archive` (`not-coherent`, unless `--approve`); `loam unarchive` refuses
+`snapshot-stale` over a relinked document edited since the archive; `move-uncommitted` also covers
+an uncommitted document outside the moved directories that the move would relink. Refusals that are
+gone: `loam explain` on the seventeen new terms, and `show`, `context`, `steps` and a bare
+`validate` for a service a feature introduces. `loam archive` files `service.no-model` at
+error severity, the severity `validate --all` gives that directory next, and it still does not gate
+(`gates: false`): count what blocks by `gates`, never by `severity`. `loam context` with two
+introducing features refuses `invalid-option` where it said `unknown-service`, and
+`loam tasks <FEAT>` in a repository bound to a service the feature touches lists that service's
+slice. The undo snapshot is now version 4, and an older loam cannot unarchive a feature this version
+archived: upgrade every checkout that may run `loam unarchive`.
+
+No stable code was added or renamed — 356 in all, as at alpha.9 — and no flag.
+`loam archive --json`'s `issues[]` may now carry seven codes `validate` already had
+(`spine.message-unproduced`, `health.uncovered` and five `usecase.*`). New `--json` keys, all
+additive: `staleViews` on `loam unarchive`, `relinked` on `subsystem move`/`rename`, `title`,
+`checklist` and `serviceSteps[]` on `loam status`, `title` on `show` and `list`,
+`currentService.introducedBy` on `loam doctor`, `boundService` on `loam validate`, and `living` /
+`introducedBy[]` on `show`, `context` and `steps` for a service a feature introduces.
+
 ### Fixed — the feature gate predicts the fleet its archive leaves
 
 No code or flag was added. A feature `validate --feature` called clean — `loam status` "ready", the
