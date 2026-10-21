@@ -658,9 +658,13 @@ describe("c4.uncovered", () => {
       const fs = ofCode(findings(res.stdout), "c4.uncovered");
       expect(fs).toHaveLength(2);
       expect(fs[0]!.message).toContain("'payment-split-service' (paymentSplitService)");
-      expect(fs[0]!.message).toContain("Covers: paymentSplitService");
+      // The hint offers the spelling that resolves once living — the service
+      // name, which the merge splices verbatim — and never the delta's own id,
+      // which resolved here and was `covers.unknown` after archive wherever the
+      // living map nests the element differently (test/feature-predicts-fleet.test.ts).
+      expect(fs[0]!.message).toContain("Covers: payment-split-service'");
       expect(fs[1]!.message).toContain("payment-service → payment-split-service");
-      expect(fs[1]!.message).toContain("Covers: paymentService -> paymentSplitService");
+      expect(fs[1]!.message).toContain("Covers: payment-service -> payment-split-service'");
       // The subject names the service whose architecture is uncovered.
       expect(fs.map((f) => f.subject)).toEqual(["payment-split-service", "payment-split-service"]);
     });

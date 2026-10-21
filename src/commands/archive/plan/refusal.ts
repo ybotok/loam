@@ -115,12 +115,15 @@ export function sayRecovery(r: CommitRecovery): void {
 }
 
 /** The full plan, as files: what a dry run shows instead of doing. */
-export function printPlan(docsDir: string, writes: PlannedWrite[], dirName: string): void {
+export function printPlan(docsDir: string, writes: PlannedWrite[], dirName: string, owed: readonly string[]): void {
   console.log(`\n  plan — ${writes.length} file(s):`);
   for (const w of writes) {
     const verb = existsSync(w.path) ? "update" : "create";
     console.log(`    ${verb}  ${repoPath(docsDir, w.path)}`);
   }
   console.log(`    move    features/${dirName} → features/archive/${dirName}`);
+  // What the real run would print in place of "complete + current" (../closing.ts).
+  if (owed.length > 0) console.log("");
+  for (const line of owed) console.log(line);
   console.log("\n  dry run — nothing was written.");
 }

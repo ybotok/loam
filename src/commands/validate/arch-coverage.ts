@@ -28,11 +28,15 @@ import { readHealth } from "../../core/vocabulary/health.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { ACTOR_KINDS, EXTERNAL_TAG } from "../../core/vocabulary/maturity.js";
 import { coversEntries, coversUnknownFindings } from "./checks/requirements.js";
-import type { DocsDir } from "../../core/kernel/ids/dirs.js";
+import { deltaSpelledCovers, mergedMapOf, survivingEdgeCover, survivingElementCover } from "./checks/covers-after.js";
+import type { DocsDir, FeatureDir } from "../../core/kernel/ids/dirs.js";
 
 /** One feature delta's architecture, and everything needed to decide what in it is new. */
 export interface DeltaArch {
   docsDir: DocsDir;
+  /** The feature itself — what the merge preview a `Covers:` line is checked against is computed from. */
+  featureDir: FeatureDir;
+  featureId: string;
   /** Every element the delta declares — the resolver's index, and `coversEdge`'s scope. */
   elements: Elem[];
   /** Every relationship the delta declares. */
@@ -67,6 +71,8 @@ export interface DeltaArch {
 export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
   const {
     docsDir,
+    featureDir,
+    featureId,
     elements,
     relationships,
     taggedEls,
@@ -96,6 +102,9 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
     ...featureServices,
   ]);
   const svcOf = serviceResolver(elements, known);
+  // The map this feature's merge would leave, parsed at most once and only when
+  // a hint or a `Covers:` line needs it (./checks/covers-after.ts says when).
+  const merged = mergedMapOf({ docsDir, featureDir, featureId, fleet, known });
 
   // Arch-edge coverage (heuristic, warn-only): each new tagged edge should be named by a scenario.
   for (const r of taggedRels) {
@@ -171,11 +180,15 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
     if (ACTOR_KINDS.has(e.kind.toLowerCase()) || e.tags.includes(EXTERNAL_TAG)) continue;
     if (baseIds.has(e.id) || baseServices.has(elementService(e))) continue;
     if (activeCovers.some((c) => coversElement(c, e))) continue;
+    // Spelled in the space it will live in, the line covers it too: the id the
+    // merge gives an element is the one the hint below recommends.
+    const cover = await survivingElementCover(e, { svcOf, known }, merged);
+    if (activeCovers.some((c) => c.form === "element" && c.id === cover)) continue;
     findings.push({
       severity: "warn",
       code: "c4.uncovered",
       subject: elementService(e),
-      message: `delta adds '${e.title}' (${e.id}) but no arch requirement covers it — add 'Covers: ${e.id}' to a specs/<svc>/arch.spec.md delta, or its architectural obligations ship unchecked`,
+      message: `delta adds '${e.title}' (${e.id}) but no arch requirement covers it — add 'Covers: ${cover}' to a specs/<svc>/arch.spec.md delta, or its architectural obligations ship unchecked`,
     });
   }
   for (const r of taggedRels) {
@@ -185,7 +198,7 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
       severity: "warn",
       code: "c4.uncovered",
       subject: svcOf(r.target),
-      message: `delta adds edge ${svcOf(r.source)} → ${svcOf(r.target)} ("${r.title ?? ""}") but no arch requirement covers it — add 'Covers: ${r.source} -> ${r.target}' to a specs/<svc>/arch.spec.md delta`,
+      message: `delta adds edge ${svcOf(r.source)} → ${svcOf(r.target)} ("${r.title ?? ""}") but no arch requirement covers it — add 'Covers: ${survivingEdgeCover(r, svcOf)}' to a specs/<svc>/arch.spec.md delta`,
     });
   }
 
@@ -208,7 +221,23 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
       // An unreadable living health.yaml mutes the alert:/sli: entries here
       // exactly as in service scope — the health.invalid finding itself
       // belongs to the service target, which owns the file's diagnosis.
-      const health = await readHealth((await locateServicePaths(docsDir, svc, fleet)).health);
+      const svcPaths = await locateServicePaths(docsDir, svc, fleet);
+      const health = await readHealth(svcPaths.health);
+      // Through the ONE reader of `model.likec4`: a model that EXTENDS the map
+      // is not a file this could open, and reading it as one would answer with
+      // a pile of parse errors — which this arm reads as "no widening", so
+      // every `Covers:` line naming a container of a migrated service would be
+      // convicted as a typo. `mapUnreadable` is the same silence for the same
+      // reason: nothing may widen a scope out of a document nobody could read.
+      // Read at most once, and only when a line needs it.
+      let modelRead: Promise<{ elements: Elem[]; relationships: Rel[] }> | undefined;
+      const model = (): Promise<{ elements: Elem[]; relationships: Rel[] }> =>
+        (modelRead ??= (async () => {
+          const m = existsSync(svcPaths.model) ? await fleet.serviceModel(docsDir, svcPaths) : null;
+          return m !== null && !m.mapUnreadable && m.doc.errors.length === 0
+            ? { elements: m.doc.elements, relationships: m.doc.relationships }
+            : { elements: [], relationships: [] };
+        })());
       let scope: CoverageScope = {
         elements: baseElements,
         relationships: baseRels,
@@ -218,24 +247,38 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
       };
       const unresolved = coversUnknownFindings(reqs, { where: `${svc}: arch.spec.md`, subject: svc }, scope, health.unreadable);
       if (unresolved.length > 0) {
-        // Through the ONE reader of `model.likec4`: a model that EXTENDS the map
-        // is not a file this could open, and reading it as one would answer with
-        // a pile of parse errors — which this arm reads as "no widening", so
-        // every `Covers:` line naming a container of a migrated service would be
-        // convicted as a typo. `mapUnreadable` is the same silence for the same
-        // reason: nothing may widen a scope out of a document nobody could read.
-        const svcPaths = await locateServicePaths(docsDir, svc, fleet);
-        const model = existsSync(svcPaths.model) ? await fleet.serviceModel(docsDir, svcPaths) : null;
-        if (model !== null && !model.mapUnreadable && model.doc.errors.length === 0) {
-          scope = {
-            elements: [...baseElements, ...model.doc.elements],
-            relationships: [...baseRels, ...model.doc.relationships],
-            health: health.ids,
-            known,
-          };
+        const m = await model();
+        scope = {
+          elements: [...baseElements, ...m.elements],
+          relationships: [...baseRels, ...m.relationships],
+          health: health.ids,
+          known,
+        };
+        // The map the merge would leave widens it last, and only for a line still
+        // unresolved: one spelled the way the living map will spell an element
+        // this feature adds resolves there and nowhere else yet — and it is the
+        // spelling the hints recommend.
+        const after = coversUnknownFindings(reqs, { where: svc, subject: svc }, scope, health.unreadable).length > 0 ? (await merged())?.doc : undefined;
+        if (after !== undefined) {
+          scope = { ...scope, elements: [...scope.elements, ...after.elements], relationships: [...scope.relationships, ...after.relationships] };
         }
         findings.push(...coversUnknownFindings(reqs, { where: `${svc}: arch.spec.md`, subject: svc }, scope, health.unreadable));
       }
+      // And the lines that DID resolve, read in the space they will live in:
+      // one that answered only through the delta's own ids is `covers.unknown`
+      // the moment the archive lands it (./checks/covers-after.ts).
+      findings.push(
+        ...(await deltaSpelledCovers({
+          service: svc,
+          reqs,
+          featureScope: scope,
+          living: { elements: landParses?.elements ?? [], relationships: landParses?.relationships ?? [] },
+          model,
+          elements,
+          svcOf,
+          merged,
+        })),
+      );
     }
   }
 

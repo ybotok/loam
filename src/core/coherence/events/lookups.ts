@@ -28,6 +28,15 @@ import type { DocsDir } from "../../kernel/ids/dirs.js";
 export interface EventLookups {
   /** The in-flight feature (if any) whose asyncapi delta adds or edits (service, message). */
   messageDefinedElsewhere(service: string, message: string): Promise<string | undefined>;
+  /**
+   * The in-flight feature (if any) whose asyncapi delta declares an `action:
+   * send` for `message`, on any service — the producer a consumer this feature
+   * adds would be waiting for (`./produced.ts`). Senders only, for
+   * `ConsumerIndex.producers`' reason: every consumer declares the message too,
+   * with `action: receive`, and counting that named the consumer its own
+   * producer.
+   */
+  messageSentElsewhere(message: string): Promise<string | undefined>;
 }
 
 /** The identity of the feature being graded — what the lazy scans exclude. */
@@ -44,10 +53,13 @@ export function eventLookups(scope: EventScope, context?: FleetContext): EventLo
   // it shares this module's laziness and its consumers. Removal markers do
   // not count: a feature retiring a message is not adding it. First feature
   // wins a clash — one name to archive first is enough to make progress.
-  let inFlight: Map<string, string> | null = null;
-  const messageDefinedElsewhere = async (service: string, message: string): Promise<string | undefined> => {
+  // The senders ride the same walk: both questions read the same deltas, and
+  // a second walk is a second parse of every one of them on the archive gate.
+  let inFlight: { declared: Map<string, string>; sent: Map<string, string> } | null = null;
+  const scan = async (): Promise<{ declared: Map<string, string>; sent: Map<string, string> }> => {
     if (inFlight === null) {
-      inFlight = new Map<string, string>();
+      const declared = new Map<string, string>();
+      const sent = new Map<string, string>();
       for (const feature of await listFeatures(docsDir, {}, context)) {
         if (feature.id === featureId) continue;
         for (const svc of feature.services) {
@@ -55,13 +67,18 @@ export function eventLookups(scope: EventScope, context?: FleetContext): EventLo
           for (const m of doc.messages) {
             if (m.remove === true) continue;
             const k = `${svc} ${m.name}`;
-            if (!inFlight.has(k)) inFlight.set(k, feature.id);
+            if (!declared.has(k)) declared.set(k, feature.id);
           }
+          for (const name of doc.sent) if (!sent.has(name)) sent.set(name, feature.id);
         }
       }
+      inFlight = { declared, sent };
     }
-    return inFlight.get(`${service} ${message}`);
+    return inFlight;
   };
+  const messageDefinedElsewhere = async (service: string, message: string): Promise<string | undefined> =>
+    (await scan()).declared.get(`${service} ${message}`);
+  const messageSentElsewhere = async (message: string): Promise<string | undefined> => (await scan()).sent.get(message);
 
-  return { messageDefinedElsewhere };
+  return { messageDefinedElsewhere, messageSentElsewhere };
 }

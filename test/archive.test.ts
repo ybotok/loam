@@ -3919,14 +3919,16 @@ describe("the machine contract (--json)", () => {
         path: "features/FEAT-1-split",
         to: "features/archive/FEAT-1-split",
       });
-      // The one warning this fixture earns: FEAT-1 brings payment-split-service
-      // into existence, and nothing in the merge writes its model.likec4.
+      // The one non-gating finding this fixture earns: FEAT-1 brings
+      // payment-split-service into existence, and nothing in the merge writes
+      // its model.likec4 — at error severity, validate's own grade of that
+      // directory, with `gates: false` saying the merge is still safe.
       // `overridable` is the additive per-issue key resolved from issue.ts's
       // approveOverrides — pinned here so removing or renaming it is a contract
       // break somebody has to see.
       expect(json.warnings).toEqual([
         {
-          severity: "warn",
+          severity: "error",
           code: "service.no-model",
           gates: false,
           overridable: true,

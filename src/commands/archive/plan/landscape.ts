@@ -5,9 +5,9 @@
  * The landscape is the one document every feature writes into, so it is spliced
  * rather than rewritten: the authored file keeps its shape and the delta's
  * elements are placed into it. A service arriving on the architecture axis alone
- * has no `model.likec4` yet, and the warning for that is carried out of the plan
- * — `validate` would report it next, and reporting it here is what stops that
- * being a surprise.
+ * has no `model.likec4` yet, and the finding for that is carried out of the plan
+ * — `validate` would report it next, at the same severity, and reporting it here
+ * is what stops that being a surprise.
  *
  * The map is not the only document the C4 axis writes. What a delta nests
  * INSIDE a service belongs to that service's `model.likec4` when the model
@@ -185,11 +185,19 @@ export async function planLandscape(
     const creates = deltaServices.some((d) => d === svc)
       ? `this archive creates services/${svc}/, but nothing writes services/${svc}/model.likec4`
       : `this archive puts '${svc}' in the landscape, but the fleet has no services/${svc}/ at all`;
+    // An ERROR that does not gate — the two questions `Issue` keeps apart
+    // (core/vocabulary/issue.ts). Severity says whether the documents are valid,
+    // and validate's service target files this very directory as
+    // `service.no-model` at error: the plan used to call it a warning, so the
+    // same fact read as advice here and as a failure one command later (the
+    // real-fleet review, 2026-10-21). Gating says whether the MERGE is safe,
+    // and it is — what is missing is the next step, as above.
     planWarns.push({
-      severity: "warn",
+      severity: "error",
+      gates: false,
       code: "service.no-model",
       subject: svc,
-      message: `${svc}: ${creates} — 'loam validate --all' will report the service as incomplete until it exists. Run 'loam adopt --service ${svc}' from the service repo, or write the model by hand.`,
+      message: `${svc}: ${creates} — 'loam validate --all' will report service.no-model, an error, until it exists. Run 'loam adopt --service ${svc}' from the service repo, or write the model by hand.`,
     });
   }
 }

@@ -258,10 +258,12 @@ describe("examples/docs vs loam archive FEAT-101 --dry-run", () => {
     // contract — and the landscape gains the element, but nothing writes the
     // service's own model.likec4. Archive used to close with "complete and
     // current" and leave `validate --all` reporting a service it had just
-    // created as incomplete; it says so up front now. Advisory: it never gates.
+    // created as incomplete; it says so up front now. At the severity validate
+    // gives the same directory (an error — it used to read `warn` here and
+    // `error` one command later), and it never gates: `gates: false`.
     expect(payload.warnings).toEqual([
       {
-        severity: "warn",
+        severity: "error",
         code: "service.no-model",
         gates: false,
         overridable: true,

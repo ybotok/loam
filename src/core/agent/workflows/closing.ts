@@ -224,7 +224,9 @@ export const LOAM_SHIP: CommandContent = {
    current consumers that overwrite lands on (\`asyncapi.message-modified\` likewise for
    a message; \`openapi.component-modified\` is the same story for a component the
    merged operations carry, with no consumer list),
-   \`service.no-model\` means a service arrives with no C4 centre behind it, and
+   \`service.no-model\` means a service arrives with no C4 centre behind it (an error,
+   the one \`validate --all\` will report until \`loam adopt\` writes the model — it never
+   blocks the merge, and the run prints it instead of claiming the docs complete), and
    \`delta.added-conflict\`
    means another feature in flight adds the same requirement — the first to archive
    lands it, and the other's archive is then refused (\`delta.added-duplicate\`: its

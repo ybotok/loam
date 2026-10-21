@@ -30,6 +30,7 @@ import type { RetiredLookup } from "../retired/archived.js";
 import { revivedEvents } from "../retired/revival/revived.js";
 import type { ConsumerIndex } from "../../consumers/consumers.js";
 import { nothingStill, refusalDetails, refusalMessage, stillNamed, type StillNamed } from "../consumed/refusal.js";
+import { unproducedIssues, type ConsumeClaim } from "./produced.js";
 
 /** What featureCoherence hands the event axis — the delta facts it already computed. */
 export interface EventCoherenceRequest {
@@ -45,6 +46,8 @@ export interface EventCoherenceRequest {
   retired: RetiredLookup;
   /** The consumer index, read after this feature's merge — shared with the contract axis so the fleet is read once. */
   consumers: ConsumerIndex;
+  /** The #external element this feature's own delta draws publishing a message, or null (./produced.ts). */
+  deltaExternal: (message: string) => string | null;
 }
 
 export async function eventCoherence(request: EventCoherenceRequest): Promise<Issue[]> {
@@ -277,6 +280,10 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
   // Tagged edges: `publishes` binds the edge's SOURCE, `consumes` its
   // TARGET — the same reading validate's event spine takes of the living
   // landscape, applied to the delta.
+  // Every consumption this merge would add, collected as the two loops below
+  // walk the edges and the lines, and asked for a producer at the end
+  // (./produced.ts) — `spine.message-unproduced` at feature scope.
+  const claims: ConsumeClaim[] = [];
   for (const r of taggedRels) {
     const bound: { direction: "publishes" | "consumes"; message: string; name: string; edge: string }[] = [];
     const edge = `${svcOf(r.source)} → ${svcOf(r.target)}`;
@@ -287,6 +294,7 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
       if (pathable === undefined) continue;
       // asyncapi.invalid already gates; one breach, one finding.
       if (declared.unreadable.has(pathable)) continue;
+      if (b.direction === "consumes") claims.push({ service: pathable, message: b.message, source: "edge", via: `edge ${b.edge}` });
       const ok = await declares(pathable, b.direction, b.message);
       if (ok !== false) continue;
       const other = await lookups.messageDefinedElsewhere(pathable, b.message);
@@ -314,6 +322,9 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
   for (const svc of svcNames) {
     if (declared.unreadable.has(svc)) continue;
     for (const link of declared.links.get(svc) ?? []) {
+      if (link.direction === "consumes") {
+        claims.push({ service: svc, message: link.message, source: "requirement", via: `requirement '${link.requirement}'` });
+      }
       const ok = await declares(svc, link.direction, link.message);
       if (ok !== false) continue;
       const other = await lookups.messageDefinedElsewhere(svc, link.message);
@@ -335,5 +346,6 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
     }
   }
 
+  issues.push(...(await unproducedIssues({ scope, declared, consumers, lookups, claims, deltaExternal: request.deltaExternal, ...(context === undefined ? {} : { context }) })));
   return issues;
 }

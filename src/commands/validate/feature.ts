@@ -206,6 +206,8 @@ export async function validateFeature(
   findings.push(
     ...(await deltaArchCoverage({
       docsDir,
+      featureDir,
+      featureId,
       elements,
       relationships: deltaRels,
       taggedEls,

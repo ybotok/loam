@@ -171,12 +171,14 @@ export type IssueCode =
   | "asyncapi.ref-unresolved"
   /** a tagged edge publishes/consumes a message its bound service's contract — as the feature's merge would leave it, feature ∪ living where no delta exists — declares no matching send/receive operation for */
   | "c4-event.message-undefined"
-  /** softened — the message is introduced by another feature still in flight; archive that one first */
+  /** softened — the message is introduced by another feature still in flight; archive that one first. Also: a tagged `consumes` edge whose message only an in-flight feature's delta sends */
   | "c4-event.message-pending"
   /** a delta requirement's Publishes:/Consumes: line names a message the service's contract — as the feature's merge would leave it, so a retired declaration stops answering — does not declare in that direction; validate's living-side code, graded in feature scope too */
   | "spec-event.message-undefined"
-  /** softened — the named message is introduced by another feature still in flight */
+  /** softened — the named message is introduced by another feature still in flight. Also: a delta `Consumes:` line whose message only an in-flight feature's delta sends — archive that one first */
   | "spec-event.message-pending"
+  /** a delta's `Consumes:` line or tagged `consumes` edge names a message nothing would send after the merge — no service's contract as the merge leaves it, no #external element on the living map or in the delta; validate's living-side code, graded in feature scope so the archive cannot land the consumer it would report */
+  | "spine.message-unproduced"
   /** W1 — an operation is called but no requirement governs it */
   | "c4.op-ungoverned"
   /** W2 — the feature adds an operation no architecture edge consumes */
@@ -267,8 +269,10 @@ export type IssueCode =
   | "delta.baseline-missing"
   /** the living requirement changed since this delta was written — merging it would silently discard whoever landed in between */
   | "delta.baseline-stale"
-  /** the archive creates `services/<id>/` but nothing writes its `model.likec4` — the fleet gate will report the service incomplete */
+  /** the archive creates `services/<id>/` but nothing writes its `model.likec4` — the fleet gate will report the service incomplete. An ERROR, the severity `validate` gives the same directory, that does NOT gate: the merge is correct, the fleet it leaves is not yet whole */
   | "service.no-model"
+  /** a health.yaml alert or SLI a living arch.spec.md requirement covers today that this feature's arch.spec.md delta would leave covered by nothing — validate's service-scope warning, predicted before the merge */
+  | "health.uncovered"
   /* --- capability axis: the Capability: join against architecture/capabilities.yaml --- */
   /** a delta requirement's `Capability:` entry that the fleet vocabulary does not declare — the merge would land a join that resolves to nothing, so it blocks archive like other errors, and `--approve` overrides it */
   | "capability.unknown"
@@ -285,6 +289,16 @@ export type IssueCode =
   /* --- the use-case axis: a flow a feature introduces --- */
   /** a `features/<FEAT>/usecases/*.likec4` that could not be read against the map this feature's own merge would leave behind — a parse error, an unresolved element, or a landscape merge that itself refuses. The flows were not graded, and archiving would copy them into `architecture/` for the next reader's `loam validate --all` to fail on. Mechanical rather than a judgement, which is why `--approve` does not move it */
   | "usecase.flow-invalid"
+  /** a hop of a feature's own flow that no relationship on the map its merge would leave backs — validate's fleet-scope code, graded in feature scope against the merge preview, so the archive cannot land a flow `validate --all` then convicts */
+  | "usecase.step-unbacked"
+  /** a hop of a feature's own flow whose candidate relationships on the post-merge map disagree about the operation — validate's fleet-scope warning, graded in feature scope */
+  | "usecase.step-contested"
+  /** a cross-service hop of a feature's own flow backed by a relationship carrying no operation — validate's fleet-scope warning, graded in feature scope */
+  | "usecase.step-unlinked"
+  /** a `#cap-` tag on a feature's own flow that resolves to no capability the merge would leave declared — validate's fleet-scope code, graded in feature scope */
+  | "usecase.capability-unresolved"
+  /** a `#req-` tag on a feature's own flow that resolves to no requirement of the capability its `#cap-` tag names, as the merge would leave that document — or a flow with no resolving `#cap-` at all; validate's fleet-scope code, graded in feature scope */
+  | "usecase.requirement-unresolved"
   /** a `features/<FEAT>/usecases/<name>.likec4` whose flow the living `architecture/` already holds — the merge is a whole-file copy, so it would replace an authored hop sequence wholesale. An error with no legal reading, which is why `--approve` changes nothing about it: a feature-local flow INTRODUCES a use case, and rewriting one belongs in a pull request where git produces the conflict */
   | "usecase.flow-exists"
   /* --- the deployment axis: the topology a feature introduces --- */

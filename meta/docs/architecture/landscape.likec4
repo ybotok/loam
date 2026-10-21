@@ -548,6 +548,7 @@ model {
   loam.core.coherence -> loam.core.repo
   loam.core.coherence -> loam.core.staging
   loam.core.coherence -> loam.core.usecases
+  loam.core.coherence -> loam.core.vocabulary
 
   // The one consumer index — who still calls an operation, still consumes a
   // message — that `loam diff`, the coherence gate and the archive planner all

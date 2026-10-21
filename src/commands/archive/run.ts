@@ -38,6 +38,7 @@ import { contractConsumers } from "./plan/contracts/consumers.js";
 import { planDeployments, planFlows, planLandscape } from "./plan/landscape.js";
 import { emptyPlan } from "./plan/state.js";
 import { checklistAtArchive } from "./shipped.js";
+import { outstandingLines } from "./closing.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 export async function archiveLocked(
@@ -167,7 +168,9 @@ export async function archiveLocked(
 
   if (dryRun) {
     if (json) emitJson(payload(false));
-    else printPlan(config.docsDir, writes, dirName);
+    // What the real run would print in place of its closing line, said BEFORE
+    // anything is written — the one moment a reader can still act on it.
+    else printPlan(config.docsDir, writes, dirName, outstandingLines({ advisory, planWarns, overridden, staleViews: [], dryRun: true }));
     return;
   }
 
@@ -309,26 +312,15 @@ export async function archiveLocked(
   console.log(`  snapshot: features/archive/${dirName}/${SNAPSHOT_DIR}/ — \`loam unarchive ${id}\` puts it back`);
   // The closing line is a claim about the whole docs repo, and it is the line a
   // reader stops at. It may be printed only when this archive left nothing the
-  // next `validate --all` will fail on — a service with no model, or a gate the
-  // caller told it to merge past. Printing it over either is how a red fleet
-  // gets reported as a finished one.
-  const incomplete = planWarns.filter((w) => w.code === "service.no-model");
-  if (incomplete.length === 0 && overridden.length === 0 && staleViews.length === 0) {
+  // next `validate --all` will fail on; ./closing.ts lists every reason it
+  // cannot be, and those lines are printed instead. Printing it over any of
+  // them is how a red fleet gets reported as a finished one.
+  const owed = outstandingLines({ advisory, planWarns, overridden, staleViews, dryRun: false });
+  if (owed.length === 0) {
     console.log("  living spec + landscape are now complete + current.");
     return;
   }
-  // One line per stale file rather than one line listing them: each names a file
-  // a reader opens, and a comma-joined series would have to choose a verb that
-  // reads wrong for one of the two counts.
-  for (const path of staleViews) {
-    console.log(`  ⚠ ${path} no longer matches the tree and this map — run \`loam subsystem sync\`.`);
-  }
-  for (const w of incomplete) console.log(`  ⚠ ${w.message}`);
-  if (overridden.length > 0) {
-    console.log(
-      `  ⚠ merged past ${overridden.length} gating issue(s) with --approve — the living docs carry them now; \`loam validate --all\` says what they cost.`,
-    );
-  }
+  for (const line of owed) console.log(line);
 }
 
 /**

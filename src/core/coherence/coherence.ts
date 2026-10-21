@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { loadFile, type Elem, type LoadedDoc, type Rel } from "../c4/likec4.js";
 import { elementService, serviceResolver } from "../c4/resolve/service.js";
+import { externalProducerOf } from "../c4/resolve/external.js";
 import { extendingModels } from "../c4/service-model/fleet/extending.js";
 import { serviceIdProblem } from "../kernel/ids/service.js";
 import { deltaShapeIssues } from "../delta/delta.js";
@@ -18,6 +19,7 @@ import { consumerIndex } from "../consumers/consumers.js";
 import { consumedOperationIssues } from "./consumed/operations.js";
 import { eventCoherence } from "./events/events.js";
 import { authoringIssues } from "./authoring/scaffold.js";
+import { droppedHealthCoverage } from "./covers/health.js";
 import { glossaryDeltaIssues } from "../glossary/delta.js";
 import { flowDeltaIssues } from "../usecases/delta/flows.js";
 import { deploymentDeltaIssues, readFeatureDeployments } from "../deployment/delta.js";
@@ -159,7 +161,8 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
   // services/ falls back to the feature's own names — every living probe would
   // have found nothing there anyway.
   const fleetIds = await enumeratedServiceIds(docsDir, context);
-  const svcOf = serviceResolver(elements, new Set<string>([...fleetIds, ...svcNames]));
+  const known = new Set([...fleetIds, ...svcNames]);
+  const svcOf = serviceResolver(elements, known);
 
   // Which elements the landscape merge would SPLICE: the tagged ones and
   // everything nested inside their blocks. Defined here because two checks
@@ -347,7 +350,15 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
   // feature's asyncapi deltas (pins, markers, justification), the tagged
   // edges' publishes/consumes metadata, and the requirement deltas'
   // Publishes:/Consumes: lines (./events/events.ts owns the walk).
-  issues.push(...(await eventCoherence({ scope, svcNames, taggedRels, svcOf, context, retired, consumers })));
+  // The one producer the event axis cannot read off the living map: an
+  // #external publisher this delta draws, which the landscape merge adds.
+  const deltaExternal = (message: string): string | null =>
+    externalProducerOf(message, { errors: [], elements, relationships: taggedRels }, svcOf, known);
+  issues.push(...(await eventCoherence({ scope, svcNames, taggedRels, svcOf, context, retired, consumers, deltaExternal })));
+
+  // The health axis's one merge question: an alert or SLI the living
+  // arch.spec.md covers that this delta would leave covered by nothing.
+  issues.push(...(await droppedHealthCoverage({ docsDir, featureDir, services: svcNames, ...(context === undefined ? {} : { context }) })));
 
   return issues;
 }
