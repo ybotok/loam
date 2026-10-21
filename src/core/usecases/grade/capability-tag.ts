@@ -22,7 +22,7 @@
  * one view's tags are two chances to disagree about which capability a flow is
  * about. The ladder that produces the suppressing `null` is
  * `gradableCapabilityIds` in `core/capabilities/findings.ts` — one function, called by every site that needs the graded id list, this module's
- * caller in `../landscape.ts` included. The FILE is this axis's opt-in, so a
+ * callers in `commands/validate/fleet/map/usecases.ts` and `./feature.ts` included. The FILE is this axis's opt-in, so a
  * fleet with no `architecture/capabilities.yaml` produces no capability finding
  * at all, and an unreadable one is `capability.invalid` alone rather than one
  * unresolved tag per use case in the fleet, which is a cascade and not a
@@ -34,10 +34,10 @@ import {
   CAP_TAG_PREFIX,
   tagSlug,
   type CapabilityClaim,
-} from "../../../../core/capabilities/usecase-join.js";
-import type { ParsedView } from "../../../../core/c4/parsed/dynamic-views.js";
-import type { Finding } from "../../../../core/vocabulary/report.js";
-import { viewPlace } from "./place.js";
+} from "../../capabilities/usecase-join.js";
+import type { ParsedView } from "../../c4/parsed/dynamic-views.js";
+import type { Finding } from "../../vocabulary/report.js";
+import type { ViewPlace } from "../place.js";
 
 /** A capability id as an author must write it in a tag: `identity/tokens (#cap-identity-tokens)`. */
 function idAndTag(id: string): string {
@@ -53,13 +53,13 @@ function idAndTag(id: string): string {
  * LikeC4 refuses to parse. The flattening rule is stated in the same breath so
  * the reader can derive the next one without being told again.
  */
-function noneMessage(view: ParsedView, claim: Extract<CapabilityClaim, { kind: "none" }>): string {
+function noneMessage(where: string, claim: Extract<CapabilityClaim, { kind: "none" }>): string {
   const hint =
     claim.close.length > 0
       ? `Did you mean: ${claim.close.map(idAndTag).join(", ")}?`
       : "Declare it there (`capabilities: {<id>: {description, owner}}`), or fix the tag.";
   return (
-    `${viewPlace(view)} is tagged #${claim.tag}, and no capability declared in ` +
+    `${where} is tagged #${claim.tag}, and no capability declared in ` +
     `architecture/capabilities.yaml flattens to '${claim.slug}'. ${hint} ` +
     "A tag spells the id with every character outside `[A-Za-z0-9_-]` flattened to `-`, because that is all a LikeC4 tag name accepts."
   );
@@ -70,9 +70,9 @@ function noneMessage(view: ParsedView, claim: Extract<CapabilityClaim, { kind: "
  * message that stopped at the first would be reporting the ambiguity while
  * hiding half of what makes it one.
  */
-function manyMessage(view: ParsedView, claim: Extract<CapabilityClaim, { kind: "many" }>): string {
+function manyMessage(where: string, claim: Extract<CapabilityClaim, { kind: "many" }>): string {
   return (
-    `${viewPlace(view)} is tagged #${claim.tag}, and ${claim.ids.length} declared capabilities flatten to ` +
+    `${where} is tagged #${claim.tag}, and ${claim.ids.length} declared capabilities flatten to ` +
     `'${claim.slug}' (${claim.ids.join(", ")}) — nothing in the tag can say which one this use case realizes. ` +
     "Rename one of them in architecture/capabilities.yaml: a guessed capability files every hop of the flow, " +
     "and every rollup built over it, under an owner who never claimed it — and the wrong answer looks exactly " +
@@ -89,7 +89,7 @@ function manyMessage(view: ParsedView, claim: Extract<CapabilityClaim, { kind: "
  * swallow a broken tag beside a working one or lose the capability the view
  * genuinely does realize; one tag, one verdict, one finding keeps both facts.
  */
-export function capabilityTagFindings(view: ParsedView, claims: readonly CapabilityClaim[]): Finding[] {
+export function capabilityTagFindings(view: ParsedView, claims: readonly CapabilityClaim[], place: ViewPlace): Finding[] {
   const findings: Finding[] = [];
   for (const claim of claims) {
     if (claim.kind === "resolved") continue;
@@ -100,7 +100,7 @@ export function capabilityTagFindings(view: ParsedView, claims: readonly Capabil
       // `subjectsWith` counts one broken use case once however many of its tags
       // are wrong.
       subject: view.id,
-      message: claim.kind === "none" ? noneMessage(view, claim) : manyMessage(view, claim),
+      message: claim.kind === "none" ? noneMessage(place(view), claim) : manyMessage(place(view), claim),
     });
   }
   return findings;

@@ -26,10 +26,10 @@ import {
   resolveRequirementTags,
   type CapabilityClaim,
   type RequirementClaim,
-} from "../../../../core/capabilities/usecase-join.js";
-import type { ParsedView } from "../../../../core/c4/parsed/dynamic-views.js";
-import type { Finding } from "../../../../core/vocabulary/report.js";
-import { viewPlace } from "./place.js";
+} from "../../capabilities/usecase-join.js";
+import type { ParsedView } from "../../c4/parsed/dynamic-views.js";
+import type { Finding } from "../../vocabulary/report.js";
+import type { ViewPlace } from "../place.js";
 
 /** A `Requirement-ID` as an author must write it in a tag: `CHK.ONCE (#req-CHK-ONCE)`. */
 function idAndTag(id: string): string {
@@ -96,6 +96,7 @@ export function requirementTagFindings(
   view: ParsedView,
   claims: readonly CapabilityClaim[],
   requirementsOf: (capability: string) => ReadonlySet<string> | undefined,
+  place: ViewPlace,
 ): Finding[] {
   const scope = claims.flatMap((claim) => (claim.kind === "resolved" ? [claim.id] : []));
   const findings: Finding[] = [];
@@ -107,7 +108,7 @@ export function requirementTagFindings(
       // The VIEW, not the tag — a subject is what a reader goes and opens, and
       // one broken use case counts once however many of its tags are wrong.
       subject: view.id,
-      message: `${viewPlace(view)} is tagged #${claim.tag}, and it does not resolve: ${advice(claim)}`,
+      message: `${place(view)} is tagged #${claim.tag}, and it does not resolve: ${advice(claim)}`,
     });
   }
   return findings;

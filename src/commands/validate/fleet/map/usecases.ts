@@ -6,13 +6,15 @@
  * The seam is a phase rather than a subject: everything here happens after the
  * map has parsed and grades documents the map does not own — every
  * `dynamic view` in `architecture/landscape.likec4` and in every
- * `architecture/usecases/*.likec4`. `../usecases/usecases.ts` owns the opt-in and
+ * `architecture/usecases/*.likec4`. `core/usecases/grade/usecases.ts` owns the opt-in and
  * the grades; this owns which inputs they are handed, which is the part that has
  * twice been got wrong and is worth stating in one place.
  *
  * A sub-package of `fleet/` for `./isolation.ts`'s reason, and with its rule:
  * it imports NOTHING from `fleet/` itself, so everything it needs arrives in
- * one record the caller fills.
+ * one record the caller fills — besides `../usecases/place.ts`, the fleet target's
+ * own name for where a view is, which the graders (`core/usecases/grade/`) take
+ * as an argument because core may not hold it.
  */
 import { capabilityRequirementIndex, gradableCapabilityIds } from "../../../../core/capabilities/findings.js";
 import { FleetContext } from "../../../../core/fleet-context.js";
@@ -20,7 +22,8 @@ import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
 import type { Elem, Rel } from "../../../../core/c4/likec4.js";
 import type { ParsedView } from "../../../../core/c4/parsed/dynamic-views.js";
 import type { Finding } from "../../../../core/vocabulary/report.js";
-import { useCaseFindings } from "../usecases/usecases.js";
+import { useCaseFindings } from "../../../../core/usecases/grade/usecases.js";
+import { viewPlace } from "../usecases/place.js";
 
 export interface FleetUseCases {
   docsDir: DocsDir;
@@ -70,5 +73,6 @@ export async function fleetUseCaseFindings(input: FleetUseCases): Promise<Findin
     resolve: input.resolve,
     capabilities: gradableCapabilityIds(vocabulary),
     requirementsOf: (capability) => capabilityReqs.byCapability.get(capability),
+    place: viewPlace,
   });
 }

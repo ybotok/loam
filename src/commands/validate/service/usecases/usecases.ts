@@ -2,7 +2,7 @@
  * The use-case axis of the SERVICE target: the `dynamic view`s a service's own
  * LikeC4 project declares, graded as the hop sequences behind its requirements.
  *
- * The fleet target grades flows drawn over the map (`../../fleet/usecases/`);
+ * The fleet target grades flows drawn over the map (`core/usecases/grade/`);
  * this grades flows drawn over ONE service's containers, which only that
  * service's project can resolve — the whole reason the slot exists
  * (`core/usecases/service/flows.ts` carries the report). The step grades are
@@ -44,7 +44,7 @@ import type { ServiceFlowScan } from "../../../../core/usecases/service/flows.js
 import type { Finding } from "../../../../core/vocabulary/report.js";
 import { errorText } from "../../../../core/c4/likec4.js";
 import { CAP_TAG_PREFIX, REQ_TAG_PREFIX } from "../../../../core/capabilities/usecase-join.js";
-import { stepFindings, type StepGrading } from "../../fleet/usecases/steps.js";
+import { stepFindings, type StepGrading } from "../../../../core/usecases/grade/steps.js";
 import { serviceTagFindings, type ServiceTagScope } from "./tags.js";
 
 /** What the service's use-case grades run over. */
