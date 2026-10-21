@@ -248,11 +248,13 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
       const unresolved = coversUnknownFindings(reqs, { where: `${svc}: arch.spec.md`, subject: svc }, scope, health.unreadable);
       if (unresolved.length > 0) {
         const m = await model();
+        // Widened, never narrowed: the topology rides along. Rebuilding the
+        // record without it convicted every `node:` entry as a typo the moment
+        // another entry beside it sent the scope here.
         scope = {
+          ...scope,
           elements: [...baseElements, ...m.elements],
           relationships: [...baseRels, ...m.relationships],
-          health: health.ids,
-          known,
         };
         // The map the merge would leave widens it last, and only for a line still
         // unresolved: one spelled the way the living map will spell an element

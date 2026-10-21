@@ -16,21 +16,21 @@ No code or flag was added. A feature `validate --feature` called clean — `loam
 archive gate agreeing — could archive at exit 0 under "living spec + landscape are now complete +
 current." into a fleet `validate --all` then reported red. The feature scope (`validate --feature`,
 `loam status <FEAT>`, the archive gate and `archive --dry-run`) now raises, before the archive,
-what `validate --all` raises after it, under the same codes:
+what `validate --all` raises after it, under the same codes — except the two `Covers:` findings
+below, which are `validate`'s alone (`--feature`, and `--all` per active feature); `loam status`
+and the archive do not raise them:
 
 - **A consumer with no producer is refused.** A delta `Consumes:` line or tagged `consumes` edge
   naming a message nothing would send after the merge — no service's contract as the merge leaves
   it, no `#external` publisher on the living map or in the delta — is `spine.message-unproduced`
-  (error) at feature scope. **`validate --feature` and `loam archive` now exit 1 on it**
-  (`--approve` overrides). When only another in-flight feature's delta sends the message it is
+  (error) at feature scope. When only another in-flight feature's delta sends the message it is
   `spec-event.message-pending` / `c4-event.message-pending` (warn) instead.
 - **A feature's own flows are graded as the fleet grades them.** A hop of a
   `features/<FEAT>/usecases/*.likec4` view that no relationship on the post-merge map backs is
   `usecase.step-unbacked`; a `#req-` tag no `#cap-` tag scopes, or one naming no requirement as the
   merge leaves the capability document, is `usecase.requirement-unresolved`; an unresolving `#cap-`
-  tag is `usecase.capability-unresolved` — errors, so **`validate --feature` and `loam archive` now
-  exit 1 on them**. `usecase.step-contested` and `usecase.step-unlinked` arrive as warnings. The
-  messages open with the feature file's path.
+  tag is `usecase.capability-unresolved` — errors. `usecase.step-contested` and
+  `usecase.step-unlinked` arrive as warnings. The messages open with the feature file's path.
 - **A MODIFIED arch requirement that drops a `Covers: sli:` / `alert:` line** the living
   `arch.spec.md` had is `health.uncovered` (warn) at feature scope, naming the signal.
 - **A `Covers:` entry spelled in the delta's own ids** — a stub the delta declares where the living
@@ -45,6 +45,16 @@ what `validate --all` raises after it, under the same codes:
   `--dry-run` now prints it, as `--json` and the real run did, before "dry run — nothing was
   written.", and both runs print in place of the closing line when this archive lands ahead of an
   in-flight change it waits on (a `*-pending` warning).
+- **Exit code:** on any of the four errors above, `loam validate --feature`, `loam validate <FEAT>`
+  and `loam validate --all` — for every active feature carrying one, before anything is archived —
+  now exit 1 where they exited 0; `loam archive` and `archive --dry-run` exit 1 (`not-coherent`)
+  without `--approve`, which overrides all four; `loam status` counts them as gating, and
+  `loam show <FEAT> --json` reports `review.readyToArchive: false`. The warnings above
+  (`health.uncovered`, `covers.unknown`, `usecase.step-contested`, `usecase.step-unlinked`, the two
+  `*-pending`) leave the exit code alone except under `--strict`, which fails on any warning and so
+  now exits 1 on these shapes.
+- **`service.no-model` rides at error severity in a `not-coherent` refusal's `error.issues[]`** too,
+  beside the issues that refused — count what blocks by `gates`, never by `severity`.
 
 `loam archive --json`'s `issues[]` may carry the seven codes above (`spine.message-unproduced`,
 `health.uncovered`, the five `usecase.*`), which the `IssueCode` union now admits; each was already
