@@ -180,24 +180,25 @@ export async function planLandscape(
   for (const svc of newServices) {
     // Two shapes of the same debt: a service with a requirement delta gets its
     // directory from this merge, one that arrives only in the landscape gets no
-    // directory at all — and `validate --all` fails the second harder
-    // (`landscape.service-unmodelled` names the binding with nothing behind it).
-    const creates = deltaServices.some((d) => d === svc)
-      ? `this archive creates services/${svc}/, but nothing writes services/${svc}/model.likec4`
-      : `this archive puts '${svc}' in the landscape, but the fleet has no services/${svc}/ at all`;
+    // directory at all — and `validate --all` reports the two under different
+    // codes, both errors: the directory with no model is the service target's
+    // `service.no-model`, the binding with no directory behind it the fleet
+    // map's `landscape.binding-unknown`. The message names the one that fires.
+    const owed = deltaServices.some((d) => d === svc)
+      ? { creates: `this archive creates services/${svc}/, but nothing writes services/${svc}/model.likec4`, reports: "service.no-model" }
+      : { creates: `this archive puts '${svc}' in the landscape, but the fleet has no services/${svc}/ at all`, reports: "landscape.binding-unknown" };
     // An ERROR that does not gate — the two questions `Issue` keeps apart
     // (core/vocabulary/issue.ts). Severity says whether the documents are valid,
-    // and validate's service target files this very directory as
-    // `service.no-model` at error: the plan used to call it a warning, so the
-    // same fact read as advice here and as a failure one command later (the
-    // real-fleet review, 2026-10-21). Gating says whether the MERGE is safe,
-    // and it is — what is missing is the next step, as above.
+    // and validate files either shape as an error: the plan used to call it a
+    // warning, so the same fact read as advice here and as a failure one
+    // command later (the real-fleet review, 2026-10-21). Gating says whether the
+    // MERGE is safe, and it is — what is missing is the next step, as above.
     planWarns.push({
       severity: "error",
       gates: false,
       code: "service.no-model",
       subject: svc,
-      message: `${svc}: ${creates} — 'loam validate --all' will report service.no-model, an error, until it exists. Run 'loam adopt --service ${svc}' from the service repo, or write the model by hand.`,
+      message: `${svc}: ${owed.creates} — 'loam validate --all' will report ${owed.reports}, an error, until it exists. Run 'loam adopt --service ${svc}' from the service repo, or write the model by hand.`,
     });
   }
 }

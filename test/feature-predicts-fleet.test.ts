@@ -199,6 +199,45 @@ model {
     expect(ofCode(await findingsOf(f.dir, "--all"), "spine.message-unproduced")).toEqual([]);
   });
 
+  it("is satisfied by a LIVING #external system the delta re-declares as an untagged stub — the merge keeps its tag", async () => {
+    // A delta quotes the neighbourhood its edges attach to, and a quote carries
+    // no tags: `salesforce` is #external on the living map, a bare stub here.
+    // The tagged edge lands, the living element keeps its tag, and the fleet
+    // `validate --all` reads has the producer — so the gate must too.
+    const f = await exampleFleet();
+    shipmentConsumer(f);
+    f.write(
+      "features/FEAT-201-shipments/delta.likec4",
+      `specification {
+  element group
+  element softwareSystem
+  tag FEAT-201
+}
+model {
+  marketplace = group 'Marketplace' {
+    orderService = softwareSystem 'order-service' {
+      metadata {
+        service 'order-service'
+      }
+    }
+  }
+  salesforce = softwareSystem 'salesforce'
+  salesforce -> marketplace.orderService 'Publishes ShipmentDispatched' {
+    #FEAT-201
+    metadata {
+      publishes 'shipping.ShipmentDispatched'
+    }
+  }
+}
+`,
+    );
+
+    expect(ofCode(await findingsOf(f.dir, "--feature", "FEAT-201"), "spine.message-unproduced")).toEqual([]);
+    const archived = await runLoam(f.dir, "archive", "FEAT-201");
+    expect(archived.code).toBe(0);
+    expect(ofCode(await findingsOf(f.dir, "--all"), "spine.message-unproduced")).toEqual([]);
+  });
+
   it("is softened to a pending warning while its only sender is in flight, and the archive withholds its closing line", async () => {
     const f = await exampleFleet();
     shipmentConsumer(f);

@@ -41,7 +41,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { relative } from "node:path";
 import { type FleetContext } from "../fleet-context.js";
-import { parseRequirements } from "../document/parse.js";
+import { parseRequirements, readRequirementsDocument } from "../document/parse.js";
 import { type Requirement } from "../document/spec.js";
 import { featureSpecPaths, SPEC_AXES } from "../repo/paths.js";
 import { featureUseCasesDir, livingCapabilityPaths } from "../repo/authored/paths.js";
@@ -215,7 +215,10 @@ export async function deltaShapeIssues(
         // `services/<svc>/`, so a hop into a service it introduces resolves to that
         // service in the grade, as it will under the next `validate --all`.
         known: new Set([...(await enumeratedServiceIds(docsDir, context)), ...services]),
-        read: async (path) => (context === undefined ? parseRequirements(await readFile(path, "utf8")) : await context.readRequirements(path)),
+        // Decoded or refused by name (`readRequirementsDocument`), never `readFile`'s
+        // utf8 — a UTF-16 capability document would read as no requirements and
+        // convict every flow naming it.
+        read: async (path) => (context === undefined ? parseRequirements(await readRequirementsDocument(path)) : await context.readRequirements(path)),
         // A function rather than the context itself: one memoised LikeC4 read
         // does not justify an edge from `core/usecases/` to `fleet-context`, and
         // the edge would push that package up a DAG level for nothing.

@@ -12,22 +12,33 @@
  * (the real-fleet review, 2026-10-21). `./events.ts` had already computed who
  * sends a message after the merge — for retirements only.
  *
- * THE SAME THREE SOURCES OF A PRODUCER, read after the merge, that the
- * retirement gate in `./events.ts` reads: a living service's contract (a
- * service this feature carries an event delta for answers with what the merge
- * leaves it, `declared.sentAfter`, and nothing else), and an #external element
- * whose `publishes` edge sends it. The external one is asked of the living map
- * over the directories the merge leaves (`ConsumerIndex.externalProducer`) AND
- * of this feature's own delta, because the landscape merge only adds: an
- * #external publisher the delta draws is on the map the next `validate --all`
- * reads. The consumer itself counts as a sender, as it does at service scope —
- * a relay that reads and writes one name produces it.
+ * THE FLEET'S SENDERS ARE THE RETIREMENT GATE'S, read after the merge
+ * (`fleetSendersAfter` below, which `./events.ts` calls too): a living
+ * service's contract, except that a service this feature carries an event
+ * delta for answers with what the merge leaves it (`declared.sentAfter`) and
+ * nothing else. The consumer itself counts, as it does at service scope — a
+ * relay that reads and writes one name produces it.
+ *
+ * THE OUTSIDE PRODUCER IS ASKED OF THE MAP THE MERGE LEAVES, and here the two
+ * gates part on purpose. The retirement gate reads only the living map and
+ * errs toward refusing a retirement (`./events.ts` says why). A consumer is the
+ * opposite shape: its question is whether `validate --all` will find a
+ * producer once the archive lands, and the landscape merge only ADDS — a
+ * tagged `publishes` edge from an #external system is on that map. Reading
+ * the delta alone was not enough, because a delta re-declares a living system
+ * as an untagged stub (`salesforce = softwareSystem 'salesforce'`): the edge
+ * lands, the living element keeps its #external tag, and the fleet is clean —
+ * while a delta-only read saw no tag and refused. So the living map is asked
+ * first (memoised, cheap), and only then the staged post-merge map
+ * (`core/c4/project/staged.ts`, the archive's own merge), parsed once per
+ * feature and only on the path where nothing else sends the message.
  *
  * THE SAME SUSPENSION. "Nobody sends this" is an argument from absence, and
  * service scope makes it only over a fleet whose every contract reads; one
  * unreadable `asyncapi.yaml` anywhere suspends it, because that file may be the
  * producer. A feature delta that does not read suspends it too — its own
- * `asyncapi.invalid` already gates.
+ * `asyncapi.invalid` already gates — and so does a post-merge map that cannot
+ * be staged: loam could not look, which is never "nobody publishes it".
  *
  * SOFTENED for a producer still in flight, on the `-pending` precedent every
  * other cross-feature join here follows: when another active feature's delta
@@ -37,8 +48,13 @@
  * ship together stay green while both are open, and its words say what the
  * wrong order costs.
  */
+import type { LoadedDoc } from "../../c4/likec4.js";
+import { stageMergedProject } from "../../c4/project/staged.js";
+import { externalProducerOf } from "../../c4/resolve/external.js";
+import { serviceResolver } from "../../c4/resolve/service.js";
+import { extendingModels } from "../../c4/service-model/fleet/extending.js";
 import type { Issue } from "../../vocabulary/issue.js";
-import type { PathableService } from "../../kernel/ids/service.js";
+import type { PathableService, RawServiceId } from "../../kernel/ids/service.js";
 import { enumeratedServiceIds } from "../../repo/service-target.js";
 import { producersByMessage } from "../../asyncapi/producers.js";
 import type { FleetContext } from "../../fleet-context.js";
@@ -56,6 +72,21 @@ export interface ConsumeClaim {
   via: string;
 }
 
+/**
+ * The fleet services that would send `message` after this merge, sorted —
+ * positive evidence only. A service this feature carries an event delta for
+ * (or whose delta does not read) sends what the simulated merge leaves it and
+ * nothing else; every other service sends what its living contract does. Read
+ * alone, the living half would let a feature retiring a message from both of
+ * its senders pass on each one's living contract.
+ */
+export async function fleetSendersAfter(declared: DeclaredEvents, consumers: ConsumerIndex, message: string): Promise<string[]> {
+  const touched = new Set<string>([...declared.featureDocs.keys(), ...declared.unreadable]);
+  const living = (await consumers.producers(message)).filter((id) => !touched.has(id));
+  const merged = [...declared.sentAfter].filter(([, sent]) => sent.includes(message)).map(([id]) => id);
+  return [...new Set([...living, ...merged])].sort();
+}
+
 /** Everything the producer question reads, already computed by `./events.ts`. */
 export interface ProducedRequest {
   scope: EventDeltaScope;
@@ -63,8 +94,8 @@ export interface ProducedRequest {
   consumers: ConsumerIndex;
   lookups: EventLookups;
   claims: readonly ConsumeClaim[];
-  /** The #external element this feature's own delta draws publishing `message`, or null. */
-  deltaExternal: (message: string) => string | null;
+  /** The services the merge leaves a directory for — the enumerated fleet plus this feature's `specs/`. */
+  known: ReadonlySet<RawServiceId>;
   context?: FleetContext;
 }
 
@@ -78,11 +109,26 @@ export async function unproducedIssues(req: ProducedRequest): Promise<Issue[]> {
     const key = JSON.stringify([claim.service, claim.message]);
     groups.set(key, [...(groups.get(key) ?? []), claim]);
   }
-  const touched = new Set<string>([...declared.featureDocs.keys(), ...declared.unreadable]);
-  const produced = async (message: string): Promise<boolean> => {
-    if ((await consumers.producers(message)).some((id) => !touched.has(id))) return true;
-    if ([...declared.sentAfter.values()].some((sent) => sent.includes(message))) return true;
-    return (await consumers.externalProducer(message)) !== null || req.deltaExternal(message) !== null;
+  // The post-merge map, staged at most once and only when the living answers
+  // ran out; null when it cannot be had, which suspends rather than convicts.
+  let staged: Promise<LoadedDoc | null> | undefined;
+  const mergedMap = (): Promise<LoadedDoc | null> =>
+    (staged ??= (async () => {
+      const project = await stageMergedProject({
+        ...scope,
+        documents: [],
+        ...(context === undefined ? {} : { load: (path: string) => context.loadLikeC4(path) }),
+        models: await extendingModels(scope.docsDir, context),
+      });
+      return project.kind === "read" ? project.doc : null;
+    })());
+  /** true = sent; false = nothing sends it; undefined = loam could not look. */
+  const produced = async (message: string): Promise<boolean | undefined> => {
+    if ((await fleetSendersAfter(declared, consumers, message)).length > 0) return true;
+    if ((await consumers.externalProducer(message)) !== null) return true;
+    const map = await mergedMap();
+    if (map === null) return undefined;
+    return externalProducerOf(message, map, serviceResolver(map.elements, req.known), req.known) !== null;
   };
   // Read only once some consumer has no producer, which a healthy feature
   // never reaches: the fleet's contracts are already behind the consumer
@@ -96,10 +142,12 @@ export async function unproducedIssues(req: ProducedRequest): Promise<Issue[]> {
         0)());
 
   const issues: Issue[] = [];
-  for (const key of [...groups.keys()].sort()) {
-    const claims = groups.get(key)!;
-    const { service, message } = claims[0]!;
-    if (await produced(message)) continue;
+  for (const [, claims] of [...groups].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    const [first] = claims;
+    if (first === undefined) continue;
+    const { service, message } = first;
+    const sent = await produced(message);
+    if (sent !== false) continue;
     if (await doubt()) continue;
     const where = claims.map((c) => c.via).join(", ");
     const pending = await lookups.messageSentElsewhere(message);

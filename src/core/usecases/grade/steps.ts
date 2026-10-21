@@ -194,8 +194,8 @@ function contestedFinding(hop: GradedStep, attribution: Contested, place: string
  *    reads the TARGET — and the target here is one of ours, so without this the
  *    warning fired on the FIRST HOP OF ALMOST EVERY FLOW, which is where a
  *    sequence diagram puts its actor. Measured on the published example fleet
- *    before it was added. This is the same exemption `fleet/census.ts`,
- *    `arch-coverage.ts`, `core/gate/partners.ts` and `core/verify/checklist.ts`
+ *    before it was added. This is the same exemption `commands/validate/fleet/census.ts`,
+ *    `commands/validate/arch-coverage.ts`, `core/gate/partners.ts` and `core/verify/checklist.ts`
  *    each already apply, through the same `ACTOR_KINDS` — a person was never a
  *    participant in any of loam's other censuses either.
  *  - The CALLER must not resolve to the provider itself. A hop between two

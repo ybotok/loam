@@ -26,10 +26,9 @@
  * coverage — the quiet direction for an advisory.
  */
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { parseCoversEntry } from "../../c4/arch.js";
 import { afterMerge } from "../../consumers/after.js";
-import { parseRequirements } from "../../document/parse.js";
+import { parseRequirements, readRequirementsDocument } from "../../document/parse.js";
 import type { Requirement } from "../../document/spec.js";
 import type { FleetContext } from "../../fleet-context.js";
 import type { DocsDir, FeatureDir } from "../../kernel/ids/dirs.js";
@@ -62,7 +61,7 @@ function covering(reqs: readonly Requirement[], form: "alert" | "sli", id: strin
 export async function droppedHealthCoverage(scope: HealthCoverageScope): Promise<Issue[]> {
   const { docsDir, featureDir, context } = scope;
   const read = async (path: string): Promise<Requirement[]> =>
-    context === undefined ? parseRequirements(await readFile(path, "utf8")) : await context.readRequirements(path);
+    context === undefined ? parseRequirements(await readRequirementsDocument(path)) : await context.readRequirements(path);
   const issues: Issue[] = [];
   for (const service of scope.services) {
     const deltaPath = featureSpecPaths(featureDir, service).archSpec;

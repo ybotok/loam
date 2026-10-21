@@ -17,8 +17,9 @@
  *    severity, not a code list: the plan files an error exactly when it knows
  *    validate will, and a second list here is the copy that drifts;
  *  - an advisory that orders this feature behind another one still in flight
- *    (the `*-pending` family): archived first, the merge lands a reference the
- *    other feature's merge has not made true yet;
+ *    and softens a fleet-gate error (four of the `*-pending` family): archived
+ *    first, the merge lands a reference the other feature's merge has not made
+ *    true yet;
  *  - gating issues the caller merged past with `--approve`;
  *  - a generated views file the new map no longer matches — known only once
  *    the commit has happened, so the dry run cannot name it.
@@ -26,19 +27,21 @@
 import type { Issue, IssueCode } from "../../core/vocabulary/issue.js";
 
 /**
- * The advisories that mean "archive the other feature first". Each softens an
- * error the fleet gate reports once this one lands alone — `spec-api.op-undefined`,
+ * The advisories that mean "archive the other feature first" AND name an error
+ * the fleet gate reports once this one lands alone — `spec-api.op-undefined`,
  * `spine.op-undefined`, `spec-event.message-undefined`,
- * `spine.message-unproduced` — and the delta pair, whose merge would address a
- * requirement no living document has yet.
+ * `spine.message-unproduced`. The delta pair (`delta.modified-pending`,
+ * `delta.removed-pending`) is NOT here, because the line below would be false
+ * for it: the merge appends a MODIFIED it cannot find and drops a REMOVED one,
+ * so `validate --all` reports nothing — the cost lands on the OTHER feature's
+ * archive (`delta.added-duplicate`) or nowhere, which is that warning's own
+ * sentence to say.
  */
 const ORDERING: ReadonlySet<IssueCode> = new Set<IssueCode>([
   "spec-api.op-pending",
   "c4-api.op-pending",
   "spec-event.message-pending",
   "c4-event.message-pending",
-  "delta.modified-pending",
-  "delta.removed-pending",
 ]);
 
 /** Everything the archive knows about what it leaves behind. */

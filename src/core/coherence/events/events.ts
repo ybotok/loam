@@ -17,7 +17,7 @@
  * there does.
  */
 import { type Rel } from "../../c4/likec4.js";
-import { type PathableService } from "../../kernel/ids/service.js";
+import { type PathableService, type RawServiceId } from "../../kernel/ids/service.js";
 import type { Issue } from "../../vocabulary/issue.js";
 import { locateServicePaths } from "../../repo/service-target.js";
 import { enumeratedServiceIndex } from "../../repo/service-target.js";
@@ -30,7 +30,7 @@ import type { RetiredLookup } from "../retired/archived.js";
 import { revivedEvents } from "../retired/revival/revived.js";
 import type { ConsumerIndex } from "../../consumers/consumers.js";
 import { nothingStill, refusalDetails, refusalMessage, stillNamed, type StillNamed } from "../consumed/refusal.js";
-import { unproducedIssues, type ConsumeClaim } from "./produced.js";
+import { fleetSendersAfter, unproducedIssues, type ConsumeClaim } from "./produced.js";
 
 /** What featureCoherence hands the event axis — the delta facts it already computed. */
 export interface EventCoherenceRequest {
@@ -46,8 +46,8 @@ export interface EventCoherenceRequest {
   retired: RetiredLookup;
   /** The consumer index, read after this feature's merge — shared with the contract axis so the fleet is read once. */
   consumers: ConsumerIndex;
-  /** The #external element this feature's own delta draws publishing a message, or null (./produced.ts). */
-  deltaExternal: (message: string) => string | null;
+  /** The services the merge leaves a directory for — the enumerated fleet plus this feature's `specs/` (./produced.ts). */
+  known: ReadonlySet<RawServiceId>;
 }
 
 export async function eventCoherence(request: EventCoherenceRequest): Promise<Issue[]> {
@@ -103,12 +103,12 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
   // reported `diff.message-removed-consumed` and `validate --all`
   // `spine.message-unproduced` (the verification of D1, X2). One this
   // feature's own C4 delta would draw is not counted, so that shape errs
-  // toward refusing — `--approve`, or draw the edge in the living map.
-  const touched = new Set<string>([...declared.featureDocs.keys(), ...declared.unreadable]);
+  // toward refusing — `--approve`, or draw the edge in the living map. The
+  // consumer check in ./produced.ts DOES count it, deliberately: there the
+  // closed direction is the other one (that module says why), and the fleet
+  // half of the senders is the one helper both read.
   const sendersAfter = async (svc: string, message: string): Promise<string[]> => {
-    const living = (await consumers.producers(message)).filter((id) => !touched.has(id));
-    const merged = [...declared.sentAfter].filter(([, sent]) => sent.includes(message)).map(([id]) => id);
-    const fleet = [...new Set([...living, ...merged])].filter((id) => id !== svc).sort();
+    const fleet = (await fleetSendersAfter(declared, consumers, message)).filter((id) => id !== svc);
     const outside = await consumers.externalProducer(message);
     return outside === null ? fleet : [...fleet, `${outside} (#external)`];
   };
@@ -346,6 +346,6 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
     }
   }
 
-  issues.push(...(await unproducedIssues({ scope, declared, consumers, lookups, claims, deltaExternal: request.deltaExternal, ...(context === undefined ? {} : { context }) })));
+  issues.push(...(await unproducedIssues({ scope, declared, consumers, lookups, claims, known: request.known, ...(context === undefined ? {} : { context }) })));
   return issues;
 }

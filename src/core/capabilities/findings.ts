@@ -47,8 +47,9 @@ export interface CapabilityTarget {
  *
  * Exported because the suppression is not this module's private business — the
  * use-case axis asks the same question about the same file
- * (`commands/validate/fleet/landscape.ts` hands the answer to
- * `usecases/capability-tag.ts`), and a hand-rolled
+ * (`commands/validate/fleet/map/usecases.ts` hands the answer to
+ * `core/usecases/grade/capability-tag.ts`, and `core/usecases/delta/claims.ts`
+ * to the same grader for a feature's own flows), and a hand-rolled
  * `present && invalid === undefined ? [...byId.keys()] : null` at each site is
  * three copies of one rule. The failure that costs is not hypothetical: the next
  * un-gradable state added to `CapabilityVocabulary` — "present but partially

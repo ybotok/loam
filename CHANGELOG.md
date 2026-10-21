@@ -39,12 +39,16 @@ and the archive do not raise them:
   this feature adds now resolves at feature scope too.
 - **`c4.uncovered`'s hint** offers that same surviving spelling: an edge by its endpoints' service
   names (`checkout-web -> payment-split-service`), an element by its service or the id the merge
-  gives it, never the delta's own id.
-- **`loam archive` files `service.no-model` at error severity**, the severity `validate` gives the
-  same directory; it still does not gate (`gates: false` in `--json` `warnings[]`). The text
+  gives it — the delta's own id only when the merge preview cannot be computed.
+- **`loam archive` files `service.no-model` at error severity**, because `validate --all` reports an
+  error next — `service.no-model` for the directory the archive creates, `landscape.binding-unknown`
+  for a binding it lands with no directory, which the message now names; it still does not gate (`gates: false` in `--json` `warnings[]`). The text
   `--dry-run` now prints it, as `--json` and the real run did, before "dry run — nothing was
   written.", and both runs print in place of the closing line when this archive lands ahead of an
-  in-flight change it waits on (a `*-pending` warning).
+  in-flight change it waits on (a `spec-api.op-pending`, `c4-api.op-pending`,
+  `spec-event.message-pending` or `c4-event.message-pending` warning).
+- **A `spine.message-unproduced` producer may be an `#external` system the delta draws**, including
+  a living one it re-declares as an untagged stub: the question is asked of the map the merge leaves.
 - **Exit code:** on any of the four errors above, `loam validate --feature`, `loam validate <FEAT>`
   and `loam validate --all` — for every active feature carrying one, before anything is archived —
   now exit 1 where they exited 0; `loam archive` and `archive --dry-run` exit 1 (`not-coherent`)
