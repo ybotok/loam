@@ -38,13 +38,17 @@
 import type { LoadedDoc } from "../../c4/likec4.js";
 import type { ExtendingModel } from "../../c4/splice/contract.js";
 import type { CapabilityVocabulary } from "../../capabilities/capabilities.js";
+import type { Requirement } from "../../document/spec.js";
 import { withFeatureCapabilities } from "../../capabilities/delta/overlay.js";
 import type { CapabilityDeltaDoc } from "../../capabilities/delta/uncovered.js";
-import { gradableCapabilityIds } from "../../capabilities/findings.js";
+import { capabilityRequirementIndex, gradableCapabilityIds } from "../../capabilities/findings.js";
 import { resolveCapabilityTags, resolveRequirementTags } from "../../capabilities/usecase-join.js";
 import type { DocsDir, FeatureDir } from "../../kernel/ids/dirs.js";
 import { compareIds } from "../../repo/entries.js";
-import { readFeatureFlows, type FlowOverlayRequest } from "./overlay.js";
+import type { Issue } from "../../vocabulary/issue.js";
+import type { UseCaseScan } from "../fleet.js";
+import { featureFlowIssues } from "../grade/feature.js";
+import { readFeatureFlows } from "./overlay.js";
 
 /** One promise this feature's flows keep, with the flows that keep it. */
 export interface FlowPromise {
@@ -76,8 +80,8 @@ export type FlowPromises =
   | { kind: "ungraded"; why: string }
   | { kind: "unreadable"; errors: string[] };
 
-/** Everything the join needs, on top of what the overlay already asks for. */
-export interface FlowPromisesRequest extends FlowOverlayRequest {
+/** Everything the join needs beside the flows themselves. */
+export interface FlowPromisesRequest {
   /**
    * The capability ids to resolve `#cap-` against — the LIVING vocabulary
    * widened with the ids this feature's own capability deltas introduce, which
@@ -97,10 +101,11 @@ export interface FlowPromisesRequest extends FlowOverlayRequest {
  * The promises this feature's own flows keep, read over the post-merge map.
  *
  * A feature with no flow is `read` with nothing kept, which is the ordinary
- * answer and costs one walk over a directory that is not there.
+ * answer and costs one walk over a directory that is not there. The scan is
+ * read by the caller (`flowCoverage`), which grades the same flows too — one
+ * staged parse for both questions, because it is a Langium workspace spin.
  */
-export async function featureFlowPromises(req: FlowPromisesRequest): Promise<FlowPromises> {
-  const scan = await readFeatureFlows(req);
+export function featureFlowPromises(scan: UseCaseScan, req: FlowPromisesRequest): FlowPromises {
   if (scan.kind === "unreadable") return { kind: "unreadable", errors: scan.errors };
   // The ladder, and it is `ungraded` rather than an empty answer. Once the
   // feature's own capability deltas are unioned in, `declared` is null for
@@ -167,6 +172,13 @@ export interface FlowCoverageRequest {
   /** The caller's memoised LikeC4 read; see `./overlay.ts`. */
   load?: (path: string) => Promise<LoadedDoc>;
   /**
+   * How a LIVING capability document's requirements are read — the caller's
+   * memo where it has one. Asked only for the grade below, and only once a
+   * feature really brings a flow: a `#req-` tag may name ANY capability, so
+   * the post-merge index it is resolved in is the whole corpus.
+   */
+  read: (path: string) => Promise<Requirement[]>;
+  /**
    * The fleet's extending models for the merge preview, as a thunk the overlay
    * calls only when this feature really brings a flow; see `./overlay.ts` for
    * why the preview is wrong without them and why it arrives as a function.
@@ -204,8 +216,16 @@ export interface FlowCoverageRequest {
  * it a short list would resolve a tag that is genuinely ambiguous fleet-wide and
  * attribute a whole flow to the wrong capability, silently. So the vocabulary is
  * the fleet's whole one, read once by the caller.
+ *
+ * AND THE SAME FLOWS ARE GRADED, against everything as the merge would leave it
+ * (`../grade/feature.ts`): the hops against the staged post-merge map, and the
+ * tags against the whole requirement corpus — not the narrowed index above,
+ * because a `#req-` tag naming a capability this feature does not touch is
+ * exactly as broken after the archive as one naming a capability it does.
+ * There REMOVED does subtract: a tag naming a promise this feature retires
+ * resolves to nothing the moment the archive lands.
  */
-export async function flowCoverage(req: FlowCoverageRequest): Promise<FlowPromises> {
+export async function flowCoverage(req: FlowCoverageRequest): Promise<{ promises: FlowPromises; issues: Issue[] }> {
   const vocab = withFeatureCapabilities(req.vocabulary, req.capabilities.map((doc) => doc.id));
   const byCapability = new Map<string, ReadonlySet<string>>();
   for (const doc of req.capabilities) {
@@ -215,14 +235,28 @@ export async function flowCoverage(req: FlowCoverageRequest): Promise<FlowPromis
     for (const r of doc.reqs) if ((r.kind === "ADDED" || r.kind === "MODIFIED") && r.id !== undefined) ids.add(r.id);
     byCapability.set(doc.id, ids);
   }
-  return featureFlowPromises({
+  const scan = await readFeatureFlows({
     docsDir: req.docsDir,
     featureDir: req.featureDir,
     featureId: req.featureId,
     known: req.known,
-    declared: gradableCapabilityIds(vocab),
-    requirementsOf: (capability) => byCapability.get(capability),
     ...(req.load === undefined ? {} : { load: req.load }),
     ...(req.models === undefined ? {} : { models: req.models }),
   });
+  const declared = gradableCapabilityIds(vocab);
+  const promises = featureFlowPromises(scan, { declared, requirementsOf: (capability) => byCapability.get(capability) });
+  if (scan.kind === "unreadable" || scan.views.length === 0) return { promises, issues: [] };
+  const after = new Map((await capabilityRequirementIndex(req.vocabulary, req.read)).byCapability);
+  for (const doc of req.capabilities) {
+    const retired = new Set(
+      doc.reqs
+        .filter((r) => r.kind === "REMOVED")
+        .flatMap((r) => (r.id !== undefined ? [r.id] : doc.living.filter((l) => l.name === r.name).flatMap((l) => (l.id === undefined ? [] : [l.id])))),
+    );
+    after.set(doc.id, new Set([...(byCapability.get(doc.id) ?? [])].filter((id) => !retired.has(id))));
+  }
+  return {
+    promises,
+    issues: featureFlowIssues({ docsDir: req.docsDir, scan, capabilities: declared, requirementsOf: (capability) => after.get(capability) }),
+  };
 }

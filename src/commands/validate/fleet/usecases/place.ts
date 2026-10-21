@@ -2,10 +2,13 @@
  * Where a use-case FINDING points: the validate target it is filed against, the
  * document the view was written in, and the view itself.
  *
- * A leaf module rather than another export on `./usecases.ts`, because both
- * graders in this package need it while the entry module imports both of them —
- * the leaf-helper-stranded-in-a-heavier-module shape docs/CODE-STYLE.md names as
- * the cause of every import cycle this repository has carried.
+ * The fleet target's `landscape:` prefix, kept as command vocabulary when the
+ * graders moved to `core/usecases/grade/` (`core/usecases/place.ts` says why):
+ * every grader there takes the place as an argument, and
+ * `../map/usecases.ts` hands them this one. It began as a leaf module beside
+ * the graders it served, for the leaf-helper-stranded-in-a-heavier-module
+ * reason docs/CODE-STYLE.md names as the cause of every import cycle this
+ * repository has carried.
  *
  * NAMING THE FILE IS THE WHOLE SUBJECT. `validate --all` reads `architecture/`
  * as ONE LikeC4 project, so a `dynamic view` may have been written in

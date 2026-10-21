@@ -135,9 +135,9 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/explain/` | `loam explain`'s lookup — a finding code, a refusal code or a concept term in, one discriminated explanation out | agent, brief |
 | `core/links/` | the corpus of authored documents loam reads links out of, and whether each link resolves | envelope, glossary, kernel, repo |
 | `core/projection/` | one feature projected onto one service — the API, event and C4 slices `loam delta` and `loam context` share | asyncapi, c4, kernel, openapi, repo |
-| `core/usecases/` | the fleet's declared use cases and the join from a flow's steps onto the model, with `delta/` beneath for the flows one FEATURE brings, `service/` beneath for the flows one SERVICE keeps beside its model, and `suites/` beneath for the journeys grouped by `#suite-` tag and the participant union a test stand is provisioned from (the one subpackage its parent imports, so it imports nothing of the parent's but types) | c4, capabilities, kernel, repo, vocabulary |
+| `core/usecases/` | the fleet's declared use cases and the join from a flow's steps onto the model, with `delta/` beneath for the flows one FEATURE brings, `service/` beneath for the flows one SERVICE keeps beside its model, `grade/` beneath for the grades a flow earns (validate's, run over a feature's own flows before the archive too), and `suites/` beneath for the journeys grouped by `#suite-` tag and the participant union a test stand is provisioned from (the one subpackage its parent imports, so it imports nothing of the parent's but types) | c4, capabilities, kernel, repo, vocabulary |
 | `core/consumers/` | the one consumer index — who in the living fleet still calls an operation or consumes a message (edges, requirements, use-case hops), over the fleet read in `loam diff`'s `ServiceState` shape | c4, document, envelope, fleet-context, kernel, openapi, repo, usecases |
-| `core/coherence/` | do the three axes agree; `retired/` beneath reads what archived features took out of the living contracts | asyncapi, c4, capabilities, conflict-markers, consumers, delta, deployment, document, envelope, glossary, kernel, openapi, repo, staging, usecases |
+| `core/coherence/` | do the three axes agree; `retired/` beneath reads what archived features took out of the living contracts | asyncapi, c4, capabilities, conflict-markers, consumers, delta, deployment, document, envelope, glossary, kernel, openapi, repo, staging, usecases, vocabulary |
 | `core/dependencies/` | who calls whom, and the fan-in over it | c4, fleet-context, kernel, openapi, repo |
 | `core/diff/` | the base-ref read of the docs repo (git show/ls-tree) and the semantic branch diff `loam diff` reports | asyncapi, c4, consumers, document, envelope, kernel, openapi, provenance, repo |
 | `core/explore/` | the read-only survey `loam explore` prints before a feature exists | c4, capabilities, fleet-context, repo, usecases, vocabulary |
@@ -376,7 +376,7 @@ the workspace layout differs, and that part is already isolated.
     nothing else — no `package.json`, no workspace, no separate publish. That layout tracks how many
     artifacts you publish; you publish one `bin`, and `scripts/release-check.mjs` hard-asserts it.
     It is also the one option here that is not cheaply reversible.
-23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 69 of the 165
+23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 69 of the 163
     modules in `commands/` — the entry module of every command among them; `core/envelope/config.ts`
     and `core/repo/repo.ts` by 3 and 30 of them. Slices would duplicate the hubs or produce a
     `shared/` folder — which is what `src/core/` already is.

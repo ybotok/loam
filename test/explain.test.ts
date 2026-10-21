@@ -141,7 +141,9 @@ describe("the fix-table parser reads the shipped /loam-check body", () => {
     // --service <id>`" for a hop into a sibling's stand-in, and the only row
     // was the `--all` one.
     const scopes = rows.filter((r) => r.codes.includes("usecase.step-unlinked")).map((r) => r.scope);
-    expect(scopes).toEqual(["--service <id>", "--all"]);
+    // And the feature scope since a feature's own flows are graded before the
+    // archive (test/feature-predicts-fleet.test.ts).
+    expect(scopes).toEqual(["--service <id>", "--feature <FEAT-id>", "--all"]);
   });
 
   it("walks every workflow body, not only /loam-check: the verify notices resolve", () => {

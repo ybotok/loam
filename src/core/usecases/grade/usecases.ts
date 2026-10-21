@@ -2,6 +2,16 @@
  * The use-case axis of `validate --all`: the `dynamic view`s a fleet declares,
  * graded as business flows against the model they are drawn over.
  *
+ * IN `core/` SINCE THE FEATURE GATE BECAME ITS SECOND CALLER. It began as
+ * `commands/validate/fleet/usecases/`, the fleet target's own package; the
+ * archive gate and `loam status` both grade a feature through
+ * `core/coherence/`, which may not import a command, so a feature's own flows
+ * archived ungraded and the next `validate --all` convicted them
+ * (`usecase.step-unbacked`, `usecase.requirement-unresolved` — the real-fleet
+ * review, 2026-10-21). One grader for both scopes is the rule this package's
+ * banner already stated for the service target; `./feature.ts` is the third
+ * caller, and `place` on the scope is the one thing each states for itself.
+ *
  * ONLY VIEWS CARRYING A RESERVED TAG ARE GRADED, and that opt-in is what lets
  * this ship into a fleet that already has diagrams. An untagged `dynamic view`
  * is somebody's hand-drawn sequence — drawn to explain something to a person,
@@ -30,16 +40,16 @@
  * than per hop — the per-hop cost is a scan, so anything rebuilt per hop is paid
  * against every hop in the fleet.
  */
-import { compareIds } from "../../../../core/repo/entries.js";
-import { resolveCapabilityTags } from "../../../../core/capabilities/usecase-join.js";
-import { isUseCase } from "../../../../core/usecases/fleet.js";
-import type { Elem, Rel } from "../../../../core/c4/likec4.js";
-import type { ParsedView } from "../../../../core/c4/parsed/dynamic-views.js";
-import type { Finding } from "../../../../core/vocabulary/report.js";
+import { compareIds } from "../../repo/entries.js";
+import { resolveCapabilityTags } from "../../capabilities/usecase-join.js";
+import { isUseCase } from "../fleet.js";
+import type { Elem, Rel } from "../../c4/likec4.js";
+import type { ParsedView } from "../../c4/parsed/dynamic-views.js";
+import type { Finding } from "../../vocabulary/report.js";
 import { capabilityTagFindings } from "./capability-tag.js";
 import { requirementTagFindings } from "./requirement-tag.js";
 import { stepFindings, type StepGrading } from "./steps.js";
-import { viewFile } from "../../../../core/usecases/place.js";
+import { viewFile, type ViewPlace } from "../place.js";
 
 /** What the use-case grades run over: the views, the model they are drawn on, and the fleet. */
 export interface UseCaseScope {
@@ -51,7 +61,9 @@ export interface UseCaseScope {
    * that loader gives a view a `sourcePath` relative to `architecture/`; the
    * single-file loaders name every document after themselves (`source.c4`), and
    * a finding built from one of those would name a file that has never existed
-   * — see `./place.ts`, which is where the path is spelled.
+   * — see `../place.ts`, which is where the path is spelled. A feature's own
+   * flows come from the staged post-merge project (`../delta/overlay.ts`), whose
+   * `sourcePath` is mapped back to the file the author wrote.
    */
   views: readonly ParsedView[];
   elements: Elem[];
@@ -83,6 +95,8 @@ export interface UseCaseScope {
    * no document at all, against a document declaring no promises yet.
    */
   requirementsOf: (capability: string) => ReadonlySet<string> | undefined;
+  /** Where every finding says its view is — the scope's own spelling (`ViewPlace`). */
+  place: ViewPlace;
 }
 
 /**
@@ -124,6 +138,7 @@ export function useCaseFindings(scope: UseCaseScope): Finding[] {
     model: { elements: scope.elements, relationships: scope.relationships, known: scope.services },
     services: scope.services,
     resolve: scope.resolve,
+    place: scope.place,
   };
   const findings: Finding[] = [];
   for (const view of gradedViews(scope.views)) {
@@ -139,8 +154,8 @@ export function useCaseFindings(scope: UseCaseScope): Finding[] {
     // the capability axis would be convicted for the axis not existing.
     if (scope.capabilities !== null) {
       const claims = resolveCapabilityTags(view.tags, scope.capabilities);
-      findings.push(...capabilityTagFindings(view, claims));
-      findings.push(...requirementTagFindings(view, claims, scope.requirementsOf));
+      findings.push(...capabilityTagFindings(view, claims, scope.place));
+      findings.push(...requirementTagFindings(view, claims, scope.requirementsOf, scope.place));
     }
     for (const step of view.steps) findings.push(...stepFindings({ view, step }, grading));
   }

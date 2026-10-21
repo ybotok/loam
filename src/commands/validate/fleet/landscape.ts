@@ -369,7 +369,7 @@ export async function validateLandscape(
   // The use cases the SAME `architecture/` project declares — every
   // `dynamic view` in the landscape and in every `architecture/usecases/*.likec4`
   // — graded against the model above (`map/usecases.ts` holds the call and the
-  // two vocabulary reads it needs; `usecases/usecases.ts` owns the opt-in and
+  // two vocabulary reads it needs; `core/usecases/grade/usecases.ts` owns the opt-in and
   // the grades). They ride this target for `viewsStaleFindings`' reason: a view
   // belongs to no service, and only the fleet run has both the whole model and
   // the enumerated `services/` in view at once.

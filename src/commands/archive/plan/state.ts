@@ -46,7 +46,10 @@ export interface Plan {
    * Warnings born in the plan itself (openapi.op-modified,
    * openapi.component-modified, the asyncapi.*-modified trio) — printed with
    * the plan and carried into the `--json` envelope beside the coherence
-   * warnings.
+   * warnings. Every one of them is NON-GATING, which is not the same as being a
+   * warning: `service.no-model` rides here at error severity with `gates: false`,
+   * the grade validate gives the directory it names (../closing.ts prints it in
+   * place of the closing line).
    */
   planWarns: Issue[];
   /** Gating issues born in the plan itself (openapi.ref-unresolved, asyncapi.ref-unresolved). */

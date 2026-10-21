@@ -10,6 +10,60 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Fixed — the feature gate predicts the fleet its archive leaves
+
+No code or flag was added. A feature `validate --feature` called clean — `loam status` "ready", the
+archive gate agreeing — could archive at exit 0 under "living spec + landscape are now complete +
+current." into a fleet `validate --all` then reported red. The feature scope (`validate --feature`,
+`loam status <FEAT>`, the archive gate and `archive --dry-run`) now raises, before the archive,
+what `validate --all` raises after it, under the same codes — except the two `Covers:` findings
+below, which are `validate`'s alone (`--feature`, and `--all` per active feature); `loam status`
+and the archive do not raise them:
+
+- **A consumer with no producer is refused.** A delta `Consumes:` line or tagged `consumes` edge
+  naming a message nothing would send after the merge — no service's contract as the merge leaves
+  it, no `#external` publisher on the living map or in the delta — is `spine.message-unproduced`
+  (error) at feature scope. When only another in-flight feature's delta sends the message it is
+  `spec-event.message-pending` / `c4-event.message-pending` (warn) instead.
+- **A feature's own flows are graded as the fleet grades them.** A hop of a
+  `features/<FEAT>/usecases/*.likec4` view that no relationship on the post-merge map backs is
+  `usecase.step-unbacked`; a `#req-` tag no `#cap-` tag scopes, or one naming no requirement as the
+  merge leaves the capability document, is `usecase.requirement-unresolved`; an unresolving `#cap-`
+  tag is `usecase.capability-unresolved` — errors. `usecase.step-contested` and
+  `usecase.step-unlinked` arrive as warnings. The messages open with the feature file's path.
+- **A MODIFIED arch requirement that drops a `Covers: sli:` / `alert:` line** the living
+  `arch.spec.md` had is `health.uncovered` (warn) at feature scope, naming the signal.
+- **A `Covers:` entry spelled in the delta's own ids** — a stub the delta declares where the living
+  map nests it, or a child under one — is `covers.unknown` (warn) at feature scope, offering the
+  spelling that resolves in both. An entry spelled the way the merged map will spell an element
+  this feature adds now resolves at feature scope too.
+- **`c4.uncovered`'s hint** offers that same surviving spelling: an edge by its endpoints' service
+  names (`checkout-web -> payment-split-service`), an element by its service or the id the merge
+  gives it — the delta's own id only when the merge preview cannot be computed.
+- **`loam archive` files `service.no-model` at error severity**, because `validate --all` reports an
+  error next — `service.no-model` for the directory the archive creates, `landscape.binding-unknown`
+  for a binding it lands with no directory, which the message now names; it still does not gate (`gates: false` in `--json` `warnings[]`). The text
+  `--dry-run` now prints it, as `--json` and the real run did, before "dry run — nothing was
+  written.", and both runs print in place of the closing line when this archive lands ahead of an
+  in-flight change it waits on (a `spec-api.op-pending`, `c4-api.op-pending`,
+  `spec-event.message-pending` or `c4-event.message-pending` warning).
+- **A `spine.message-unproduced` producer may be an `#external` system the delta draws**, including
+  a living one it re-declares as an untagged stub: the question is asked of the map the merge leaves.
+- **Exit code:** on any of the four errors above, `loam validate --feature`, `loam validate <FEAT>`
+  and `loam validate --all` — for every active feature carrying one, before anything is archived —
+  now exit 1 where they exited 0; `loam archive` and `archive --dry-run` exit 1 (`not-coherent`)
+  without `--approve`, which overrides all four; `loam status` counts them as gating, and
+  `loam show <FEAT> --json` reports `review.readyToArchive: false`. The warnings above
+  (`health.uncovered`, `covers.unknown`, `usecase.step-contested`, `usecase.step-unlinked`, the two
+  `*-pending`) leave the exit code alone except under `--strict`, which fails on any warning and so
+  now exits 1 on these shapes.
+- **`service.no-model` rides at error severity in a `not-coherent` refusal's `error.issues[]`** too,
+  beside the issues that refused — count what blocks by `gates`, never by `severity`.
+
+`loam archive --json`'s `issues[]` may carry the seven codes above (`spine.message-unproduced`,
+`health.uncovered`, the five `usecase.*`), which the `IssueCode` union now admits; each was already
+a stable `validate` code.
+
 ## [0.2.0-alpha.9] - 2026-10-20
 
 The first publish since `0.2.0-alpha.7`. `0.2.0-alpha.8` was tagged but never reached npm (its

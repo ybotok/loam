@@ -20,6 +20,17 @@
 import type { ParsedStep, ParsedView } from "../c4/parsed/dynamic-views.js";
 
 /**
+ * Where a use-case FINDING says its view is — the opening of every message the
+ * graders in `./grade/` write. A function each scope supplies rather than one
+ * spelling, because the three scopes file a view three ways: the fleet target
+ * as `landscape: architecture/<file> — dynamic view '<id>'` (`viewPlace`, which
+ * stayed command vocabulary for the reason above), the service target against
+ * its own directory, and the feature gate against the feature's `usecases/`
+ * file the view is still written in.
+ */
+export type ViewPlace = (view: ParsedView) => string;
+
+/**
  * The document the view was written in, spelled repo-relative.
  *
  * `sourcePath` is relative to the LikeC4 PROJECT root, which for

@@ -1470,6 +1470,16 @@ survives as an **operational warning**, not a veto: passing the gate proves the 
 nobody consumes the message — it does not prove no consumer is still reading the topic with lag, so
 sequence the runtime retirement accordingly.
 
+**The same senders answer the consumer this feature ADDS.** A delta `Consumes:` line or tagged
+`consumes` edge naming a message nothing would send after the merge is `spine.message-unproduced`
+at feature scope — the error the next `validate --all` would raise against the consumer, raised
+before the archive lands it. Here an `#external` publisher the feature's own delta draws DOES count:
+it is an addition, the one thing the landscape merge makes, and the map `validate --all` then reads
+carries it. The suspension is service scope's: any contract in the fleet that does not read leaves
+the question unanswered. When only another in-flight feature's delta sends the message, the finding
+softens to `spec-event.message-pending` (a requirement line) or `c4-event.message-pending` (an
+edge) — archive that feature first; archived ahead of it, the consumer is unproduced until it lands.
+
 **Payload-schema correctness stays out of scope, stated so the boundary reads as a decision rather
 than a gap.** loam never validates that a payload schema is correct JSON Schema, correct Avro, or
 correct anything: digests are content identity and every check joins on names. A fleet that wants
@@ -1765,7 +1775,10 @@ scenarios exercise. Comma-separated, same keep-last-line quirk (and the same rep
 
 - a **C4 element** — its id (`paymentService.db`), or the service a bound/titled element stands for;
   resolved against the service's own model plus the landscape (for a feature delta: the feature's
-  `delta.likec4`, the landscape, and the service's model);
+  `delta.likec4`, the landscape, the service's model, and the map the merge would leave — and an
+  entry that resolves ONLY through the delta's own ids is `covers.unknown` at feature scope, because
+  the merge lands a stub's children under the living element it binds to, so the delta's spelling
+  is not the map's: write the service name, or the id the merged map gives the element);
 - an **edge** — `paymentService -> kafka`, each side resolved the same way against the declared
   relationships;
 - a **health signal** — `alert:<id>` / `sli:<id>`, ids the service's `health.yaml` declares.
@@ -1783,7 +1796,8 @@ the CI escalation.
 - `c4.uncovered` (feature scope): a NEW tagged element or tagged edge in the feature's
   `delta.likec4` that no requirement across the feature's `arch.spec.md` deltas covers.
   Grouping-only elements follow the landscape checks' exemptions (`person`-kind elements,
-  `#external` tags).
+  `#external` tags). The `Covers:` line it offers is the spelling that survives the merge — an edge
+  by its endpoints' service names, an element by its service or the id the merge gives it.
 - `health.uncovered` (service scope): an alert or SLI declared in `services/<svc>/health.yaml` that
   no requirement in the LIVING `arch.spec.md` covers. This is the moment `health.yaml` stops being
   inert — and all loam reads out of it is ids: the recognized keys are top-level `slis:` and
@@ -1796,6 +1810,9 @@ the CI escalation.
   **warning** (`health.invalid`): its ids are unknown, not empty, so `health.uncovered` stays quiet
   AND the `Covers: alert:/sli:` entries of that service go ungraded — the old silence turned every
   such entry into a false `covers.unknown` "typo" pointing at the spec, when the truth was the file.
+  At FEATURE scope the same code names what the merge takes away: a signal the living
+  `arch.spec.md` covers that this feature's arch delta would leave covered by nothing — a MODIFIED
+  requirement restates its whole block, so a `Covers:` entry not carried over is one it deletes.
 - `health.dependency-unmodelled` (service scope): a `dependencies:` id that nothing in the service's
   OWN `model.likec4` answers to — by element id, `metadata { service }` binding, or title; exact
   match, with a did-you-mean hint. Deliberately the service model and never the landscape read on
@@ -2323,6 +2340,13 @@ only then earn its error, against a document whoever reads the finding did not w
   does not land, or a landscape merge that itself refuses. The flows were not graded, so the archive
   would copy them into `architecture/` for somebody else's `validate --all` to fail on. `--approve`
   overrides loam's judgement about coherence, never its ability to read an axis.
+- `usecase.step-unbacked`, `usecase.requirement-unresolved`, `usecase.capability-unresolved`
+  (**errors**) and `usecase.step-contested`, `usecase.step-unlinked` (warnings) — the flows that DO
+  read, graded by the very grader `validate --all` runs over a living flow, against the post-merge
+  map and the capability vocabulary and requirement ids the merge would leave (an id this feature's
+  capability delta adds resolves; one it removes does not). Each message opens with the feature
+  file's path. Before these ran here, a hop nothing backs and a `#req-` tag nothing scopes archived
+  clean and turned the next `validate --all` red.
 - `usecase.flow-exists` (**error**, never `--approve`-overridable) — a flow this feature introduces
   that `architecture/usecases/` already holds. The merge is a whole-file copy, so it would replace
   an authored hop sequence wholesale; the same shape and the same severity as `glossary.term-exists`,

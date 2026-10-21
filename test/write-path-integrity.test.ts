@@ -883,9 +883,13 @@ describe("the closing completeness claim", () => {
       expect(res.code).toBe(0);
       expect(res.out).not.toContain("living spec + landscape are now complete + current.");
       expect(res.out).toContain("the fleet has no services/fraud-check/ at all");
+      // Naming the code the fleet gate will actually raise for a binding with
+      // no directory — not `service.no-model`, which needs a directory to grade.
+      expect(res.out).toContain("will report landscape.binding-unknown, an error");
       // …because the same archive just made the fleet gate red.
       const gate = await runLoam(p.workDir, "validate", "--all", "--json");
       expect(gate.code).toBe(1);
+      expect(gate.stdout).toContain('"landscape.binding-unknown"');
     } finally {
       await p.destroy();
     }

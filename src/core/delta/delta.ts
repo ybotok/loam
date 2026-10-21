@@ -41,7 +41,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { relative } from "node:path";
 import { type FleetContext } from "../fleet-context.js";
-import { parseRequirements } from "../document/parse.js";
+import { parseRequirements, readRequirementsDocument } from "../document/parse.js";
 import { type Requirement } from "../document/spec.js";
 import { featureSpecPaths, SPEC_AXES } from "../repo/paths.js";
 import { featureUseCasesDir, livingCapabilityPaths } from "../repo/authored/paths.js";
@@ -200,7 +200,7 @@ export async function deltaShapeIssues(
   // A feature with no `usecases/` directory is a REAL empty answer, not an
   // ungraded one: there is no flow, so "no flow keeps this" is true and the
   // message may say it.
-  const kept: FlowPromises = hasFlows
+  const flows: { promises: FlowPromises; issues: Issue[] } = hasFlows
     ? await flowCoverage({
         docsDir,
         featureDir,
@@ -211,7 +211,14 @@ export async function deltaShapeIssues(
         // the same, and `core/repo/service-target.ts` prices a fleet
         // enumeration per call at ~13 ms on a 120-service fleet.
         vocabulary: context === undefined ? await readCapabilityVocabulary(docsDir) : await context.capabilities(docsDir),
-        known: new Set(await enumeratedServiceIds(docsDir, context)),
+        // The fleet the merge leaves: each `specs/<svc>/` of this feature becomes a
+        // `services/<svc>/`, so a hop into a service it introduces resolves to that
+        // service in the grade, as it will under the next `validate --all`.
+        known: new Set([...(await enumeratedServiceIds(docsDir, context)), ...services]),
+        // Decoded or refused by name (`readRequirementsDocument`), never `readFile`'s
+        // utf8 — a UTF-16 capability document would read as no requirements and
+        // convict every flow naming it.
+        read: async (path) => (context === undefined ? parseRequirements(await readRequirementsDocument(path)) : await context.readRequirements(path)),
         // A function rather than the context itself: one memoised LikeC4 read
         // does not justify an edge from `core/usecases/` to `fleet-context`, and
         // the edge would push that package up a DAG level for nothing.
@@ -225,7 +232,8 @@ export async function deltaShapeIssues(
         // service's own model (verification 2026-09-04, review F8).
         models: () => extendingModels(docsDir, context),
       })
-    : { kind: "read", kept: [] };
+    : { promises: { kind: "read", kept: [] }, issues: [] };
+  const kept = flows.promises;
   if (kept.kind === "unreadable") {
     // ERROR, and the archive gate's own `NEVER_OVERRIDABLE` keeps `--approve`
     // off it. This is the refusal that stops a flow being copied into
@@ -251,6 +259,12 @@ export async function deltaShapeIssues(
         `${kept.errors.length} problem(s): ${kept.errors.join("; ")}`,
     });
   }
+  // And the flows that DID read, graded as `validate --all` grades them once
+  // living: every hop against the post-merge map, every `#cap-`/`#req-` tag
+  // against the vocabulary and requirements the merge leaves
+  // (`core/usecases/grade/feature.ts`). Before this, a hop nothing backs and a
+  // `#req-` tag nothing resolves archived clean and turned the fleet red.
+  issues.push(...flows.issues);
 
   // The `Realizes:` join, both directions, over documents this walk has already
   // parsed. Skipped entirely when the feature carries no capability delta,

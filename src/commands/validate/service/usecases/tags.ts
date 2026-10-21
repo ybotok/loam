@@ -5,7 +5,7 @@
  * Both codes are REUSED from the fleet target rather than minted, under
  * add-error-code's "prefer existing" rule: a caller acts the same way (fix the
  * tag, or the `Requirement-ID:` line it names), and only the sentences differ.
- * The fleet's own graders (`../../fleet/usecases/{requirement,capability}-tag.ts`)
+ * The fleet's own graders (`core/usecases/grade/{requirement,capability}-tag.ts`)
  * are not reused for the sentences, because every one of theirs names a
  * capability document, and a service-local flow has none.
  *

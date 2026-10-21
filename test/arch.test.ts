@@ -457,6 +457,24 @@ describe("Covers: node: — the deployment forms", () => {
     });
   });
 
+  it("a feature delta's node: entry still resolves when another entry beside it does not", async () => {
+    // The feature scope widens its Covers scope once some entry fails the first
+    // pass — by the service model, then the merge preview — and the widened
+    // scope used to drop the topology: a real `node:eu.a` beside a typo was
+    // convicted with it. The service the delta covers has no model at all,
+    // which is the shape that reaches the widening every time.
+    const files = coherentFixture();
+    files["architecture/landscape.likec4"] = LANDSCAPE_WITH_KINDS + "\n" + DEPLOYMENT;
+    files["features/FEAT-1-split/specs/payment-split-service/arch.spec.md"] =
+      "# arch delta\n\n## ADDED Requirements\n\n### Requirement: Split state is replicated\nThe service SHALL replicate split state across clusters.\n\nCovers: node:eu.a, nosuch.thing\n\n#### Scenario: A cluster is lost\n- **Given** a recorded split\n- **When** cluster a is lost\n- **Then** cluster b still has the split\n";
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
+      const unknown = ofCode(findings(res.stdout), "covers.unknown").map((f) => f.message);
+      expect(unknown).toHaveLength(1);
+      expect(unknown[0]).toContain("'nosuch.thing'");
+    });
+  });
+
   it("a fleet with no deployment model reports the entry rather than crashing on an absent scope", async () => {
     const files = coherentFixture();
     files["services/payment-service/arch.spec.md"] = ARCH_REQ("Covers: node:eu.a");
@@ -658,9 +676,13 @@ describe("c4.uncovered", () => {
       const fs = ofCode(findings(res.stdout), "c4.uncovered");
       expect(fs).toHaveLength(2);
       expect(fs[0]!.message).toContain("'payment-split-service' (paymentSplitService)");
-      expect(fs[0]!.message).toContain("Covers: paymentSplitService");
+      // The hint offers the spelling that resolves once living — the service
+      // name, which the merge splices verbatim — and never the delta's own id,
+      // which resolved here and was `covers.unknown` after archive wherever the
+      // living map nests the element differently (test/feature-predicts-fleet.test.ts).
+      expect(fs[0]!.message).toContain("Covers: payment-split-service'");
       expect(fs[1]!.message).toContain("payment-service → payment-split-service");
-      expect(fs[1]!.message).toContain("Covers: paymentService -> paymentSplitService");
+      expect(fs[1]!.message).toContain("Covers: payment-service -> payment-split-service'");
       // The subject names the service whose architecture is uncovered.
       expect(fs.map((f) => f.subject)).toEqual(["payment-split-service", "payment-split-service"]);
     });

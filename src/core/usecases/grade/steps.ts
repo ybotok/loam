@@ -33,13 +33,12 @@
  * once for the disagreement, and once for whichever candidate happened to carry
  * no operation at all.
  */
-import { attributeStep, type StepAttribution, type StepScope } from "../../../../core/c4/resolve/steps.js";
-import type { Elem, Rel } from "../../../../core/c4/likec4.js";
-import type { ParsedStep, ParsedView } from "../../../../core/c4/parsed/dynamic-views.js";
-import { ACTOR_KINDS } from "../../../../core/vocabulary/maturity.js";
-import type { Finding } from "../../../../core/vocabulary/report.js";
-import { stepPlace } from "../../../../core/usecases/place.js";
-import { viewPlace } from "./place.js";
+import { attributeStep, type StepAttribution, type StepScope } from "../../c4/resolve/steps.js";
+import type { Elem, Rel } from "../../c4/likec4.js";
+import type { ParsedStep, ParsedView } from "../../c4/parsed/dynamic-views.js";
+import { ACTOR_KINDS } from "../../vocabulary/maturity.js";
+import type { Finding } from "../../vocabulary/report.js";
+import { stepPlace, type ViewPlace } from "../place.js";
 
 /** One hop being graded and the view it belongs to — never passed apart. */
 export interface GradedStep {
@@ -73,14 +72,17 @@ export interface StepGrading {
   resolve: (id: string) => string;
   /**
    * Where a finding says the view is — the opening of every message in this
-   * family. Defaults to `viewPlace`, the fleet target's
-   * `landscape: architecture/<file> — dynamic view '<id>'`. The service target
+   * family. REQUIRED since the graders moved into `core/`: the fleet target's
+   * `landscape: architecture/<file> — dynamic view '<id>'` is `viewPlace` in
+   * `commands/validate/fleet/usecases/place.ts`, command vocabulary core may not
+   * import, so every scope states its own. The feature gate injects the feature's
+   * `usecases/` file (`./feature.ts`), and the service target
    * injects its own, because a view read out of a service's project carries a
    * `sourcePath` relative to the SERVICE directory, and the `landscape:`
    * opening is the fleet target's name — a finding filed on a service must not
    * claim it (`../place.ts` records why the prefix stayed command vocabulary).
    */
-  place?: (view: ParsedView) => string;
+  place: ViewPlace;
 }
 
 type Unbacked = Extract<StepAttribution, { verdict: "unbacked" }>;
@@ -92,11 +94,11 @@ type Attributed = Extract<StepAttribution, { verdict: "attributed" }>;
  *
  * Spelled once per hop in `stepFindings` and handed to each sentence builder as
  * a string, rather than recomputed from the grading inside each of them: three
- * builders reaching for `grading.place ?? viewPlace` on their own would be three
+ * builders reaching for `grading.place` on their own would be three
  * places for one scope to forget the injection.
  */
 function placeOf(hop: GradedStep, grading: StepGrading): string {
-  return `${(grading.place ?? viewPlace)(hop.view)} ${stepPlace(hop.step)}`;
+  return `${grading.place(hop.view)} ${stepPlace(hop.step)}`;
 }
 
 /**
@@ -192,8 +194,8 @@ function contestedFinding(hop: GradedStep, attribution: Contested, place: string
  *    reads the TARGET — and the target here is one of ours, so without this the
  *    warning fired on the FIRST HOP OF ALMOST EVERY FLOW, which is where a
  *    sequence diagram puts its actor. Measured on the published example fleet
- *    before it was added. This is the same exemption `fleet/census.ts`,
- *    `arch-coverage.ts`, `core/gate/partners.ts` and `core/verify/checklist.ts`
+ *    before it was added. This is the same exemption `commands/validate/fleet/census.ts`,
+ *    `commands/validate/arch-coverage.ts`, `core/gate/partners.ts` and `core/verify/checklist.ts`
  *    each already apply, through the same `ACTOR_KINDS` — a person was never a
  *    participant in any of loam's other censuses either.
  *  - The CALLER must not resolve to the provider itself. A hop between two
