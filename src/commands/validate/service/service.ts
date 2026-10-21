@@ -23,7 +23,6 @@ import { realizesStaleFindings, realizesUnknownIssues } from "../../../core/capa
 import { requiresUnknownFindings } from "../checks/requirements.js";
 import { listServices } from "../../../core/repo/repo.js";
 import { type Finding, type TargetReport } from "../../../core/vocabulary/report.js";
-import { closeIds } from "../../../core/c4/arch.js";
 import { serviceProvenance } from "../../../core/provenance/findings.js";
 import { gherkinFindings } from "../../../core/gherkin/stale.js";
 import { gherkinRoot } from "../../../core/gherkin/stamp.js";
@@ -33,6 +32,7 @@ import { interruptedCommitFinding } from "../../../core/staging/recovery/finding
 import { FleetContext } from "../../../core/fleet-context.js";
 import { serviceLinkFindings } from "../links/corpus.js";
 import { sourceScopeFindings } from "../checks/sources.js";
+import { unknownServiceFinding } from "../checks/introduced.js";
 import { apiAxisFindings } from "./api.js";
 import { generatedContractFindings } from "./contracts/generated.js";
 import { evidencePinFindings } from "./evidence-pins.js";
@@ -51,7 +51,9 @@ import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
  *
  * `service.unknown` (error): the directory itself does not exist — the id is a
  * typo until proven otherwise, so the hint names ids that DO exist and never
- * `loam adopt`, which would faithfully document the misspelling.
+ * `loam adopt`, which would faithfully document the misspelling. The proof
+ * otherwise is a feature in flight that introduces it; the hint then names
+ * that feature instead (`../checks/introduced.ts`).
  * `service.no-model` (error): the directory is real but the C4 center is not —
  * adopt is the right hint. Every check that does not read the model still runs
  * (spec coverage, the arch axis, provenance, gherkin staleness): archive
@@ -124,18 +126,10 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   };
 
   // A directory that does not exist is a different fact from a directory with
-  // everything missing: validating a typo must say "typo", not "unadopted".
+  // everything missing: validating a typo must say "typo", not "unadopted" —
+  // and a service a feature in flight introduces is neither (checks/introduced.ts).
   if (!existsSync(paths.dir)) {
-    const close = closeIds(service, (await listServices(docsDir, fleet)).map((s) => s.id));
-    findings.push({
-      severity: "error",
-      code: "service.unknown",
-      message:
-        `No service directory at ${treePath}.` +
-        (close.length > 0
-          ? ` Did you mean: ${close.join(", ")}?`
-          : " `loam list services` shows what exists."),
-    });
+    findings.push(await unknownServiceFinding(docsDir, service, treePath, fleet));
     return report;
   }
 

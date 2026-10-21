@@ -478,6 +478,7 @@ model {
   loam.commands.validate -> loam.core.obligations
   loam.commands.validate -> loam.core.openapi
   loam.commands.validate -> loam.core.permissions
+  loam.commands.validate -> loam.core.projection
   loam.commands.validate -> loam.core.provenance
   loam.commands.validate -> loam.core.repo
   loam.commands.validate -> loam.core.staging

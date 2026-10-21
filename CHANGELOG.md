@@ -100,6 +100,34 @@ and no longer tells anyone to adopt.
   both states and both fixes.
 - A bound service no feature introduces gets the adopt advice, byte for byte, as before.
 
+### Changed — `loam validate` in that repository validates the feature that introduces its service
+
+No code was added. In the same state, a bare `loam validate` refused with `✗ No service directory
+at services/payment-split-service. Did you mean: payment-service?  (service.unknown)` and exited 1.
+It treated the newest service in the fleet as a typo of an older one, so that repository's CI could
+not pass until the feature archived. A service a feature introduces has no `services/<id>/` yet.
+Its documents are the feature's `specs/<id>/`, so the run now validates each introducing feature
+instead. That is the same grade `loam validate --feature <FEAT>` gives, target for target, and the
+exit code follows it: `0` when the feature is valid, `1` when it has errors. `--strict` and
+`--errors-only` work as before.
+
+- **Human view:** two lines above the report say what was validated and why —
+  `payment-split-service   introduced by FEAT-101 (in flight) — not in the living docs until it
+  archives` (the header `loam show payment-split-service` prints), then `validating FEAT-101
+  instead: its specs/payment-split-service/ are this service's documents until then`.
+- **`--json` (additive):** `boundService` — `{ id, living: false, introducedBy }`, the same keys
+  `show` and `steps` use for this state — present only on such a run. `targets` then holds the
+  features and no service, and the `summary` counts no services.
+- **Naming the service** with `--service <id>` or the positional still targets a service, so it is
+  still `service.unknown` at error and exits 1. The message now names the feature in place of a
+  near-miss: ``No service directory at services/payment-split-service: FEAT-101 introduces it, and
+  it is not in the living docs until FEAT-101 archives. Until then its documents are FEAT-101's
+  specs/payment-split-service/ — run `loam validate --feature FEAT-101` to validate them.``
+- `loam explain service.unknown`, its row in the `loam-check` fix table (the text `--json`'s
+  `fixes` carries) and the `loam-codes` page describe both states.
+- A name no active feature introduces keeps today's `service.unknown` message and near-miss,
+  unchanged.
+
 ### Added — `loam explain` defines the words loam prints, and a finding page says which command reports it
 
 No code was added. `loam explain` knew six concept terms and answered `unknown-target` for the

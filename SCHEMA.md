@@ -1173,7 +1173,11 @@ A missing `openapi.yaml` is graded on what already points into it, under one cod
 And `loam validate --service <id>` for a directory that does not exist at all is an **error**
 (`service.unknown`) that suggests close ids — never `loam adopt`, which would steer an agent into
 adopting the typo. Only a legal id earns that grading: a name that is neither an existing directory
-nor a legal service id is refused as `invalid-option` before any path is built from it. A
+nor a legal service id is refused as `invalid-option` before any path is built from it. A service
+an active feature introduces is not a typo: its only documents are that feature's `specs/<svc>/`
+until it archives, so the same error names the feature and `loam validate --feature <FEAT>` instead
+of a near-miss, and a bare `loam validate` in a repository bound to that service validates the
+introducing features in its place (`--json` says so in `boundService`). A
 `features/<FEAT>/specs/<svc>/` directory addressing a service that neither exists as
 `services/<svc>/` nor is introduced by that feature's own tagged `delta.likec4` is the same class of
 mistake and gets its own **error**, `delta.service-unknown`, naming close ids: archiving would
