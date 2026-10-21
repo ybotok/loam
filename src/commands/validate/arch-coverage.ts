@@ -28,7 +28,7 @@ import { readHealth } from "../../core/vocabulary/health.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { ACTOR_KINDS, EXTERNAL_TAG } from "../../core/vocabulary/maturity.js";
 import { coversEntries, coversUnknownFindings } from "./checks/requirements.js";
-import { deltaSpelledCovers, mergedMapOf, survivingEdgeCover, survivingElementCover } from "./checks/covers-after.js";
+import { deltaSpelledCovers, mergedMapOf, survivingEdgeCover, survivingElementCover } from "./coverage/covers-after.js";
 import type { DocsDir, FeatureDir } from "../../core/kernel/ids/dirs.js";
 
 /** One feature delta's architecture, and everything needed to decide what in it is new. */
@@ -103,7 +103,7 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
   ]);
   const svcOf = serviceResolver(elements, known);
   // The map this feature's merge would leave, parsed at most once and only when
-  // a hint or a `Covers:` line needs it (./checks/covers-after.ts says when).
+  // a hint or a `Covers:` line needs it (./coverage/covers-after.ts says when).
   const merged = mergedMapOf({ docsDir, featureDir, featureId, fleet, known });
 
   // Arch-edge coverage (heuristic, warn-only): each new tagged edge should be named by a scenario.
@@ -268,7 +268,7 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
       }
       // And the lines that DID resolve, read in the space they will live in:
       // one that answered only through the delta's own ids is `covers.unknown`
-      // the moment the archive lands it (./checks/covers-after.ts).
+      // the moment the archive lands it (./coverage/covers-after.ts).
       findings.push(
         ...(await deltaSpelledCovers({
           service: svc,
