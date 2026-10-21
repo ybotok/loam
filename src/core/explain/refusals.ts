@@ -45,7 +45,7 @@ export const REFUSAL_MEANINGS = {
   "snapshot-missing":
     "`loam unarchive` refuses: the archive carries no snapshot of what it overwrote (it predates snapshots, or was written by a different loam) — restore the living docs from version control instead.",
   "snapshot-stale":
-    "`loam unarchive` refuses: a file the archive wrote changed after it — a living document, or one of the feature's own documents it relinked under `features/archive/` — so restoring is no longer an undo; re-run with `--force` to restore anyway, deliberately discarding those later changes.",
+    "`loam unarchive` refuses: a file the archive wrote changed after it — a living document, another feature's document whose links into this one it rewrote, or one of the feature's own documents it relinked under `features/archive/` — so restoring is no longer an undo; re-run with `--force` to restore anyway, deliberately discarding those later changes.",
   "snapshot-corrupt":
     "`loam unarchive` refuses: a snapshot pre-image no longer matches the digest the archive recorded for it, so restoring would write text nobody wrote — `--force` does not override this one; restore from version control.",
   "commit-interrupted":

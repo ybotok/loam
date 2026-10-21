@@ -6,7 +6,12 @@
  * reads the WHOLE fleet's, because "which documents use this term" is a question
  * no single target can answer. A corpus that differed between them would report
  * a term as unused while the very document citing it was being graded one target
- * over.
+ * over. The two directory renames read it too — `subsystem move`
+ * (`commands/subsystem/txn/links.ts`) and `archive`
+ * (`commands/archive/plan/document/links.ts`) rewrite the links INTO what they
+ * move from every document here — for the same reason from the other side: a
+ * document `validate` grades that a rename did not relink is `link.unresolved`
+ * the commit after.
  *
  * THE CORPUS IS EVERY AUTHORED MARKDOWN DOCUMENT, and the word doing the work is
  * authored. `AGENTS.md` and the scaffolded `README.md` are excluded because loam

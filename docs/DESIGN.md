@@ -378,7 +378,7 @@ the workspace layout differs, and that part is already isolated.
     It is also the one option here that is not cheaply reversible.
 23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 73 of the 169
     modules in `commands/` — the entry module of every command among them; `core/envelope/config.ts`
-    and `core/repo/repo.ts` by 3 and 30 of them. Slices would duplicate the hubs or produce a
+    and `core/repo/repo.ts` by 3 and 31 of them. Slices would duplicate the hubs or produce a
     `shared/` folder — which is what `src/core/` already is.
 24. **Do not add a dependency to express structure.** No `madge`, no `dependency-cruiser`, no
     boundaries plugin. `oxlint` already ships the one rule that matters.

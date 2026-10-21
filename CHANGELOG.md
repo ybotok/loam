@@ -15,8 +15,10 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
 No code or flag was added. Two additive `--json` keys (`unarchive`'s `staleViews`, `subsystem
 move`/`rename`'s `relinked`), one new snapshot layout (version 4) and one refusal that is new
 (`move-uncommitted` over a document outside the move). Archive's `plan` gains `update` rows for the
-feature's own documents it relinks, and `unarchive`'s existing `snapshot-stale` refusal now covers
-those documents too. SCHEMA.md "Conventions" states the rules.
+feature's own documents it relinks and for every document outside the feature whose links into it
+it rewrites, its `revouchOwed` also names a vouched spec that rewrite moves, and `unarchive`'s
+existing `snapshot-stale` refusal now covers all of those documents too. SCHEMA.md "Conventions"
+states the rules.
 
 - **A living document archive CREATES carries what the delta marked as its own.** A new
   `services/<svc>/spec.md` or `arch.spec.md` used to be a fixed header — `service`,
@@ -60,6 +62,28 @@ those documents too. SCHEMA.md "Conventions" states the rules.
   code:** `loam unarchive` now also refuses with `snapshot-stale` (exit 1) when a document the
   archive relinked was edited under `features/archive/<FEAT>/` since; `--force` puts the authored
   text back over that edit. Those documents used to move back as they stood.
+- **A document outside the feature that links into it still resolves once the feature is
+  archived.** Another change in flight citing the feature's ADR (`../<FEAT>/adrs/0001-x.md` from its
+  intent), or a living service or fleet ADR citing a decision taken for a change still open, was
+  correct the moment before the archive and `link.unresolved` (an error) on the first
+  `validate --all` after it: the rename took the directory away from under the link, and the
+  archived path the author would have needed did not exist until the archive did. The archive now
+  rewrites those links in the same commit, across the whole link corpus — the fleet's own documents,
+  every service's, every other in-flight feature's, the documents `subsystem move` rewrites for its
+  renames: a term the archive copies into `glossary/` is cited at its living copy, everything else
+  in the feature where it now lives (`features/archive/<FEAT>/…`), and every other link keeps its
+  spelling. A living spec the merge rewrites is relinked from its merged text, so it is still one
+  `plan` row. Each relinked document is an `update` row in `plan` (`--dry-run` included); the text
+  output adds `links into the feature: N document(s) relinked for features/archive/<FEAT>/`, one
+  line per document. The costs are said, not softened: a vouched `spec.md` or `arch.spec.md` the
+  rewrite moves off its stamp is on `revouchOwed` like one the merge moves (`content.stale` follows
+  until its owner re-vouches), and a rewritten route inside a living requirement adds a `note:` line
+  saying a feature that pins it with `Based-On:` reports `delta.baseline-stale` until `loam rebase`.
+  No code, flag or payload key was added. The undo is the snapshot's — each relinked document is an
+  ordinary row, so `loam unarchive` puts the authored bytes back and archive-then-unarchive stays a
+  byte-for-byte round trip. **Exit code:** `loam unarchive` now also refuses with `snapshot-stale`
+  (exit 1) when such a document — another in-flight feature's intent among them — was edited since
+  the archive; `--force` puts the pre-archive text back over that edit.
 - **The undo snapshot no longer breaks a feature's LikeC4 project.** `.loam-before/` stored each
   pre-image under its living name, so the archived feature held a second `landscape.likec4`: a
   feature with its own `likec4.config.json`, or rendered alone, failed on duplicate elements, and so

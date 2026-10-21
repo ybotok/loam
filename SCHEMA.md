@@ -955,6 +955,29 @@ links are true **as of the archive**, and that is the whole promise: archived fe
 `link.unresolved` and out of `subsystem move`'s rewrite, because a later rename is a later commit and
 the archive is history — what the archive owes is not to break them itself.
 
+**A document outside the feature that links into it keeps a link that resolves.** The same rename
+takes `features/<FEAT>/` away from under every document that cites something in it — another change
+in flight that builds on this one's decision (`../<FEAT>/adrs/0001-x.md` from its intent), a living
+ADR citing the decision taken for a change still open — and no edit made in advance could have
+helped, because the archived path does not exist until the archive does. So the archive rewrites the
+links INTO the feature from every other authored document — the fleet's own documents, every
+service's, every other in-flight feature's: the corpus `subsystem move` rewrites for its renames —
+in the same commit, under the rule for a link into the feature above: a file the archive copies into
+the living tree is cited at its living copy, everything else where the archived feature keeps it.
+These documents are the living corpus and the other changes in flight, not the record of this one, so
+they follow a term to its living copy where the feature's own documents keep citing the archived one.
+Every other link keeps its spelling, and a living document the merge also rewrites is relinked from
+its merged text, as one write. The plan lists each as an `update` before the `move`, and the text
+output says `links into the feature: N document(s) relinked for features/archive/<FEAT>/`. The costs
+are the ones `subsystem move` names, said the archive's way: a `verified` `spec.md` or `arch.spec.md`
+the relink moves off its `content_digest` joins `revouchOwed`, exactly like one the merge moves, and
+a living requirement whose route it rewrote moves the digest a feature in flight may pin with
+`Based-On:` (`delta.baseline-stale` until `loam rebase` — a `note:` line in the text output). There
+is no `move-uncommitted` refusal: archive does not stage in git, and its undo is the snapshot, where
+each relinked document is an ordinary row. `loam unarchive` puts the authored bytes back, and a
+document edited since — another feature's intent included — is a later change it will not discard
+without `--force` (`snapshot-stale`).
+
 **`loam subsystem move` and `rename` keep the same promise.** A move is a directory rename and a
 relative link is a route between directories, so the move rewrites every relative link it would
 break, in the same transaction as the renames: the links out of every markdown document under a
@@ -2557,7 +2580,9 @@ to the literal path (an absent service restores as a create, exactly as before).
 move leaves them — `features/archive/<FEAT>/…`, which is where `unarchive` restores them before it
 moves the directory back — so they needed no layout version of their own; the two readers that meet
 a snapshot before its feature moved, the clobber guard below and the crash repair, look for them
-across the move. Version 4 stores each
+across the move. The documents outside the feature whose links into it the archive rewrites are
+ordinary rows: a service's keyed by `(service, artifact)` like every `services/` entry, the rest — a
+fleet ADR, a glossary term, another in-flight feature's intent — by their literal path. Version 4 stores each
 pre-image as **`files/<path>.before`** rather than under its living name. A pre-image kept as
 `files/architecture/landscape.likec4` was a second copy of the map inside the archived feature, and
 every tool that reads by extension took it for a document: a feature with its own

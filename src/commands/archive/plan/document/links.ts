@@ -32,20 +32,28 @@
  * to copy them; a `Gated` field would be one more value the gate computes for
  * a phase it does not own.
  *
- * THE OTHER HALF IS THE FEATURE'S OWN DOCUMENTS (`planFeatureLinks` below):
- * the ones that stay in the feature and ride the rename, whose links out of it
- * are one directory short the moment it lands.
+ * THE OTHER TWO HALVES ARE THE DOCUMENTS THAT DO NOT MERGE. The feature's own
+ * (`planFeatureLinks` below) stay in the feature and ride the rename, so their
+ * links out of it are one directory short the moment it lands. Every other
+ * document in the corpus (`planInboundLinks` below) stays where it is while
+ * the files it cites inside the feature move away from under it.
  */
 import { dirname, resolve } from "node:path";
 import { repoPath } from "../../../../core/envelope/json.js";
+import { movedUnderVouch, parseFrontmatter, stringField } from "../../../../core/document/frontmatter.js";
+import { parseRequirements } from "../../../../core/document/parse.js";
+import { requirementDigest } from "../../../../core/document/spec.js";
 import { featureGlossary, livingTermPath } from "../../../../core/glossary/delta.js";
-import { movedMarkdown } from "../../../../core/links/corpus.js";
+import { allAuthoredDocuments, movedMarkdown } from "../../../../core/links/corpus.js";
 import { rebaseLinks } from "../../../../core/links/parse.js";
 import { inOrder } from "../../../../core/kernel/concurrency.js";
-import { acrossRename } from "../../../../core/kernel/path-safety.js";
+import { acrossRename, isPathInside } from "../../../../core/kernel/path-safety.js";
+import { featuresDir, servicePathsAt } from "../../../../core/repo/paths.js";
+import { listServices } from "../../../../core/repo/repo.js";
 import { featureFlows, livingFlowPath } from "../../../../core/usecases/delta/flows.js";
 import { featureDeployments, livingDeploymentPath } from "../../../../core/deployment/delta.js";
 import { NotUtf8Error, planWrite, readUtf8 } from "../../../../core/staging/writes.js";
+import type { FleetContext } from "../../../../core/fleet-context.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
 import type { Gated, Plan } from "../state.js";
 
@@ -139,6 +147,133 @@ export async function planFeatureLinks(
   if (relinked.length === 0) return;
   say(`  feature documents: ${relinked.length} relinked for ${repoPath(docsDir, gated.archiveDest)}/`);
   for (const path of relinked) say(`      ${path}`);
+}
+
+/**
+ * Every other document in the link corpus whose links reach INTO the feature,
+ * re-expressed for where this archive leaves what they cite.
+ *
+ * THE DEFECT THIS CLOSES. Another change in flight builds on this one's
+ * decision (`../FEAT/adrs/0001-x.md` from its intent), or a living ADR cites
+ * the decision taken for it while the change is still open. Correct the moment
+ * before the archive, so no gate could say otherwise; `link.unresolved` the
+ * moment after, because the rename took the directory away from under the
+ * link. And no edit the author could make in advance would have helped: the
+ * archived path does not exist until the archive does. `subsystem move` has
+ * rewritten the links into the directories it renames since it shipped
+ * (`commands/subsystem/txn/links.ts`); this is the archive's rename owing the
+ * same correction.
+ *
+ * THE RULE IS `featureRetarget`'s, not the rename's. These documents are not
+ * the record of the change; they are the living corpus and the other changes
+ * in flight, read against the tree as it is. So a term the archive copies into
+ * `glossary/` is cited at the living copy — the one a reader is meant to find
+ * and the one `glossary.unlinked` counts — and everything that stays with the
+ * change, its ADRs and intent above all, is cited where the feature now lives.
+ * Only the routes into the feature change; every other link keeps its
+ * spelling (`rebaseLinks`).
+ *
+ * COMPOSED ONTO THE MERGE. A living spec the merge rewrites can cite the
+ * feature in its own narrative, and relinking the bytes on disk would plan a
+ * second write of its PRE-merge text — swapped after the merge's, it would
+ * undo the merge. So a document this plan already writes is relinked from the
+ * text the merge composed, and that one write is replaced in place.
+ *
+ * THE COSTS ARE SAID THE WAY THE MERGE SAYS ITS OWN. A rewritten route is still
+ * a changed byte. Under a vouch stamp it is `content.stale` until the owner
+ * re-vouches, so a vouched spec this moves joins `revouchOwed` exactly as one
+ * the merge moves does. Inside a living requirement it moves the digest a
+ * `Based-On:` pin holds, and the plan names the document. No git refusal of the
+ * kind `subsystem move` holds (`move-uncommitted`): archive never stages in
+ * git, and its undo is the snapshot — every write here is one of its rows, so
+ * `loam unarchive` puts the authored bytes back, and a document edited since
+ * is `snapshot-stale` like any other.
+ */
+export async function planInboundLinks(
+  config: { docsDir: DocsDir; fleet: FleetContext },
+  gated: Pick<Gated, "featureDir" | "archiveDest">,
+  planned: Plan,
+  say: (line?: string) => void,
+): Promise<void> {
+  const { docsDir, fleet } = config;
+  let corpus: string[];
+  try {
+    corpus = await allAuthoredDocuments(docsDir, fleet);
+  } catch (err) {
+    // The gate enumerated this fleet already, so a walk that fails here is a
+    // tree `validate` will diagnose. The archive is not refused over a question
+    // it asks to keep the corpus readable — `subsystem move` decides the same —
+    // but it does not pretend the question was answered either.
+    say(
+      `  ⚠ links INTO ${repoPath(docsDir, gated.featureDir)}/ were not checked — the fleet's documents could not be walked ` +
+        `(${err instanceof Error ? err.message : String(err)}); \`loam validate --all\` names any that broke.`,
+    );
+    return;
+  }
+  const retarget = await featureRetarget(docsDir, gated);
+  const vouchable = new Map<string, string>();
+  for (const service of await listServices(docsDir, fleet)) {
+    const paths = servicePathsAt(service.dir);
+    vouchable.set(resolve(paths.spec), service.id);
+    vouchable.set(resolve(paths.archSpec), service.id);
+  }
+  const plannedAt = new Map(planned.writes.map((w, i) => [resolve(w.path), i]));
+  const seen = new Set<string>();
+  const candidates = corpus.filter((path) => {
+    const key = resolve(path);
+    if (seen.has(key) || isPathInside(gated.featureDir, path)) return false;
+    seen.add(key);
+    return true;
+  });
+  const documents = await inOrder(candidates, async (path) => {
+    const at = plannedAt.get(resolve(path));
+    if (at !== undefined) {
+      // A delete or a Buffer is not text this rewrite may compose onto; no
+      // markdown planner hands over either.
+      const content = planned.writes[at]!.content;
+      return { path, at, text: typeof content === "string" ? content : null };
+    }
+    try {
+      return { path, at, text: await readUtf8(path) };
+    } catch {
+      // Absent (the corpus names every slot a service MAY fill) or not UTF-8,
+      // which `link.unreadable` already names: nothing loam could write back.
+      return { path, at, text: null };
+    }
+  });
+  const pinned = (md: string): string => parseRequirements(md).map(requirementDigest).join(",");
+  const relinked: string[] = [];
+  const notes: string[] = [];
+  for (const { path, at, text } of documents) {
+    if (text === null) continue;
+    const next = rebaseLinks(text, { from: dirname(path), to: dirname(path), retarget });
+    if (next === text) continue;
+    if (at === undefined) planned.writes.push(planWrite(path, next));
+    else planned.writes[at] = { ...planned.writes[at]!, content: next };
+    const where = repoPath(docsDir, path);
+    relinked.push(where);
+    // The merge's own question (`../specs.ts`), asked of the bytes about to be
+    // written — and once per document: a spec the merge already named is not
+    // owed a second re-vouch for the same commit.
+    const service = vouchable.get(resolve(path));
+    const fm = parseFrontmatter(next);
+    const named = planned.revouchOwed.some((owed) => resolve(owed.path) === resolve(path));
+    if (service !== undefined && !named && movedUnderVouch(fm, next)) {
+      planned.revouchOwed.push({ service, path, owner: stringField(fm, "owner") ?? null });
+    }
+    // Living documents only: a pin holds the digest of a LIVING requirement,
+    // so another feature's own delta text moving pins nothing.
+    if (!isPathInside(featuresDir(docsDir), path) && pinned(next) !== pinned(text)) {
+      notes.push(
+        `${where}: links this archive rewrote sit inside requirements, so a feature in flight that pins one with Based-On: ` +
+          "reports delta.baseline-stale until `loam rebase` re-pins it.",
+      );
+    }
+  }
+  if (relinked.length === 0) return;
+  say(`  links into the feature: ${relinked.length} document(s) relinked for ${repoPath(docsDir, gated.archiveDest)}/`);
+  for (const path of relinked) say(`      ${path}`);
+  for (const note of notes) say(`      note: ${note}`);
 }
 
 /** Where `target` will be once the feature directory has moved: its image under the archive when it is inside the feature, itself otherwise. */
