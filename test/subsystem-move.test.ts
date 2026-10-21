@@ -20,6 +20,7 @@ import { recoverForward } from "../src/core/staging/txn/forward.js";
 import { readTxnIntent, writeTxnIntent, type TxnSpec } from "../src/core/staging/txn/journal.js";
 import { commitStaged } from "../src/core/staging/txn/transaction.js";
 import { stageWrites, swapStaged } from "../src/core/staging/commit.js";
+import { contentDigest } from "../src/core/document/frontmatter.js";
 import {
   coherentFixture,
   LANDSCAPE,
@@ -179,6 +180,99 @@ describe("moving services and subtrees", () => {
     );
     await refuses(p, ["subsystem", "move", "payment-service", "--into", "payments"], "docs-busy");
     await rm(join(p.docsDir, ".loam-lock"));
+  });
+});
+
+describe("a move keeps every relative link reaching the file it named", () => {
+  /** The canonical fleet plus documents that link out of, and into, payment-service. */
+  function linkedFleet(): Record<string, string> {
+    const files = coherentFixture();
+    files["services/payments/subsystem.yaml"] = "title: Payments\n";
+    files["glossary/payment.md"] =
+      "# Payment\n\nMoney a customer commits; authorized by [the payment service](../services/payment-service/spec.md).\n";
+    files["services/payment-service/runbook.md"] =
+      "# Runbook\n\nThe [spec](./spec.md) says what must hold; a [Payment](../../glossary/payment.md) is defined there.\n";
+    // Root-anchored: climbs to the docs root and back down through the
+    // service's OWN old directory. Its route computes the same either side of
+    // the move, and a rewrite that compared routes kept a spelling naming a
+    // directory the move removed.
+    files["services/payment-service/adrs/0001-authorize-first.md"] =
+      "# 1. Authorize before capture\n\nSee [the spec](../../../services/payment-service/spec.md).\n";
+    return files;
+  }
+
+  it("rewrites the moved documents' routes out, and other documents' routes in — and validate --all agrees", async () => {
+    const p = await project(linkedFleet());
+    await runLoam(p.workDir, "subsystem", "sync");
+    const res = await runLoam(p.workDir, "subsystem", "move", "payment-service", "--into", "payments", "--json");
+    expect(res.code, res.out).toBe(0);
+    // Out of the moved directory: one level deeper now. The sibling link moved
+    // WITH its document and keeps the author's exact spelling.
+    expect(await p.read("services/payments/payment-service/runbook.md")).toBe(
+      "# Runbook\n\nThe [spec](./spec.md) says what must hold; a [Payment](../../../glossary/payment.md) is defined there.\n",
+    );
+    // Into it, from a document that did not move.
+    expect(await p.read("glossary/payment.md")).toBe(
+      "# Payment\n\nMoney a customer commits; authorized by [the payment service](../services/payments/payment-service/spec.md).\n",
+    );
+    expect(await p.read("services/payments/payment-service/adrs/0001-authorize-first.md")).toBe(
+      "# 1. Authorize before capture\n\nSee [the spec](../spec.md).\n",
+    );
+    expect(JSON.parse(res.stdout).relinked).toEqual([
+      "services/payments/payment-service/adrs/0001-authorize-first.md",
+      "services/payments/payment-service/runbook.md",
+      "glossary/payment.md",
+    ]);
+    const validated = JSON.parse((await runLoam(p.workDir, "validate", "--all", "--json")).stdout) as {
+      targets: Array<{ findings: Array<{ code: string; message: string }> }>;
+    };
+    const unresolved = validated.targets.flatMap((t) => t.findings).filter((f) => f.code === "link.unresolved");
+    expect(unresolved, JSON.stringify(unresolved)).toEqual([]);
+  });
+
+  it("says so when a rewritten route lands under a vouch stamp or inside a pinned requirement", async () => {
+    // A route is still a byte: the vouch's content_digest and a Based-On pin
+    // both hash it. The move does not soften either — it names the document.
+    const body =
+      "\n# payment-service\n\n## Requirements\n\n### Requirement: Authorize a payment\n" +
+      "The service SHALL authorize a [payment](../../glossary/payment.md) before capture.\n\n" +
+      "Operations: authorizePayment\n\n#### Scenario: Successful authorization\n" +
+      "- **Given** a valid card\n- **When** authorization is requested\n- **Then** the payment is authorized\n";
+    const files = linkedFleet();
+    files["services/payment-service/spec.md"] =
+      `---\nservice: payment-service\nstatus: verified\ncontent_digest: ${contentDigest(`---\n---\n${body}`)}\n---\n${body}`;
+    const p = await project(files);
+    const res = await runLoam(p.workDir, "subsystem", "move", "payment-service", "--into", "payments", "--json");
+    expect(res.code, res.out).toBe(0);
+    const warnings = (JSON.parse(res.stdout).warnings ?? []) as string[];
+    expect(warnings.some((w) => w.startsWith("services/payments/payment-service/spec.md is vouched"))).toBe(true);
+    expect(warnings.some((w) => w.includes("sit inside requirements") && w.includes("delta.baseline-stale"))).toBe(true);
+    expect(await p.read("services/payments/payment-service/spec.md")).toContain("[payment](../../../glossary/payment.md)");
+  });
+
+  it("a subsystem rename relinks the documents under it too", async () => {
+    const files = linkedFleet();
+    const p = await project(files);
+    expect((await runLoam(p.workDir, "subsystem", "move", "payment-service", "--into", "payments")).code).toBe(0);
+    const res = await runLoam(p.workDir, "subsystem", "rename", "payments", "money");
+    expect(res.code, res.out).toBe(0);
+    expect(res.out).toContain("relinked glossary/payment.md");
+    expect(await p.read("glossary/payment.md")).toContain("(../services/money/payment-service/spec.md)");
+    // The runbook's route out is the same depth as before the rename: nothing to rewrite.
+    expect(await p.read("services/money/payment-service/runbook.md")).toContain("(../../../glossary/payment.md)");
+  });
+
+  it("refuses move-uncommitted on a dirty document OUTSIDE the move whose links it would rewrite", async () => {
+    const p = await project(linkedFleet());
+    await runLoam(p.workDir, "subsystem", "sync");
+    gitInit(p.docsDir);
+    await writeFile(
+      join(p.docsDir, "glossary/payment.md"),
+      "# Payment\n\nEdited, not committed — see [the payment service](../services/payment-service/spec.md).\n",
+      "utf8",
+    );
+    const message = await refuses(p, ["subsystem", "move", "payment-service", "--into", "payments"], "move-uncommitted");
+    expect(message).toContain("glossary/payment.md");
   });
 });
 
@@ -412,6 +506,23 @@ describe("crash recovery at the move's commit boundaries", () => {
     const outcome = await recoverForward(root, (await readTxnIntent(root))!);
     expect(outcome.outcome).toBe("completed");
     expect(stripRoots(await treeHashes(root))).toEqual(done);
+  });
+
+  it("finds a document the commit relinked INSIDE a moved directory where the rename took it", async () => {
+    // A move rewrites a moved document's links at its pre-move path, and the
+    // rename then carries it. A crash after the renames but before the
+    // journal's removal used to look for that file at the recorded path, find
+    // nothing, and refuse the repair as "edited since".
+    const { root, spec, views } = await moveFixture();
+    const relinked = { path: join(root, "services", "a-service", "spec.md"), content: "---\nservice: a-service\n---\n\n# a, relinked\n" };
+    const staged = await stageWrites([views, relinked]);
+    await writeTxnIntent(spec, staged);
+    await swapStaged(staged);
+    for (const m of spec.moves!) await rename(m.from, m.to);
+    // killed here
+    const outcome = await recoverForward(root, (await readTxnIntent(root))!);
+    expect(outcome.outcome).toBe("completed");
+    expect(existsSync(join(root, ".loam-commit"))).toBe(false);
   });
 
   it("refuses to choose when a moved directory is in NEITHER recorded state", async () => {

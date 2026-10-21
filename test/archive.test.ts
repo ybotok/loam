@@ -33,7 +33,7 @@ import { loadFile, type LoadedDoc } from "../src/core/c4/likec4.js";
 import { parseRequirements } from "../src/core/document/parse.js";
 import { applyRequirementDelta } from "../src/core/document/apply.js";
 import { contentDigest } from "../src/core/document/frontmatter.js";
-import { rewriteRequirementsRun } from "../src/commands/archive/plan/specs.js";
+import { rewriteRequirementsRun } from "../src/commands/archive/plan/document/run.js";
 import {
   coherentFixture,
   makeProject,
@@ -4373,6 +4373,114 @@ model {
       // The additive key is resolved on EVERY issue in the envelope, so a
       // consumer branches on data rather than keeping its own code list.
       for (const i of issues) expect(typeof i.overridable).toBe("boolean");
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("a CREATED living spec keeps what the delta marked as the document's own", () => {
+  /**
+   * A delta written as the service's first document — the shape a domain
+   * migrated into one feature arrives in: an owner, a real title, a Purpose,
+   * prose for the reviewer, the requirements, and a section after them. Archive
+   * used to keep the requirements and write a fixed header over the rest.
+   */
+  const AUTHORED_DELTA = `---
+owner: team-payments
+---
+
+# Payment splitting
+
+Reviewers: this delta is the first cut of the service; see the intent for why it is separate.
+
+## Purpose
+
+Splits one payment across several payees, so a marketplace order can pay each seller
+their share. See [the payer](../../../../services/payment-service/spec.md).
+
+## ADDED Requirements
+
+### Requirement: Split a payment
+The service SHALL split a payment across payees summing to the total.
+
+Operations: createSplit
+
+#### Scenario: Split across two payees
+- **Given** a payment of 100.00
+- **When** it is split 60/40
+- **Then** two shares are recorded
+
+## Open questions
+
+Should a split survive a partial refund? Decide before FEAT-2.
+`;
+
+  it("carries the owner, the title and ## Purpose, links back to the delta for the rest, and says so", async () => {
+    const files = coherentFixture();
+    files["features/FEAT-1-split/specs/payment-split-service/spec.md"] = AUTHORED_DELTA;
+    const p = await makeProject(files, { service: "payment-service" });
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-1");
+      expect(res.code, res.out).toBe(0);
+      const text = await p.read("services/payment-split-service/spec.md");
+      expect(text.startsWith("---\nservice: payment-split-service\nstatus: draft\nowner: team-payments\n---\n\n# Payment splitting\n\n")).toBe(
+        true,
+      );
+      expect(text).toContain(
+        "## Purpose\n\nSplits one payment across several payees, so a marketplace order can pay each seller\n" +
+          "their share. See [the payer](../payment-service/spec.md).\n\n## Requirements\n",
+      );
+      // Prose about the CHANGE stays with the change — one link away, and the
+      // link resolves into the archived feature.
+      expect(text).not.toContain("Reviewers: this delta");
+      expect(text).not.toContain("Open questions");
+      expect(text).toContain("[its delta](../../features/archive/FEAT-1-split/specs/payment-split-service/spec.md)");
+      expect(p.exists("features/archive/FEAT-1-split/specs/payment-split-service/spec.md")).toBe(true);
+      expect(parseRequirements(text).map((r) => [r.name, r.kind])).toEqual([["Split a payment", "BASE"]]);
+      expect(res.out).toContain("carried from the delta: owner, its title, its ## Purpose");
+      const validated = JSON.parse((await runLoam(p.workDir, "validate", "--all", "--json")).stdout) as {
+        targets: Array<{ findings: Array<{ code: string; message: string }> }>;
+      };
+      const unresolved = validated.targets.flatMap((t) => t.findings).filter((f) => f.code === "link.unresolved");
+      expect(unresolved, JSON.stringify(unresolved)).toEqual([]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a delta titled for the change keeps the id as the title and carries none of its prose", async () => {
+    // The canonical fixture's H1 names the feature, which is what loam's own
+    // scaffold writes: "<svc> — delta for FEAT-1" is the change's title.
+    const p = await makeProject(coherentFixture(), { service: "payment-service" });
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-1");
+      expect(res.code, res.out).toBe(0);
+      const text = await p.read("services/payment-split-service/spec.md");
+      expect(text).toContain("\n# payment-split-service\n\nCreated when FEAT-1 was archived; [its delta](");
+      expect(text).not.toContain("delta for FEAT-1");
+      expect(text).not.toContain("## Purpose");
+      expect(res.out).toContain("the delta's prose stays in features/archive/FEAT-1-split/specs/payment-split-service/spec.md");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a ## Purpose in a delta against an EXISTING spec merges as nothing, and the plan says so", async () => {
+    const files = coherentFixture();
+    files["features/FEAT-1-split/specs/payment-service/spec.md"] =
+      "# payment-service — delta for FEAT-1\n\n## Purpose\n\nA rewritten purpose nobody merges.\n\n## ADDED Requirements\n\n" +
+      "### Requirement: Report a split\nThe service SHALL report each split it initiates.\n\n" +
+      "#### Scenario: A split is reported\n- **Given** a split\n- **When** it is initiated\n- **Then** it is reported\n";
+    const p = await makeProject(files, { service: "payment-service" });
+    try {
+      const before = await p.read("services/payment-service/spec.md");
+      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--approve");
+      expect(res.code, res.out).toBe(0);
+      const after = await p.read("services/payment-service/spec.md");
+      expect(after).not.toContain("A rewritten purpose nobody merges");
+      expect(after.startsWith(before.slice(0, before.indexOf("## Requirements")))).toBe(true);
+      expect(res.out).toContain("the delta's ## Purpose was not merged");
     } finally {
       await p.destroy();
     }

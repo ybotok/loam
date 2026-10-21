@@ -23,7 +23,7 @@ import { dirname, join } from "node:path";
 import { repoPath } from "../../envelope/json.js";
 import { sha256 } from "../writes.js";
 import { atomicWrite, quietRmdir } from "../commit.js";
-import { SNAPSHOT_DIR } from "../snapshot/manifest.js";
+import { PRE_IMAGE_SUFFIX, SNAPSHOT_DIR } from "../snapshot/manifest.js";
 import {
   COMMIT_INTENT,
   type CommitRecovery,
@@ -108,7 +108,14 @@ export async function recoverInterruptedCommit(docsDir: string): Promise<CommitR
   // a service directory moved by hand between the crash and this repair leaves
   // its files "in neither recorded state", which is the refusal below, not a
   // resolution question.
+  //
+  // Both pre-image NAMES are tried, the suffixed one first: a snapshot this
+  // loam wrote stores `<path>` + PRE_IMAGE_SUFFIX (version 4), while a commit
+  // an older loam was killed in left one under the living name. Trying both is
+  // safe for the same reason the two ends are: whichever is found must still
+  // hash to the digest the journal recorded, or the repair refuses below.
   const roots = [join(moveFrom, SNAPSHOT_DIR, "files"), join(moveTo, SNAPSHOT_DIR, "files")];
+  const names = (path: string): string[] => [`${path}${PRE_IMAGE_SUFFIX}`, path];
   const repaired: string[] = [];
   for (const f of pending) {
     const file = target(f.path);
@@ -119,7 +126,7 @@ export async function recoverInterruptedCommit(docsDir: string): Promise<CommitR
       repaired.push(f.path);
       continue;
     }
-    const source = roots.map((r) => join(r, ...f.path.split("/"))).find((p) => existsSync(p));
+    const source = roots.flatMap((r) => names(f.path).map((n) => join(r, ...n.split("/")))).find((p) => existsSync(p));
     if (source === undefined) {
       throw new InterruptedCommitError(
         `a \`loam ${intent.command} ${intent.feature}\` was interrupted mid-commit and ${f.path} is half-written, but ` +

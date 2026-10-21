@@ -119,6 +119,20 @@ export const LOAM_FEATURE: CommandContent = {
      \`components.messages\`, and a \`Publishes:\`/\`Consumes:\` line on each
      requirement that names them. \`loam new\` scaffolds none — an event
      contract is genuinely optional
+   - for a service (or capability) this feature CREATES, the delta is the
+     living document's first draft, and \`loam archive\` carries only what you
+     mark as the document's own: the frontmatter \`owner\`, an H1 that neither
+     names $1 nor calls itself a delta (the scaffold's does both — retitle it),
+     and a \`## Purpose\` section — put the service's narrative there. Everything
+     else in the delta is read as being about the change and stays with it in
+     \`features/archive/\`, linked from the new document
+   - links: write each one so it resolves where you write it, relative to the
+     file. A link into this feature is re-pointed by \`loam archive\` to wherever
+     the file ends up — a term in \`glossary/<term>.md\` at the living glossary,
+     anything else (an ADR in \`adrs/\` above all) inside
+     \`features/archive/\`, because a feature ADR is never copied into the living
+     tree. A decision meant to outlive this change belongs in
+     \`architecture/adrs/\` or the service's own \`adrs/\` instead
 4b. **Analyze before you pin.** Nothing grades this step, which is why it is here:
    every check after it is a join between exact tokens, so two services that
    agree on every operationId and disagree on what it means validate, archive

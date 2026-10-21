@@ -20,7 +20,8 @@ import { isRecord } from "../../kernel/records.js";
 import { isDigest, sha256, type StagedWrite } from "../writes.js";
 import { message, quietRm } from "../commit.js";
 import {
-  SNAPSHOT_COMPAT_VERSION,
+  isReadableSnapshotVersion,
+  preImageRel,
   SNAPSHOT_DIR,
   SNAPSHOT_MANIFEST,
   SNAPSHOT_VERSION,
@@ -95,7 +96,10 @@ export async function writeSnapshot(request: SnapshotRequest): Promise<void> {
       before: s.before === null ? null : sha256(s.before),
     });
     if (s.before !== null) {
-      const dest = join(dir, "files", rel);
+      // Under the suffixed name (`./manifest.ts`, version 4): a pre-image kept
+      // under its living name is a second living document to every tool that
+      // reads by extension.
+      const dest = join(dir, "files", preImageRel(SNAPSHOT_VERSION, rel));
       await mkdir(dirname(dest), { recursive: true });
       await writeFile(dest, s.before);
     }
@@ -127,9 +131,12 @@ export async function writeSnapshot(request: SnapshotRequest): Promise<void> {
  * clear turned a repairable half-merge into a permanent one — after which
  * `unarchive` restored the half-merged text and said the docs were back.
  *
- * Version 2 manifests are graded by the same staleness question over their
- * literal paths — refusing them as "a different loam" would turn every leftover
- * version-2 snapshot into a permanent archive refusal on upgrade.
+ * Version 2 and 3 manifests are graded by the same staleness question — version
+ * 2 over its literal paths — because refusing them as "a different loam" would
+ * turn every leftover snapshot an older loam wrote into a permanent archive
+ * refusal on upgrade. The question reads only the manifest and the living docs,
+ * never a pre-image, so where each layout stores its pre-images does not enter
+ * into it.
  */
 async function assertSnapshotReplaceable(
   dir: string,
@@ -155,10 +162,7 @@ async function assertSnapshotReplaceable(
   if (!isRecord(manifest)) {
     throw new SnapshotClobberError(dir, `${SNAPSHOT_MANIFEST} cannot be read, so nothing can say whether it is stale`);
   }
-  if (
-    (manifest.version !== SNAPSHOT_VERSION && manifest.version !== SNAPSHOT_COMPAT_VERSION) ||
-    !Array.isArray(manifest.files)
-  ) {
+  if (!isReadableSnapshotVersion(manifest.version) || !Array.isArray(manifest.files)) {
     throw new SnapshotClobberError(dir, `it was written by a different loam and cannot be checked against the living docs`);
   }
   // `Array.isArray` narrows to `any[]`; naming the element type here is what
@@ -222,7 +226,7 @@ async function assertSnapshotReplaceable(
  * (`after`, `archivedAt`, the feature name, no duplicates) because it is about
  * to write THROUGH it; that check stays where it is, with its own refusals.
  *
- * `service`/`artifact` are read when present (a version-3 `services/` row) and
+ * `service`/`artifact` are read when present (a keyed `services/` row) and
  * must arrive as a pair: half a key is a manifest that does not say where the
  * file lives, and grading through the literal path anyway would be a guess.
  */

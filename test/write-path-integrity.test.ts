@@ -33,7 +33,13 @@ import { writeCommitIntent } from "../src/core/staging/recovery/intent.js";
 import { COMMIT_INTENT } from "../src/core/staging/interrupted.js";
 import { recoverInterruptedCommit } from "../src/core/staging/recovery/recover.js";
 import { scanWritePathResidue } from "../src/core/staging/recovery/residue.js";
-import { SNAPSHOT_DIR, SNAPSHOT_MANIFEST, SNAPSHOT_VERSION, snapshotDir } from "../src/core/staging/snapshot/manifest.js";
+import {
+  PRE_IMAGE_SUFFIX,
+  SNAPSHOT_DIR,
+  SNAPSHOT_MANIFEST,
+  SNAPSHOT_VERSION,
+  snapshotDir,
+} from "../src/core/staging/snapshot/manifest.js";
 import {
   SnapshotClobberError,
   writeSnapshot,
@@ -52,6 +58,7 @@ import {
   treeHashes,
   type Project,
 } from "./helpers/harness.js";
+import { downgradeSnapshot } from "./helpers/snapshot-layout.js";
 
 /* ------------------------------------------------------------------ */
 /* Fixtures                                                            */
@@ -249,7 +256,7 @@ describe("the snapshot pre-image", () => {
       const landscape = manifest.files.find((f) => f.path === "architecture/landscape.likec4")!;
       expect(landscape.existed).toBe(true);
       const preImage = await p.read(
-        `features/archive/FEAT-1-split/${SNAPSHOT_DIR}/files/architecture/landscape.likec4`,
+        `features/archive/FEAT-1-split/${SNAPSHOT_DIR}/files/architecture/landscape.likec4${PRE_IMAGE_SUFFIX}`,
       );
       expect(landscape.before).toBe(sha256(preImage));
       // A file archive CREATED has no pre-image, and must not claim a digest for one.
@@ -261,15 +268,37 @@ describe("the snapshot pre-image", () => {
     }
   });
 
+  it("stores no pre-image a LikeC4 project — or any tool reading by extension — would load as a document", async () => {
+    // The landscape's pre-image used to sit in the archived feature as a
+    // `.likec4` under its living name: a feature with its own
+    // likec4.config.json, or rendered alone, loaded the map twice beside the
+    // delta and failed on duplicate elements.
+    const p = await makeProject(coherentFixture());
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+      const root = join(p.docsDir, "features/archive/FEAT-1-split", SNAPSHOT_DIR);
+      const stored = (await readdir(root, { recursive: true, withFileTypes: true }))
+        .filter((e) => e.isFile())
+        .map((e) => e.name);
+      for (const name of stored) {
+        expect(name, name).not.toMatch(/\.(likec4|like-c4|c4|md|ya?ml)$/);
+      }
+      expect(stored).toContain(`landscape.likec4${PRE_IMAGE_SUFFIX}`);
+    } finally {
+      await p.destroy();
+    }
+  });
+
   it("re-keys services/ entries by (service, artifact), and leaves everything else literal", async () => {
     const p = await makeProject(coherentFixture());
     try {
       expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
       const manifest = await readSnapshotManifest(p, "FEAT-1-split");
-      // Version 3 is the re-keying: a services/ entry names its service by id —
-      // the one name a subsystem re-cut never changes — so unarchive can put
-      // the bytes back wherever that service lives at restore time.
-      expect(manifest.version).toBe(3);
+      // Version 3 was the re-keying, and version 4 keeps it: a services/ entry
+      // names its service by id — the one name a subsystem re-cut never
+      // changes — so unarchive can put the bytes back wherever that service
+      // lives at restore time.
+      expect(manifest.version).toBe(SNAPSHOT_VERSION);
       for (const f of manifest.files.filter((x) => x.path.startsWith("services/"))) {
         expect(f.service).toBe("payment-split-service");
         expect(`services/${f.service}/${f.artifact}`).toBe(f.path);
@@ -287,7 +316,7 @@ describe("the snapshot pre-image", () => {
     const p = await makeProject(coherentFixture());
     try {
       await runLoam(p.workDir, "archive", "FEAT-1");
-      const rel = `features/archive/FEAT-1-split/${SNAPSHOT_DIR}/files/architecture/landscape.likec4`;
+      const rel = `features/archive/FEAT-1-split/${SNAPSHOT_DIR}/files/architecture/landscape.likec4${PRE_IMAGE_SUFFIX}`;
       await p.write(rel, (await p.read(rel)).replace("Owns payment authorization/capture", "TEXT NOBODY WROTE"));
       const merged = await treeHashes(p.docsDir);
 
@@ -506,6 +535,9 @@ describe("a commit killed between two renames", () => {
   it("finishes an interrupted RESTORE — there is no merged text to go back to — and a plain re-run completes it", async () => {
     const p = await makeProject(coherentFixture());
     try {
+      // Generated views current before the archive, so the restore's closing
+      // line is the whole-repo one: the undo is the only thing under test.
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
       const clean = await treeHashes(p.docsDir);
       expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
 
@@ -517,7 +549,7 @@ describe("a commit killed between two renames", () => {
       for (const f of manifest.files) {
         const target = join(p.docsDir, ...f.path.split("/"));
         const pre = f.existed
-          ? await readFile(join(featureDir, SNAPSHOT_DIR, "files", ...f.path.split("/")))
+          ? await readFile(join(featureDir, SNAPSHOT_DIR, "files", ...`${f.path}${PRE_IMAGE_SUFFIX}`.split("/")))
           : null;
         writes.push(planWrite(target, pre));
       }
@@ -562,7 +594,9 @@ describe("a commit killed between two renames", () => {
         SnapshotClobberError,
       );
       // The pre-images are still there to repair from.
-      expect(existsSync(join(featureDir, SNAPSHOT_DIR, "files/architecture/landscape.likec4"))).toBe(true);
+      expect(existsSync(join(featureDir, SNAPSHOT_DIR, `files/architecture/landscape.likec4${PRE_IMAGE_SUFFIX}`))).toBe(
+        true,
+      );
     } finally {
       await p.destroy();
     }
@@ -573,16 +607,9 @@ describe("a commit killed between two renames", () => {
 /* Leftover snapshots from older layouts                               */
 /* ------------------------------------------------------------------ */
 
-/** Rewrite an ACTIVE feature's leftover manifest to the version-2 layout: no (service, artifact) keys. */
+/** Rewrite an ACTIVE feature's leftover snapshot to the version-2 layout: no (service, artifact) keys, bare pre-image names. */
 async function downgradeActiveManifest(p: Project, dirName: string): Promise<void> {
-  const path = join(p.docsDir, "features", dirName, SNAPSHOT_DIR, SNAPSHOT_MANIFEST);
-  const manifest = JSON.parse(await readFile(path, "utf8")) as Manifest;
-  manifest.version = 2;
-  for (const f of manifest.files) {
-    delete f.service;
-    delete f.artifact;
-  }
-  await writeFile(path, JSON.stringify(manifest, null, 2) + "\n", "utf8");
+  await downgradeSnapshot(join(p.docsDir, "features", dirName), 2);
 }
 
 describe("a version-2 leftover snapshot in an active feature", () => {
@@ -721,7 +748,7 @@ describe("a docs repo whose services are mounted by symlink", () => {
       await writeSnapshot(snapshotRequest(featureDir, p.docsDir, second));
       const rewritten = JSON.parse(await readFile(activeManifestPath(p, "FEAT-1-split"), "utf8")) as Manifest;
       expect(rewritten.files.map((f) => f.path)).toContain("services/payment-service/spec.md");
-      expect(existsSync(join(featureDir, SNAPSHOT_DIR, "files/services/payment-service/spec.md"))).toBe(true);
+      expect(existsSync(join(featureDir, SNAPSHOT_DIR, `files/services/payment-service/spec.md${PRE_IMAGE_SUFFIX}`))).toBe(true);
     } finally {
       await p.destroy();
     }
@@ -760,7 +787,7 @@ describe("a docs repo whose services are mounted by symlink", () => {
         expect(rejection).toBeInstanceOf(SnapshotClobberError);
         expect((rejection as Error).message).toContain(spelling);
         // The refusal kept the pre-images it exists to keep.
-        expect(existsSync(join(featureDir, SNAPSHOT_DIR, "files/services/payment-service/spec.md"))).toBe(true);
+        expect(existsSync(join(featureDir, SNAPSHOT_DIR, `files/services/payment-service/spec.md${PRE_IMAGE_SUFFIX}`))).toBe(true);
       }
     } finally {
       await p.destroy();

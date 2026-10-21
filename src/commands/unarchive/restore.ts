@@ -28,6 +28,7 @@ import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js
 import { SNAPSHOT_DIR } from "../../core/staging/snapshot/manifest.js";
 import { planWrite, sha256, type PlannedWrite } from "../../core/staging/writes.js";
 import { readManifest } from "./manifest.js";
+import { staleGeneratedViews } from "../../core/c4/project/architecture.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 export async function unarchiveLocked(
@@ -67,7 +68,7 @@ export async function unarchiveLocked(
   }
 
   // The restore-time half of the snapshot's (service, artifact) re-keying: a
-  // version-3 entry restores into wherever its service lives TODAY, and the
+  // keyed entry restores into wherever its service lives TODAY, and the
   // enumeration is the only thing that may say where that is. Built once here,
   // as a map, so the manifest validation stays a pure question of one file
   // against one repo state. "no-services" is tolerated the way `listFeatures`
@@ -195,6 +196,14 @@ export async function unarchiveLocked(
 
   const restored = writes.filter((w) => w.content !== null).map((w) => repoPath(docsDir, w.path));
   const removed = writes.filter((w) => w.content === null).map((w) => repoPath(docsDir, w.path));
+  // The undo puts back what the archive WROTE, and the two generated views
+  // files were never among it: `loam subsystem sync` owns them, and a sync run
+  // between the archive and this undo rewrote them against the merged map. So
+  // the map just went back and they did not — the services overview naming
+  // a service the map no longer draws — and "the living docs are back" would
+  // be said over a repo whose next `validate --all` is red. Graded after the
+  // commit through validate's own function, as archive grades its own result.
+  const staleViews = await staleGeneratedViews(docsDir);
 
   if (json) {
     emitJson({
@@ -205,6 +214,8 @@ export async function unarchiveLocked(
       restored,
       removed,
       discarded: drifted,
+      // Additive, and omitted when nothing is stale — `archive --json`'s key, same meaning.
+      ...(staleViews.length === 0 ? {} : { staleViews }),
       ...(recovered === null ? {} : { recovered }),
     });
     return;
@@ -212,7 +223,17 @@ export async function unarchiveLocked(
   for (const p of restored) console.log(`  restored: ${p}`);
   for (const p of removed) console.log(`  removed:  ${p}`);
   console.log(`\n  reopened: features/archive/${feature.dirName} → features/${feature.dirName}`);
-  console.log("  the living docs are back to what they said before the archive.");
+  if (staleViews.length === 0) {
+    console.log("  the living docs are back to what they said before the archive.");
+    return;
+  }
+  // The narrower claim, true whether the views went stale after the archive or
+  // were stale before it — the closing line is a claim about the whole docs
+  // repo, and `archive` withholds its own for the same files.
+  console.log("  the documents the archive wrote are back to what they said before it.");
+  for (const path of staleViews) {
+    console.log(`  ⚠ ${path} no longer matches the tree and this map — run \`loam subsystem sync\`.`);
+  }
 }
 
 /**

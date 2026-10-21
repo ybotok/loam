@@ -124,9 +124,12 @@ heading refuses the archive here as it does in a spec delta, and
 \`spec.md\` — an empty one is not a delta, so the merge would carry nothing.
 \`loam archive\` merges it into the living document in the same
 transaction as the service merge, creating \`capabilities/<id>/spec.md\` — and
-so the whole tree — when this is the first feature to mention it; the heading
-is the id and the narrative above \`## Requirements\` is yours to write, because
-loam merges requirements and never prose. The document's three rules above are
+so the whole tree — when this is the first feature to mention it. Only what
+the delta marks as the document's own comes across: its H1 as the title
+(unless it names the feature or calls itself a delta — then the title is the
+id), its \`## Purpose\` section as the narrative, and a line linking back to the
+archived delta for everything else, because loam merges requirements and never
+prose; after that the narrative is yours to edit in place. The document's three rules above are
 graded on the delta BEFORE the merge, so a capability requirement filed at the
 wrong altitude is refused while you still hold it. Editing the living document
 directly is still legal; the delta is what makes two features touching one

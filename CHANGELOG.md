@@ -10,6 +10,70 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Fixed — `loam archive` keeps what makes the living docs readable, and a link it moves still resolves
+
+No code or flag was added. Two additive `--json` keys (`unarchive`'s `staleViews`, `subsystem
+move`/`rename`'s `relinked`), one new snapshot layout (version 4) and one refusal that is new
+(`move-uncommitted` over a document outside the move). SCHEMA.md "Conventions" states the rules.
+
+- **A living document archive CREATES carries what the delta marked as its own.** A new
+  `services/<svc>/spec.md` or `arch.spec.md` used to be a fixed header — `service`,
+  `status: draft`, `# <svc>` — and the requirements; a new `capabilities/<cap>/spec.md` was
+  `# <cap>` and the requirements. The delta's title, its narrative, its frontmatter `owner` and
+  every section around the delta sections were dropped in silence. Now a created document gets the
+  delta's `owner` (service specs), its H1 unless that title is about the change (it names the
+  feature, or calls itself a delta — the scaffold's own title does both, so a scaffolded delta keeps
+  the heading it always had), its `## Purpose` section verbatim, and one sentence linking back to
+  the archived delta ("Created when FEAT-1 was archived; its delta keeps the prose written for that
+  change", with "its delta" the link). The plan prints one note per created document, under that
+  file's line, naming what it carried and where the rest stays. A `## Purpose` in a delta against a
+  document that already exists is not merged, and the plan now says so under that file's line.
+- **A link into the feature lands on the file's new home.** A delta link to the feature's own
+  `glossary/<term>.md`, `adrs/…` or any other file was re-expressed against the file's old place,
+  which the same archive then moved — `link.unresolved` on the first `validate --all` after a clean
+  archive. A link to a file the archive copies — a glossary term, a flow, a topology document — now
+  lands on its living copy (`glossary/<term>.md`, `architecture/usecases/…`, `architecture/…`); a
+  link to any other file under the feature lands in `features/archive/<FEAT>/`. A feature ADR is
+  never copied into the living tree: it stays with the archived feature, and living documents that
+  cite it point there. A glossary term the archive copies has its own relative links re-expressed
+  for `glossary/` too, so a term citing a service spec or the feature's ADR no longer lands broken;
+  the copy is otherwise byte-for-byte, as before. A link whose text still reaches its target from
+  where it lands keeps its exact spelling.
+- **The undo snapshot no longer breaks a feature's LikeC4 project.** `.loam-before/` stored each
+  pre-image under its living name, so the archived feature held a second `landscape.likec4`: a
+  feature with its own `likec4.config.json`, or rendered alone, failed on duplicate elements, and so
+  did a fleet project that did not exclude `features/`. Snapshot manifests are now **version 4** and
+  store each pre-image as `files/<path>.before`. Version-2 and version-3 snapshots are still read
+  and restored, each under its own layout, and are never rewritten. **An older loam cannot unarchive
+  a feature this version archived** — it refuses with `snapshot-missing`, as it does any layout it
+  does not know — and it cannot repair an archive, unarchive or subsystem move this version was
+  killed in the middle of; finish those with this version, and upgrade every checkout that may run
+  `loam unarchive`.
+- **`loam unarchive` names the generated views it left behind.** It restores what the archive
+  wrote, and `architecture/subsystems.likec4` / `architecture/services.likec4` are not among it, so
+  after `loam subsystem sync` had run on the merged map the undo closed on "the living docs are back
+  to what they said before the archive" over a fleet the next `validate --all` failed
+  (`subsystem.views-stale`). It now prints one `⚠ <path> no longer matches the tree and this map`
+  line per stale file, naming `loam subsystem sync`, under a narrower closing line, and `--json`
+  carries the list as `staleViews` — the key `archive --json` already has, same meaning, absent when
+  nothing is stale.
+- **`loam subsystem move` and `rename` rewrite the relative links the renames would break** — out of
+  every markdown document under a moved directory, and into a moved directory from every other
+  authored document (fleet documents, services, in-flight features; archived features are left as
+  history) — in the same transaction as the renames, and stage them in git with the renames. Each
+  rewritten document is printed as `relinked <path>` and listed in `--json` as `relinked` (always
+  present; `[]` when no link needed rewriting). A rewritten route is still a changed byte, and the
+  move says so in its `warnings` (text: `note:` lines): a `verified` document it relinks no longer
+  hashes to its `content_digest`, so `content.stale` follows (exit 1 under `--strict`) until its
+  owner re-vouches, and a living requirement it relinks moves the digest a feature in flight may
+  have pinned with `Based-On:`, so that feature reports `delta.baseline-stale` until `loam rebase`.
+  Before this release the same move left those links `link.unresolved` instead. **Exit code:**
+  `move-uncommitted` now also refuses (exit 1) when git reports an uncommitted or untracked
+  document OUTSIDE the moved directories that the move would relink — an in-flight feature's work
+  in progress included; it used to proceed and leave the link broken. A commit killed after its
+  renames now recovers a relinked document from where the rename took it instead of refusing it as
+  edited.
+
 ## [0.2.0-alpha.9] - 2026-10-20
 
 The first publish since `0.2.0-alpha.7`. `0.2.0-alpha.8` was tagged but never reached npm (its

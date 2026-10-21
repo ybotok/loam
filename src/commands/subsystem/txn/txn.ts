@@ -90,7 +90,11 @@ export function reportViews(views: ViewsActions): string {
 export interface SubsystemTxn {
   /** The journal's `target` — what this commit is FOR. */
   target: string;
-  /** Marker writes (create/delete); the views write is derived and appended. */
+  /**
+   * Marker writes (create/delete), or a move's link rewrites (`./links.ts`) —
+   * planned at the document's pre-move path, which the swap lands on before
+   * the renames carry it; the views write is derived and appended.
+   */
   writes: PlannedWrite[];
   /** The tree AS THE COMMIT LEAVES IT — the views file is rendered from this. */
   tree: FleetTree;

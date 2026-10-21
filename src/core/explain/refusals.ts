@@ -89,7 +89,7 @@ export const REFUSAL_MEANINGS = {
   "subsystem-not-empty":
     "`loam subsystem` rm refuses a subsystem that still holds members — services or child subsystems, named in the message — because a destructive command never picks targets the caller did not name; move them out first, then re-run.",
   "move-uncommitted":
-    "A subsystem move/rename refuses because git reports uncommitted or untracked paths under a directory being moved — the rename would sweep them into a move nobody reviewed; commit, `git stash -u`, or remove them, then re-run.",
+    "A subsystem move/rename refuses because git reports uncommitted or untracked paths under a directory being moved, or in a document outside it whose links the move would rewrite — the move would sweep them into a change nobody reviewed; commit, `git stash -u`, or remove them, then re-run.",
   "move-failed":
     "A subsystem move/rename failed and was rolled back cleanly — every rename undone, the generated views file restored, the docs unchanged; re-running can work.",
   "no-members":

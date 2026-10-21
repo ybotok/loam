@@ -262,7 +262,7 @@ describe("rollback under mid-write failure", () => {
       // the message above sends a human off to restore by hand.
       expect(p.exists("features/FEAT-30-capture/.loam-before/manifest.json")).toBe(true);
       expect(
-        await p.read("features/FEAT-30-capture/.loam-before/files/services/payment-service/spec.md"),
+        await p.read("features/FEAT-30-capture/.loam-before/files/services/payment-service/spec.md.before"),
         "the pre-image must be byte-identical to the living spec before the merge",
       ).toBe(LIVING_SPEC);
       // and the message says where the pre-images live, so the repairer finds them

@@ -94,11 +94,11 @@ docs/
     capabilities/<cap>/spec.md       capability delta, same requirement grammar  [authored]
     glossary/<term>.md               a word this feature brings with it; create-only  [authored]
     usecases/<name>.likec4           a FLOW this feature brings; views-only, create-only  [authored]
-    adrs/NNNN-*.md                   feature-level decisions             [authored]
+    adrs/NNNN-*.md                   feature-level decisions; they stay with the feature when it archives  [authored]
     verification/<svc>.yaml          the done-check, one file per attesting service: claims + verdicts + evidence  [loam verify --service <id> --record]
     verification.yaml                the same answered all at once, and every record from before the directory — read forever  [loam verify --record]
   features/archive/<FEAT>/           a shipped change — the same files, plus:
-    .loam-before/                    the bytes the merge overwrote, and the checklist it shipped with  [written by loam]
+    .loam-before/                    the bytes the merge overwrote, each as files/<path>.before, and the checklist it shipped with  [written by loam]
   .loam-lock                         transient: one writer at a time      [archive/unarchive only]
   .loam-commit                       transient: the commit intent journal [archive/unarchive only]
 ```
@@ -675,11 +675,13 @@ would keep a dead project in the list forever.
 
 A move is **one journaled transaction over N directory renames plus the regenerated views file**
 (`loam subsystem move <name>... --into <sub|.>`; `rename` is a one-rename move; whole subtrees move
-as one rename). It refuses only when git reports uncommitted changes under a directory being moved
-(`move-uncommitted` — where git will not say, it proceeds), and after landing it stages the renames
-and the views file in git without committing. Archive snapshots survive any of this: a version-3
-snapshot re-keys `services/` entries by `(service, artifact)` and restores wherever the service
-lives *today*.
+as one rename), **plus every relative markdown link the renames would break** — out of the moved
+documents and into them, rewritten in the same commit (Conventions, above, has the rule). It
+refuses only when git reports uncommitted changes under a directory being moved, or in a document
+outside it that the move would relink (`move-uncommitted` — where git will not say, it proceeds),
+and after landing it stages the renames, the relinked documents and the views file in git without
+committing. Archive snapshots survive any of this: a keyed (version 3 or 4) snapshot re-keys
+`services/` entries by `(service, artifact)` and restores wherever the service lives *today*.
 
 ## Canonical joins
 
@@ -909,7 +911,70 @@ the target is unchanged, only the route to it — which is what lets an author w
 resolves where they wrote it, in the pull request that reviews it, and keeps it resolving after it
 ships. This applies to the service and capability spec merges alike, and predates the glossary: a
 delta requirement citing an ADR always had it. A link inside a fenced block or a code span, an
-absolute URL, a site-root path and a bare `#section` are left exactly as written.
+absolute URL, a site-root path and a bare `#section` are left exactly as written, and so is a link
+whose text still reaches its target from where it lands.
+
+**A link into the feature itself follows the file to where the archive puts it.** The same archive
+that moves a requirement two directories up moves the rest of the feature too, so the rule for
+writing a link is one sentence — write the link that resolves where you write it — and archive owns
+the rest:
+
+- a file the archive COPIES into the living tree is cited at its living copy: a term the feature
+  introduces (`features/<FEAT>/glossary/<term>.md` → `glossary/<term>.md`), a flow
+  (`architecture/usecases/`), a topology document (`architecture/`);
+- every other file under the feature — its ADRs above all, its intent, its deltas — is cited where
+  the archived feature keeps it, `features/archive/<FEAT>/…`.
+
+So `[Order](../../glossary/order.md)` written in `features/<FEAT>/specs/<svc>/spec.md` (the
+feature's own term) and `[Order](../../../../glossary/order.md)` (the term's future living path,
+which `link.unresolved` already treats as resolved while the feature is in flight) land as the same
+link. **A feature ADR is never copied into the living tree**: it records a decision taken for that
+change, it is part of the change's history exactly as the deltas are, and the living documents that
+cite it point into `features/archive/<FEAT>/adrs/`. A decision meant to govern beyond the change
+belongs in `architecture/adrs/` or the service's own `adrs/`, written there in the same pull
+request. A term the archive copies gets the same treatment as the requirements: its own relative
+links are re-expressed for `glossary/`, two directories up from where it was written — the one
+change to an otherwise byte-for-byte copy.
+
+**`loam subsystem move` and `rename` keep the same promise.** A move is a directory rename and a
+relative link is a route between directories, so the move rewrites every relative link it would
+break, in the same transaction as the renames: the links out of every markdown document under a
+moved directory, and the links into a moved directory from every other authored document (the
+fleet's own documents, every service's, every in-flight feature's — archived features are history
+and are left as they are). A link whose text still reaches its target from the new place — a
+sibling moving with its document — keeps its exact spelling. Each rewritten document is listed in
+the text output (`relinked <path>`) and in `--json` as `relinked`, staged in git with the renames,
+and asked the same uncommitted-work question: a document OUTSIDE the moved directories that the
+move would relink, and that git reports as uncommitted or untracked, refuses the move with
+`move-uncommitted` exactly as a dirty file under a moved directory does. A rewritten route is
+still a changed byte, and the move says what that costs rather than leaving it to the next gate: a
+`verified` document it relinks no longer hashes to its `content_digest` (`content.stale` until
+its owner re-vouches — the archive merge's `revouchOwed` in another form), and a living
+requirement it relinks moves the digest a feature in flight may pin with `Based-On:`
+(`delta.baseline-stale` until `loam rebase`). Both arrive as `warnings` (`note:` lines in
+text); neither is softened, because the alternative was a link that resolves to nothing.
+
+**When archive CREATES a living document, it carries what the delta marked as the document's own —
+and nothing else.** "loam merges requirements, never prose" is not an aversion to prose: a delta's
+prose is about the CHANGE — the scaffold's own title is `<svc> — requirement delta for <FEAT>` — and
+a living document that kept it would describe a pull request that merged months ago. A machine
+cannot tell narrative about the service from narrative about the change, so a new
+`services/<svc>/spec.md`, `arch.spec.md` or `capabilities/<cap>/spec.md` gets:
+
+- the delta's frontmatter **`owner`** (service specs; a capability document carries no frontmatter)
+  — the one field that describes the service rather than the change or a vouch;
+- the delta's **H1**, unless it is about the change — it names the feature, or calls itself a
+  delta — in which case the title is the id (`<svc> — architecture` for an `arch.spec.md`);
+- the delta's **`## Purpose`** section, verbatim, with its links re-expressed like the
+  requirements' — the explicit marker, and the one OpenSpec's living specs already use;
+- one sentence linking back to the archived delta — "Created when FEAT-1 was archived; its delta
+  keeps the prose written for that change", with "its delta" the link — so nothing the merge left
+  behind is unreachable.
+
+The plan prints one note per created document saying which of these it carried and where the rest
+stays. Only on creation: a living document that already exists keeps its own narrative, edited in
+place, and a `## Purpose` in a delta against it merges as nothing — the plan says so on that file's
+line rather than letting it vanish.
 
 **Frontmatter**: `status`, `owner`, `service` or `feature`, `last_verified`, `vouched_by`, `sources`
 (literal files and directories), `sources_digest`, `content_digest`, `sources_files`, `vouch_scope`.
@@ -1550,7 +1615,11 @@ the source for tests.
   (`spec-api.op-pending` / `c4-api.op-pending`) naming that feature — archive it first — because the
   fix is ordering, not authoring.
 - **`loam unarchive <FEAT>`** takes an archive back: it restores the living docs and re-opens the
-  feature.
+  feature, and names any generated views file the restore left behind the tree (`staleViews`).
+- **A document the merge CREATES** — a new service's `spec.md` or `arch.spec.md`, a capability's
+  `spec.md` — carries what the delta marked as its own (frontmatter `owner`, a title that is not
+  the change's, the `## Purpose` section) and one line linking back to the archived delta;
+  Conventions, above, has the rule.
 - **The requirement baseline.** A MODIFIED requirement carries its full new text rather than a diff,
   so the merge REPLACES the living requirement instead of folding into it — and two features
   rewriting one requirement destroy the loser's text entirely. `loam validate` names the other
@@ -2287,9 +2356,11 @@ requirement grammar and delta algebra every service spec already uses —
 nesting spelled by the tree exactly as the living corpus spells it
 (`features/FEAT-9/capabilities/payments/refunds/spec.md`). `loam archive` merges it through the same
 transactional path as every other document and **creates `capabilities/<cap>/spec.md`, and the
-`capabilities/` tree itself, when the feature is the first to name that capability**;
-`loam unarchive` takes it back and removes what the archive created; `loam rebase` pins its
-`MODIFIED`/`REMOVED` requirements.
+`capabilities/` tree itself, when the feature is the first to name that capability** — titled by
+the delta's own H1 unless that title is about the change, with the delta's `## Purpose` as its
+narrative and a line linking back to the archived delta (Conventions, "When archive CREATES a
+living document"); `loam unarchive` takes it back and removes what the archive created;
+`loam rebase` pins its `MODIFIED`/`REMOVED` requirements.
 
 **Both lifecycles coexist and neither is deprecated.** A capability document may still be edited
 directly under PR review, like `capabilities.yaml` and the use cases. What changes for a document a
@@ -2449,7 +2520,7 @@ the merge wrote, and `before`, of the pre-image sitting beside the manifest (nul
 created the file). That directory travels with the feature into `features/archive/`, and
 `loam unarchive` puts it back.
 
-The manifest is **version 3**. Version 2 added `before`: a version-1 snapshot described only what
+The manifest is **version 4**. Version 2 added `before`: a version-1 snapshot described only what
 archive *wrote*; nothing described the bytes it would *restore*, so a pre-image altered inside the
 archived feature directory — a bad merge, a rebase, a stray editor — was written back verbatim and
 every loam surface certified the result as "the living docs are back to what they said before the
@@ -2462,12 +2533,22 @@ naming the pre-image under `.loam-before/files/`. At restore time the write targ
 the **current services enumeration**: the bytes land wherever the service lives *today*, not
 wherever it lived on the day of the archive, and an id the enumeration no longer answers falls back
 to the literal path (an absent service restores as a create, exactly as before). Entries under
-`architecture/` and `features/` stay literal-path-only — they do not move. Version-2 manifests are
-still read, forever, under their own literal-path rules: they already sit inside archived features,
-which carry them across loam upgrades. Correspondingly, `archive` refuses to replace a
-`.loam-before/` whose pre-images no longer match the living bytes — version 2 or 3 alike, with a
-version-3 claim graded at its service's current directory: the previous archive's writes are still
-in the docs and those files are the only way back.
+`architecture/` and `features/` stay literal-path-only — they do not move. Version 4 stores each
+pre-image as **`files/<path>.before`** rather than under its living name. A pre-image kept as
+`files/architecture/landscape.likec4` was a second copy of the map inside the archived feature, and
+every tool that reads by extension took it for a document: a feature with its own
+`likec4.config.json`, or one rendered alone (`likec4 start features/archive/<FEAT>`), loaded the map
+twice beside the delta and failed on duplicate elements, as did a fleet project that did not
+exclude `features/`. With the suffix no pre-image is a `.likec4`, `.md` or `.yaml` to anything.
+Version-2 and version-3 manifests are still read, forever, each under its own rules — version 2 by
+literal path, version 3 keyed, both with pre-images under their living names: they already sit
+inside archived features, which carry them across loam upgrades, and a snapshot is restored from
+where it was written, never migrated. An older loam reads a version-4 snapshot as one it cannot
+honour (`snapshot-missing` from `unarchive`), which is the refusal it owes a layout it would have to
+guess at. Correspondingly, `archive` refuses to replace a `.loam-before/` whose pre-images no longer
+match the living bytes — version 2, 3 or 4 alike, with a keyed claim graded at its service's
+current directory: the previous archive's writes are still in the docs and those files are the only
+way back.
 
 The manifest also carries one key that is not about bytes, added without a version bump because
 nothing that restores reads it: **`checklist`**, the digest of the checklist a fresh `loam verify`
@@ -2616,6 +2697,16 @@ lists the files that need a hand.
   here is to the undo itself;
 - `commit-interrupted` — a previous `archive`/`unarchive` was killed mid-commit and this run cannot
   repair it on its own.
+
+What `unarchive` restores is what the archive WROTE, and the two generated views files were never
+among it: `loam subsystem sync` owns them, and a sync run between the archive and the undo rewrote
+them against the merged map. So after the restore `unarchive` asks the question archive asks after
+its merge — through `validate`'s own staleness grade — and when `architecture/subsystems.likec4` or
+`architecture/services.likec4` no longer matches the restored tree and map it names each one
+(`⚠ <path> no longer matches the tree and this map — run \`loam subsystem sync\``) instead of
+closing on "the living docs are back to what they said before the archive", and `--json` carries
+them as `staleViews` — the same key, with the same meaning, as `archive --json`'s; absent when
+nothing is stale.
 
 Rules (`loam validate`): every requirement has ≥1 scenario; every C4 edge `op` resolves to an
 OpenAPI operation governed by a requirement; and **the diff applies** — a `MODIFIED`/`REMOVED`

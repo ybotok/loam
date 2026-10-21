@@ -27,8 +27,16 @@ export const SNAPSHOT_MANIFEST = "manifest.json";
  * directory where it stood on the day of the archive, and once the subsystem
  * tree lets it move — re-cutting is expected to be routine — an undo addressed
  * by path restores into a location that is gone. The service id never moves.
+ * 4 stores each pre-image under its own name PLUS {@link PRE_IMAGE_SUFFIX}: a
+ * pre-image kept under its living name is a second copy of a living document
+ * that every tool reading by extension takes for one. The snapshot of a
+ * landscape is a `.likec4` inside the archived feature, so a feature with its
+ * own `likec4.config.json` — or rendered alone, `likec4 start
+ * features/archive/<FEAT>`, as the brief recommends — loaded the map twice
+ * beside the delta and failed on duplicate elements, and a fleet project that
+ * did not exclude `features/` failed the same way.
  */
-export const SNAPSHOT_VERSION = 3;
+export const SNAPSHOT_VERSION = 4;
 /**
  * Version 2 is still READ, forever: version-2 snapshots already sit inside
  * archived features, which carry them across loam upgrades, and each must keep
@@ -36,12 +44,54 @@ export const SNAPSHOT_VERSION = 3;
  * its own literal-path rules. Only version 1 is refused (no restore digests).
  */
 export const SNAPSHOT_COMPAT_VERSION = 2;
+/**
+ * Version 3 is read forever for the same reason, under its own rules: rows
+ * keyed by `(service, artifact)` like version 4's, pre-images stored under
+ * their living names. A version-3 snapshot keeps its layout — it is restored
+ * from where it was written, never migrated, because rewriting a snapshot is
+ * rewriting the only copy of what the living docs once said.
+ */
+const SNAPSHOT_KEYED_VERSION = 3;
+/** Appended to every pre-image a version-4 snapshot stores; see {@link SNAPSHOT_VERSION}. */
+export const PRE_IMAGE_SUFFIX = ".before";
+
+/**
+ * The layouts this loam reads, by LITERAL — never "the version this loam
+ * writes". Each rule below names the version that introduced it, so the next
+ * bump cannot quietly re-read an older layout under the new one's rules: the
+ * key rule was spelled `version === SNAPSHOT_VERSION` until this bump, and
+ * would have stopped keying every version-3 row the day the constant moved. A
+ * version added to the writer and not to this union is a compile error at the
+ * writer's own call to {@link preImageRel}.
+ */
+export type ReadableSnapshotVersion = typeof SNAPSHOT_COMPAT_VERSION | typeof SNAPSHOT_KEYED_VERSION | 4;
+
+/** A manifest version this loam reads: the one it writes and the two it reads forever. */
+export function isReadableSnapshotVersion(version: unknown): version is ReadableSnapshotVersion {
+  return version === SNAPSHOT_COMPAT_VERSION || version === SNAPSHOT_KEYED_VERSION || version === 4;
+}
+
+/** Does a manifest of this version key its `services/` rows by `(service, artifact)`? Version 3 on. */
+export function keysServiceRows(version: ReadableSnapshotVersion): boolean {
+  return version >= SNAPSHOT_KEYED_VERSION;
+}
+
+/**
+ * Where a row's pre-image sits inside `files/`, forward slashes, under the
+ * layout the manifest's VERSION names — never the layout this loam would
+ * write, since a snapshot is read where it was written. Suffixed from version
+ * 4 on.
+ */
+export function preImageRel(version: ReadableSnapshotVersion, path: string): string {
+  return version >= 4 ? `${path}${PRE_IMAGE_SUFFIX}` : path;
+}
 
 export interface SnapshotEntry {
   /**
    * Docs-repo-relative path, forward slashes, AS ARCHIVED. Load-bearing even
-   * beside the key below: it names the pre-image under `.loam-before/files/`,
-   * and it is the literal fallback when the id stops being enumerated.
+   * beside the key below: it names the pre-image under `.loam-before/files/`
+   * (through {@link preImageRel}), and it is the literal fallback when the id
+   * stops being enumerated.
    */
   path: string;
   /**
@@ -151,7 +201,7 @@ export type SnapshotPreImage =
  * reason: the readers are read-only commands, and this module is the half of
  * the snapshot they may import.
  *
- * The entry is found by `(service, artifact)` on a version-3 manifest — the
+ * The entry is found by `(service, artifact)` on a keyed (version 3 or 4) manifest — the
  * key that survives a subsystem re-cut — and by the literal path's last two
  * segments on a version-2 one, which recorded nothing else. Tolerant to the
  * last byte, like the checklist reader: no manifest, a layout this loam would
@@ -169,7 +219,8 @@ export async function readSnapshotPreImage(
 ): Promise<SnapshotPreImage | null> {
   const manifest = await manifestRecord(featureDir);
   if (manifest === null || !Array.isArray(manifest.files)) return null;
-  if (manifest.version !== SNAPSHOT_VERSION && manifest.version !== SNAPSHOT_COMPAT_VERSION) return null;
+  const { version } = manifest;
+  if (!isReadableSnapshotVersion(version)) return null;
   // `Array.isArray` narrows to `any[]`; naming the element type keeps that
   // `any` from spreading past the row being read (snapshot.ts's reason).
   const rows: unknown[] = manifest.files;
@@ -187,7 +238,11 @@ export async function readSnapshotPreImage(
     // The manifest is data and this path is one we go and read: the lexical
     // containment `unarchive` and the staleness check apply to the same field.
     bytes = await readFile(
-      resolvePortableFileInsideLexically(join(snapshotDir(featureDir), "files"), entry.path, "snapshot pre-image"),
+      resolvePortableFileInsideLexically(
+        join(snapshotDir(featureDir), "files"),
+        preImageRel(version, entry.path),
+        "snapshot pre-image",
+      ),
     );
   } catch {
     return null;
@@ -196,7 +251,7 @@ export async function readSnapshotPreImage(
   return { kind: "held", text: bytes.toString("utf8") };
 }
 
-/** Does this manifest row record `key`'s artifact? The version-3 key when it has one, the literal path otherwise. */
+/** Does this manifest row record `key`'s artifact? The `(service, artifact)` key when it has one, the literal path otherwise. */
 function entryIs(row: Record<string, unknown>, key: { service: string; artifact: string }): boolean {
   if (typeof row.service === "string" && typeof row.artifact === "string") {
     return row.service === key.service && row.artifact === key.artifact;

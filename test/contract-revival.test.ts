@@ -23,6 +23,7 @@ import { retiredLookup } from "../src/core/coherence/retired/archived.js";
 import { docsDirOf } from "../src/core/kernel/ids/dirs.js";
 import type { Finding } from "../src/core/vocabulary/report.js";
 import { makeProject, makeTmpDir, pinAsyncapi, pinFor, pinOpenapi, runLoam, type Project } from "./helpers/harness.js";
+import { downgradeSnapshot } from "./helpers/snapshot-layout.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -1307,7 +1308,7 @@ components:
         type: object
 `,
     );
-    const preImage = join(p.docsDir, "features/archive/FEAT-40-retire-legacy/.loam-before/files/services/payment-service/asyncapi.yaml");
+    const preImage = join(p.docsDir, "features/archive/FEAT-40-retire-legacy/.loam-before/files/services/payment-service/asyncapi.yaml.before");
     expect(existsSync(preImage)).toBe(true);
     // Edited since the merge: its bytes no longer hash to what the manifest
     // recorded, so they are not what the merge saw — refused, as unarchive
@@ -1332,14 +1333,8 @@ components:
         type: object
 `,
     );
-    const manifestPath = join(p.docsDir, "features/archive/FEAT-40-retire-legacy/.loam-before/manifest.json");
-    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { version: number; files: Array<Record<string, unknown>> };
-    manifest.version = 2;
-    for (const entry of manifest.files) {
-      delete entry["service"];
-      delete entry["artifact"];
-    }
-    await writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+    // What an older loam wrote: no keys, and the pre-image under its living name.
+    await downgradeSnapshot(join(p.docsDir, "features/archive/FEAT-40-retire-legacy"), 2);
     expect(await eventFindings(p, "FEAT-41")).toHaveLength(1);
   });
 

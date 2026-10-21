@@ -33,6 +33,8 @@ import {
   LIVING_OPENAPI,
   type Project,
 } from "./helpers/harness.js";
+import { downgradeSnapshot } from "./helpers/snapshot-layout.js";
+import { PRE_IMAGE_SUFFIX } from "../src/core/staging/snapshot/manifest.js";
 
 /**
  * Fault injection for the commit phase. The harness runs commands in-process,
@@ -238,19 +240,28 @@ describe("snapshot versions across the re-keying", () => {
       const before = await treeHashes(p.docsDir);
       expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
       // Exactly what a pre-re-keying loam archived: version 2, literal paths,
-      // no (service, artifact) keys. Such snapshots sit in archived features
-      // forever and travel across upgrades — they must keep restoring.
-      const path = join(p.docsDir, "features/archive/FEAT-1-split/.loam-before/manifest.json");
-      const manifest = JSON.parse(await readFile(path, "utf8")) as {
-        version: number;
-        files: Array<{ service?: string; artifact?: string }>;
-      };
-      manifest.version = 2;
-      for (const f of manifest.files) {
-        delete f.service;
-        delete f.artifact;
-      }
-      await writeFile(path, JSON.stringify(manifest, null, 2) + "\n", "utf8");
+      // no (service, artifact) keys, pre-images under their living names. Such
+      // snapshots sit in archived features forever and travel across upgrades
+      // — they must keep restoring.
+      await downgradeSnapshot(join(p.docsDir, "features/archive/FEAT-1-split"), 2);
+
+      expect((await runLoam(p.workDir, "unarchive", "FEAT-1")).code).toBe(0);
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("still restores a version-3 snapshot byte for byte — keyed rows, pre-images under their living names", async () => {
+    const p = await makeProject(coherentFixture());
+    try {
+      const before = await treeHashes(p.docsDir);
+      expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+      // What alpha.9 and every loam since the re-keying wrote. Version 4 moved
+      // the pre-images to suffixed names; a version-3 snapshot is never
+      // migrated, so it is read where it was written.
+      await downgradeSnapshot(join(p.docsDir, "features/archive/FEAT-1-split"), 3);
+      expect(p.exists("features/archive/FEAT-1-split/.loam-before/files/architecture/landscape.likec4")).toBe(true);
 
       expect((await runLoam(p.workDir, "unarchive", "FEAT-1")).code).toBe(0);
       expect(await treeHashes(p.docsDir)).toEqual(before);
@@ -344,10 +355,67 @@ describe("a service directory moved after the archive", () => {
       const entry = manifest!.files.find((f) => f.path === "services/payment-service/spec.md")!;
       expect(entry.target).toBe(join(p.docsDir, "services/payments-group/payment-service/spec.md"));
       expect(entry.snapshot).toBe(
-        join(featureDir, ".loam-before/files/services/payment-service/spec.md"),
+        join(featureDir, ".loam-before/files/services/payment-service/spec.md.before"),
       );
     } finally {
       await p.destroy();
+    }
+  });
+});
+
+describe("the generated views an archive never wrote", () => {
+  /**
+   * Archive, then `loam subsystem sync` — the per-service overview gains the
+   * service the archive created — then the undo. The snapshot holds only what
+   * the ARCHIVE wrote, so the views file keeps naming a service the restored
+   * map and tree no longer have, and the undo used to close on "the living docs
+   * are back to what they said before the archive" over a red fleet.
+   */
+  async function syncedAfterArchive(): Promise<Project> {
+    const p = await makeProject(coherentFixture());
+    expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
+    expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+    expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
+    return p;
+  }
+
+  it("names each stale file instead of saying the docs are back, and validate agrees", async () => {
+    const p = await syncedAfterArchive();
+    try {
+      const res = await runLoam(p.workDir, "unarchive", "FEAT-1");
+      expect(res.code, res.out).toBe(0);
+      expect(res.out).not.toContain("the living docs are back to what they said before the archive");
+      expect(res.out).toContain("⚠ architecture/services.likec4 no longer matches the tree and this map — run `loam subsystem sync`.");
+      const validated = JSON.parse((await runLoam(p.workDir, "validate", "--all", "--json")).stdout) as {
+        targets: Array<{ findings: Array<{ code: string; subject?: string }> }>;
+      };
+      const stale = validated.targets.flatMap((t) => t.findings).filter((f) => f.code === "subsystem.views-stale");
+      expect(stale.map((f) => f.subject)).toContain("architecture/services.likec4");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("carries the same list as `staleViews` in --json, and omits the key when nothing is stale", async () => {
+    const p = await syncedAfterArchive();
+    try {
+      const res = await runLoam(p.workDir, "unarchive", "FEAT-1", "--json");
+      expect(res.code, res.out).toBe(0);
+      expect(JSON.parse(res.stdout).staleViews).toEqual(["architecture/services.likec4"]);
+    } finally {
+      await p.destroy();
+    }
+    // Synced before the archive and not after: the undo restores the very map
+    // the views were written against, so nothing is stale and the key is absent.
+    const clean = await makeProject(coherentFixture());
+    try {
+      expect((await runLoam(clean.workDir, "subsystem", "sync")).code).toBe(0);
+      expect((await runLoam(clean.workDir, "archive", "FEAT-1")).code).toBe(0);
+      const res = await runLoam(clean.workDir, "unarchive", "FEAT-1", "--json");
+      expect(res.code, res.out).toBe(0);
+      expect(JSON.parse(res.stdout)).not.toHaveProperty("staleViews");
+    } finally {
+      await clean.destroy();
     }
   });
 });
@@ -502,7 +570,7 @@ describe("refusals", () => {
       const preimage = join(
         p.docsDir,
         "features/archive/FEAT-1-split/.loam-before/files",
-        ...entry.path.split("/"),
+        ...`${entry.path}${PRE_IMAGE_SUFFIX}`.split("/"),
       );
       const outside = join(p.docsDir, "..", "forged-preimage.txt");
       await writeFile(outside, "forged bytes\n", "utf8");
