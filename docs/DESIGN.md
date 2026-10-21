@@ -134,7 +134,7 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/delta/` | does the diff apply | capabilities, document, repo, usecases |
 | `core/explain/` | `loam explain`'s lookup — a finding code, a refusal code or a concept term in, one discriminated explanation out | agent, brief |
 | `core/links/` | the corpus of authored documents loam reads links out of, and whether each link resolves | envelope, glossary, kernel, repo |
-| `core/projection/` | one feature projected onto one service — the API, event and C4 slices `loam delta` and `loam context` share | asyncapi, c4, kernel, openapi, repo |
+| `core/projection/` | one feature projected onto one service — the API, event and C4 slices `loam delta` and `loam context` share, and which feature in flight introduces a service not yet living (`status`, `show`, `context`, `steps`) | asyncapi, c4, kernel, openapi, repo |
 | `core/usecases/` | the fleet's declared use cases and the join from a flow's steps onto the model, with `delta/` beneath for the flows one FEATURE brings, `service/` beneath for the flows one SERVICE keeps beside its model, and `suites/` beneath for the journeys grouped by `#suite-` tag and the participant union a test stand is provisioned from (the one subpackage its parent imports, so it imports nothing of the parent's but types) | c4, capabilities, kernel, repo, vocabulary |
 | `core/consumers/` | the one consumer index — who in the living fleet still calls an operation or consumes a message (edges, requirements, use-case hops), over the fleet read in `loam diff`'s `ServiceState` shape | c4, document, envelope, fleet-context, kernel, openapi, repo, usecases |
 | `core/coherence/` | do the three axes agree; `retired/` beneath reads what archived features took out of the living contracts | asyncapi, c4, capabilities, conflict-markers, consumers, delta, deployment, document, envelope, glossary, kernel, openapi, repo, staging, usecases |
@@ -144,7 +144,7 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/mcp/` | the MCP facade's pure half: stdio framing, JSON-RPC routing and resources, the read-only plus opt-in authoring tool tables, output schema and argv boundary | agent, envelope, explain, kernel |
 | `core/pack/` | the context pack — one service's whole docs slice as one deterministic briefing | c4, capabilities, document, envelope, fleet-context, kernel, permissions, projection, provenance, repo, usecases, vocabulary |
 | `core/verify/` | the done-check: questions, answers, the record | asyncapi, c4, conflict-markers, document, envelope, fleet-context, gherkin, kernel, openapi, repo, staging, vocabulary |
-| `core/status/` | aggregate answers for a feature (`feature/`) or a fleet (`fleet/`) | coherence, dependencies, document, envelope, fleet-context, kernel, provenance, repo, scaffold, staging, usecases, verify, vocabulary |
+| `core/status/` | aggregate answers for a feature (`feature/`) or a fleet (`fleet/`) | coherence, dependencies, document, envelope, fleet-context, kernel, projection, provenance, repo, scaffold, staging, usecases, verify, vocabulary |
 | `core/gate/` | the deploy-time query — `loam gate`'s partner scan and its four checks over recorded evidence | c4, kernel, provenance, repo, staging, status, vocabulary |
 
 Four modules stay loose in `core/`: `conflict-markers.ts`, `docs.ts`, `fleet-context.ts` and
@@ -376,9 +376,9 @@ the workspace layout differs, and that part is already isolated.
     nothing else — no `package.json`, no workspace, no separate publish. That layout tracks how many
     artifacts you publish; you publish one `bin`, and `scripts/release-check.mjs` hard-asserts it.
     It is also the one option here that is not cheaply reversible.
-23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 69 of the 165
+23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 75 of the 171
     modules in `commands/` — the entry module of every command among them; `core/envelope/config.ts`
-    and `core/repo/repo.ts` by 3 and 30 of them. Slices would duplicate the hubs or produce a
+    and `core/repo/repo.ts` by 3 and 32 of them. Slices would duplicate the hubs or produce a
     `shared/` folder — which is what `src/core/` already is.
 24. **Do not add a dependency to express structure.** No `madge`, no `dependency-cruiser`, no
     boundaries plugin. `oxlint` already ships the one rule that matters.

@@ -254,6 +254,7 @@ model {
   loam.commands.context -> loam.core.fleet_context
   loam.commands.context -> loam.core.kernel
   loam.commands.context -> loam.core.pack
+  loam.commands.context -> loam.core.projection
   loam.commands.context -> loam.core.repo
 
   loam.commands.delta -> loam.core.c4
@@ -434,6 +435,7 @@ model {
   loam.commands.steps -> loam.core.envelope
   loam.commands.steps -> loam.core.gherkin
   loam.commands.steps -> loam.core.kernel
+  loam.commands.steps -> loam.core.projection
   loam.commands.steps -> loam.core.repo
 
   loam.commands.subsystem -> loam.commands.policy
@@ -708,6 +710,7 @@ model {
   loam.core.status -> loam.core.envelope
   loam.core.status -> loam.core.fleet_context
   loam.core.status -> loam.core.kernel
+  loam.core.status -> loam.core.projection
   loam.core.status -> loam.core.provenance
   loam.core.status -> loam.core.repo
   loam.core.status -> loam.core.scaffold

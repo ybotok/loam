@@ -40,7 +40,8 @@ import { printScorecard } from "./fleet/scorecard/print.js";
 import { validateFeature } from "./feature.js";
 import { validateService } from "./service/service.js";
 import { scopedLandscapeFindings } from "./scope.js";
-import { ambiguousTarget, capDetails, guarded, renderText, summary, unverifiableSubjects } from "./report.js";
+import { ambiguousTarget, capDetails, guarded, summary, unverifiableSubjects } from "./report.js";
+import { renderText } from "./render/text.js";
 
 interface ValidateOptions {
   service?: string;
@@ -133,7 +134,7 @@ export function registerValidate(program: Command): void {
        * with no details, and the parser output was reported nowhere.
        */
       const serviceTarget = (id: RawServiceId, land?: LoadedDoc | null, landscapeReported = false): Promise<TargetReport> =>
-        guarded({ kind: "service", id }, () =>
+        guarded({ kind: "service", id }, docsDir, () =>
           validateService({
             docsDir, service: id, repoDir: repoOf(id), loamOwned, gherkinDir: config.gherkinDir, contracts: config.contracts, fleet,
             ...(land === undefined ? {} : { preloaded: land }),
@@ -142,7 +143,7 @@ export function registerValidate(program: Command): void {
         );
       /** One feature target; `land` as above, and left undefined it means "load it if you need it". */
       const featureTarget = (feature: FeatureEntry, land?: LoadedDoc | null): Promise<TargetReport> =>
-        guarded({ kind: "feature", id: feature.id }, () => validateFeature(docsDir, feature, land, fleet));
+        guarded({ kind: "feature", id: feature.id }, docsDir, () => validateFeature(docsDir, feature, land, fleet));
 
       const targets: TargetReport[] = [];
       /** What the positional argument turned out to name, for the JSON payload. */
@@ -283,9 +284,14 @@ export function registerValidate(program: Command): void {
       // A journal in the repo outranks everything graded above: the docs may
       // be half-merged, and in CI a green over them merges. Led, not appended
       // — it is the reason nothing below can be trusted — and attached to the
-      // first target because a finding lives in one.
+      // first target because a finding lives in one. `lead` keeps it leading
+      // in the fleet report too, which orders targets by kind rather than by
+      // position (render/text.ts) and would otherwise print it wherever the
+      // first target landed.
       const interrupted = await interruptedCommitFinding(docsDir);
-      if (interrupted !== null && targets.length > 0) targets[0]!.findings.unshift(interrupted);
+      if (interrupted !== null && targets.length > 0) {
+        targets[0]!.findings.unshift({ ...interrupted, text: { ...interrupted.text, lead: true } });
+      }
 
       // The fleet scorecard, --all only: recomputed per invocation off the same
       // memoized reads this run already made — loam stores no history — and it
@@ -302,11 +308,14 @@ export function registerValidate(program: Command): void {
 
       const valid = reportValid(targets);
       const capped = targets.map(capDetails);
+      // One rollup for both views: the --json summary and the text footer
+      // print this object, never a count of their own.
+      const totals = summary(targets);
       if (json) {
         emitJson({
           command: "validate",
           valid,
-          summary: summary(targets),
+          summary: totals,
           ...(resolvedKind === undefined ? {} : { resolvedKind }),
           // What this run looked at. Only under `--base`, so an unscoped payload
           // is today's document and its ABSENCE says `summary` counts the whole
@@ -362,6 +371,7 @@ export function registerValidate(program: Command): void {
         renderText(capped, {
           all: opts.all === true,
           errorsOnly: opts.errorsOnly === true,
+          summary: totals,
           unverifiable,
           scorecard,
         });

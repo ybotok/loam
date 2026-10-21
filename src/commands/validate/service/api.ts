@@ -19,9 +19,13 @@ import { responseGovernanceFindings } from "../checks/requirements.js";
 import { type Requirement } from "../../../core/document/spec.js";
 import { readOpenapi, type OpenapiDoc } from "../../../core/openapi/doc.js";
 import { FleetContext } from "../../../core/fleet-context.js";
+import { repoPath } from "../../../core/envelope/json.js";
+import { type DocsDir } from "../../../core/kernel/ids/dirs.js";
 
 /** What the service target hands the HTTP axis. */
 export interface ApiAxis {
+  /** The docs root, so a message names the contract by its repo-relative path. */
+  docsDir: DocsDir;
   service: PathableService;
   /** `service` widened for `===` against the resolver's DOCUMENT text — see service.ts. */
   me: string;
@@ -55,7 +59,7 @@ export interface ServiceContract {
 export async function apiAxisFindings(
   axis: ApiAxis,
 ): Promise<{ findings: Finding[]; contract: ServiceContract }> {
-  const { service, me, paths, reqs, livingReqs, land, landSvcOf, fleet } = axis;
+  const { docsDir, service, me, paths, reqs, livingReqs, land, landSvcOf, fleet } = axis;
   const findings: Finding[] = [];
 
   // API coverage: every operation in openapi.yaml is governed by a requirement.
@@ -100,7 +104,7 @@ export async function apiAxisFindings(
         code: "service.no-openapi",
         subject: service,
         message:
-          `No OpenAPI contract at ${paths.openapi}, and ${dangling.length} operation link(s) already point into it — ` +
+          `No OpenAPI contract at ${repoPath(docsDir, paths.openapi)}, and ${dangling.length} operation link(s) already point into it — ` +
           `every requirement and landscape edge naming one of them resolves to nothing until the file is back`,
         details: dangling,
       });
@@ -108,7 +112,7 @@ export async function apiAxisFindings(
       findings.push({
         severity: "warn",
         code: "service.no-openapi",
-        message: `No OpenAPI contract at ${paths.openapi} — API coverage and the landscape spine are unchecked`,
+        message: `No OpenAPI contract at ${repoPath(docsDir, paths.openapi)} — API coverage and the landscape spine are unchecked`,
       });
     }
   } else if (api.unreadable) {

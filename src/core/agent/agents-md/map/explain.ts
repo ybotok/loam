@@ -11,19 +11,28 @@
  * string starts at the first character of its opening line and ends with
  * the newline that closes its last one.
  *
- * The six term names below are HAND-LISTED, unlike the interpolated copies in
+ * The term names below are HAND-LISTED, unlike the interpolated copies in
  * commands/explain and core/mcp/tools — importing core/explain/terms.ts from
  * here would close a package cycle, because terms.ts reads its pin sources
  * from this very package's siblings (agents-md → map → explain → agents-md).
  * test/explain.test.ts pins this string against TERMS instead: a term added
- * to the registry without a name here fails there, loudly.
+ * to the registry without a name here fails there, loudly. They are written
+ * as plain words, not backticked, on purpose: everywhere else on this page a
+ * backticked dotted name is a finding code, and the five claim kinds are
+ * spelled exactly like one without being one.
  */
 export const EXPLAIN_COMMAND = `- \`loam explain [<subject>]\` answers "what does this mean and what do I do
   about it" from the binary itself: a finding code (\`spine.op-undefined\`), a
-  refusal code (\`docs-busy\`), or a concept term — vouch, attested, spine,
-  delta, axis, baseline — and \`loam explain\` alone lists the terms. For
-  finding codes the meaning-and-fix text IS the /loam-check fix table, parsed
-  at runtime from the same body \`loam instructions loam-check\` prints, so the
+  refusal code (\`docs-busy\`), or a concept term — the words loam prints to a
+  person. \`loam explain\` alone lists the terms under four headings: the
+  stages \`loam status\` reports (stage, which also answers missing, blocked and
+  draft; ready; done), the done-check \`loam verify\` asks (claim; its five kinds
+  service.exists, api.exposes, event.declares, c4.calls and scenario.tested;
+  attested; verified), the work packet \`loam tasks\` lists (unit, frontier,
+  describe, generate, implement), and the documents (delta, baseline, spine,
+  axis, coherence, vouch, maturity, which also answers its rungs empty,
+  partial, documented and sourced). For finding codes the meaning-and-fix
+  text IS the /loam-check fix table, parsed at runtime from the same body \`loam instructions loam-check\` prints, so the
   two can never disagree; a code graded in more than one table (service scope
   and \`loam archive\` plan time, say) explains every context it appears in,
   and refusal meanings cover every \`error.code\` the envelope can carry. It

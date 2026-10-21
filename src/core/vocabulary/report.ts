@@ -16,20 +16,54 @@ export type Severity = "ok" | "warn" | "error";
  * everything else fall to ⚠ — and a reader who learns the marks from one
  * command's output has to be able to read them in the next. It lives beside
  * `Severity` because it is a fact about the union, not about any one renderer;
- * `TextHint.marker` above already describes it as "the ✓/⚠/✗ marker".
+ * `TextHint.marker` below is the switch that prints it, or a different mark.
  */
 export const SEVERITY_MARK: Record<Severity, string> = { ok: "✓", warn: "⚠", error: "✗" };
+
+/**
+ * The glyph for an `ok` finding whose check did NOT run here — printed in
+ * place of ✓, never in place of ⚠ or ✗.
+ *
+ * Not a fourth severity, on purpose: `sources.unverifiable-from-here` is `ok`
+ * because nothing is wrong with the docs, and a severity of its own would move
+ * the footer's counts, `--strict` and the frozen `--json` vocabulary for what
+ * is only a question of how the line reads. But ✓ is the one mark that says
+ * "checked, fine", and a person reading a docs-repo run saw a column of them
+ * beside the sentence "nothing here can resolve them" — a pass for a check
+ * that was skipped. Defined here beside SEVERITY_MARK for the same reason that
+ * table is: a reader who learns it from one command must be able to read it in
+ * the next.
+ */
+export const NOT_CHECKED_MARK = "○";
 
 /** How the text renderer should lay a finding out. The JSON contract ignores this. */
 export interface TextHint {
   /** Leading spaces. Default 0. */
   indent?: number;
-  /** Print the ✓/⚠/✗ marker. Default true. */
-  marker?: boolean;
+  /**
+   * Which marker leads the line. Absent prints the severity's ✓/⚠/✗.
+   *
+   * `false` prints none, and only a line that is genuinely a sub-header may
+   * ask for it — `coherence.ok`, whose message carries its own ✓ under the
+   * feature it belongs to. An error or a warning that stands alone with no
+   * marker reads as prose between findings: `service.no-model` printed that
+   * way, and a run that exited 1 showed no ✗ anywhere.
+   *
+   * `"not-checked"` prints NOT_CHECKED_MARK in place of ✓ — see there.
+   */
+  marker?: false | "not-checked";
   /** Block header printed once, before the first finding that carries it. */
   header?: string;
   /** Prefix for each detail line (e.g. "- " for a list of names). */
   detailPrefix?: string;
+  /**
+   * Print this finding before every target's block on a fleet run, rather
+   * than inside its own target's. For a finding that says nothing below it
+   * can be trusted (`docs.commit-interrupted`): it has to be attached to SOME
+   * target, and the fleet report orders targets by kind, so without the hint
+   * it would print wherever its host target happened to land.
+   */
+  lead?: true;
 }
 
 export interface FindingLocation {

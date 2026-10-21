@@ -192,7 +192,8 @@ describe("verification column", () => {
   it("shows '-' and verification: null for a feature nobody has recorded", async () => {
     await withProject(fleetFixture(), async (p) => {
       const res = await runLoam(p.workDir, "list", "features");
-      expect(featureRow(res.out, "FEAT-10")).toMatch(/FEAT-10\s+-\s+payment-service/);
+      // The intent title rides beside the id (`# splitting` in the fixture).
+      expect(featureRow(res.out, "FEAT-10")).toMatch(/FEAT-10\s+splitting\s+-\s+payment-service/);
 
       const json = JSON.parse((await runLoam(p.workDir, "list", "features", "--json")).stdout);
       for (const f of json.features) expect(f.verification).toBeNull();
@@ -518,6 +519,7 @@ describe("--json contract", () => {
       const feat = json.features.find((f: { id: string }) => f.id === "FEAT-10");
       expect(feat).toEqual({
         id: "FEAT-10",
+        title: "splitting",
         dirName: "FEAT-10-splitting",
         path: "features/FEAT-10-splitting",
         archived: false,

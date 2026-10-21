@@ -32,7 +32,8 @@ import { VALIDATE_CHECKS, type BriefCheck } from "../brief/checks.js";
 import { familyCodes, familyFinding } from "./families.js";
 import { parseFixRows, type FixRow } from "./fix-tables.js";
 import { REFUSAL_MEANINGS } from "./refusals.js";
-import { TERMS, type TermEntry } from "./terms.js";
+import { TERM_GROUPS, TERMS } from "./terms.js";
+import type { TermEntry } from "./terms/entry.js";
 
 export interface FindingEntry {
   /** Which table graded it — `--service <id>`, `--feature <FEAT-id>`, `--all`, `loam archive`, … */
@@ -154,6 +155,20 @@ export function firstSentence(text: string): string {
 /** The no-argument listing: each term with its paragraph's first sentence as the one-line summary. */
 export function listTerms(): Array<{ term: string; summary: string }> {
   return TERMS.map(({ term, paragraph }) => ({ term, summary: firstSentence(paragraph) }));
+}
+
+/**
+ * The same listing under the headings the text view prints — the subject
+ * groups of ./terms/, in order. A second function rather than a `heading` key
+ * on `listTerms`' rows: those rows are the `--json` listing's `terms[]`, whose
+ * shape is contract, and a group is typography for a reader scanning twenty
+ * terms, not a fact a caller branches on.
+ */
+export function listTermGroups(): Array<{ heading: string; terms: Array<{ term: string; summary: string }> }> {
+  return TERM_GROUPS.map(({ heading, terms }) => ({
+    heading,
+    terms: terms.map(({ term, paragraph }) => ({ term, summary: firstSentence(paragraph) })),
+  }));
 }
 
 /**

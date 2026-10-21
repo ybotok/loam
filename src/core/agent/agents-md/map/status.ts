@@ -28,20 +28,29 @@ export const STATUS_COMMAND = `- \`loam status [<FEAT>]\` is the orientation sur
   names what comes first), \`draft\` (on disk, and the shared checks report an error
   against it — what exists is wrong), \`ready\` (on disk and clean, but something
   outside the documents — code, a test run, a recording — still has to answer it)
-  or \`done\`. The payload's reason to exist is \`next[]\`: ordered, first entry
+  or \`done\`. Those are values to branch on, not progress words: \`ready\` says
+  nothing about code being built or claims being verified, and an archived feature
+  is \`done\` whatever its record says — read \`verification\` for that. The human
+  view prints the stage in words with the claims counted, and the payload carries
+  \`feature.title\` and \`checklist.claims\` (what the checklist asks now; null once
+  archived). The payload's reason to exist is \`next[]\`: ordered, first entry
   first, each carrying a code and the literal command to run — so a step needs no
   gloss here, and \`loam explain <code>\` has the long form of any of them.
   \`next.recover-commit\` outranks every other step in both forms below and is
   never elided: a \`.loam-commit\` journal says a writer was killed mid-commit, so
   some of the files everything else is derived from may be half-written.
-  Fleet-wide the rest are \`next.adopt-bound\`, \`next.adopt\`,
-  \`next.complete-service\`, \`next.revouch\` (a vouched document's words moved
-  under its stamp — \`content.stale\`; its \`execution\` is a human review, never
-  yours to run: prepare \`loam vouch --pack --service <id>\` and hand the vouch
-  to a person),
-  \`next.feature\`, \`next.archive\`, \`next.fleet-clean\`,
-  \`next.elided\` (the fleet list hit its cap and says how many steps of the same
-  kinds it left out — it is ordered most-unblocking first, so work down it and
+  Fleet-wide the rest are, in order, \`next.adopt-bound\` (or, when a feature in
+  flight introduces the service this repository is bound to, that feature's
+  \`next.feature\` instead — there is no code to adopt yet), every feature in
+  flight — \`next.feature\`, \`next.archive\` — and then each service's
+  adoption rungs: \`next.adopt\`, \`next.complete-service\`, \`next.revouch\` (a
+  vouched document's words moved under its stamp — \`content.stale\`; its
+  \`execution\` is a human review, never yours to run: prepare
+  \`loam vouch --pack --service <id>\` and hand the vouch to a person), every one
+  of them also listed uncapped in \`serviceSteps[]\` grouped by code; then
+  \`next.fleet-clean\`,
+  \`next.elided\` (the fleet list hit its cap and says how many steps of which
+  codes it left out — it is ordered most-unblocking first, so work down it and
   re-run) and \`next.fleet-gate\`, always last while anything is outstanding:
   \`loam validate --all\` is what CI runs, and the fleet form grades nothing
   itself. A docs repo with no services and no features instead gets the
@@ -54,7 +63,8 @@ export const STATUS_COMMAND = `- \`loam status [<FEAT>]\` is the orientation sur
   \`next.attest-service\` (this repo IS one of the services that owes an answer,
   so the step is bound to this commit), \`next.verify-attested\` — see
   "The done-check" for what attested costs — \`next.archive\`, and
-  \`next.archived\` for one that shipped.
+  \`next.archived\` for one that is archived (archive checks documents, not
+  code: the step says whether it was ever verified).
   It grades nothing of its own: the verdict is the one \`loam validate --feature\`
   and \`loam archive\` compute — status takes the UNION of what both of them refuse,
   so it may be more pessimistic than either and can never be greener than both.

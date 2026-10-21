@@ -533,9 +533,10 @@ describe("loam tasks — the lens and the leaf", () => {
       expect(payload.frontierElided).toBe(5);
       expect(payload.frontier).toEqual(payload.units.slice(0, 10).map((u) => u.id));
 
-      // The human view caps per service and points at the lens for the rest.
+      // The human view caps per service and points at the lens for the rest —
+      // the lens is the full human listing, so the pointer is not `--json`.
       const human = await runLoam(p.workDir, "tasks", FEAT);
-      expect(human.stdout).toContain(`+3 more — loam tasks ${FEAT} --service checkout-web --json`);
+      expect(human.stdout).toContain(`+3 more — \`loam tasks ${FEAT} --service checkout-web\` lists every one`);
     } finally {
       await p.destroy();
     }

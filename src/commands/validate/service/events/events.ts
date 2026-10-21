@@ -24,6 +24,7 @@ import { type Finding } from "../../../../core/vocabulary/report.js";
 import { type Requirement } from "../../../../core/document/spec.js";
 import { readAsyncapi, slotsOf } from "../../../../core/asyncapi/read.js";
 import { FleetContext } from "../../../../core/fleet-context.js";
+import { repoPath } from "../../../../core/envelope/json.js";
 import { producerFindings } from "./message-producers.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
 
@@ -105,7 +106,7 @@ export async function eventAxisFindings(axis: EventAxis): Promise<Finding[]> {
         code: "service.no-asyncapi",
         subject: service,
         message:
-          `No async contract at ${paths.asyncapi}, and ${dangling.length} message link(s) already point into it — ` +
+          `No async contract at ${repoPath(docsDir, paths.asyncapi)}, and ${dangling.length} message link(s) already point into it — ` +
           `every landscape edge and requirement naming one of them resolves to nothing until the file is back`,
         details: dangling,
       });

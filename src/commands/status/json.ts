@@ -22,6 +22,7 @@ export function featureJson(r: FeatureStatusReport): Record<string, unknown> {
       ),
     },
     verification: r.verification,
+    checklist: r.checklist,
     // Additive (core/envelope/json.ts). Spread key by key rather than passed
     // through whole, so an optional `error` that is absent stays absent instead
     // of arriving as `undefined` — the shape every other payload here keeps.
@@ -42,6 +43,7 @@ export function fleetJson(r: FleetStatusReport): Record<string, unknown> {
     features: r.features,
     order: r.order,
     next: r.next.map(executableNext),
+    serviceSteps: r.serviceSteps,
   };
 }
 

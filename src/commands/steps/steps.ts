@@ -1,5 +1,7 @@
 /**
- * `loam steps` — the step-phrase inventory of one service's living specs.
+ * `loam steps` — the step-phrase inventory of one service's living specs, or,
+ * for a service an active feature introduces and `services/` does not hold
+ * yet, of that feature's spec delta (the payload then says `living: false`).
  *
  * A READ, and that is the whole design. It emits no finding, sets no exit code
  * beyond a refusal, writes nothing, and needs no service repo to stand in: it
@@ -19,8 +21,12 @@ import { readFile } from "node:fs/promises";
 import { relative } from "node:path";
 import { decodeDocument, NotUtf8DocumentError } from "../../core/kernel/document-bytes.js";
 import { configOrRefuse, emitJson, fail, NO_SERVICE_MESSAGE } from "../../core/envelope/json.js";
-import { SPEC_AXES } from "../../core/repo/paths.js";
+import { featureSpecPaths, SPEC_AXES, unfiledServicePaths, type SpecAxis } from "../../core/repo/paths.js";
 import { locateServicePaths, resolveServiceTarget } from "../../core/repo/service-target.js";
+import { type FeatureEntry } from "../../core/repo/entries.js";
+import { introducingFeatures } from "../../core/projection/introduced.js";
+import type { DocsDir } from "../../core/kernel/ids/dirs.js";
+import type { RawServiceId } from "../../core/kernel/ids/service.js";
 import { parseRequirements } from "../../core/document/parse.js";
 import { axisLabel } from "../../core/gherkin/emit.js";
 import {
@@ -60,21 +66,40 @@ export function registerSteps(program: Command): void {
       // the name pathable. Same resolution `validate --service` performs, so the
       // two commands cannot disagree about which directory a name means.
       const resolved = await resolveServiceTarget(config.docsDir, named, "--service");
-      if (!resolved.ok) return fail(json, "invalid-option", resolved.problem);
-      const service = resolved.id;
-
-      const paths = await locateServicePaths(config.docsDir, service);
-      if (!existsSync(paths.spec)) {
-        return fail(
-          json,
-          "unknown-target",
-          `No living spec at ${paths.spec}. Run \`loam adopt\` for '${service}' first.`,
-        );
+      // A name `services/` does not hold may still be a service an active
+      // feature INTRODUCES — the second enumeration, a readdir of the feature's
+      // own specs/, so it is asked before the grammar refusal too. Its phrases
+      // are the delta's: the implement protocol tells whoever builds a NEW
+      // service to run this before writing a single step definition, and the
+      // answer was "No living spec … run `loam adopt`" for code that does not
+      // exist yet. The bound service (`config.service`) takes the same road.
+      const introducing =
+        resolved.ok && resolved.dir !== undefined ? [] : await introducingFeatures(config.docsDir, named);
+      const introducedId = introducing[0]?.services.find((s) => s === named);
+      let source: Source;
+      if (introducedId !== undefined) {
+        source = introducedSource(config.docsDir, introducedId, introducing);
+      } else {
+        if (!resolved.ok) return fail(json, "invalid-option", resolved.problem);
+        const paths = await locateServicePaths(config.docsDir, resolved.id);
+        if (!existsSync(paths.spec)) {
+          return fail(
+            json,
+            "unknown-target",
+            `No living spec at ${paths.spec}. Run \`loam adopt\` for '${resolved.id}' first.`,
+          );
+        }
+        source = {
+          service: resolved.id,
+          files: SPEC_AXES.map((axis) => ({ axis, path: paths[axis.key] })),
+          steps: paths.steps,
+          introducedBy: [],
+        };
       }
+      const { service } = source;
       const axes: InventoryAxis[] = [];
       try {
-        for (const axis of SPEC_AXES) {
-          const path = paths[axis.key];
+        for (const { axis, path } of source.files) {
           // An absent arch.spec.md is not a finding anywhere else and is not one
           // here: partial adoption is supported, and an empty axis contributes
           // no phrases rather than an empty section nobody asked for.
@@ -93,7 +118,7 @@ export function registerSteps(program: Command): void {
       // recomputation: without it every run says the same thing about a suite
       // whose glue somebody has already written. Absent is the ordinary state
       // and costs one `existsSync` (`core/gherkin/steps/catalogue.ts`).
-      const catalogue = await readStepCatalogue(paths.steps);
+      const catalogue = await readStepCatalogue(source.steps);
       const against = catalogue.present && catalogue.unreadable === undefined
         ? compareToCatalogue(inv, catalogue)
         : null;
@@ -106,12 +131,23 @@ export function registerSteps(program: Command): void {
       // exist, and here that would be worse than cosmetic: `steps.yaml` is a
       // service artifact now, so an author who created the file where this told
       // them to would mint a second, empty service in the enumeration.
-      const where = relative(config.docsDir, paths.steps).split(/[\\/]/).join("/");
+      const where = docsRelative(config.docsDir, source.steps);
+      const introducedBy = source.introducedBy.map((f) => f.id);
       if (json) {
         emitJson({
           command: "steps",
           docsDir: config.docsDir,
           service,
+          // Present only for a service a feature introduces, so a living
+          // service's payload stays byte-identical: `living: false` is the
+          // marker, and `specs` names the delta files the phrases came from.
+          ...(introducedBy.length === 0
+            ? {}
+            : {
+                living: false,
+                introducedBy,
+                specs: source.files.filter((f) => existsSync(f.path)).map((f) => docsRelative(config.docsDir, f.path)),
+              }),
           steps: inv.steps,
           phrases: inv.phrases.length,
           covering80: coveringPhrases(inv),
@@ -137,9 +173,62 @@ export function registerSteps(program: Command): void {
         });
         return;
       }
-      print(inv, service, opts.duplicates === true);
-      printCatalogue({ catalogue, against, where });
+      const origin = introducedBy.length === 0
+        ? null
+        : {
+            by: introducedBy.join(", "),
+            dirs: source.introducedBy.map((f) => `${docsRelative(config.docsDir, featureSpecPaths(f.dir, service).dir)}/`),
+          };
+      print(inv, { service, origin, duplicatesOnly: opts.duplicates === true });
+      printCatalogue({ catalogue, against, where, introducedBy });
     });
+}
+
+/**
+ * Where the phrases are read from. A living service reads its own spec pair; a
+ * service an active feature introduces reads each introducing feature's delta
+ * pair, because that is the only place its scenarios are written yet.
+ */
+interface Source {
+  service: RawServiceId;
+  files: Array<{ axis: SpecAxis; path: string }>;
+  /** The catalogue's path — the service's own, or, for an introduced one, where its directory will land. */
+  steps: string;
+  /** The introducing features; empty for a living service. */
+  introducedBy: FeatureEntry[];
+}
+
+/**
+ * Every introducing feature's spec pair, not just the first: with two features
+ * each introducing the service, the suite that exists once both merge needs the
+ * glue for both, and this command has no flag to choose one. The catalogue path
+ * is the unfiled spelling — where archive materialises a new service — and is
+ * reported, never written: `printCatalogue` says why nobody should create it
+ * yet.
+ */
+function introducedSource(docsDir: DocsDir, service: RawServiceId, introducedBy: FeatureEntry[]): Source {
+  return {
+    service,
+    files: introducedBy.flatMap((f) => {
+      const paths = featureSpecPaths(f.dir, service);
+      return SPEC_AXES.map((axis) => ({ axis, path: paths[axis.key] }));
+    }),
+    steps: unfiledServicePaths(docsDir, service).steps,
+    introducedBy,
+  };
+}
+
+/** A docs-relative POSIX path, the spelling every path in this command's output uses. */
+function docsRelative(docsDir: DocsDir, path: string): string {
+  return relative(docsDir, path).split(/[\\/]/).join("/");
+}
+
+/** What the human headline prints from. */
+interface PrintView {
+  service: string;
+  /** For a service a feature introduces: which features, and the delta directories read. Null when living. */
+  origin: { by: string; dirs: string[] } | null;
+  duplicatesOnly: boolean;
 }
 
 /**
@@ -147,15 +236,29 @@ export function registerSteps(program: Command): void {
  * are written, and how few definitions cover most of them — because the list
  * underneath is long by construction and the headline is what decides whether
  * anybody reads it.
+ *
+ * For an introduced service the source is said straight under the headline:
+ * the same numbers read off a delta are a proposal, and a reader who takes them
+ * for a living spec's would plan glue for scenarios review may still change.
  */
-function print(inv: StepInventory, service: string, duplicatesOnly: boolean): void {
+function print(inv: StepInventory, view: PrintView): void {
+  const { service, origin, duplicatesOnly } = view;
+  const from = origin === null
+    ? null
+    : `  read from the feature delta, not a living spec: ${origin.dirs.join(", ")} — ` +
+      `${service} is introduced by ${origin.by} and is not in the living docs until it archives`;
   if (inv.steps === 0) {
-    console.log(`steps ${service} — the living specs hold no scenario steps yet.\n`);
+    console.log(
+      origin === null
+        ? `steps ${service} — the living specs hold no scenario steps yet.\n`
+        : `steps ${service} — the delta introducing it holds no scenario steps yet.\n${from}\n`,
+    );
     return;
   }
   const covering = coveringPhrases(inv);
   const share = Math.round((100 * inv.phrases.reduce((a, p, i) => (i < covering ? a + p.count : a), 0)) / inv.steps);
   console.log(`steps ${service} — ${inv.steps} written step(s), ${inv.phrases.length} distinct phrase(s)`);
+  if (from !== null) console.log(from);
   console.log(`  ${covering} phrase(s) cover ${share}% of them — that is the size of the step-definition registry\n`);
 
   if (!duplicatesOnly) {
@@ -188,6 +291,8 @@ interface CatalogueView {
    * wrong for every filed one. The same string `--json` reports.
    */
   where: string;
+  /** The features introducing the service, by id; empty for a living one. */
+  introducedBy: string[];
 }
 
 /**
@@ -204,7 +309,16 @@ interface CatalogueView {
  * Nothing here is a finding and nothing changes the exit code. `loam steps` is a
  * read, and a phrase written before its glue is the normal order of work.
  */
-function printCatalogue({ catalogue, against, where }: CatalogueView): void {
+function printCatalogue({ catalogue, against, where, introducedBy }: CatalogueView): void {
+  // A service still in flight gets the opposite advice. `steps.yaml` is a
+  // service artifact (repo/paths.ts), so writing one where it belongs mints the
+  // service's directory — and the service with it — before its feature merges,
+  // after which nothing reads the feature's specs/ as introducing it any more.
+  if (!catalogue.present && introducedBy.length > 0) {
+    console.log(`\n  no catalogue yet — ${where} lands with the service when ${introducedBy.join(", ")} archives.`);
+    console.log("  Write it after the archive: a steps.yaml there now would put the service in the living docs before its feature merges.");
+    return;
+  }
   if (!catalogue.present) {
     console.log(`\n  no ${where} — nothing records which phrases this suite has decided to define.`);
     console.log("  Write one (a `steps:` list of step texts) and this report becomes a diff instead of a recount.");

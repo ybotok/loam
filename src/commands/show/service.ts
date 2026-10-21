@@ -24,7 +24,7 @@ import { countMarkdown } from "../../core/repo/tree/fs.js";
 import { parseRequirements } from "../../core/document/parse.js";
 import { type Requirement } from "../../core/document/spec.js";
 import { plural } from "../policy/format.js";
-import { edgeNote, mark, scenarioCount } from "./marks.js";
+import { edgeNote, mark, requirementJson, requirementLine, scenarioCount } from "./marks.js";
 import { errorText } from "../../core/c4/likec4.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
@@ -118,15 +118,6 @@ export async function showService(
 
   const { inbound, outbound } = await landscapeEdges(docsDir, id, context);
 
-  const requirementJson = (r: Requirement): Record<string, unknown> => ({
-    id: r.id,
-    name: r.name,
-    kind: r.kind,
-    scenarios: r.scenarios.length,
-    operations: r.operations,
-    covers: r.covers,
-  });
-
   if (json) {
     emitJson({
       command: "show",
@@ -204,18 +195,13 @@ export async function showService(
   console.log(`    ${mark(has.health)} health.yaml`);
   console.log(`    ${mark(adrs > 0)} adrs/           ${adrs > 0 ? plural(adrs, "decision") : ""}`.trimEnd());
 
-  const requirementLine = (r: Requirement): string => {
-    const govern = r.operations.length > 0 ? `  → ${r.operations.join(", ")}` : "";
-    const covers = r.covers.length > 0 ? `  covers ${r.covers.join(", ")}` : "";
-    return `    ${r.name}  (${plural(r.scenarios.length, "scenario")})${govern}${covers}`;
-  };
   if (reqs.length > 0) {
     console.log("\n  requirements");
-    for (const r of reqs) console.log(requirementLine(r));
+    for (const r of reqs) console.log(`    ${requirementLine(r)}`);
   }
   if (archReqs.length > 0) {
     console.log("\n  arch requirements");
-    for (const r of archReqs) console.log(requirementLine(r));
+    for (const r of archReqs) console.log(`    ${requirementLine(r)}`);
   }
 
   if (api.unreadable) {

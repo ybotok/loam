@@ -19,7 +19,8 @@ import { repoPath } from "../../envelope/json.js";
 import { FleetContext } from "../../fleet-context.js";
 import { compareIds, type FeatureEntry, type ServiceEntry } from "../../repo/entries.js";
 import { featurePaths, featureSpecPaths, landscapePath } from "../../repo/paths.js";
-import { listFeatures, listServices } from "../../repo/repo.js";
+import { featureTitle, listFeatures, listServices } from "../../repo/repo.js";
+import { introducingFeatures } from "../../projection/introduced.js";
 import { contractOwners, contractsHeldElsewhere, owesContract } from "../contracts.js";
 import { readInterruptedCommit } from "../interrupted.js";
 import {
@@ -32,7 +33,7 @@ import {
 } from "../report.js";
 import { governedServices, scanDeltas } from "../scan.js";
 import { fullyVerified, verificationState } from "../verification.js";
-import { fleetNext, type Binding } from "./next.js";
+import { fleetNext, groupServiceSteps, perServiceSteps, type Binding } from "./next.js";
 import type { DocsDir } from "../../kernel/ids/dirs.js";
 
 /**
@@ -60,8 +61,18 @@ export async function fleetStatus(
   // so the walk could see the repository it stands in only while that
   // repository was undocumented — and a developer in an adopted service repo
   // got the whole fleet's worklist with their own boundary buried in it.
+  //
+  // And the third fact: which feature in flight introduces it, when the fleet
+  // has no directory for it. Through the shared resolver, so `status` and
+  // `show`/`context`/`steps` agree on what "introduced" means.
   const binding: Binding | null =
-    opts.bound === undefined ? null : { id: opts.bound, adopted: all.some((s) => s.id === opts.bound) };
+    opts.bound === undefined
+      ? null
+      : {
+          id: opts.bound,
+          adopted: all.some((s) => s.id === opts.bound),
+          introducedBy: (await introducingFeatures(docsDir, opts.bound, context)).map((f) => f.id),
+        };
   const graph = await analyzeDependencies(docsDir, undefined, context);
   const entries = await listFeatures(docsDir, {}, context);
   const inScope = narrowed === undefined ? entries : entries.filter((f) => f.services.some((s) => s === narrowed));
@@ -129,6 +140,10 @@ export async function fleetStatus(
     next: fleetNext(
       { services, features, graph, interrupted, teaching },
       narrowed === undefined ? binding : null,
+    ),
+    // The same rungs `next[]` carries, from the same function, before the cap.
+    serviceSteps: groupServiceSteps(
+      perServiceSteps(services, narrowed === undefined && binding?.adopted === true ? binding.id : null),
     ),
   };
 }
@@ -228,6 +243,7 @@ async function fleetFeature(
 
   return {
     id: feature.id,
+    title: await featureTitle(feature),
     dirName: feature.dirName,
     path: repoPath(docsDir, feature.dir),
     stage,

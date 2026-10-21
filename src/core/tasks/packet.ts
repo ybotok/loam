@@ -40,7 +40,11 @@ export interface PacketRequest {
   docsDir: DocsDir;
   /** Active only — an archived feature is refused by the caller, and why is stated there. */
   feature: FeatureEntry;
-  /** The `--service` lens, or null for the whole feature. A lens, never a binding check. */
+  /**
+   * The `--service` lens, or null when none was asked for. A lens, never a
+   * binding check. Null is not always the whole feature: `lensOf` falls back to
+   * the bound service, and the packet's `service` says which lens was applied.
+   */
   lens: string | null;
   binding: GherkinBinding;
 }
@@ -55,6 +59,7 @@ export interface WaitingOn {
 
 export interface WorkPacket {
   feature: string;
+  /** The lens applied — the flag's, else the bound service's (`lensOf`) — or null for the whole feature. */
   service: string | null;
   services: string[];
   path: string;
@@ -156,8 +161,31 @@ function contractTokens(claims: readonly Claim[], lens: string | null): { expose
   return { expose: pick("api.exposes", "operation"), call: pick("c4.calls", "token") };
 }
 
+/**
+ * The lens the packet is actually cut to.
+ *
+ * An explicit lens wins. Without one, a run from a service repository is about
+ * THAT service whenever the feature touches it, because the stamps that tell
+ * `generate` from `implement` are read from this repository's suite alone
+ * (`./stamps.ts`): in a whole-feature view from here, every other service's
+ * scenario reads `implement` whatever its own suite holds — a verdict about a
+ * directory this run has never seen, printed beside one about a directory it
+ * has, in the same words. A feature that does not touch the bound service keeps
+ * the whole view, because narrowing to a service with nothing in it prints an
+ * empty packet, and an agent reads an empty packet as "nothing to do".
+ *
+ * Decided here rather than by the caller because "touches" is the packet's own
+ * service list, which includes a service only the C4 delta names — learning it
+ * first would cost the caller a second checklist derivation of the same delta.
+ */
+function lensOf(request: PacketRequest, services: readonly string[]): string | null {
+  if (request.lens !== null) return request.lens;
+  const bound = request.binding.service;
+  return bound !== undefined && services.includes(bound) ? bound : null;
+}
+
 export async function workPacket(request: PacketRequest): Promise<WorkPacket> {
-  const { docsDir, feature, lens, binding } = request;
+  const { docsDir, feature, binding } = request;
   // One read index for the whole derivation: the checklist, the delta axes and
   // the architecture parse all reach the same documents, and without a shared
   // context each would be its own fleet walk.
@@ -173,6 +201,8 @@ export async function workPacket(request: PacketRequest): Promise<WorkPacket> {
     ...describeUnits(feature.id, axes),
     ...claimUnits(checklist.claims, settled, stamps, scenarioSources(feature.id, axes)),
   ]));
+  const services = [...new Set([...feature.services, ...checklist.claims.map((c) => c.subject)])].sort(compareIds);
+  const lens = lensOf(request, services);
   const units = lens === null ? all : all.filter((unit) => unit.subject === lens);
   const open = units.filter(isOpen);
 
@@ -184,7 +214,7 @@ export async function workPacket(request: PacketRequest): Promise<WorkPacket> {
   return {
     feature: feature.id,
     service: lens,
-    services: [...new Set([...feature.services, ...checklist.claims.map((c) => c.subject)])].sort(compareIds),
+    services,
     path: repoPath(docsDir, feature.dir),
     checklist: checklist.digest,
     record: view.state,

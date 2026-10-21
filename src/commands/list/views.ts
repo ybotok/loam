@@ -17,6 +17,7 @@ import {
 } from "../../core/vocabulary/maturity.js";
 import { type FeatureEntry, type ServiceEntry } from "../../core/repo/entries.js";
 import { landscapePath, servicePathsAt } from "../../core/repo/paths.js";
+import { featureTitle } from "../../core/repo/repo.js";
 import type { FleetContext } from "../../core/fleet-context.js";
 import { verificationState } from "../../core/status/verification.js";
 import { type AnsweredBy } from "../../core/verify/answers.js";
@@ -157,4 +158,20 @@ export async function featureVerification(
     attested: s.attested,
     answered: s.answered,
   };
+}
+
+/**
+ * One features-table row: the feature, its verification cell, and what it is
+ * called — carried together so the table and the payload iterate rows rather
+ * than join two arrays by position.
+ */
+export interface FeatureRow {
+  feature: FeatureEntry;
+  cell: VerificationCell | null;
+  /** intent.md's title (`featureTitle`) — the words a person recognises a change by; the id alone is a key. */
+  title: string | null;
+}
+
+export async function featureRow(docsDir: DocsDir, f: FeatureEntry, fleet: FleetContext): Promise<FeatureRow> {
+  return { feature: f, cell: await featureVerification(docsDir, f, fleet), title: await featureTitle(f) };
 }

@@ -18,7 +18,7 @@ export function registerVerify(program: Command): void {
   program
     .command("verify")
     .argument("<featureId>", "feature id, e.g. FEAT-101")
-    .description("Check a shipped feature against its own promises: derive the claims, record the answers")
+    .description("Check a feature against its own promises: derive the claims, record the answers with evidence")
     .option("--record <file>", "record a JSON answer set against the current checklist")
     .option(
       "--results <file>",

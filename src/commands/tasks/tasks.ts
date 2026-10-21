@@ -71,6 +71,10 @@ export function registerTasks(program: Command): void {
         return;
       }
 
+      // Only the flag's lens is passed. Without one, the packet narrows itself to
+      // the bound service when the feature touches it (`lensOf` in
+      // core/tasks/packet.ts says why, and why it is decided there), and
+      // `packet.service` is what reports the lens actually applied.
       const lens = opts.service ?? null;
       const packet = await workPacket({
         docsDir: config.docsDir,
@@ -93,7 +97,8 @@ export function registerTasks(program: Command): void {
       // delta to learn the same answer. A typo must never be indistinguishable
       // from a finished service: `--service paymnt-service` produces a
       // perfectly plausible EMPTY packet, and an agent reads that as "nothing
-      // to do here".
+      // to do here". Only an EXPLICIT lens is checked: the bound service is
+      // applied only when the packet already lists it, so it cannot be a typo.
       if (lens !== null && !packet.services.includes(lens)) {
         const living = await livingServices(config.docsDir);
         if (!living.includes(lens)) {
@@ -124,8 +129,9 @@ export function registerTasks(program: Command): void {
         emitJson({ command: "tasks", ...shown });
         return;
       }
-      if (opts.next === true) renderNext(shown);
-      else renderPacket(shown);
+      const view = { explicitLens: opts.service !== undefined, bound: config.service };
+      if (opts.next === true) renderNext(shown, view);
+      else renderPacket(shown, view);
     });
 }
 

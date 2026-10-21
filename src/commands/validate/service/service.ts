@@ -28,6 +28,7 @@ import { serviceProvenance } from "../../../core/provenance/findings.js";
 import { gherkinFindings } from "../../../core/gherkin/stale.js";
 import { gherkinRoot } from "../../../core/gherkin/stamp.js";
 import { UnsafePathError } from "../../../core/kernel/path-safety.js";
+import { repoPath } from "../../../core/envelope/json.js";
 import { interruptedCommitFinding } from "../../../core/staging/recovery/finding.js";
 import { FleetContext } from "../../../core/fleet-context.js";
 import { serviceLinkFindings } from "../links/corpus.js";
@@ -130,11 +131,10 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
       severity: "error",
       code: "service.unknown",
       message:
-        `No service directory at ${paths.dir}.` +
+        `No service directory at ${treePath}.` +
         (close.length > 0
           ? ` Did you mean: ${close.join(", ")}?`
           : " `loam list services` shows what exists."),
-      text: { marker: false },
     });
     return report;
   }
@@ -178,8 +178,7 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
     findings.push({
       severity: "error",
       code: "service.no-model",
-      message: `No C4 model at ${paths.model}. Run \`loam adopt\` for '${service}' first.`,
-      text: { marker: false },
+      message: `No C4 model at ${repoPath(docsDir, paths.model)}. Run \`loam adopt\` for '${service}' first.`,
     });
   } else {
     model = await fleet.serviceModel(docsDir, paths);
@@ -241,11 +240,12 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   // and the event spine can never disagree about which edges are inbound.
   const landSvcOf = land === null ? null : serviceResolver(land.elements, known);
 
-  const specs = await readServiceSpecs({ service, paths, fleet });
+  const specs = await readServiceSpecs({ docsDir, service, paths, fleet });
   findings.push(...specs.findings);
   const { reqs, livingReqs, archText, archReqs } = specs;
 
   const api = await apiAxisFindings({
+    docsDir,
     service,
     me,
     paths,

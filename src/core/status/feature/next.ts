@@ -10,7 +10,7 @@
  * behind the author's back — loam does not author.
  *
  * `next` is never empty. A feature with nothing outstanding still has a next
- * step (ship it), and a repository with nothing outstanding still has one (keep
+ * step (archive it), and a repository with nothing outstanding still has one (keep
  * the fleet green) — an empty array would be indistinguishable from a bug in
  * the caller's own parsing.
  */
@@ -19,6 +19,7 @@ import { recoverStep } from "../interrupted.js";
 import type { ArtifactId, ArtifactState, NextStep } from "../report.js";
 import { testStep, verifyStep } from "../verification.js";
 import { type FeatureState } from "./state.js";
+import { archivedVerification } from "./words.js";
 
 /**
  * Would either gate refuse this? Severity answers `validate`'s question and
@@ -45,7 +46,12 @@ export function featureNext(state: FeatureState, boundService: string | undefine
       ...first,
       {
         code: "next.archived",
-        statement: `${id} is archived — it shipped, and its delta is already folded into the living docs.`,
+        // Not "it shipped": archive folds documents and checks no code and no
+        // evidence, so the sentence says what archiving did and then, in the
+        // done-check's own words, whether anybody verified it.
+        statement:
+          `${id} is archived — its deltas are folded into the living docs. Archiving checks documents, not code: ` +
+          `${id} is ${archivedVerification(verification)}.`,
         command: `loam show ${id} --json`,
       },
     ];
@@ -173,12 +179,20 @@ export function featureNext(state: FeatureState, boundService: string | undefine
   // whose record is complete still has one thing left to do, and an empty
   // `next[]` would leave a caller unable to tell "finished" from "this command
   // had nothing to say".
+  //
+  // The sentence used to say the feature "ships once everything above is
+  // done", which promised a check archive never makes: it refuses on the
+  // documents (coherence, the gating warnings) and looks at neither the code
+  // nor the verification record. So it says what archive does, and what it
+  // does not, in the order a reader decides in.
   steps.push({
     code: "next.archive",
     statement:
       steps.length === 0
-        ? `${id} is authored, coherent and verified — ship it.`
-        : `${id} ships once everything above is done; the dry run writes nothing and lists every file the merge would touch.`,
+        ? `${id} is authored, coherent and verified — archive it to fold its deltas into the living docs.`
+        : `Archive ${id} once the steps above are done. Archive merges its deltas into the living docs and checks only ` +
+          "the documents — not the code, not the verification record — so it will not stop you archiving work nobody " +
+          "built. The dry run writes nothing and lists every file the merge would touch.",
     command: `loam archive ${id} --dry-run --json`,
   });
   return steps;

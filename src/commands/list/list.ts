@@ -11,7 +11,7 @@ import { readGlossary } from "../../core/glossary/tree.js";
 import { backlinkIndex } from "../../core/links/backlinks.js";
 import { glossaryDir } from "../../core/repo/authored/paths.js";
 import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "../policy/gate.js";
-import { featureVerification, serviceViews, type ServiceView } from "./views.js";
+import { featureRow, serviceViews, type ServiceView } from "./views.js";
 import { capabilityJson, featureJson, glossaryJson, ownersJson, serviceRows, subsystemsJson } from "./json.js";
 import {
   printCapabilities,
@@ -158,8 +158,8 @@ export function registerList(program: Command): void {
         const features = wanted.includes("features")
           ? await listFeatures(docsDir, { includeArchived: opts.archived }, fleet)
           : undefined;
-        const verification = features
-          ? await Promise.all(features.map((f) => featureVerification(docsDir, f, fleet)))
+        const featureRows = features
+          ? await Promise.all(features.map((f) => featureRow(docsDir, f, fleet)))
           : undefined;
 
         // The capability section: the vocabulary's own verdict decides the shape.
@@ -306,8 +306,8 @@ export function registerList(program: Command): void {
                 }
               : {}),
             ...(owned !== undefined ? { owners: ownersJson(owned) } : {}),
-            ...(features
-              ? { features: features.map((f, i) => featureJson(docsDir, f, verification![i] ?? null)) }
+            ...(featureRows
+              ? { features: featureRows.map((row) => featureJson(docsDir, row)) }
               : {}),
             ...(capabilities ? { capabilities: capabilities.map(capabilityJson) } : {}),
             ...(terms ? { glossary: terms.map((t) => glossaryJson(t.term, t.linkedBy, docsDir)) } : {}),
@@ -368,7 +368,7 @@ export function registerList(program: Command): void {
         // fleet's ADR count is not derived from the rows at all and stays.
         if (shown) printServices(shown, { tree: slice === undefined ? tree : undefined, adrs: fleetAdrs });
         if (views && features) console.log("");
-        if (features) printFeatures(features, verification!);
+        if (featureRows) printFeatures(featureRows);
         if (capabilities) {
           if (capabilityVocab!.present) printCapabilities(capabilities, promises!);
           else console.log("no architecture/capabilities.yaml — the fleet declares no capabilities");
