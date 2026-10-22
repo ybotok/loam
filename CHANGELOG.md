@@ -10,6 +10,51 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+## [0.2.0-alpha.11] - 2026-10-22
+
+Everything on `main` since `0.2.0-alpha.10`. Still a prerelease on the `alpha` line. When this
+version was cut, `0.2.0-alpha.10` was tagged but its publish had not run (`alpha` and `latest` both
+named `0.2.0-alpha.9`), so a repository upgrading from alpha.9 takes alpha.10's section below as
+well as this one; `npm view @ybotok/loam dist-tags` is the record of what installs.
+
+Most of it makes a grade or an archive say what it used to decide in silence. An event key on an
+edge drawn the wrong way round is named instead of binding nothing, the consumer census counts a
+service at either end of an edge into a store or a topic, and a `Covers:` line may name a kinded
+edge. `loam archive` merges an edge whose relationship kind carries a tag, reads an extending
+model's dotted edges and kind-first declarations, keeps a comment with the statement under it, and
+gives a service it creates its own `services/<svc>/model.likec4`. A feature's new services are the
+ones the archived fleet will call services, and `loam status` owes an `openapi.yaml` only where
+something calls the service. The archive names every scenario and join-line entry a MODIFIED or
+REMOVED requirement takes out of the living docs, marks a first spec.md it writes into a
+never-adopted service `adoption: partial`, and writes only the entries a contract merge changes. A
+use-case step's title can say which of several relationships its hop means.
+
+Several entries change an exit code, listed in each. Refusals that are gone: `loam archive` and
+`archive --dry-run` on an edge whose relationship kind carries a tag or on a child of a kind-first
+container in an extending model, and the `usecase.flow-invalid` / `deployment.doc-invalid` that
+`validate --feature`, `validate --all` and `loam status` reported for the same shapes. Refusals that
+are new: a feature's use-case hop or deployment document naming a container the delta draws inside
+a service the feature introduces is `usecase.flow-invalid` / `deployment.doc-invalid` from
+`validate --feature`, `validate --all` for an active feature and `loam archive` (`not-coherent`,
+which `--approve` does not override); on the tagged-kind shape `validate --feature` can now report
+`spine.message-unproduced`; and `loam gate --service <id>` exits 1 for a service whose first
+spec.md an archive wrote as `adoption: partial` (`gate.service-undocumented`). Under `--strict` the
+new warnings can fail a run that passed — `spine.message-unbound`, `usecase.requirement-modified`,
+`openapi.info-not-merged`, `asyncapi.info-not-merged`, `gate.partner-undocumented`, and
+`landscape.datastore-shared` / `landscape.platform-candidate` now that the census counts both ends
+— and the warnings that are gone (`service.no-requirement-delta` on an `#external` producer or a
+living element's stub, `c4.uncovered` on a grouping, a `usecase.step-contested` hop its title
+resolves) can let one pass that failed.
+
+Four stable codes were added, all warnings that never gate — `spine.message-unbound`,
+`usecase.requirement-modified`, `openapi.info-not-merged` and `asyncapi.info-not-merged` — 360 in
+all, 356 at alpha.10; none was renamed or retired, and no flag was added. New `--json` keys, all
+additive: `dropped` on `loam archive` and on `loam delta`, and `partial: true` on the spec.md entry
+of `loam adopt`'s `targets[]`. `loam archive --json`'s `plan` gains a `create` row for a service
+model it writes, and `loam status` can read a new service's `openapi` as `done` with
+`required: false`. One frontmatter field is new, written by loam: `adoption: partial`, which stays
+until the service's baseline is written and the line is deleted.
+
 ### Fixed — which way an edge points no longer decides a grade in silence
 
 One finding code was added: `spine.message-unbound` (warn). It is a new member of the frozen
@@ -148,7 +193,7 @@ above was the only one.
 ### Fixed — the archive says what it replaces, creates and rewrites
 
 Three new stable codes, all warnings that never gate: `usecase.requirement-modified`,
-`openapi.info-not-merged`, `asyncapi.info-not-merged` (359 in all). No flag and no refusal changed;
+`openapi.info-not-merged`, `asyncapi.info-not-merged` (360 in all). No flag and no refusal changed;
 the exit codes that move are `loam gate`'s and, under `--strict`, `validate`'s, both below. New
 `--json` keys, all additive: `dropped` on `loam archive` and on `loam delta`, and `partial: true` on
 the spec.md entry of `loam adopt`'s `targets[]`. One new frontmatter
