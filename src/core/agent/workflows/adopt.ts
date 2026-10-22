@@ -164,7 +164,9 @@ thin baseline that validates is thin, not done.
    \`usecase.*\` findings on this run are about the flows beside model.likec4:
    \`usecase.step-unbacked\` is a hop no relationship in model.likec4 backs,
    \`usecase.step-contested\` two edges backing one hop and naming different
-   operations, \`usecase.requirement-unresolved\` a \`#req-\` tag naming no
+   operations (open the step's title with the operation id it means, then
+   punctuation),
+   \`usecase.requirement-unresolved\` a \`#req-\` tag naming no
    \`Requirement-ID:\` of this service's spec.md or arch.spec.md,
    \`usecase.capability-unresolved\` a \`#cap-\` tag beside a model (drop it — a
    capability is claimed on the fleet map, never inside one service), and

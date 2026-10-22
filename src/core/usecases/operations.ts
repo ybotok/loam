@@ -17,14 +17,18 @@
  * count across the relationships backing it:
  *
  *  - `attributed` with `op === X` means every relationship behind the hop agrees
- *    the hop exercises X. Remove X and the flow breaks at that hop. That is
- *    positive evidence, and it is a victim.
- *  - `contested` means the relationships DISAGREE, so loam does not know which
- *    operation the hop exercises. It must not claim the flow breaks — a guessed
- *    victim reads exactly like a real one and turns a warn into an error on
- *    somebody's PR — and it must not go silent either, because silence here is
- *    the fail-open shape `ConsumerScan.suspended` exists to forbid. It is a
- *    suspension: loam says it could not answer.
+ *    the hop exercises X, or they disagree and the step's title opens with a
+ *    name declared by candidates that agree on X — the author naming the one
+ *    the hop means, by its op or by the message that edge also carries. Remove
+ *    X and the flow breaks at that hop. That is positive evidence, and it is a
+ *    victim.
+ *  - `contested` means the relationships DISAGREE and the title names none of
+ *    them, so loam does not know which operation the hop exercises. It must not
+ *    claim the flow breaks — a guessed victim reads exactly like a real one and
+ *    turns a warn into an error on somebody's PR — and it must not go silent
+ *    either, because silence here is the fail-open shape
+ *    `ConsumerScan.suspended` exists to forbid. It is a suspension: loam says it
+ *    could not answer.
  *
  * A contested hop is suspended only when X is among its candidate operations.
  * That is not a noise trade, it is the honest boundary: the candidates ARE the

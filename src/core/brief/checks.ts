@@ -282,7 +282,7 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
     code: "usecase.step-contested",
     severity: "warn",
     via: VIA_SERVICE,
-    what: "two or more relationships back one hop of a service-local flow and name different operations — loam names the candidates rather than picking one",
+    what: "two or more relationships back one hop of a service-local flow and name different operations, and the step's title opens with none of their operation ids or message names — loam names the candidates rather than picking one; opening the title with the one the hop means, then punctuation, is how the author picks",
   },
   {
     code: "usecase.step-unlinked",

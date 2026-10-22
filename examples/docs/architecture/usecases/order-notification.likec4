@@ -43,9 +43,11 @@
 // edges for that pair — `Calls createOrder` and `Calls getOrder` — so a step
 // between those two elements names two operations, and loam refuses to guess
 // which one the flow exercises: `usecase.step-contested` (warn), listing both
-// candidates. That is the check working. The two fixes are the ones the message
-// offers: draw the hop between elements that name exactly one operation, or give
-// the candidates one operation between them.
+// candidates. That is the check working. The fix is the one the message offers
+// first: say which operation the hop means by opening the step's title with it,
+// then punctuation — `marketplace.checkoutWeb -> marketplace.orderService
+// 'createOrder — creates the order'` — and loam attributes the hop to that edge.
+// (The other fix is to give the candidates one operation between them.)
 
 views {
   dynamic view uc_order_notification {

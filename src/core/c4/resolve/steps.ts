@@ -24,16 +24,25 @@ import { resolverFor } from "./service.js";
 import type { ParsedStep } from "../parsed/dynamic-views.js";
 
 /**
- * The three fields an attribution reads off a step, and no more.
+ * The fields an attribution reads off a step, and no more: the endpoints, and
+ * the title that may choose between the candidates the endpoints found.
  *
  * Narrower than `ParsedStep` on purpose. Attribution must not depend on the
- * ordinal, the title or the notes — a hop is graded by where it points, never by
- * what the author called it — and a signature that says so is also a signature a
- * test can satisfy with a literal instead of a parsed document. Derived from
- * `ParsedStep` rather than restated, so a rename upstream is a compile error
- * here instead of a second definition that quietly disagrees.
+ * ordinal or the notes, and the title never decides WHETHER a hop is backed —
+ * a hop is backed by where it points, never by what the author called it. The
+ * title has exactly one job, `pickedByTitle`'s: when the relationships the
+ * endpoints found disagree about the operation, a title that opens with one
+ * candidate's own declared name narrows them to the ones this hop means. A
+ * signature that says so is also a signature a test can satisfy with a literal
+ * instead of a parsed document. Derived from `ParsedStep` rather than restated,
+ * so a rename upstream is a compile error here instead of a second definition
+ * that quietly disagrees.
+ *
+ * `title` is optional because an untitled step is legal, and that makes it the
+ * one field a hand-built literal can leave out and still compile — silently
+ * losing the pick. Both callers pass a `ParsedStep`, which carries it.
  */
-export type StepEndpoints = Pick<ParsedStep, "source" | "target" | "isBackward">;
+export type StepReading = Pick<ParsedStep, "source" | "target" | "isBackward" | "title">;
 
 /**
  * What a step is attributed against: the model in view, plus the enumerated
@@ -67,19 +76,26 @@ interface CallPair {
  * and no tier either. Tagged, those states stop being constructible.
  *
  *  - `attributed` — the candidates on the matched tier agree, so the hop
- *    exercises exactly one operation. `op` is absent when that one agreed
- *    operation is *no* operation: the relationships back the hop but none of
- *    them carries `metadata { op '…' }`.
- *  - `contested` — the candidates disagree, so loam cannot say which operation
- *    the hop exercises. `ops` lists the distinct values in candidate order,
- *    `undefined` standing for the candidate that declared none.
+ *    exercises exactly one operation, or they disagree and the step's title
+ *    picked the ones it means (`pickedByTitle`), in which case `rels` holds the
+ *    picked candidates only. `op` is absent when that one operation is *no*
+ *    operation: the relationships back the hop but none of them carries
+ *    `metadata { op '…' }`.
+ *  - `contested` — the candidates disagree and the title picks none of them, so
+ *    loam cannot say which operation the hop exercises. `ops` lists the distinct
+ *    values in candidate order, `undefined` standing for the candidate that
+ *    declared none.
  *  - `unbacked` — nothing in the model backs the hop on either tier. The pair is
  *    still carried, because a message about it has to be able to name the edge
  *    the author would have to draw.
  *
  * `rels` carries every candidate on the matched tier, not just the first: an
  * `attributed` verdict over two relationships is the normal shape once a service
- * is drawn as containers, and a caller pinning evidence needs all of them.
+ * is drawn as containers, and a caller pinning evidence needs all of them. The
+ * one exception is an `attributed` verdict the title picked, whose `rels` holds
+ * the picked candidates only: the others are what the author said the hop is
+ * NOT, and a rollup over `rels` — a message census, the removal victims in
+ * `core/usecases/operations.ts` — must not count them as exercised.
  */
 export type StepAttribution =
   | (CallPair & { verdict: "attributed"; tier: 1 | 2; rels: readonly Rel[]; op?: string })
@@ -120,7 +136,7 @@ export type StepAttribution =
  * here — the call is, and the mirror edge backs only a hop drawn forward along
  * it.
  */
-function callPair(step: StepEndpoints): CallPair {
+function callPair(step: StepReading): CallPair {
   return step.isBackward ? { from: step.target, to: step.source } : { from: step.source, to: step.target };
 }
 
@@ -141,6 +157,127 @@ function distinctOps(rels: readonly Rel[]): (string | undefined)[] {
 }
 
 /**
+ * What a relationship can be picked by: the identifiers it DECLARES — its
+ * `metadata { op }`, and the message it `publishes` or `consumes` — and never
+ * its title, which is prose. An empty value names nothing: `op ''` parses, and
+ * every title starts with the empty string.
+ */
+function declaredNames(rel: Rel): string[] {
+  return [rel.op, rel.publishes, rel.consumes].filter((name): name is string => name !== undefined && name !== "");
+}
+
+/**
+ * The characters an operation id or a message name is spelled with. A name
+ * spelled with these alone ends where the next character is not one of them,
+ * so of two such names where one prefixes the other (`order.placed` and
+ * `order.placed.v2`, `createOrder` and `createOrder-batch`) one title never
+ * picks both. A name spelled with anything else (`orders/create`) still
+ * matches, and where it shares a prefix with another candidate's (`orders`) a
+ * title opening with the longer one picks both and the hop stays contested —
+ * which fails closed rather than guessing.
+ */
+const NAME_CHARACTER = /[A-Za-z0-9_.-]/;
+
+/** A letter or a digit in any script — what a word of prose starts with. */
+const WORD_CHARACTER = /[\p{L}\p{N}]/u;
+
+/**
+ * Does `title` open with `name`, set off as a name rather than as the first
+ * word of a sentence?
+ *
+ * Two conditions after the name. The next character must not continue it, so
+ * `createOrderBatch` is not `createOrder`. And the title must end there, or go
+ * on with punctuation — `:`, `(`, `,`, a dash — before any further word:
+ * `'createOrder — places the order'`, `'getOrder(orderId)'` and a bare
+ * `'refundPayment'` name an operation, while `'get the customer's orders'`
+ * does not name `get`. The second condition is what keeps a fleet whose
+ * operationIds are plain verbs from having its existing prose titles read as
+ * picks on the day it upgrades: the first word of a sentence is not an author
+ * naming an operation.
+ */
+function opensWith(title: string, name: string): boolean {
+  if (!title.startsWith(name)) return false;
+  const rest = title.slice(name.length);
+  if (rest === "") return true;
+  if (NAME_CHARACTER.test(rest.charAt(0))) return false;
+  return !WORD_CHARACTER.test(rest.trimStart().charAt(0));
+}
+
+/**
+ * The candidates a step's title picks: those that declare the name the title
+ * opens with (`opensWith`). `[]` when the step has no title or its title opens
+ * with no candidate's name.
+ *
+ * This is how an author says which relationship a hop means when the map joins
+ * the pair by several — `orders -> payments 'authorizePayment — authorizes the
+ * payment'` against an `authorizePayment` edge and a `refundPayment` one. It
+ * exists because every other way to say it is closed, and each was MEASURED at
+ * the 1.59.2 pin before this was chosen:
+ *
+ *  - `metadata { op }` on a step is a parse error (the step accepts title,
+ *    `technology`, `description`, `notes`, `navigateTo` and the styling
+ *    properties, and no metadata block), and so are tags on a step;
+ *  - a step's KIND exists only as the arrow `-[kind]->`, which needs a
+ *    `relationship <kind>` in the specification and names a TRANSPORT — the
+ *    reserve, read and release calls one caller makes to one provider are one
+ *    kind, so a kind cannot tell them apart;
+ *  - the repair the warning used to offer alone, drawing the hop between the
+ *    elements that carry exactly one candidate, is closed on a fleet flow
+ *    wherever those elements are containers an extending model declares: a
+ *    hop naming one does not resolve in the `architecture/` project at all
+ *    (SCHEMA.md, "What loam grades is still the `architecture/` project
+ *    alone"), so between two services drawn as single elements on the map
+ *    there was no repair short of changing the map.
+ *
+ * The title is what is left, and it is the native place: a sequence diagram
+ * labels a message with the operation it invokes. The rule is deliberately
+ * narrow, because a guessed operation reads exactly like a right one in every
+ * rollup built over a flow:
+ *
+ *  - the title must START with the name, set off from any prose after it by
+ *    punctuation — a candidate's name later in the sentence ("reads the order
+ *    before release") or as its first word ("read the order") picks nothing,
+ *    since a word in a sentence is not an author naming an operation;
+ *  - it must be a candidate's DECLARED identifier, matched exactly, case
+ *    included — an operationId is case-sensitive, and a relationship's title is
+ *    prose nobody wrote to be matched;
+ *  - it only ever chooses AMONG the candidates the endpoints found, and only
+ *    when they disagree: a title can never back an unbacked hop, move a hop to
+ *    another tier, or overrule candidates that already agree.
+ */
+function pickedByTitle(rels: readonly Rel[], title: string | undefined): Rel[] {
+  if (title === undefined) return [];
+  return rels.filter((rel) => declaredNames(rel).some((name) => opensWith(title, name)));
+}
+
+/**
+ * A title that WOULD settle a disagreement among `rels` — the step's own
+ * `title` behind one candidate's declared name — or `undefined` when no single
+ * name does.
+ *
+ * For the `usecase.step-contested` message, whose example is only worth giving
+ * if pasting it clears the warning. So it is tried through `pickedByTitle`
+ * itself rather than read off a candidate: a name two disagreeing candidates
+ * share, or one the title already opens with to no effect, is skipped instead
+ * of offered. Operation ids are tried before message names, because the
+ * warning is about operations and the hop is more often a call.
+ */
+export function pickingTitle(rels: readonly Rel[], title: string | undefined): string | undefined {
+  const names = [...rels.map((rel) => rel.op), ...rels.flatMap((rel) => [rel.publishes, rel.consumes])];
+  for (const name of names) {
+    if (name === undefined || name === "") continue;
+    const spelled = title === undefined ? name : `${name} — ${title}`;
+    if (distinctOps(pickedByTitle(rels, spelled)).length === 1) return spelled;
+  }
+  return undefined;
+}
+
+/** The `attributed` verdict over candidates already known to agree on `op`. */
+function attributed(pair: CallPair, tier: 1 | 2, rels: readonly Rel[], op: string | undefined): StepAttribution {
+  return { ...pair, verdict: "attributed", tier, rels, ...(op === undefined ? {} : { op }) };
+}
+
+/**
  * The verdict one tier's candidates imply, or `undefined` when that tier found
  * nothing and is therefore not the tier that answers.
  *
@@ -149,17 +286,29 @@ function distinctOps(rels: readonly Rel[]): (string | undefined)[] {
  * as containers, `a.api -> b` and `a.worker -> b` both carrying
  * `op 'createOrder'` are two relationships and one operation, and a verdict read
  * off `rels.length` would convict a perfectly consistent model of contesting
- * itself.
+ * itself. The same count decides the title's pick: a title that picks two
+ * candidates still disagreeing — one name declared as one edge's `op` and
+ * another's `publishes` — has said nothing that settles the hop, and the
+ * verdict stays `contested` over every candidate rather than over the two.
  */
-function verdictOn(pair: CallPair, tier: 1 | 2, rels: readonly Rel[]): StepAttribution | undefined {
+function verdictOn(
+  pair: CallPair,
+  tier: 1 | 2,
+  rels: readonly Rel[],
+  title: string | undefined,
+): StepAttribution | undefined {
   if (rels.length === 0) return undefined;
   const ops = distinctOps(rels);
-  if (ops.length > 1) return { ...pair, verdict: "contested", tier, rels, ops };
+  if (ops.length > 1) {
+    const picked = pickedByTitle(rels, title);
+    const pickedOps = distinctOps(picked);
+    if (pickedOps.length === 1) return attributed(pair, tier, picked, pickedOps[0]);
+    return { ...pair, verdict: "contested", tier, rels, ops };
+  }
   // Length is exactly one here, so the single distinct value is the answer —
   // and `undefined` is a legitimate answer: every candidate agreed that this
   // hop names no operation.
-  const [only] = ops;
-  return { ...pair, verdict: "attributed", tier, rels, ...(only === undefined ? {} : { op: only }) };
+  return attributed(pair, tier, rels, ops[0]);
 }
 
 /**
@@ -205,7 +354,8 @@ function resolvedTier(pair: CallPair, scope: StepScope): Rel[] {
  * the same service trivially — so running it unconditionally would let a
  * container-level edge with a different `op` contest a step the model already
  * answers exactly, turning an `attributed` verdict into a `contested` one on a
- * document nobody changed.
+ * document nobody changed. The step's title is read inside a tier, never across
+ * them: it narrows the tier that answered and cannot reach the other.
  *
  * Relationship `kind` is deliberately not part of the match, and that is
  * measured too: at this pin `a -[http]-> b` without a `relationship http` in the
@@ -215,10 +365,10 @@ function resolvedTier(pair: CallPair, scope: StepScope): Rel[] {
  * relationship kinds. So narrowing by kind would mean a fix message asking an
  * author to write a line their document does not parse.
  */
-export function attributeStep(step: StepEndpoints, scope: StepScope): StepAttribution {
+export function attributeStep(step: StepReading, scope: StepScope): StepAttribution {
   const pair = callPair(step);
   const exact = scope.relationships.filter((r) => r.source === pair.from && r.target === pair.to);
-  const declared = verdictOn(pair, 1, exact);
+  const declared = verdictOn(pair, 1, exact, step.title);
   if (declared !== undefined) return declared;
-  return verdictOn(pair, 2, resolvedTier(pair, scope)) ?? { ...pair, verdict: "unbacked" };
+  return verdictOn(pair, 2, resolvedTier(pair, scope), step.title) ?? { ...pair, verdict: "unbacked" };
 }

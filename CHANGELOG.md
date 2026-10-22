@@ -200,6 +200,46 @@ field, written by loam: `adoption: partial`.
   from the living one — including for a delta whose only change is its `info` — since the merge
   keeps the living `info`. Edit the living contract in the same change if it should move.
 
+### Fixed — a use-case hop can say which of several relationships it means
+
+No code, flag or `--json` key was added or removed. Before this, a hop between two elements the map
+joins by edges naming different operations was `usecase.step-contested` (warn) whatever the flow
+said. On a fleet flow (`architecture/usecases/*.likec4`) between two services the map draws as
+single elements, no edit to the flow could clear it: the repair the warning offered — draw the hop
+between the elements that name exactly one candidate — needs containers, and a container an
+extending model declares does not resolve on a fleet flow.
+
+- **A step's title now picks the candidate it opens with.** Where the candidates disagree, a title
+  that STARTS with one candidate's `metadata { op }` — or with the message it `publishes` or
+  `consumes` — and goes on only after punctuation, or not at all, attributes the hop to that
+  relationship: `orders -> payments 'authorizePayment — authorizes the payment'`,
+  `'getOrder(orderId)'`, `'refundPayment'`. The name is matched exactly, case included, as a whole
+  name: a letter, digit, `_`, `.` or `-` after it means it is part of a longer name and picks
+  nothing. A name that is the first word of a sentence (`'read the order'`), a name later in the
+  title, a relationship's own title, a name the pair's candidates do not declare, or one name
+  declared by candidates that still disagree picks nothing, and the hop stays contested over every
+  candidate. A title never backs an unbacked hop and never overrules candidates that agree.
+- **Which findings change.** A hop the title resolves is no longer `usecase.step-contested`.
+  Picked by an operation, it is attributed to that operation. Picked by a message, it is an event
+  hop, which `usecase.step-unlinked` exempts. This holds on the fleet target, on a service's own
+  flows (`loam validate --service`) and on a feature's `usecases/` flows. **Titles written before
+  this release are read the same way**: a step title that already opens with a candidate's
+  operation id and punctuation (`'createOrder: places the order'`) now picks it with no edit, its
+  next `loam validate` stops warning on that hop, and `--strict` can exit 0 where it exited 1.
+- **Contract removals read the same pick.** `loam diff --base` and the contract-removal gate list a
+  picked hop among the flows that break when its operation is removed, and drop the "could not be
+  answered" line they printed for the other candidates' operations. A hop picked by an operation is
+  no longer listed among the flows a removed message breaks, even where another candidate consumes
+  that message; that edge itself still is. Which code fires, and the exit code, do not change: the
+  picked edge was already named as a consumer.
+- **The `usecase.step-contested` message** now leads with how to pick, giving as the example the
+  step's own title behind a candidate's name, and only a title that would clear the warning. Drawing
+  the hop between other elements comes last, for a project that declares those elements. Its
+  `details[]` lines print every name an edge declares — `(op: <id>)`,
+  `(publishes: <message>)`, `(consumes: <message>)`, or `(no op)` when it declares none — where a
+  message edge used to print `(no op)`, and an edge declaring both an operation and a message
+  prints both, `(op: <id>, publishes: <message>)`, where it used to print only `(op: <id>)`.
+
 ## [0.2.0-alpha.10] - 2026-10-21
 
 Everything on `main` since `0.2.0-alpha.9`. Still a prerelease on the `alpha` line.

@@ -255,6 +255,57 @@ So a hop naming `<service-fqn>.<container>` resolves in neither the preview nor 
 leaves, and `usecase.flow-invalid` refuses — where the un-routed preview resolved it, passed the
 gate `--approve` cannot override, and landed a flow the next `loam validate --all` failed on.
 
+**Which relationship a hop exercises.** A hop is backed by the relationships declared between its
+two endpoints, or — only when there are none — by those whose endpoints resolve to the same two
+services, so a hop between two services matches an edge drawn into one of their containers. A reply
+written `a <- b` is looked up under the call it answers. Nothing behind the hop is
+`usecase.step-unbacked` (error). Candidates that all name one operation attribute the hop to it.
+Candidates that name different operations — an edge with no `metadata { op }` counts as naming
+none, which differs from naming one — are `usecase.step-contested` (warn), unless **the step's
+title opens with a name one candidate declares**: its `op`, or the message it `publishes` or
+`consumes`, followed by the end of the title or by punctuation. Then the hop is attributed to that
+candidate:
+
+```
+model {
+  web -> payments 'Calls authorizePayment' { metadata { op 'authorizePayment' } }
+  web -> payments 'Calls refundPayment' { metadata { op 'refundPayment' } }
+}
+views {
+  dynamic view uc_refund {
+    #cap-payments
+    web -> payments 'authorizePayment — authorizes the payment'
+    web -> payments 'refundPayment(orderId)'
+    web -> payments 'takes the payment back'
+  }
+}
+```
+
+The first two hops are attributed and the third is contested. The rule is deliberately narrow,
+because a guessed operation reads exactly like a right one in every rollup built over a flow. The
+name must OPEN the title, matched exactly with case included. It must end there or at a character
+that cannot continue a name — anything but a letter, digit, `_`, `.` or `-` — so
+`authorizePaymentAsync` picks nothing. Any words after it must follow punctuation (`:`, `(`, `,`, a
+dash): as the first word of a sentence it is prose, so against a `read` edge `read: the order`
+picks and `read the order` does not, and neither does `reads the order before release` against a
+`release` edge. A relationship's own title is prose and picks nothing. The pick runs only among the
+candidates the endpoints found, and only when they disagree: a title never backs an unbacked hop,
+never reaches the service tier when the exact one answered, and never overrules candidates that
+agree. A pick that still disagrees — one name declared as one edge's `op` and another's `publishes`
+— leaves the hop contested over every candidate. A hop picked by a message is an event hop, which
+`usecase.step-unlinked` exempts. `loam diff --base` and the contract-removal gate read the same
+attribution, so a picked hop is a victim of the removal of its own operation and of no other.
+
+It is the title because nothing else on a step can carry the choice, as measured at the LikeC4
+1.59.2 pin. `metadata` and tags on a step are parse errors. A step's kind exists only as
+`-[kind]->`; it needs a declared `relationship` kind, and it names a transport, so a caller's
+reserve, read and release calls to one provider are one kind. And drawing the hop between elements
+that each carry exactly one candidate works only where the graded project declares those elements —
+a service's own flow over its containers, or a map that draws a service's containers itself. It is
+closed on a fleet flow whose two services are single elements on the map, because a container an
+extending model declares does not resolve there (above). A sequence diagram labels a message with
+the operation it invokes anyway.
+
 **Private stores.** **Where a store is drawn is the team's choice.** A store one service owns may be
 nested UNDER that service's element — written in the service's `extend <fqn> { store = database … }`
 block, or inside the service's element on the map when the map draws that service's containers — or
