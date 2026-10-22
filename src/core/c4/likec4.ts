@@ -178,9 +178,9 @@ export interface Rel {
    * not symmetric with the HTTP one: there the PROVIDER owns the contract and
    * every consumer is checked against it, while here the PRODUCER owns the
    * message and the consumer lives in another repository entirely. Which side of
-   * an edge owes the declaration has to be readable from the edge itself — the
-   * arrow cannot say it, because a Kafka edge points at the broker from both
-   * ends.
+   * an edge owes the declaration is read from the key AND the arrow: `consumes`
+   * binds the TARGET, so a consume edge points away from the topic, at its
+   * consumer (`./resolve/direction.ts`; reversed, `spine.message-unbound`).
    */
   consumes?: string;
   tags: string[];

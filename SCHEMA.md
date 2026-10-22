@@ -280,7 +280,8 @@ services. That was always the load-bearing half; the prescription around it was 
 Nesting closes no door in the other direction: loam counts a
 consumer a service's EXTENDING model attests exactly as it counts one the map draws, so a nested
 store two services reach is `landscape.datastore-shared` — the store's owner plus every service
-whose model draws an outbound call at it or below it. The second consumer draws that call as a
+whose model draws a call at it or below it, outbound or, since a store never initiates, inbound
+from it (*Which way an edge points*). The second consumer draws that call as a
 container-level edge to `<owner-fqn>.<store>` in its OWN model, and the service-level twin on the
 map as usual. The two placements give the store the same id,
 `<owner-fqn>.<store>`, so moving the declaration OUT of the owner's `extend` block into the owner's
@@ -705,6 +706,57 @@ broken join is the finding loam reports.
 The last two exist only inside an `archive`/`unarchive` commit window and are removed after it. Both
 belong in the docs repo's `.gitignore`. Finding one at rest means a write did not finish:
 `loam doctor` grades it, and the next `archive`/`unarchive` repairs or refuses.
+
+### Which way an edge points
+
+LikeC4 accepts an arrow in either direction, and some of loam's readers draw meaning from it. This
+section lists every reader and the drawing each one expects. A reader not listed here ignores
+direction.
+
+| Reader | Expects | Drawn the other way round |
+|---|---|---|
+| The HTTP spine, `metadata { op }` | caller `->` provider: the `op` resolves against the TARGET's `openapi.yaml` | graded against the wrong service: `spine.op-undefined` there |
+| The event spine, `metadata { publishes }` | producer `->` topic: `publishes` binds the edge's SOURCE | when the source is infrastructure and the target is a service, the key binds nothing: `spine.message-unbound` (warn) on the target |
+| The event spine, `metadata { consumes }` | topic `->` consumer: `consumes` binds the edge's TARGET | when the target is infrastructure and the source is a service, the key binds nothing: `spine.message-unbound` (warn) on the source |
+| The consumer census behind `landscape.datastore-shared` and `landscape.platform-candidate` | a service at the SOURCE of an edge into the element, or an outbound call in the service's extending model | for infrastructure, either direction counts; for any other element the arrow is read, so a system calling INTO the fleet is not consumed by the services it calls |
+| Review order (`loam list --review-order`) | a plain edge is a call, so its source depends on its target; a `consumes` edge is a delivery, so its target depends on its source | the dependency is counted backwards |
+| Use-case hops (`dynamic view`) | each hop backed by a relationship drawn the same way | `usecase.step-unbacked`; a reply hop is written `<target> <- <source>` and is looked up under the call it answers |
+| `Covers:` edge entries | `a -> b` names the edges from `a` to `b` | `covers.unknown` |
+
+**Infrastructure** here is an element whose kind, or an ancestor's, is one of `database`, `queue`,
+`topic`, `cache` or `bucket`, and which stands for no service: a table nested in a `database` is
+part of it. These are the kinds that exempt an owned store from `landscape.service-undocumented`,
+and the limitation is the same: the hook is a kind NAME, so a kind spelled `postgres`, or a broker
+drawn as a plain `softwareSystem`, is not infrastructure. Infrastructure never initiates and never
+decides: a store, a topic or a bucket neither calls nor publishes nor consumes. Both rules below
+follow from that one fact.
+
+**THE ARROW FOLLOWS THE MESSAGE on the event spine**, producer to topic and topic to consumer. A
+key bound to a topic is therefore on the wrong end of its edge, because a topic is what sits
+between a producer and a consumer and is never either of them. Through 0.2.0-alpha.10 such a key
+was skipped without a word: the document validated, the metadata parsed, and the spine graded one
+link fewer. `spine.message-unbound` now says so, at service scope (the living map) and at feature
+scope (a delta's tagged edges), and it spells the edge turned round. When the edge carries both
+keys, turning it round would only move the warning to the other key, so the message says to put
+the key at fault on an edge of its own.
+
+loam reports the reversed edge and does not quietly bind it to the other end. Review order and
+use-case hops read the same arrow, and re-binding the spine alone would make it agree with a
+drawing those readers still take the opposite way. An `#external` system at the bound end is not
+this case. `crm -> billingService` carrying `publishes` says that an outside party produces the
+message, which `spine.message-unproduced` accepts and `spine.message-external` grades, and a
+`consumes` on an outside system says that an outside party consumes it. Both drawings are correct
+and stay silent. So does an edge with no fleet service at either end, such as an `#external`
+producer publishing to the broker. A key bound to a service is graded against that service's
+contract, so a wrong drawing there already surfaces as `spine.message-undefined`.
+
+**For the census, infrastructure's direction carries no meaning.** Fleets draw a read as a call
+(`service -> store`) or as the data's flow (`store -> service`), and both are common. The census
+counted only the first, so a second consumer drawn as data flow vanished, and so did the
+`landscape.datastore-shared` it should have caused. The event doctrine above draws every consumer
+as `topic -> service`, so no broker's consumers were ever counted toward
+`landscape.platform-candidate`. Both directions now count, from the map's edges and from an
+extending model's attested calls alike.
 
 ## `loam.json` — the wiring, one file per repository
 
@@ -1898,7 +1950,12 @@ scenarios exercise. Comma-separated, same keep-last-line quirk (and the same rep
   the merge lands a stub's children under the living element it binds to, so the delta's spelling
   is not the map's: write the service name, or the id the merged map gives the element);
 - an **edge** — `paymentService -> kafka`, each side resolved the same way against the declared
-  relationships;
+  relationships. Direction counts: `kafka -> paymentService` names a different edge (*Which way an
+  edge points*). The arrow may carry the relationship's kind exactly as the edge is written,
+  `paymentService -[async]-> kafka`. loam identifies an edge by its two endpoints and reads no
+  relationship kind, so the kind is read past rather than compared: `a -[async]-> b` covers exactly
+  what `a -> b` covers, every kind of edge from `a` to `b`. (Through 0.2.0-alpha.10 the kinded
+  spelling split at the `->` after the `]` and was always `covers.unknown`.);
 - a **health signal** — `alert:<id>` / `sli:<id>`, ids the service's `health.yaml` declares.
 
 An entry that resolves to nothing is `covers.unknown` (**warning**, with close ids offered where

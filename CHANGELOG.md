@@ -10,6 +10,43 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Fixed — which way an edge points no longer decides a grade in silence
+
+One finding code was added: `spine.message-unbound` (warn). It is a new member of the frozen
+`IssueCode` union. No flag or payload key changed, and no exit code changed except under `--strict`,
+where every new warning below fails the run. SCHEMA.md has a new section, *Which way an edge
+points*, that lists every reader of a relationship's direction and the drawing each one expects.
+Until now the event rule was written only in the examples README.
+
+- **An event key bound to a topic is reported.** `metadata { publishes }` binds the edge's SOURCE
+  and `metadata { consumes }` binds its TARGET. A consume edge drawn from the consumer to the topic,
+  or a publish edge drawn from the topic to the producer, bound nothing: the document validated, and
+  the event spine graded one link fewer without a word. `loam validate` (`--service`, and `--all`
+  per service) now raises `spine.message-unbound` on the service at the other end when the bound end
+  is infrastructure: a `topic`, `queue`, `database`, `cache` or `bucket`, by its own kind or an
+  ancestor's. `validate --feature`, `loam status <FEAT>` and the archive gate raise it for a delta's
+  tagged edges. The message spells the edge turned round. For an edge that carries both keys it says
+  to move the key at fault onto an edge of its own, since turning the arrow round would only move
+  the warning. The warning does not gate. While it stands, the service's `event.covered` line does
+  not appear. An `#external` system at the bound end does not raise it: `crm -> billingService`
+  carrying `publishes` is an outside producer, and a `consumes` on an outside system is an outside
+  consumer, both drawn correctly. Neither does an edge with no fleet service at either end.
+- **The consumer census counts a service at either end of an edge into infrastructure.** For an
+  infrastructure element that stands for no service, `store -> service` now counts that service as
+  a consumer, as `service -> store` already did, and so does an extending model's inbound call from
+  such an element. Two drawings now warn that did not. A store a second service reads, drawn
+  `store -> service`, raises `landscape.datastore-shared`. An `#external` broker not tagged
+  `#platform` raises `landscape.platform-candidate` once three services reach its topics, counting
+  services that only consume, drawn `topic -> service`. Before, only publishers were counted. **This
+  can add a warning to a fleet that had none, and fail `--strict` with it.** While either warning
+  stands, `validate --all` does not print `landscape.matched`. For any other element the arrow is
+  still read, so a system calling into the fleet is not consumed by the services it calls.
+- **A `Covers:` edge entry may carry the relationship's kind.** `a -[kind]-> b` used to split at the
+  `->` after the `]` and was always `covers.unknown`, while `a -> b` matched the same kinded edge.
+  It now resolves exactly as `a -> b` does, at service and feature scope, and satisfies
+  `c4.uncovered` the same way. `node:a -[kind]-> node:b` reads as a deployment edge. The kind is read
+  past, not compared, because loam identifies an edge by its two endpoints.
+
 ## [0.2.0-alpha.10] - 2026-10-21
 
 Everything on `main` since `0.2.0-alpha.9`. Still a prerelease on the `alpha` line.

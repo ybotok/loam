@@ -19,6 +19,7 @@ import {
   type RawServiceId,
 } from "../../../../core/kernel/ids/service.js";
 import { type LoadedDoc } from "../../../../core/c4/likec4.js";
+import { eventKeys, infrastructureKind, unboundSentence } from "../../../../core/c4/resolve/direction.js";
 import { type ServicePaths } from "../../../../core/repo/paths.js";
 import { type Finding } from "../../../../core/vocabulary/report.js";
 import { type Requirement } from "../../../../core/document/spec.js";
@@ -65,21 +66,41 @@ export async function eventAxisFindings(axis: EventAxis): Promise<Finding[]> {
 
   // Every edge that binds THIS service to a message: `publishes` binds the
   // edge's source (a service produces what it declares an `action: send` for),
-  // `consumes` binds its target. One edge may legitimately carry both — a relay
-  // that reads one topic and writes another is a single arrow in most fleet maps.
-  const eventEdges =
-    land === null || land.errors.length > 0
-      ? []
-      : land.relationships.flatMap((r) => {
-          const bound: { direction: "publishes" | "consumes"; message: string; other: string }[] = [];
-          if (r.publishes !== undefined && landSvcOf!(r.source) === me) {
-            bound.push({ direction: "publishes", message: r.publishes, other: landSvcOf!(r.target) });
-          }
-          if (r.consumes !== undefined && landSvcOf!(r.target) === me) {
-            bound.push({ direction: "consumes", message: r.consumes, other: landSvcOf!(r.source) });
-          }
-          return bound;
+  // `consumes` binds its target — `eventKeys` is where that rule is written,
+  // once, for this scope and the feature gate alike. One edge may legitimately
+  // carry both: a producer drawn straight to its consumer is a single arrow.
+  const readable = land !== null && land.errors.length === 0 && landSvcOf !== null;
+  const eventEdges = !readable
+    ? []
+    : land.relationships.flatMap((r) =>
+        eventKeys(r)
+          .filter((k) => landSvcOf(k.bound) === me)
+          .map((k) => ({ direction: k.direction, message: k.message, other: landSvcOf(k.other) })),
+      );
+  // The edges the filter above drops that THIS service drew the wrong way
+  // round: a key bound to infrastructure (a topic, which neither publishes nor
+  // consumes) while this service sits at the other end. It used to fall out of
+  // `eventEdges` without a word, so a consume edge drawn from the consumer to
+  // the topic graded nothing and said nothing. A key bound to an `#external`
+  // system is NOT this case — an outside producer or consumer, which the
+  // drawing states correctly (core/c4/resolve/direction.ts says why). Raised on
+  // the service at the unbound end, because it is the one with a drawing to fix.
+  const knownIds: ReadonlySet<string> = known;
+  if (readable) {
+    const infraKindOf = infrastructureKind(land.elements);
+    for (const r of land.relationships) {
+      for (const key of eventKeys(r)) {
+        const kind = infraKindOf(key.bound);
+        if (kind === undefined || landSvcOf(key.other) !== me || knownIds.has(landSvcOf(key.bound))) continue;
+        findings.push({
+          severity: "warn",
+          code: "spine.message-unbound",
+          subject: service,
+          message: `${service}: landscape ${unboundSentence(r, key, kind)}`,
         });
+      }
+    }
+  }
   // Both requirement namespaces, and a REMOVED requirement links nothing —
   // the `livingReqs` rule the API axis already follows, applied to the pair.
   const eventLinks = [...livingReqs, ...archReqs.filter((r) => r.kind !== "REMOVED")].flatMap((r) => [

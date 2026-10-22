@@ -250,9 +250,10 @@ model {
   // THE ARROW FOLLOWS THE MESSAGE, and that is load-bearing rather than
   // aesthetic. `publishes` binds the edge's SOURCE and `consumes` binds its
   // TARGET, so a consume edge drawn the other way round — `orderService ->
-  // kafka.paymentEvents` — binds to nothing at all: the metadata parses, the
-  // document validates, and the check silently grades zero edges. Producer to
-  // topic, topic to consumer, every time.
+  // kafka.paymentEvents` — binds to nothing at all: the metadata parses and the
+  // document validates, and all that says so is `spine.message-unbound` (warn)
+  // on the service that drew it. Producer to topic, topic to consumer, every
+  // time.
   marketplace.paymentService -> kafka.paymentEvents 'Publishes PaymentAuthorized' {
     #obl-outbox
     metadata {
