@@ -18,9 +18,10 @@
  *                                   element stands for (binding, then title);
  *   paymentService -> kafka         an edge — each side resolved the same way,
  *                                   against the declared relationships; the
- *                                   arrow may carry the relationship's kind,
- *                                   `paymentService -[async]-> kafka`, which is
- *                                   read past rather than compared;
+ *                                   edge may carry the relationship's kind as
+ *                                   LikeC4 writes it, `paymentService -[async]->
+ *                                   kafka` or `paymentService .async kafka`,
+ *                                   which is read past rather than compared;
  *   alert:<id> / sli:<id>           a health signal — ids `health.yaml`
  *                                   declares (core/vocabulary/health.ts);
  *   node:<id>, node:a -> node:b     a deployment object — a node or an instance
@@ -70,14 +71,20 @@ export function parseCoversEntry(raw: string): CoversEntry {
   if (alert) return { form: "alert", id: alert[1]!.trim(), raw };
   const sli = /^sli:\s*(.+)$/.exec(raw);
   if (sli) return { form: "sli", id: sli[1]!.trim(), raw };
-  // The arrow may carry a relationship kind, `a -[async]-> b`, because that is
-  // how the edge itself is written and an author copies the edge line. The
-  // split used to stop at the first `->`, the one AFTER the `]`, so the entry
-  // became `a -[async]` -> `b` and was `covers.unknown` while the kind-less
-  // spelling of the same edge resolved. The kind is read past, not compared:
-  // loam identifies an edge by its two endpoints (`flattenModel` keeps no
-  // kind), so `a -[async]-> b` covers exactly what `a -> b` covers.
-  const edge = /^(.+?)\s*(?:-\[[^\]]*\])?->\s*(.+)$/.exec(raw);
+  // An edge may be spelled with its relationship kind, the two ways LikeC4
+  // writes one — `a -[async]-> b`, and `a .async b` for a kind the
+  // specification declares — because that is how the edge itself is written
+  // and an author copies the edge line. The split used to stop at the first
+  // `->`, the one AFTER the `]`, so the bracket form became `a -[async]` ->
+  // `b`, and the dotted form, with no `->` at all, fell through to an element
+  // entry: both were `covers.unknown` while the kind-less spelling of the same
+  // edge resolved. The kind is read past, not compared: loam identifies an
+  // edge by its two endpoints (`flattenModel` keeps no kind), so either kinded
+  // spelling covers exactly what `a -> b` covers. The dotted form needs no
+  // specification to tell it from an element id: an id never holds a space,
+  // so `<id> .<kind> <id>` can be nothing else.
+  const edge =
+    /^(.+?)\s*(?:-\[[^\]]*\])?->\s*(.+)$/.exec(raw) ?? /^(\S+)\s+\.[A-Za-z_][\w-]*\s+(\S+)$/.exec(raw);
   if (edge) {
     const source = edge[1]!.trim();
     const target = edge[2]!.trim();

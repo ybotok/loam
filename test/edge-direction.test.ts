@@ -451,8 +451,13 @@ describe("a Covers: edge entry spelled with the relationship's kind", () => {
     "services/order-service/arch.spec.md": archSpec(covers),
   });
 
-  it("resolves `a -[kind]-> b` exactly as `a -> b` does", async () => {
-    for (const covers of ["orderService.api -[async]-> orderService.outbox", "orderService.api -> orderService.outbox"]) {
+  it("resolves `a -[kind]-> b` and `a .kind b` exactly as `a -> b` does", async () => {
+    const spellings = [
+      "orderService.api -[async]-> orderService.outbox",
+      "orderService.api .async orderService.outbox",
+      "orderService.api -> orderService.outbox",
+    ];
+    for (const covers of spellings) {
       await withProject(files(covers), async (p) => {
         const { targets } = await validate(p, "--service", "order-service");
         expect(findingsIn(targets, "covers.unknown"), covers).toEqual([]);
@@ -461,12 +466,14 @@ describe("a Covers: edge entry spelled with the relationship's kind", () => {
   });
 
   it("is no free pass — a kinded entry naming an edge the model does not draw is still covers.unknown", async () => {
-    await withProject(files("orderService.outbox -[async]-> orderService.api"), async (p) => {
-      const { targets } = await validate(p, "--service", "order-service");
-      const [f] = findingsIn(targets, "covers.unknown");
-      expect(f, "a reversed kinded entry resolved").toBeDefined();
-      expect(f!.message).toContain("orderService.outbox -[async]-> orderService.api");
-    });
+    for (const covers of ["orderService.outbox -[async]-> orderService.api", "orderService.outbox .async orderService.api"]) {
+      await withProject(files(covers), async (p) => {
+        const { targets } = await validate(p, "--service", "order-service");
+        const [f] = findingsIn(targets, "covers.unknown");
+        expect(f, `a reversed kinded entry resolved: ${covers}`).toBeDefined();
+        expect(f!.message).toContain(covers);
+      });
+    }
   });
 
   it("counts toward a feature's coverage — the kinded entry answers c4.uncovered for the edge the delta adds", async () => {
@@ -475,7 +482,7 @@ describe("a Covers: edge entry spelled with the relationship's kind", () => {
       "  tag FEAT-1",
       "  relationship async\n  tag FEAT-1",
     ).replace("paymentService -> paymentSplitService", "paymentService -[async]-> paymentSplitService");
-    const featureArch = `# payment-split-service — architecture delta for FEAT-1
+    const featureArch = (covers: string): string => `# payment-split-service — architecture delta for FEAT-1
 
 ## ADDED Requirements
 
@@ -483,7 +490,7 @@ describe("a Covers: edge entry spelled with the relationship's kind", () => {
 
 The service SHALL treat createSplit as idempotent by payment id.
 
-Covers: payment-split-service, payment-service -[async]-> payment-split-service
+Covers: payment-split-service, ${covers}
 
 #### Scenario: payment-service retries createSplit
 - **Given** a split already recorded for a payment
@@ -494,16 +501,18 @@ Covers: payment-split-service, payment-service -[async]-> payment-split-service
       "  element person",
       "  element person\n  relationship async",
     );
-    const all = {
-      ...fixture,
-      "architecture/landscape.likec4": living,
-      "features/FEAT-1-split/delta.likec4": kindedDelta,
-      "features/FEAT-1-split/specs/payment-split-service/arch.spec.md": featureArch,
-    };
-    await withProject(all, async (p) => {
-      const { targets } = await validate(p, "--feature", "FEAT-1");
-      expect(findingsIn(targets, "covers.unknown")).toEqual([]);
-      expect(findingsIn(targets, "c4.uncovered")).toEqual([]);
-    });
+    for (const covers of ["payment-service -[async]-> payment-split-service", "payment-service .async payment-split-service"]) {
+      const all = {
+        ...fixture,
+        "architecture/landscape.likec4": living,
+        "features/FEAT-1-split/delta.likec4": kindedDelta,
+        "features/FEAT-1-split/specs/payment-split-service/arch.spec.md": featureArch(covers),
+      };
+      await withProject(all, async (p) => {
+        const { targets } = await validate(p, "--feature", "FEAT-1");
+        expect(findingsIn(targets, "covers.unknown"), covers).toEqual([]);
+        expect(findingsIn(targets, "c4.uncovered"), covers).toEqual([]);
+      });
+    }
   });
 });

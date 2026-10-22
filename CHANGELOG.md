@@ -41,11 +41,12 @@ Until now the event rule was written only in the examples README.
   can add a warning to a fleet that had none, and fail `--strict` with it.** While either warning
   stands, `validate --all` does not print `landscape.matched`. For any other element the arrow is
   still read, so a system calling into the fleet is not consumed by the services it calls.
-- **A `Covers:` edge entry may carry the relationship's kind.** `a -[kind]-> b` used to split at the
-  `->` after the `]` and was always `covers.unknown`, while `a -> b` matched the same kinded edge.
-  It now resolves exactly as `a -> b` does, at service and feature scope, and satisfies
-  `c4.uncovered` the same way. `node:a -[kind]-> node:b` reads as a deployment edge. The kind is read
-  past, not compared, because loam identifies an edge by its two endpoints.
+- **A `Covers:` edge entry may carry the relationship's kind**, in either of LikeC4's spellings.
+  `a -[kind]-> b` used to split at the `->` after the `]`, and `a .kind b` was read as one element
+  id, so both were always `covers.unknown` while `a -> b` matched the same kinded edge. Both now
+  resolve exactly as `a -> b` does, at service and feature scope, and satisfy `c4.uncovered` the
+  same way. `node:a -[kind]-> node:b` reads as a deployment edge. The kind is read past, not
+  compared, because loam identifies an edge by its two endpoints.
 
 ## [0.2.0-alpha.10] - 2026-10-21
 

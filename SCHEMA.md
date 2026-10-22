@@ -1951,11 +1951,12 @@ scenarios exercise. Comma-separated, same keep-last-line quirk (and the same rep
   is not the map's: write the service name, or the id the merged map gives the element);
 - an **edge** — `paymentService -> kafka`, each side resolved the same way against the declared
   relationships. Direction counts: `kafka -> paymentService` names a different edge (*Which way an
-  edge points*). The arrow may carry the relationship's kind exactly as the edge is written,
-  `paymentService -[async]-> kafka`. loam identifies an edge by its two endpoints and reads no
-  relationship kind, so the kind is read past rather than compared: `a -[async]-> b` covers exactly
-  what `a -> b` covers, every kind of edge from `a` to `b`. (Through 0.2.0-alpha.10 the kinded
-  spelling split at the `->` after the `]` and was always `covers.unknown`.);
+  edge points*). The entry may carry the relationship's kind exactly as LikeC4 writes the edge,
+  `paymentService -[async]-> kafka` or `paymentService .async kafka`. loam identifies an edge by
+  its two endpoints and reads no relationship kind, so the kind is read past rather than compared:
+  either kinded spelling covers exactly what `a -> b` covers, every kind of edge from `a` to `b`.
+  (Through 0.2.0-alpha.10 both kinded spellings were always `covers.unknown`: the bracket form
+  split at the `->` after the `]`, and the dotted form was read as one element id.);
 - a **health signal** — `alert:<id>` / `sli:<id>`, ids the service's `health.yaml` declares.
 
 An entry that resolves to nothing is `covers.unknown` (**warning**, with close ids offered where
