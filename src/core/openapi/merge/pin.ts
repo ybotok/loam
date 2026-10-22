@@ -24,7 +24,7 @@ import {
   OPENAPI_BASELINE_KEY,
 } from "../digest.js";
 import { openapiRefusal } from "./error.js";
-import { readTree, writeTree } from "../contract-tree.js";
+import { readTree, writeTreeOver } from "../contract-tree.js";
 import { isRemoval } from "../digest.js";
 import { plainChild } from "./markers.js";
 
@@ -140,7 +140,9 @@ export function pinOpenapiOperations(featureText: string, livingText: string, se
   }
 
   if (!edited) return { text: null, pins };
-  return { text: writeTree(doc, openapiRefusal("feature", service)), pins };
+  // Over the author's text, so the pins are the only lines this run changes
+  // (`writeTreeOver` says what re-serializing cost).
+  return { text: writeTreeOver(doc, featureText, openapiRefusal("feature", service)), pins };
 }
 
 

@@ -11,8 +11,8 @@
  * event axis would read its contracts through a file named for an error.
  * Import direction is asyncapi → openapi, as everywhere else on the contract
  * axes. `writeTreeOver` is the write an EDIT takes — a merge into a living
- * contract, a strip of a feature's markers — so that only what changed is
- * re-printed.
+ * contract, a strip of a feature's markers, the pins and baseline record
+ * `loam rebase` stamps into one — so that only what changed is re-printed.
  */
 import { isDeepStrictEqual } from "node:util";
 import { Document, Pair, Scalar, YAMLMap, isMap, isScalar, parseDocument, type Node } from "yaml";
@@ -55,8 +55,13 @@ export function resolveTree(doc: Document, fail: (detail: string) => Error): unk
   }
 }
 
-/** One spelling of "hand the document back", so every writer fails the same way. */
-export function writeTree(doc: Document, fail: (detail: string) => Error): string {
+/**
+ * Hand the whole document back through the printer. Not exported: it is
+ * `writeTreeOver`'s first step and its fallback, and a writer calling it
+ * directly would re-print the author's whole contract — the cost
+ * `writeTreeOver` exists to avoid.
+ */
+function writeTree(doc: Document, fail: (detail: string) => Error): string {
   try {
     return doc.toString();
   } catch (error) {

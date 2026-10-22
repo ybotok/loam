@@ -240,6 +240,19 @@ extending model declares does not resolve on a fleet flow.
   message edge used to print `(no op)`, and an edge declaring both an operation and a message
   prints both, `(op: <id>, publishes: <message>)`, where it used to print only `(op: <id>)`.
 
+### Fixed — `loam rebase` pins a feature's contract without re-printing it
+
+No code, flag, exit code or `--json` key was added or removed.
+
+- **A rebased `openapi.yaml` or `asyncapi.yaml` changes only where loam pins it.** Writing an
+  `x-loam-based-on` pin, or writing or removing the root `x-loam-baselines` record, re-printed the
+  feature's whole contract: every long scalar re-folded at 80 columns, every flow sequence
+  re-padded (`[a, b]` became `[ a, b ]`) and CRLF turned into LF. Now only the pin lines and the
+  record change and the rest of the file stays byte-for-byte as written, with the same fallback to
+  the whole-file write that the archive's merges use for a shape they cannot splice safely. A
+  contract an earlier rebase already re-printed stays as it is: rebasing it again does not bring
+  back the author's layout.
+
 ## [0.2.0-alpha.10] - 2026-10-21
 
 Everything on `main` since `0.2.0-alpha.9`. Still a prerelease on the `alpha` line.

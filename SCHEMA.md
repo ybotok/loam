@@ -2837,7 +2837,9 @@ the comment lines directly above it, and new lines take the file's own line endi
 entries are printed by the library. The spliced text is parsed back and must equal the merged tree
 value for value; a shape the walk does not understand (a non-scalar key, a key spelled twice, a
 reorder, an alias it cannot print alone) or a mismatch falls back to the whole-document write, so
-the splice can narrow a diff and can never change what a contract says.
+the splice can narrow a diff and can never change what a contract says. `loam rebase` writes its
+`x-loam-based-on` pins and `x-loam-baselines` record into a FEATURE's contract the same way, so a
+rebase changes those lines and no others in the author's file.
 
 **The delta's `info` is not merged, and the plan says so.** Neither merge carries `info` (nor any
 root key outside the sections it merges) — a delta is a diff of operations and slots, and its `info`
