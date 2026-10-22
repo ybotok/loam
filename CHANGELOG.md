@@ -10,6 +10,32 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+## [0.2.0-alpha.12] - 2026-10-22
+
+Everything on `main` since `0.2.0-alpha.11`. Still a prerelease on the `alpha` line. When this
+version was cut, `0.2.0-alpha.10` and `0.2.0-alpha.11` were tagged but neither publish had run
+(`alpha` and `latest` both named `0.2.0-alpha.9`), so a repository upgrading from alpha.9 takes
+alpha.10's and alpha.11's sections below as well as this one; `npm view @ybotok/loam dist-tags` is
+the record of what installs.
+
+Both entries close a gap between what a feature's checks say and what the archive then does. A
+feature that REMOVES a requirement a living flow's `#req-` tag claims, or MODIFIES one and adds an
+id that flattens to the same tag, is refused at feature scope with
+`usecase.requirement-unresolved` — the error `validate --all` used to report only after the
+archive — and that walk reads a service-local tag against both of the service's documents, as the
+fleet does. `loam rebase` writes a contract's `x-loam-based-on` pin and `x-loam-baselines` record
+without re-printing the rest of the feature's `openapi.yaml` or `asyncapi.yaml`.
+
+One entry changes an exit code. The refusal is new: `loam validate --feature`, `validate --all` for
+an active feature and `loam archive` (`not-coherent`, which `--approve` overrides) exit 1 for a
+feature whose merge breaks a living flow's `#req-` tag where they exited 0, and `loam status` no
+longer calls that feature ready. Under `--strict`, a `usecase.requirement-modified` warning that
+reading both of a service's documents takes away can let a run pass that failed. `loam rebase`
+changes no exit code.
+
+No stable code was added, renamed or retired — 360 in all, as at alpha.11, counted with
+`loam explain --codes --json` — and no flag, `--json` key or frontmatter field was added.
+
 ### Fixed — a feature that removes a promise a living flow claims is refused before the archive
 
 No code, flag or payload key was added. SCHEMA.md "A promise a living flow keeps, removed" states
