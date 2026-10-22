@@ -22,9 +22,10 @@ import { planWrite, readUtf8 } from "../../../core/staging/writes.js";
 import { featureSpecPaths, SPEC_AXES } from "../../../core/repo/paths.js";
 import { capabilityDocsDir, glossaryDir, livingCapabilityPaths } from "../../../core/repo/authored/paths.js";
 import { featureGlossary, livingTermPath } from "../../../core/glossary/delta.js";
-import { locateServicePaths } from "../../../core/repo/service-target.js";
+import { enumeratedServiceIds, locateServicePaths } from "../../../core/repo/service-target.js";
+import { introducedServices } from "../../../core/projection/arch-slice.js";
 import { isRequirementsHeading, parseRequirements, sectionHeadings } from "../../../core/document/parse.js";
-import { applyRequirementDelta } from "../../../core/document/apply.js";
+import { applyRequirementDelta, droppedBy, droppedSentence, type DroppedRow } from "../../../core/document/apply.js";
 import { type Requirement } from "../../../core/document/spec.js";
 import { movedUnderVouch, parseFrontmatter, stringField } from "../../../core/document/frontmatter.js";
 import { CodedFailure } from "../../../core/envelope/json.js";
@@ -46,6 +47,12 @@ export async function planSpecs(
   // Where every file of the feature will be once this archive lands — the
   // glossary terms it copies out, everything else under features/archive/.
   const retarget = await featureRetarget(config.docsDir, gated);
+  // Who the fleet already has, asked BEFORE any of this archive's writes, and
+  // which of them this feature's own C4 delta introduces: a first spec.md for a
+  // service that existed and was never adopted is the feature's slice, not the
+  // service, and the create branch below says so in its frontmatter.
+  const existing = new Set<string>(await enumeratedServiceIds(config.docsDir, config.fleet));
+  const introduced = new Set(introducedServices(gated.deltaDoc ?? null, gated.id));
   // Requirements merge — apply ADDED/MODIFIED/REMOVED into each living service
   // spec. ONE code path for the pair of requirement-carrying files: the business
   // spec.md and the architecture arch.spec.md ride the same delta algebra, the
@@ -78,6 +85,11 @@ export async function planSpecs(
           say(`  ${axis.label}: ${svc} — nothing to merge (delta leaves no requirements), no living ${axis.file} created`);
           continue;
         }
+        // The business spec only: it is the document the maturity ladder and
+        // `next.adopt` read as "this service is written down" (SCHEMA.md,
+        // `adoption`). A service the feature introduces IS its slice — there was
+        // nothing before it to adopt — so it is never marked.
+        const unadopted = axis.key === "spec" && existing.has(svc) && !introduced.has(svc);
         const doc = createdDocument({
           docsDir: config.docsDir,
           featureId: gated.id,
@@ -87,11 +99,18 @@ export async function planSpecs(
           retarget,
           fallbackTitle: axis.key === "spec" ? svc : `${svc} — architecture`,
           service: svc,
+          ...(unadopted ? { adoption: "partial" as const } : {}),
           requirements: created,
         });
         writes.push(planWrite(livingPath, doc.text));
         say(`  ${axis.label}: ${svc} — created living ${axis.file} (${created.length} requirement(s))`);
         say(`      ${doc.note}`);
+        if (unadopted) {
+          say(
+            `      ${svc} existed before ${gated.id} and was never adopted — this spec.md holds only the feature's slice, so it is ` +
+              `written \`adoption: partial\` and ${svc} stays owed its adoption: \`loam adopt --service ${svc}\`, then delete the line`,
+          );
+        }
         continue;
       }
       const livingText = await readUtf8(livingPath);
@@ -125,6 +144,7 @@ export async function planSpecs(
 
       const c = summarize(deltaReqs);
       say(`  ${axis.label}: ${svc} ← +${c.ADDED} ~${c.MODIFIED} -${c.REMOVED} (now ${merged.length} total)`);
+      sayDropped(plan, say, livingPath, droppedBy(livingReqs, deltaReqs));
       if (hasPurpose(delta)) say(`      ${PURPOSE_NOT_MERGED}`);
     }
   }
@@ -236,10 +256,27 @@ export async function planCapabilities(
     writes.push(planWrite(livingPath, rewriteRequirementsRun(livingText, livingReqs, merged)));
     const c = summarize(deltaReqs);
     say(`  capability: ${doc.id} ← +${c.ADDED} ~${c.MODIFIED} -${c.REMOVED} (now ${merged.length} total)`);
+    sayDropped(plan, say, livingPath, droppedBy(livingReqs, deltaReqs));
     if (hasPurpose(delta)) say(`      ${PURPOSE_NOT_MERGED}`);
   }
   if (adopting && creating) {
     say(`  capabilities/ did not exist — this archive opts the fleet into the business axis, and \`loam validate --all\` grades it from now on`);
+  }
+}
+
+/**
+ * What each replacement takes out of the living document, named under the
+ * count line and carried as `--json` `dropped`. The counts alone were the whole
+ * report — `~1` — while a MODIFIED that restated one of two scenarios, or wrote
+ * `Covers:` without the `sli:` entries the living text had, merged at exit 0
+ * and the rest was gone (`core/document/apply.ts` says why it is read verbatim
+ * and by name). Said, never gated: rewriting a requirement smaller is a
+ * legitimate change, and what was missing was only that nobody was told.
+ */
+function sayDropped(plan: Plan, say: (line?: string) => void, path: string, rows: DroppedRow[]): void {
+  for (const row of rows) {
+    plan.dropped.push({ path, ...row });
+    say(`      ${row.kind === "REMOVED" ? "-" : "~"} ${droppedSentence(row)}`);
   }
 }
 

@@ -18,7 +18,12 @@ import { archSlice, introducedServices, livingServices } from "../../core/projec
 import { useCaseBlastRadius } from "../../core/usecases/touch.js";
 import { featureCapabilityDeltas } from "../../core/capabilities/delta/tree.js";
 import { capabilityDeltaSummaries } from "../../core/capabilities/delta/summary.js";
-import { printApi, printArchSlice, printCapabilities, printEvents, printRequirements, printUseCases } from "./print.js";
+import { printApi, printArchSlice, printCapabilities, printDropped, printEvents, printRequirements, printUseCases } from "./print.js";
+import { droppedBy, type DroppedRow } from "../../core/document/apply.js";
+import { locateServicePaths } from "../../core/repo/service-target.js";
+import { livingCapabilityPaths } from "../../core/repo/authored/paths.js";
+import type { CapabilityDoc } from "../../core/capabilities/tree.js";
+import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import { indent } from "./print.js";
 
 interface DeltaOptions {
@@ -182,8 +187,9 @@ export function registerDelta(program: Command): void {
       // whole feature is for, and narrowing it would report a capability-only
       // feature as having nothing to say about every service in turn. One
       // `existsSync` for a fleet that has not adopted the axis.
+      const capabilityDocs = (await featureCapabilityDeltas(feature.dir)).docs;
       const capabilities = await capabilityDeltaSummaries(
-        (await featureCapabilityDeltas(feature.dir)).docs,
+        capabilityDocs,
         async (path) => parseRequirements(await readFile(path, "utf8")),
       );
 
@@ -203,6 +209,18 @@ export function registerDelta(program: Command): void {
       // agents that never ran validate, so the exit code must carry the
       // failure itself.
       if (arch.errors.length > 0 || api.unreadable || events.unreadable) process.exitCode = 1;
+
+      // What the merge would take out of the living documents this projection
+      // touches — the archive plan's `dropped` rows, read the same way, so the
+      // brief says before the archive what the plan says during it.
+      const livingPaths = await locateServicePaths(config.docsDir, service);
+      const dropped = await droppedRows(config.docsDir, {
+        axes: [
+          { delta: reqs, living: livingPaths.spec },
+          { delta: archReqs, living: livingPaths.archSpec },
+        ],
+        capabilities: capabilityDocs,
+      });
 
       if (json) {
         // `axis` is a parameter and `service` stays in the closure, because the
@@ -308,6 +326,11 @@ export function registerDelta(program: Command): void {
             removed: c.removed,
             promises: c.promises,
           })),
+          // Additive: every scenario and join-line entry the merge would take out
+          // of a living document, one row per replaced or removed requirement, in
+          // the shape `loam archive --json` carries as `dropped`. An empty array
+          // is the answer for a feature that only adds.
+          dropped,
         });
         return;
       }
@@ -324,6 +347,50 @@ export function registerDelta(program: Command): void {
       if (existsSync(specPaths.asyncapi)) printEvents(events);
       if (existsSync(paths.delta)) printArchSlice(arch, service);
       printCapabilities(capabilities);
+      printDropped(dropped);
       printUseCases(useCases, service);
     });
+}
+
+/** The documents one projection's dropped rows are read over. */
+interface DroppedRequest {
+  /** The service's two spec axes: the feature's parsed delta and the living document's path. */
+  axes: Array<{ delta: Requirement[]; living: string }>;
+  /** The feature's capability deltas — not narrowed by `--service`, for the capabilities section's reason. */
+  capabilities: readonly CapabilityDoc[];
+}
+
+/**
+ * Each living document's dropped rows (core/document/apply.ts), docs-relative.
+ *
+ * A pair the merge itself would refuse — malformed or repeated
+ * `Requirement-ID`s, an id and a heading selecting different requirements —
+ * is skipped rather than reported: `validate --feature` grades each under its
+ * own code, the archive refuses it, and a brief that died on it would hide
+ * every other section from the implementer. The catch is around the pure
+ * algebra alone, whose only throws are those refusals; the reads stay outside.
+ */
+async function droppedRows(docsDir: DocsDir, req: DroppedRequest): Promise<Array<DroppedRow & { path: string }>> {
+  const pairs = [
+    ...req.axes,
+    ...(await Promise.all(
+      req.capabilities.map(async (doc) => ({
+        delta: parseRequirements(await readFile(doc.spec, "utf8")),
+        living: livingCapabilityPaths(docsDir, doc.id).spec,
+      })),
+    )),
+  ];
+  const out: Array<DroppedRow & { path: string }> = [];
+  for (const { delta, living } of pairs) {
+    if (delta.length === 0 || !existsSync(living)) continue;
+    const livingReqs = parseRequirements(await readFile(living, "utf8"));
+    let rows: DroppedRow[];
+    try {
+      rows = droppedBy(livingReqs, delta);
+    } catch {
+      continue;
+    }
+    for (const row of rows) out.push({ path: repoPath(docsDir, living), ...row });
+  }
+  return out;
 }

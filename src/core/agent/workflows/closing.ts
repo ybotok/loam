@@ -235,7 +235,10 @@ export const LOAM_SHIP: CommandContent = {
    means another feature in flight adds the same requirement — the first to archive
    lands it, and the other's archive is then refused (\`delta.added-duplicate\`: its
    ADDED now collides with the living spec) unless a human \`--approve\`s the
-   replacement.
+   replacement. \`dropped[]\` is what each MODIFIED or REMOVED requirement takes OUT
+   of a living document — the scenarios and the \`Covers:\` / \`Operations:\` / … entries
+   its new text does not restate. None of it is a warning, and all of it is gone
+   after the merge: restate in the delta anything that must survive, then re-run.
 4. \`loam archive $1 --json\`. It merges three axes into the living state — requirements
    into \`services/<svc>/spec.md\`, endpoints into \`services/<svc>/openapi.yaml\`,
    elements and edges into \`architecture/landscape.likec4\` and, for an addition nested

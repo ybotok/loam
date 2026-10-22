@@ -10,6 +10,61 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Fixed — the archive says what it replaces, creates and rewrites
+
+Three new stable codes, all warnings that never gate: `usecase.requirement-modified`,
+`openapi.info-not-merged`, `asyncapi.info-not-merged` (359 in all). No flag and no refusal changed;
+the exit codes that move are `loam gate`'s and, under `--strict`, `validate`'s, both below. New
+`--json` keys, all additive: `dropped` on `loam archive` and on `loam delta`, and `partial: true` on
+the spec.md entry of `loam adopt`'s `targets[]`. One new frontmatter
+field, written by loam: `adoption: partial`.
+
+- **A MODIFIED or REMOVED requirement names what it takes away.** A MODIFIED replaces the living
+  requirement whole, so every scenario and join-line entry (`Operations:`, `Covers:`, `Requires:`,
+  `Capability:`, `Realizes:`, `Publishes:`, `Consumes:`) it did not restate vanished at archive
+  under a bare `~1`. The plan now prints one line per replaced or removed requirement naming the
+  dropped scenarios and entries, `loam archive --json` carries them as `dropped`
+  (`[{ path, kind, requirement, id?, scenarios, directives }]`), and `loam delta` carries the same
+  rows as `dropped` and prints them under *Taken out of the living docs by the merge* — on the
+  service's spec.md and arch.spec.md and on every capability document the feature changes. `path`
+  is the living document; `kind` is `MODIFIED`, `REMOVED` or `ADDED` (an ADDED that lands on a living
+  requirement of the same id or name); `id` is absent for a requirement with no `Requirement-ID:`;
+  `directives` is keyed `operations`, `covers`, `requires`, `capabilities`, `realizes`, `publishes`,
+  `consumes`, each present only for a line that loses an entry (a `Realizes:` entry is compared by
+  its target, so a pin is never a drop).
+- **A living flow claiming a requirement the feature MODIFIES is named.** Its `#req-` tag still
+  resolves after the archive and every grade stays green, whatever the new wording says.
+  `usecase.requirement-modified` (warn) now fires wherever the feature is graded — `validate
+  --feature`, `validate --all` per active feature, `loam status <FEAT>`, and the archive's
+  `warnings[]` (it never refuses the archive) — for an `architecture/` flow whose `#cap-`-scoped `#req-` tag claims a capability
+  requirement the feature modifies, and for a flow beside a service's model whose `#req-` tag
+  names one of that service's requirements the feature's `specs/` delta modifies. **Exit code:**
+  unchanged, except under `--strict`, which fails on any warning and so now exits 1 on this shape.
+- **A first spec.md archived into a never-adopted service is marked `adoption: partial`.** When
+  `loam archive` creates `services/<id>/spec.md` for a service that already existed and that the
+  feature does not introduce, the file carries `adoption: partial` and the plan says why.
+  `loam list`, `explore`, the context pack and `validate --all`'s scorecard keep the service at
+  `partial` (`missing` names `loam adopt --service <id>`) instead of `documented`, and `loam status`
+  lists it under `next.adopt`, with a sentence saying the spec.md holds one feature's slice, instead
+  of `next.complete-service` even when it has no model.likec4. **Exit code: `loam gate --service
+  <id>` now exits 1 for such a service** — it sits at `partial`, so `gate.service-undocumented`
+  fires where the same archive used to leave it `documented` and the gate passing; every service
+  joined to it gets `gate.partner-undocumented` (warn: exit unchanged, except under `--strict`).
+  `loam adopt --service <id>` — the command all of those name — flags that spec.md `PARTIAL` and
+  counts it as owed (`targets[]` carries `partial: true`) where it said every required artifact was
+  already there. Delete the line once the service's baseline is written — the brief and the
+  `loam-adopt` protocol now say so — and all of it clears.
+- **The contract merges keep the bytes they did not change.** Archiving into a living
+  `openapi.yaml` or `asyncapi.yaml` re-folded every long scalar at 80 columns, re-padded flow
+  sequences and turned CRLF into LF across the whole file; only the entries the merge adds, replaces
+  or removes are now written, and the rest of the file is byte-identical (falling back to the old
+  whole-file write for a shape it cannot splice safely). A living contract the archive CREATES from
+  the feature's file keeps that file's bytes too, minus the `x-loam-*` keys it strips.
+- **The delta's `info` is not merged, and the plan now says so.** `openapi.info-not-merged` /
+  `asyncapi.info-not-merged` (warn) name every `info` key the feature's contract spells differently
+  from the living one — including for a delta whose only change is its `info` — since the merge
+  keeps the living `info`. Edit the living contract in the same change if it should move.
+
 ## [0.2.0-alpha.10] - 2026-10-21
 
 Everything on `main` since `0.2.0-alpha.9`. Still a prerelease on the `alpha` line.

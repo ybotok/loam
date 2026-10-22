@@ -93,6 +93,14 @@ export const USECASE_VIEWS = `- Business use cases are \`dynamic view\`s, and \`
   fleet map, never inside one service. A resolved service-local \`#req-\` keeps its
   own grade and nothing else — it is not \`keptBy\`, not \`Covers:\`, and no feature
   carries one yet.
+- A feature that MODIFIES a requirement a LIVING flow claims — an \`architecture/\`
+  flow's \`#req-\` tag on a capability requirement, or a service-local flow's on
+  that service's own — gets \`usecase.requirement-modified\` (warn, never gates)
+  wherever the feature is graded (\`loam validate --feature\`, \`--all\` per active
+  feature, \`loam status <FEAT>\`, the archive): the tag still resolves after
+  the merge, so nothing else would say the drawing now answers to new words.
+  Read the flow against the replacement and redraw it in the same change if it
+  no longer keeps the promise.
 - A FEATURE brings a flow the way it brings every other axis: write it at
   \`features/<FEAT>/usecases/<name>.likec4\` — the same views-only document, in the
   feature's own directory — and \`loam archive\` copies it into

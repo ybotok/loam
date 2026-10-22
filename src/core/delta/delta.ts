@@ -40,7 +40,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { relative } from "node:path";
-import { type FleetContext } from "../fleet-context.js";
+import { FleetContext } from "../fleet-context.js";
 import { parseRequirements, readRequirementsDocument } from "../document/parse.js";
 import { type Requirement } from "../document/spec.js";
 import { featureSpecPaths, SPEC_AXES } from "../repo/paths.js";
@@ -49,6 +49,7 @@ import { readCapabilityVocabulary } from "../capabilities/capabilities.js";
 import { extendingModels } from "../c4/service-model/fleet/extending.js";
 
 import { flowCoverage, type FlowPromises } from "../usecases/delta/claims.js";
+import { modifiedPromiseFlowIssues, type ServiceDeltaPair } from "../usecases/delta/modified.js";
 import { enumeratedServiceIds, locateServicePaths } from "../repo/service-target.js";
 import { featureSpecServices } from "../repo/repo.js";
 import { capabilityDocIssues } from "../capabilities/delta/doc.js";
@@ -132,6 +133,9 @@ export async function deltaShapeIssues(
   // holds the rules; nothing here decides anything).
   const serviceDeltas: RealizingDoc[] = [];
   const capabilityDeltas: CapabilityDeltaDoc[] = [];
+  // Each service axis beside its living document, for the one question that
+  // needs both: which living flow claims a requirement this feature MODIFIES.
+  const servicePairs: ServiceDeltaPair[] = [];
 
   // Both requirement-carrying files per service run the same checks — one code
   // path parameterized by filename, the merge's own factoring. `where` names
@@ -156,6 +160,8 @@ export async function deltaShapeIssues(
       const graded = await gradeDelta(scope, (await locateServicePaths(docsDir, service, context))[axis.key], reads);
       issues.push(...graded.issues);
       serviceDeltas.push({ service, file: axis.file, reqs: graded.reqs });
+      const paths = (): ReturnType<typeof locateServicePaths> => locateServicePaths(docsDir, service, context);
+      servicePairs.push({ id: service, reqs: graded.reqs, living: graded.living.all, paths });
     }
   }
 
@@ -293,6 +299,24 @@ export async function deltaShapeIssues(
         capabilities: capabilityDeltas,
         deltas: serviceDeltas,
         living: () => livingRealizers(docsDir, context),
+      })),
+    );
+  }
+
+  // The living flows whose `#req-` tag claims a promise this feature rewrites
+  // (`core/usecases/delta/modified.ts`). Asked only when a requirement is
+  // MODIFIED, on either corpus, so every other feature never reads a flow for it.
+  if ([...capabilityDeltas, ...servicePairs].some((doc) => doc.reqs.some((r) => r.kind === "MODIFIED"))) {
+    const ctx = context ?? new FleetContext();
+    issues.push(
+      ...(await modifiedPromiseFlowIssues({
+        docsDir,
+        capabilities: capabilityDeltas,
+        services: servicePairs,
+        vocabulary: await ctx.capabilities(docsDir),
+        known: new Set(await enumeratedServiceIds(docsDir, ctx)),
+        serviceModel: (paths) => ctx.serviceModel(docsDir, paths),
+        architecture: () => ctx.architecture(docsDir),
       })),
     );
   }

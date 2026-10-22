@@ -20,7 +20,7 @@ import { stripAsyncapiMarkers } from "../../../../core/asyncapi/merge/markers.js
 import { mergeAsyncapiSlots, type AsyncapiMergeResult } from "../../../../core/asyncapi/merge/merge.js";
 import { type Gated, type Plan } from "../state.js";
 import { consumerClause, type ContractConsumers } from "./consumers.js";
-import { sayQuoted, sayStale, warnOverwrite } from "./verdict-lines.js";
+import { infoDrift, sayQuoted, sayStale, warnInfoDrift, warnOverwrite } from "./verdict-lines.js";
 import type { FleetContext } from "../../../../core/fleet-context.js";
 import type { IssueCode } from "../../../../core/vocabulary/issue.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
@@ -100,7 +100,8 @@ export async function planAsyncapiContracts(
         say(`  asyncapi: ${svc} — created (${names.join(", ")})`);
         continue;
       }
-      const merge: AsyncapiMergeResult = mergeAsyncapiSlots(await readUtf8(livingAsyncapi), featText, svc);
+      const livingText = await readUtf8(livingAsyncapi);
+      const merge: AsyncapiMergeResult = mergeAsyncapiSlots(livingText, featText, svc);
       // What the delta declares OUTSIDE the three slot sections — the one
       // question the merge result cannot answer for the silence below, because
       // a merge that wrote nothing reports nothing to distinguish "the delta
@@ -125,6 +126,13 @@ export async function planAsyncapiContracts(
         // surface being a quote is correct authoring and the correct merge.
         say(`  asyncapi: ${svc} — nothing to write: every one of the ${surfaces.length} component surface(s) this delta declares already stands as living has it`);
       }
+      // Asked whatever the merge wrote: a delta whose ONLY change is its `info`
+      // merges nothing at all, and that is exactly the shape that archived in
+      // silence (./verdict-lines.ts).
+      warnInfoDrift(plan, say, {
+        svc, code: "asyncapi.info-not-merged", file: "asyncapi.yaml", carries: "channels, operations and components",
+        labels: infoDrift(parse(livingText), parse(featText)),
+      });
       if (merge.removed.length > 0) {
         asyncapiRemovals.push({ service: svc, slots: merge.removed.map((slot) => slot.label) });
         for (const slot of merge.removed) say(`      - removes ${slot.label}`);

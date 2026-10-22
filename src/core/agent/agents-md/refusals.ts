@@ -120,7 +120,9 @@ export const REFUSALS = `- \`loam audit-openspec <root>\` is the read-only OpenS
   \`openapi.ref-unresolved\`, \`openapi.remove-marker-path-level\`, the event
   axis's own trio \`asyncapi.message-modified\` / \`asyncapi.channel-modified\` /
   \`asyncapi.operation-modified\`, \`asyncapi.ref-unresolved\`,
-  \`asyncapi.remove-marker-inline\` and \`service.no-model\`. Two of those are
+  \`asyncapi.remove-marker-inline\`, \`openapi.info-not-merged\` /
+  \`asyncapi.info-not-merged\` (the delta spells an \`info\` key the merge never
+  carries) and \`service.no-model\`. Two of those are
   graded at validate time as well and are STRICTER here —
   \`openapi.ref-unresolved\` and \`asyncapi.ref-unresolved\` are warnings there and
   errors here, because the merged document is what would carry the dangling

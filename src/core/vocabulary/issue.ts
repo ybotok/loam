@@ -239,6 +239,10 @@ export type IssueCode =
   | "asyncapi.operation-modified"
   /** the delta declares a component SURFACE outside `components.messages` — a schema, a security scheme — that the living AsyncAPI already has with different content, and the merge copies the feature's version over it wholesale */
   | "asyncapi.component-modified"
+  /** the delta's OpenAPI spells an `info` key differently from the living contract — the merge carries paths and components and never `info`, so the living contract keeps its own and the delta's version or description is lost unless the author edits the living file in the same change */
+  | "openapi.info-not-merged"
+  /** the delta's AsyncAPI spells an `info` key differently from the living contract — the merge carries channels, operations and components and never `info`; the event-axis twin of `openapi.info-not-merged` */
+  | "asyncapi.info-not-merged"
   /** an `x-loam-remove: true` marker with no operationId — loam cannot tell which operation it retires, and the marker itself would reach the living contract */
   | "openapi.remove-marker-anonymous"
   /** an `x-loam-remove: true` written at PATH level, beside the methods — it addresses no operation, so it retires nothing and is not a contract key either */
@@ -299,6 +303,8 @@ export type IssueCode =
   | "usecase.capability-unresolved"
   /** a `#req-` tag on a feature's own flow that resolves to no requirement of the capability its `#cap-` tag names, as the merge would leave that document — or a flow with no resolving `#cap-` at all; validate's fleet-scope code, graded in feature scope */
   | "usecase.requirement-unresolved"
+  /** a LIVING flow — in `architecture/` or a service's own — whose `#req-` tag claims a requirement — a capability's, or that service's own — this feature MODIFIES: the tag still resolves after the archive and nothing grades the drawing against the new wording, so the author reads the flow against the replacement. A warning that never gates */
+  | "usecase.requirement-modified"
   /** a `features/<FEAT>/usecases/<name>.likec4` whose flow the living `architecture/` already holds — the merge is a whole-file copy, so it would replace an authored hop sequence wholesale. An error with no legal reading, which is why `--approve` changes nothing about it: a feature-local flow INTRODUCES a use case, and rewriting one belongs in a pull request where git produces the conflict */
   | "usecase.flow-exists"
   /* --- the deployment axis: the topology a feature introduces --- */

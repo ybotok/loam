@@ -1022,7 +1022,8 @@ place, and a `## Purpose` in a delta against it merges as nothing — the plan s
 line rather than letting it vanish.
 
 **Frontmatter**: `status`, `owner`, `service` or `feature`, `last_verified`, `vouched_by`, `sources`
-(literal files and directories), `sources_digest`, `content_digest`, `sources_files`, `vouch_scope`.
+(literal files and directories), `sources_digest`, `content_digest`, `sources_files`, `vouch_scope`,
+`adoption`.
 `loam validate` reads it in exactly three files — a service's living `spec.md`, its living
 `arch.spec.md` when present (same conventions, same checks, only the label differs), and a feature's
 `intent.md`: the documents whose identity and status everything else joins on. `adrs/` and
@@ -1092,6 +1093,23 @@ two checked files:
   `loam list`, `loam show` and `loam status`, since the sample is per file. A later FULL
   `loam vouch` deletes the field, which is the only thing that clears the warning; deleting it by
   hand forges a full vouch out of a partial one, and the generated `AGENTS.md` says so.
+- `adoption: partial` — written by `loam archive`, never by hand, on a service's living `spec.md`
+  only, and only when the archive CREATES it for a service that existed before the feature (its
+  directory is enumerated) and that the feature's own `delta.likec4` does not introduce. What lands
+  then is that feature's slice — the requirements it added — and nothing about what the service
+  already did, so the document is not an adoption, and the decision is to say so where every
+  fleet readout looks rather than to refuse the archive: the plan prints why the file is marked,
+  the maturity ladder keeps the service at `partial` (a spec.md carrying the marker does not count
+  toward `documented`; `loam list`'s `missing` names `loam adopt --service <id>`, so the scorecard
+  and `--needs-work` see it too, and `loam gate --service <id>` refuses the deploy with
+  `gate.service-undocumented` exactly as it did before the archive), and `loam status` keeps
+  `next.adopt` for it — in place of `next.complete-service` — with a sentence that does not claim
+  the file is missing. A service the feature introduces is never marked — its slice
+  is all of it — and neither is a spec.md that already existed. `loam adopt` flags the file `PARTIAL`
+  and counts it as owed (`targets[]` carries `partial: true`), while its action stays `diff` — never
+  replace it: write the baseline from the code around the slice, then **delete the line**, which is
+  the only thing that clears it. Any value other than `partial` reads
+  as absent.
 - Missing fields are warnings, and `loam list` reports the fleet's draft/verified/unmarked split.
 
 **Vouching** (`loam vouch --service <id>`, run in the service's own repo) is the human promotion
@@ -2441,6 +2459,19 @@ they gate archive. Without that the feature-local delta becomes a second way to 
 requirements: a capability requirement carrying `Operations:` would merge into the living tree and
 only then earn its error, against a document whoever reads the finding did not write.
 
+**A promise a living flow keeps, rewritten, is named.** A MODIFIED keeps the `Requirement-ID` and
+replaces the text, so a living flow tagged `#req-<id>` still resolves after the archive and every
+grade of it stays green — while it may draw exactly what the new wording forbids. Nothing in loam
+reads a flow's meaning, so `usecase.requirement-modified` (**warning**, never gates) names each such
+flow under `validate --feature` and in the archive's warnings: an `architecture/` flow whose `#cap-`
+tag scopes its `#req-` tag to a capability requirement this feature modifies, and — at the service
+altitude, where the directory is the scope — a flow beside a service's model whose `#req-` tag names
+one of that service's spec.md / arch.spec.md requirements the feature's `specs/` delta modifies. Read
+the flow against the replacement, and redraw it (or drop the tag) in the same change if it no longer
+keeps the promise. A REMOVED requirement is not this warning's: its tag stops resolving, which is
+`usecase.requirement-unresolved`. The cost is a byte scan for the tag's spelling, and a LikeC4 load
+only for a project a document carrying it is in; a feature that modifies nothing pays nothing.
+
 **The archive refuses a promise nothing keeps, in both directions.**
 
 - `capability.uncovered` (**warning that gates**, `--approve`-overridable) — the feature ADDS a
@@ -2655,6 +2686,49 @@ defined nowhere, never reaches the plan without `--approve`: the gate refuses it
 (`openapi.remove-op-consumed`, the overwrite shape). An unparseable `delta.likec4` fails the archive at plan time regardless of
 `--approve`: the alternative was archiving with the architecture axis silently dropped, which is the
 data loss this tool exists to prevent.
+
+**What a replacement takes away is named, not just counted.** A MODIFIED requirement carries its
+full new text and replaces the living one whole, so every living scenario and every join-line entry
+(`Operations:`, `Covers:`, `Requires:`, `Capability:`, `Realizes:`, `Publishes:`, `Consumes:`) it
+does not restate is gone after the merge. Under each `← +A ~M -R` line the plan now prints one line
+per replaced or removed requirement saying what goes — the scenarios by name, the entries verbatim —
+and `archive --json` carries the same rows as `dropped`
+(`[{ path, kind, requirement, id?, scenarios, directives: { covers?: […], … } }]`: `path` the living
+document; `kind` `MODIFIED`, `REMOVED`, or `ADDED` for an ADDED that lands on a living requirement
+of the same id or name; `requirement` and `id` the LIVING requirement's heading and id, `id` absent
+when it has none; `directives` keyed by field — `operations`, `covers`, `requires`,
+`capabilities`, `realizes`, `publishes`, `consumes` — each present only for a line that loses an
+entry, and a `Realizes:` entry compared by its target so a `@<digest>` pin is never a drop). `loam delta --json` carries the identical rows as its own `dropped` key, and its human view
+prints them under *Taken out of the living docs by the merge*, so the brief says before the archive
+what the plan says during it. Read verbatim and by name, deliberately: a renamed scenario or a
+`Covers:` entry respelled from an element id to the service name is listed, because what is listed
+is what the living text says and the merged text does not — the author decides whether it meant the
+same. Never a warning and never a gate: rewriting a requirement smaller is legitimate; what was
+missing was being told. The one drop that IS graded is the health signal's, as before
+(`health.uncovered` at feature scope).
+
+**The contract merges write over the living text, not out of a printer.** Both the OpenAPI and the
+AsyncAPI merge used to hand the living contract back through the `yaml` library's printer, which
+re-folds every plain scalar at 80 columns, re-pads every flow sequence (`[a, b]` → `[ a, b ]`) and
+turns CRLF into LF — so a delta adding one channel rewrote a long `description` three sections away.
+`lineWidth: 0` is not the fix (measured: it joins every scalar the author folded by hand onto one
+line). The merge now SPLICES: the living and merged trees are walked block map by block map, every
+entry whose resolved value is unchanged keeps its bytes, a changed entry is descended into or
+replaced, a new one is printed after the entry the merge placed it behind, a removed one is cut with
+the comment lines directly above it, and new lines take the file's own line ending. Only those
+entries are printed by the library. The spliced text is parsed back and must equal the merged tree
+value for value; a shape the walk does not understand (a non-scalar key, a key spelled twice, a
+reorder, an alias it cannot print alone) or a mismatch falls back to the whole-document write, so
+the splice can narrow a diff and can never change what a contract says.
+
+**The delta's `info` is not merged, and the plan says so.** Neither merge carries `info` (nor any
+root key outside the sections it merges) — a delta is a diff of operations and slots, and its `info`
+is most often a copy. But a delta that DID move it lost the change at exit 0 with nothing in the
+plan. Now every `info` key the delta declares with a value different from the living contract's is
+reported — `openapi.info-not-merged` / `asyncapi.info-not-merged`, a warning naming the keys
+(`info.version`, `info.description`) — including for a delta whose only change is its `info`, which
+merges nothing at all. Keys the delta leaves out are not compared. If the `info` should move, edit
+the living contract in the same change.
 
 The landscape merge **splices authored source, it does not re-serialize**. Each new element and
 relationship is copied into the living landscape byte-for-byte from `delta.likec4` — technology,

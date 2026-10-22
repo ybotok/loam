@@ -25,6 +25,7 @@ import { join, relative } from "node:path";
 import type { PathableService } from "../kernel/ids/service.js";
 import { landscapePath, type ServicePaths } from "../repo/paths.js";
 import { locateServicePaths } from "../repo/service-target.js";
+import { specAdoption } from "../repo/repo.js";
 import { entryIs } from "../repo/tree/fs.js";
 import { VALIDATE_CHECKS, type BriefCheck } from "./checks.js";
 import { UNCHECKED } from "./unchecked.js";
@@ -231,8 +232,10 @@ export async function serviceBrief(
     const ext = key === "adrsDir" ? ".md" : key === "usecasesDir" ? ".likec4" : null;
     const at = key === "usecasesDir" ? join(paths.dir, USECASES_DIR) : paths[key];
     const exists = ext === null ? existsSync(at) : await hasEntry(at, ext);
+    const partial = key === "spec" && exists && (await specAdoption(at)) === "partial";
     targets.push({
       ...artifact,
+      ...(partial ? { partial: true as const } : {}),
       ...(key === "openapi" ? { required: owesApi } : {}),
       // Every `<fqn>` in the model target, replaced by the element this service
       // actually extends. The placeholder is left literal in `targets.ts` — the

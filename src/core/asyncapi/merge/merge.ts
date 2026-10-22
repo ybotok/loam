@@ -25,7 +25,7 @@ import { danglingRefs } from "../depth.js";
 import { messageName } from "../read.js";
 import { readBaselineRecord } from "../../openapi/baseline/record.js";
 import { asyncapiSurfaces } from "../baseline/surfaces.js";
-import { resolveTree, writeTree } from "../../openapi/contract-tree.js";
+import { resolveTree, writeTreeOver } from "../../openapi/contract-tree.js";
 import { asyncapiRefusal } from "./error.js";
 import { mergeAsyncapiComponents } from "./components.js";
 import {
@@ -241,7 +241,9 @@ export function mergeAsyncapiSlots(
 
   const fail = asyncapiRefusal("living", service);
   const mergedPlain = resolveTree(living, fail);
-  const text = writeTree(living, fail);
+  // Over the living text, so every entry the merge did not touch keeps the
+  // author's bytes (`writeTreeOver` says what re-serializing cost).
+  const text = writeTreeOver(living, livingText, fail);
   // The ref sweep grades what the MERGE would leave dangling: a merged slot
   // pointing at something neither document defines, or a removal that took a
   // target the living document still references. Refs already dangling in the

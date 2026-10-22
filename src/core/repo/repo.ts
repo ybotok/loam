@@ -135,6 +135,21 @@ async function filesMovedUnderVouch(
   return moved.flat();
 }
 
+/**
+ * `ServiceEntry.adoption`, read off one living spec.md's frontmatter — the one
+ * spelling of the marker's test, for the enumeration below and for the adopt
+ * brief, which must not call a partial adoption finished. Any value but
+ * `partial` reads as absent (SCHEMA.md).
+ */
+export function adoptionOf(fm: Frontmatter): "partial" | null {
+  return stringField(fm, "adoption") === "partial" ? "partial" : null;
+}
+
+/** `adoptionOf` for a spec.md by path; an absent file is no marker. */
+export async function specAdoption(specPath: string): Promise<"partial" | null> {
+  return adoptionOf(await readFrontmatter(specPath));
+}
+
 export async function serviceEntries(tree: FleetTree): Promise<ServiceEntry[]> {
   const entries = await Promise.all(
     tree.services.map(async (svc): Promise<ServiceEntry> => {
@@ -163,6 +178,7 @@ export async function serviceEntries(tree: FleetTree): Promise<ServiceEntry[]> {
         },
         adrs: await countMarkdown(p.adrsDir),
         status: stringField(fm, "status") ?? null,
+        adoption: adoptionOf(fm),
         sources: {
           declared: listField(fm, "sources").length > 0,
           stamped: stringField(fm, "sources_digest") !== undefined,

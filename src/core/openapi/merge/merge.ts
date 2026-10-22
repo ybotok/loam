@@ -15,7 +15,7 @@ import { isMap } from "yaml";
 import { isRecord } from "../../kernel/records.js";
 import { HTTP_METHODS } from "../doc.js";
 import { OpenapiMergeError, openapiRefusal } from "./error.js";
-import { readTree, writeTree } from "../contract-tree.js";
+import { readTree, writeTreeOver } from "../contract-tree.js";
 import { classifyOperationBaseline } from "./pin.js";
 import { classifyBaselineDigests, isRemoval, valueDigest } from "../digest.js";
 import { entryFor, readBaselineRecord, restatedSurfaces } from "../baseline/record.js";
@@ -290,7 +290,9 @@ export function mergeOpenapiPaths(
   const closure = mergeComponentClosure({ living, featPlain, livingPlain, record, written, componentsAreTheDelta });
   const { componentsModified, componentsAdded, componentsQuoted, componentsStale, unresolved } = closure;
 
-  const text = writeTree(living, openapiRefusal("living", service));
+  // Over the living text, so every entry the merge did not touch keeps the
+  // author's bytes (`writeTreeOver` says what re-serializing cost).
+  const text = writeTreeOver(living, livingText, openapiRefusal("living", service));
   return {
     text, modified, modifiedOperationIds, pathItemModified, removed, quoted, baselineStale,
     pathItemQuoted, pathItemStale, componentsModified, componentsAdded, componentsQuoted, componentsStale, unresolved,

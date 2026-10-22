@@ -26,7 +26,7 @@ import {
 } from "../digest.js";
 import { setKeyed } from "./components.js";
 import { openapiRefusal } from "./error.js";
-import { readTree, writeTree } from "../contract-tree.js";
+import { readTree, writeTreeOver } from "../contract-tree.js";
 
 /**
  * Remove feature-only operation-removal markers — and the root
@@ -51,7 +51,7 @@ export function stripOpenapiRemovalMarkers(featureText: string, service: string)
   if (!isRecord(paths)) {
     if (!hasRecord) return featureText;
     feature.deleteIn([OPENAPI_BASELINES_KEY]);
-    return writeTree(feature, fail);
+    return writeTreeOver(feature, featureText, fail);
   }
 
   const cleaned: Record<string, unknown> = {};
@@ -86,7 +86,7 @@ export function stripOpenapiRemovalMarkers(featureText: string, service: string)
   if (!stripped) {
     if (!hasRecord) return featureText;
     feature.deleteIn([OPENAPI_BASELINES_KEY]);
-    return writeTree(feature, fail);
+    return writeTreeOver(feature, featureText, fail);
   }
 
   // Edit the AST in place when every node the strip touches IS a node — the
@@ -153,7 +153,7 @@ export function stripOpenapiRemovalMarkers(featureText: string, service: string)
   // bookkeeping exactly like the pins, and the rewrite branch above replaced
   // only `paths`, so the root key survives either way without this.
   if (hasRecord) feature.deleteIn([OPENAPI_BASELINES_KEY]);
-  return writeTree(feature, fail);
+  return writeTreeOver(feature, featureText, fail);
 }
 
 /**

@@ -311,10 +311,14 @@ export function perServiceSteps(services: ServiceEntry[], adoptedBinding: string
   // float above `next.adopt-bound` or the first-hour ladder, both of which are
   // about the repository rather than about any one service in the fleet.
   const perService: NextStep[] = [];
-  for (const s of services.filter(undocumented)) {
+  // `adoption: partial` is one feature's slice archived into a service never
+  // adopted (SCHEMA.md); the file's presence used to discharge this rung.
+  for (const s of services.filter((x) => undocumented(x) || x.adoption !== null)) {
     perService.push({
       code: "next.adopt",
-      statement: `${serviceTreePath(s)}/ has no spec.md — nothing about ${s.id} is written down, so no feature can be graded against it.`,
+      statement: undocumented(s)
+        ? `${serviceTreePath(s)}/ has no spec.md — nothing about ${s.id} is written down, so no feature can be graded against it.`
+        : `${serviceTreePath(s)}/spec.md is adoption: partial — it holds what an archived feature added, nothing of what ${s.id} already did.`,
       command: `loam adopt --service ${s.id} --json`,
       service: s.id,
     });
@@ -324,7 +328,7 @@ export function perServiceSteps(services: ServiceEntry[], adoptedBinding: string
   // model.likec4 is the state archive itself warns about (`service.no-model`)
   // and the fleet gate reports — invisible here until now, because this form
   // looked at exactly one bit of each service's artifact set.
-  for (const s of services.filter((x) => !undocumented(x) && !x.has.model)) {
+  for (const s of services.filter((x) => !undocumented(x) && x.adoption === null && !x.has.model)) {
     perService.push({
       code: "next.complete-service",
       statement: `${serviceTreePath(s)}/ has a spec.md but no model.likec4 — the fleet gate reports the service incomplete until something models it.`,

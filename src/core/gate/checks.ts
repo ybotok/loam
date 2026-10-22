@@ -125,7 +125,7 @@ function partnersFindings(scan: PartnerScan, service: string): Finding[] {
       subject: service,
       message:
         `${serviceTreePath(scan.targetEntry)}/ sits at '${target.maturity}' on the adoption ladder — below 'documented', the docs cannot say what its joins even are, so no recorded evidence can answer the deploy question. ` +
-        `Author the baseline (\`loam adopt --service ${service}\` briefs it); this check passes once the required artifact set exists.`,
+        `Author the baseline (\`loam adopt --service ${service}\` briefs it); this check passes once the required artifact set exists and its spec.md no longer says \`adoption: partial\`.`,
       details: target.gaps,
       text: { detailPrefix: "- " },
     });

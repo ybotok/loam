@@ -14,6 +14,7 @@ import { type PathableService } from "../../../core/kernel/ids/service.js";
 import { type LoadedDoc } from "../../../core/c4/likec4.js";
 import { type CapabilityDoc } from "../../../core/capabilities/tree.js";
 import { type CommitRecovery } from "../../../core/staging/interrupted.js";
+import { type DroppedRow } from "../../../core/document/apply.js";
 
 export interface Gated {
   /** The canonical feature id. The raw argument does not survive the gate. */
@@ -67,6 +68,13 @@ export interface Plan {
    * document names none. The `--json` payload carries it as `revouchOwed`.
    */
   revouchOwed: Array<{ service: string; path: string; owner: string | null }>;
+  /**
+   * What each requirement replacement takes out of a living document — the
+   * scenarios and join-line entries a MODIFIED does not restate, and every
+   * removal. `path` is absolute like `revouchOwed`'s, made docs-relative where
+   * it is printed; the `--json` payload carries it as `dropped`.
+   */
+  dropped: Array<DroppedRow & { path: string }>;
 }
 
 export function emptyPlan(): Plan {
@@ -78,5 +86,6 @@ export function emptyPlan(): Plan {
     asyncapiRemovals: [],
     architectureServices: new Set<PathableService>(),
     revouchOwed: [],
+    dropped: [],
   };
 }

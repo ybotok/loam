@@ -87,6 +87,17 @@ export interface ServiceEntry {
    */
   contentStale: string[];
   /**
+   * "partial" when the living spec.md's frontmatter says `adoption: partial`,
+   * null otherwise. `loam archive` writes it on a service's FIRST spec.md when
+   * the service existed before the feature and was never adopted: what landed
+   * is that feature's slice, and nothing about what the service already did is
+   * written down. Presence of the file used to be the whole answer, so the one
+   * archive turned a `partial` service `documented` and `loam status` stopped
+   * asking for its adoption. The maturity ladder and `next.adopt` read this
+   * instead; a person deletes the line once the baseline is written.
+   */
+  adoption: "partial" | null;
+  /**
    * Why no loam command can author this directory, or absent when the name is a
    * legal service id — `serviceIdProblem`'s own sentence, so the read model and
    * the refusal say the same thing.
