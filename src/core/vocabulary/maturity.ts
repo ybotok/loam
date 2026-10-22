@@ -50,6 +50,14 @@ export interface MaturityInput {
  *               stamped it. `verified` with no digest is a claim with nothing
  *               behind it and stays below this rung.
  *
+ * A spec.md marked `adoption: partial` does not count toward `documented`.
+ * That marker is not a completeness grade — completeness stays unchecked, as
+ * above — but a PROVENANCE fact: `loam archive` wrote the file from one
+ * feature's slice into a service that existed and was never adopted, so the
+ * document says what that feature added and nothing about what the service
+ * already did. Counting it made one archive move a service from `partial` to
+ * `documented` with no adoption having happened.
+ *
  * `openapi.yaml` is required ONLY where an API is expected. The rung used to
  * demand it of everything, which permanently pinned every worker, cron and
  * consumer in the fleet at `partial` — services that are fully documented and
@@ -61,7 +69,7 @@ export interface MaturityInput {
 export function serviceMaturity(v: MaturityInput): Maturity {
   const s = v.entry;
   if (!Object.values(s.has).some(Boolean) && !v.archSpec && s.adrs === 0) return "empty";
-  if (!(s.has.model && s.has.spec && (!v.apiExpected || s.has.openapi))) return "partial";
+  if (!(s.has.model && s.has.spec && s.adoption === null && (!v.apiExpected || s.has.openapi))) return "partial";
   if (!s.sources.declared) return "documented";
   if (!(s.status === "verified" && s.sources.stamped)) return "sourced";
   return "vouched";
@@ -84,6 +92,9 @@ export function maturityGaps(v: MaturityInput): string[] {
   const files = [
     ...(s.has.model ? [] : ["model.likec4"]),
     ...(s.has.spec ? [] : ["spec.md"]),
+    // Named as the step that discharges it, because the file it is about is
+    // already there: what is missing is the adoption, not the document.
+    ...(s.has.spec && s.adoption !== null ? [`\`loam adopt --service ${s.id}\` (spec.md is adoption: partial — one feature's slice)`] : []),
     ...(v.apiExpected && !s.has.openapi ? ["openapi.yaml"] : []),
   ];
   if (files.length > 0) return files;

@@ -171,6 +171,8 @@ export async function archiveLocked(
     openapiRemovals,
     asyncapiRemovals,
     revouchOwed,
+    // What the requirement merge takes away (./plan/specs.ts). Additive.
+    dropped: planned.dropped.map((row) => ({ ...row, path: repoPath(config.docsDir, row.path) })),
     // Present only when this run found an interrupted commit and dealt with it:
     // an agent that sees the docs change under it deserves to be told why, and
     // the absent field is the ordinary case.

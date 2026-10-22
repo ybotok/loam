@@ -69,11 +69,13 @@ export function render(b: Brief, warnings: string[], full?: string): void {
         ? b.landscape.modelled === true
           ? "EDGELESS"
           : "UNDRAWN"
-        : t.exists
-          ? "present"
-          : t.required
-            ? "MISSING"
-            : "missing";
+        : t.partial === true
+          ? "PARTIAL"
+          : t.exists
+            ? "present"
+            : t.required
+              ? "MISSING"
+              : "missing";
     console.log(`    ${t.artifact.padEnd(width)}  ${t.action.padEnd(6)}  ${flag.padEnd(7)}  ${t.purpose}`);
   }
 
@@ -109,7 +111,7 @@ export function render(b: Brief, warnings: string[], full?: string): void {
 
 /** The table's five flags, compressed to one terminal line for the scroll-back reader. */
 const LEGEND_LINE =
-  "MISSING required · missing optional · present diff it · UNDRAWN add to the map · EDGELESS an element exists, no edge does";
+  "MISSING required · missing optional · present diff it · PARTIAL one feature's slice, adopt around it · UNDRAWN add to the map · EDGELESS an element exists, no edge does";
 
 /**
  * A required target whose work is still outstanding.
@@ -123,7 +125,7 @@ const LEGEND_LINE =
  * `BriefTarget.action`, core/brief/targets.ts).
  */
 function outstanding(t: BriefTarget): boolean {
-  return t.required && (!t.exists || t.action === "edit");
+  return t.required && (!t.exists || t.action === "edit" || t.partial === true);
 }
 
 /**
@@ -160,7 +162,7 @@ function printOrientation(b: Brief): void {
   // one row that is not this boundary's file at all.
   console.log(
     bullet(
-      "The flags in that table: `MISSING` in capitals is required and not there, lowercase `missing` is optional and not there, `present` means the file exists — diff it, never replace it. `UNDRAWN` and `EDGELESS` mark the one row that is not this boundary's own file: `architecture/landscape.likec4` is the whole system's map and already holds every other boundary, so ADD to it rather than rewriting it. Until an element in it resolves to this directory, `loam validate --all` reports `landscape.service-unmodelled` (error); `EDGELESS` means an element already does and no edge touches it, so what the map lacks is the calls in and out of it, never a second element.",
+      "The flags in that table: `MISSING` in capitals is required and not there, lowercase `missing` is optional and not there, `present` means the file exists — diff it, never replace it. `PARTIAL` is a spec.md marked `adoption: partial`: one archived feature's slice, so keep every requirement in it, write the rest of the service around them, and then delete the `adoption: partial` line. `UNDRAWN` and `EDGELESS` mark the one row that is not this boundary's own file: `architecture/landscape.likec4` is the whole system's map and already holds every other boundary, so ADD to it rather than rewriting it. Until an element in it resolves to this directory, `loam validate --all` reports `landscape.service-unmodelled` (error); `EDGELESS` means an element already does and no edge touches it, so what the map lacks is the calls in and out of it, never a second element.",
       "    ",
     ),
   );

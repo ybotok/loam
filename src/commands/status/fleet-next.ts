@@ -17,7 +17,7 @@ const NAMED = 6;
 
 /** What a folded line says about each per-service code, after the count; anything unlisted falls back to its code. */
 const SAY: Record<string, string> = {
-  "next.adopt": "with no spec.md — nothing written down yet; adopt each",
+  "next.adopt": "with no spec.md, or one that is adoption: partial — not adopted yet; adopt each",
   "next.complete-service": "with a spec.md and no model.likec4 — the fleet gate reports each incomplete until something models it",
   "next.revouch": "whose documents changed after the vouch — a person re-reads each and re-vouches it from its own repository",
 };

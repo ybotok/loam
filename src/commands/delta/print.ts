@@ -12,6 +12,7 @@ import { type ArchSlice } from "../../core/projection/arch-slice.js";
 import { type EventSlice } from "../../core/projection/events.js";
 import { type UseCaseBlastRadius } from "../../core/usecases/touch.js";
 import { type CapabilityDeltaSummary } from "../../core/capabilities/delta/summary.js";
+import { droppedSentence, type DroppedRow } from "../../core/document/apply.js";
 
 /**
  * The requirement delta, in full.
@@ -193,6 +194,20 @@ export function printCapabilities(capabilities: readonly CapabilityDeltaSummary[
       console.log(`    ${p.kind} '${p.name}' — ${entry}`);
     }
   }
+  console.log();
+}
+
+/**
+ * What the merge would take out of the living documents, per document — the
+ * archive plan's own lines (`core/document/apply.ts`), printed BEFORE the
+ * archive, which is the only moment a reader can still put a scenario back.
+ * Silent when nothing is taken: a section that said "(none)" on every
+ * additive feature would teach the reader to skip it.
+ */
+export function printDropped(rows: ReadonlyArray<DroppedRow & { path: string }>): void {
+  if (rows.length === 0) return;
+  console.log("Taken out of the living docs by the merge:");
+  for (const row of rows) console.log(`  ${row.path}: ${row.kind === "REMOVED" ? "-" : "~"} ${droppedSentence(row)}`);
   console.log();
 }
 

@@ -140,7 +140,13 @@ thin baseline that validates is thin, not done.
    the map usually has nothing for \`sync\` to write here, and that is the healthy
    state, not a skipped step.
    Everything \`status: draft\`. Never write \`last_verified\`, \`sources_digest\`,
-   \`content_digest\` or \`sources_files\`.
+   \`content_digest\` or \`sources_files\`. A spec.md whose frontmatter says
+   \`adoption: partial\` is one archived feature's slice written into this service
+   before anyone adopted it: keep every requirement in it, write the rest of the
+   service's behaviour around them from the code, and when the document describes
+   the service — not just that feature — DELETE the \`adoption: partial\` line. It is
+   the only thing that clears it; until then \`loam list\` keeps the service
+   \`partial\` and \`loam status\` keeps asking for this adoption (\`next.adopt\`).
 4. \`loam validate --service $1 --json\`. Fix every error. \`c4.valid\` reading
    "extends the fleet map" is the confirmation that the model was read as one
    document with the map; \`c4.invalid\` on this run means the model plus the map do

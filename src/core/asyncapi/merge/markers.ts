@@ -30,7 +30,7 @@ import { isRecord } from "../../kernel/records.js";
 import { FEATURE_ONLY_KEYS, withoutFeatureKeysDeep } from "../../openapi/digest.js";
 import { ASYNCAPI_BASELINES_KEY, isSlotRemoval, type AsyncapiSection } from "../digest.js";
 import { pairAt, setKeyed } from "../../openapi/merge/components.js";
-import { readTree, writeTree, type ContractTree } from "../../openapi/contract-tree.js";
+import { readTree, writeTreeOver, type ContractTree } from "../../openapi/contract-tree.js";
 import { AsyncapiMergeError, asyncapiRefusal, type AsyncapiMergeSource } from "./error.js";
 
 /** The three slot sections, in document order — every whole-document walk here goes over them. */
@@ -258,7 +258,9 @@ export function stripAsyncapiMarkers(featureText: string, service: string): stri
   }
 
   if (!stripped) return featureText;
-  return writeTree(feature, asyncapiRefusal("feature", service));
+  // Over the feature text: the create branch publishes this as the new living
+  // contract, and only the markers it cut are the strip's to rewrite.
+  return writeTreeOver(feature, featureText, asyncapiRefusal("feature", service));
 }
 
 /**

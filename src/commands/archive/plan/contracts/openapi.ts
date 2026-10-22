@@ -20,7 +20,7 @@ import { stripOpenapiRemovalMarkers } from "../../../../core/openapi/merge/marke
 import { mergeOpenapiPaths, type OpenapiMergeResult } from "../../../../core/openapi/merge/merge.js";
 import { type Gated, type Plan } from "../state.js";
 import { consumerClause, type ContractConsumers } from "./consumers.js";
-import { sayQuoted, sayStale, warnOverwrite } from "./verdict-lines.js";
+import { infoDrift, sayQuoted, sayStale, warnInfoDrift, warnOverwrite } from "./verdict-lines.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
 import type { FleetContext } from "../../../../core/fleet-context.js";
 
@@ -93,9 +93,10 @@ export async function planOpenapiContracts(
       writes.push(planWrite(livingOpenapi, content));
       say(`  openapi: ${svc} — created (${ops.join(", ")})`);
     } else {
+      const livingText = await readUtf8(livingOpenapi);
       let merge: OpenapiMergeResult;
       try {
-        merge = mergeOpenapiPaths(await readUtf8(livingOpenapi), featText, svc);
+        merge = mergeOpenapiPaths(livingText, featText, svc);
       } catch (err) {
         if (err instanceof OpenapiMergeError) throw new CodedFailure("merge-failed", err.message);
         throw err;
@@ -117,6 +118,12 @@ export async function planOpenapiContracts(
         const mergedNames = ops.length > 0 ? ops : componentsAdded.map((comp) => `component ${comp}`);
         say(`  openapi: ${svc} — merged${mergedNames.length > 0 ? ` (${mergedNames.join(", ")})` : ""}`);
       }
+      // Asked whatever the merge wrote, for the event planner's reason: an
+      // `info`-only delta merges nothing, and archived in silence.
+      warnInfoDrift(plan, say, {
+        svc, code: "openapi.info-not-merged", file: "openapi.yaml", carries: "paths and components",
+        labels: infoDrift(parse(livingText), parse(featText)),
+      });
       if (removed.length > 0) {
         openapiRemovals.push({ service: svc, operations: removed });
         for (const label of removed) say(`      - removes ${label}`);

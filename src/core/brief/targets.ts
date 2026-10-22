@@ -44,6 +44,15 @@ export interface BriefTarget {
    * to write a contract for a service that serves no requests.
    */
   required: boolean;
+  /**
+   * True on spec.md alone, and only when the file that exists says
+   * `adoption: partial` — `loam archive` wrote it from one feature's slice into
+   * a service nobody had adopted (SCHEMA.md). It still exists and is still
+   * `diff` (never replace it: the slice is real requirements), but it is OWED:
+   * without this the brief told the reader `loam status` had just sent here that
+   * every required artifact was already there.
+   */
+  partial?: true;
   /** What the artifact is for, in one line. */
   purpose: string;
   /** The grammar. Every rule here is one a later check depends on. */

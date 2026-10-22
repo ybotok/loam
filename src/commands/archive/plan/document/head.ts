@@ -65,6 +65,14 @@ export interface CreatedRequest {
   fallbackTitle: string;
   /** The `service:` the created frontmatter names; null for a document that carries no frontmatter. */
   service: string | null;
+  /**
+   * `partial` when the document is a service's FIRST spec.md and the service
+   * existed before this feature — so what lands is the feature's slice and
+   * not the service. Written to the frontmatter as `adoption: partial`
+   * (SCHEMA.md), which the maturity ladder and `loam status` read as "not
+   * adopted yet" until a person deletes the line.
+   */
+  adoption?: "partial";
   requirements: Requirement[];
 }
 
@@ -91,6 +99,7 @@ interface HeadRequest {
   featureId: string;
   fallbackTitle: string;
   service: string | null;
+  adoption?: "partial";
   /** The created document's relative link to the archived delta. */
   backLink: string;
 }
@@ -110,7 +119,12 @@ function createdHead(request: HeadRequest): CreatedHead {
   const carried: string[] = [];
   let text = "";
   if (request.service !== null) {
-    const fields = { service: request.service, status: "draft", ...(owner === undefined ? {} : { owner }) };
+    const fields = {
+      service: request.service,
+      status: "draft",
+      ...(request.adoption === undefined ? {} : { adoption: request.adoption }),
+      ...(owner === undefined ? {} : { owner }),
+    };
     text += `---\n${stringifyYaml(fields, { lineWidth: 0 })}---\n\n`;
     if (owner !== undefined) carried.push("owner");
   }

@@ -243,6 +243,7 @@ model {
   loam.commands.archive -> loam.core.kernel
   loam.commands.archive -> loam.core.links
   loam.commands.archive -> loam.core.openapi
+  loam.commands.archive -> loam.core.projection
   loam.commands.archive -> loam.core.repo
   loam.commands.archive -> loam.core.staging
   loam.commands.archive -> loam.core.usecases
@@ -586,6 +587,10 @@ model {
   // `core/usecases/` does not.
   loam.core.delta -> loam.core.c4
   loam.core.delta -> loam.core.document
+  // A read index of its own when the caller threads none, for the one question in
+  // the walk that loads a service model: which living flow claims a requirement the
+  // feature MODIFIES (core/usecases/delta/modified.ts takes the model reader injected).
+  loam.core.delta -> loam.core.fleet_context
   loam.core.delta -> loam.core.repo
   loam.core.delta -> loam.core.usecases
 
@@ -739,6 +744,7 @@ model {
 
   loam.core.usecases -> loam.core.c4
   loam.core.usecases -> loam.core.capabilities
+  loam.core.usecases -> loam.core.document
   loam.core.usecases -> loam.core.kernel
   loam.core.usecases -> loam.core.repo
   loam.core.usecases -> loam.core.vocabulary

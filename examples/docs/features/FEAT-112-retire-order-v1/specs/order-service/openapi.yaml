@@ -17,10 +17,13 @@
 # Removal markers carry no baseline pin, unlike the operations a feature edits:
 # `openapi.remove-target-mismatch` already checks that exact slot, which is the same question a
 # pin would answer.
+#
+# `info` restates the living contract's. No merge carries `info`, so a value that differs here
+# would be lost at archive — `openapi.info-not-merged` says so in the plan instead of letting it vanish.
 openapi: 3.1.0
 info:
   title: order-service
-  version: "1.0"
+  version: "2.0"
 paths:
   /v1/orders:
     post:

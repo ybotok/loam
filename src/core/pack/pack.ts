@@ -131,6 +131,7 @@ export async function assembleIntroducedPack(req: IntroducedPackRequest): Promis
     has: { model: false, spec: false, openapi: false, asyncapi: false, runbook: false, health: false },
     adrs: 0,
     status: null,
+    adoption: null,
     sources: { declared: false, stamped: false },
     vouchScope: null,
     contentStale: [],
