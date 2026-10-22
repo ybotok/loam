@@ -416,7 +416,9 @@ claimant). Subsystem names take the service-id grammar (`subsystem.name-invalid`
 is unbounded and is the author's problem, not the tool's. A service directly under `services/` is
 **unfiled** — permanent, normal, and never a finding; `loam list` carries the count
 (`unfiledServices`, plus `services[].subsystem` and `subsystems[]`), and an empty subsystem is
-legal, since `loam subsystem new` must be usable before anything moves in.
+legal, since `loam subsystem new` must be usable before anything moves in. A service `loam archive`
+creates lands unfiled too: the archive takes no placement input but the tree itself, never the map's
+nesting ("How archive writes, and how unarchive undoes it" has the decision).
 
 The tree is mirrored into **one generated file, never into the authored landscape**:
 `architecture/subsystems.likec4` holds LikeC4 **views only** — no model, no tags, no `specification`
@@ -2734,7 +2736,22 @@ its leading statement (an anchored join sits where its anchor is, wherever its o
 sort, so comparing per statement would make placement depend on which archive ran first). That is
 what makes the scheme **order-independent**: archiving feature A then feature B (touching different
 services) yields the byte-identical landscape to B then A, so concurrent archive PRs usually splice
-different lines and git merges them without help. The insertions carry no marker comment — which
+different lines and git merges them without help. The relationship walk sorts **only within the
+region's ascending tail** — the run of cluster heads that already reads in key order from the end,
+which loam's own insertions keep that way — and stops where the existing order descends. A
+hand-written relationship region is sorted by nobody, and walking into it made the landing spot a
+function of unrelated edges: turning one hand-drawn edge round (`svc -> broker` to
+`broker -[delivers]-> svc`) changed the head key the walk compared and moved an addition sixty lines
+away. On a region loam wrote the bound changes nothing, and it keeps the scheme order-independent:
+the statements before the tail never change, so every archive inserts into the same sorted run. (The
+element walk keeps its plain insertion sort over the few top-level elements, as before.) Wherever a
+walk stops **before** a statement, or at the closing brace, the addition lands **above the comment
+written directly over it** — a comment is about what follows it, or heads the section it opens, and
+an addition spliced at the statement's own line sat between a six-line explanation and the edge it
+explained. "Directly" is literal: a blank line ends the comment run, so a comment separated from
+the statement below it by a blank line stands alone and stays where it is, and the tail of a block
+comment opened on an earlier line is never split. The same rule at both stopping points is what
+keeps two additions landing in one gap order-free. The insertions carry no marker comment — which
 archive added what is the git history's to say. A **nested** element lands inside its parent's block
 — inside the living parent when the landscape already has it, riding verbatim inside the spliced
 parent when the parent is new — never as a flat dotted id, which LikeC4 rejects at top level. A
@@ -2794,6 +2811,54 @@ declares is skipped exactly as one the map declares is. The title half is servic
 and global on the map — the map's global join is the fallback for documents written before
 `metadata { service }` existed, and a service's interior is where two boxes called `api` would
 collide.
+
+**A service the archive creates gets its model, empty.** A service the feature carries
+`specs/<svc>/` for and the fleet does not enumerate is one whose directory the archive creates; when
+the map the merge leaves also DRAWS it — the living map, or an element the delta adds, bound to it or
+titled with its name; a context element the delta only quotes is merged nowhere — the archive writes its
+`model.likec4` beside its first documents: a header comment and an empty
+`model { }`, extending the map, with whatever the delta draws inside the service routed into it
+like any extending model's interior (FEAT-101's `api` container lands there, not on the map). It is
+a `create` in the plan, so `loam unarchive` deletes it. Two alternatives were rejected. Leaving the
+file out was the old behaviour: `service.no-model` on the next `validate --all` after an archive
+that exited 0, and the new service's containers riding onto the map because no model existed to own
+them. Writing a container model would be inventing one. An EMPTY extending model invents nothing —
+LikeC4 reads it as the map's box with nothing drawn inside, and an empty file is already a legal
+extending model — while it lets the service's first `validate --all` grade it rather than stop at a
+missing file. A team that pre-placed an empty extending model got exactly this result; nobody has to
+know to now. The feature gate's merge preview routes the same way, so a feature flow hopping into
+the new service's container is `usecase.flow-invalid` before the archive, as it would be
+`landscape.invalid` after it — and a feature deployment document naming it
+`deployment.doc-invalid`. A service whose directory already exists is enumerated and left alone.
+`service.no-model` is still owed — at error severity, never gating — in two shapes: a service the
+map gains with no `specs/<svc>/` behind it (there is no directory, `landscape.binding-unknown`
+follows, and a model would be the one document in a directory the archive invented), and a
+`specs/<svc>/` the merged map never draws, which the gate already calls an unknown service and only
+`--approve` brings to the merge — a model there would fabricate a service out of what is usually a
+typo, which is also why the spec merge creates no empty living spec.
+
+**Where it lands is the tree's to say, never the map's.** The directory is always the unfiled
+`services/<svc>/`. The archive does not read a subsystem off the delta's group nesting — the map's
+grouping and the tree are independent (Subsystems, above), and a map edit must never decide a
+directory — and it takes no `metadata { subsystem }` hint either: that key would be spliced into the
+authored landscape, writing tree placement into the one document the tree is never mirrored into.
+The tree is placement's only input. To file a new service at archive time, create its directory
+first — an empty `model.likec4` at `services/<subsystem>/<svc>/` does it, and the archive then writes
+the specs there and routes the interior into that model — or move it afterwards with
+`loam subsystem move <svc> --into <subsystem>`, which the archive prints when the tree has a
+subsystem.
+
+**What the splice reads off kinds.** An extending model declares no kinds, so the archive scans it
+with the map's: without them its `kind name` declarations and its `a .kind b` edges read as property
+lines, an edge routed into the model landed above a dotted edge, a delta restating a dotted edge
+added a second copy, and a child of a kind-first container was refused as nesting under nothing.
+Kinds declared in an `architecture/` document other than the landscape are not borrowed — the
+landscape is the extending shape's one `specification`. And a relationship kind may carry tags
+(`relationship publishes { #async }`, LikeC4 1.59.0+): the parse hands every edge of the kind those
+tags, the delta's statement shows only what is written in it, so the splice matches a parsed addition
+to its statement with the kind's tags added to the written ones. Matched as written, every edge of a
+tagged kind found no statement — `merge-failed` from an archive `validate --feature` had called ready,
+or `usecase.flow-invalid` when the feature had flows.
 
 The OpenAPI merge carries components along with operations, and since the path-item/component
 baselines it decides each one **by verdict rather than by reachability**: a component the feature

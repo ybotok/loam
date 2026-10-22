@@ -3903,7 +3903,14 @@ paths:
 
 describe("the machine contract (--json)", () => {
   it("success emits one valid JSON document: feature, archived, plan, warnings", async () => {
-    const p = await makeProject(coherentFixture());
+    // FEAT-1 also puts fraud-check on the map ALONE — a binding with no
+    // `specs/fraud-check/` — so the run earns one non-gating finding to pin.
+    const files = coherentFixture();
+    files["features/FEAT-1-split/delta.likec4"] = FEATURE_DELTA.replace(
+      "  paymentService -> paymentSplitService",
+      "  fraudCheck = softwareSystem 'fraud-check' {\n    #FEAT-1\n    metadata { service 'fraud-check' }\n  }\n\n  paymentService -> paymentSplitService",
+    );
+    const p = await makeProject(files);
     try {
       const res = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
       expect(res.code).toBe(0);
@@ -3916,27 +3923,40 @@ describe("the machine contract (--json)", () => {
           { path: "services/payment-split-service/spec.md", action: "create" },
           { path: "services/payment-split-service/openapi.yaml", action: "create" },
           { path: "architecture/landscape.likec4", action: "update" },
+          // The service this archive creates gets its model with it.
+          { path: "services/payment-split-service/model.likec4", action: "create" },
         ]),
       );
       expect(json.plan.find((e: { action: string }) => e.action === "move")).toMatchObject({
         path: "features/FEAT-1-split",
         to: "features/archive/FEAT-1-split",
       });
-      // The one non-gating finding this fixture earns: FEAT-1 brings
-      // payment-split-service into existence, and nothing in the merge writes
-      // its model.likec4 — at error severity, validate's own grade of that
-      // directory, with `gates: false` saying the merge is still safe.
-      // `overridable` is the additive per-issue key resolved from issue.ts's
-      // approveOverrides — pinned here so removing or renaming it is a contract
-      // break somebody has to see.
+      // The two non-gating findings this fixture earns, both about fraud-check,
+      // which FEAT-1 puts on the map with no directory behind it: the gate's
+      // advisory that it has no requirement delta, and the plan's note that
+      // nothing writes its model.likec4 — at error severity, the grade validate
+      // gives that state, with `gates: false` saying the merge is still safe.
+      // (payment-split-service, whose directory the archive creates, gets its
+      // model and owes nothing.) `overridable` is the additive per-issue key
+      // resolved from issue.ts's approveOverrides — pinned here so removing or
+      // renaming it is a contract break somebody has to see.
       expect(json.warnings).toEqual([
+        {
+          severity: "warn",
+          code: "service.no-requirement-delta",
+          gates: false,
+          overridable: true,
+          message: "new service fraud-check has no requirement delta under specs/",
+          details: [],
+          locations: [{ path: "features/archive/FEAT-1-split", role: "scope" }],
+        },
         {
           severity: "error",
           code: "service.no-model",
           gates: false,
           overridable: true,
-          subject: "payment-split-service",
-          message: expect.stringContaining("services/payment-split-service/model.likec4"),
+          subject: "fraud-check",
+          message: expect.stringContaining("the fleet has no services/fraud-check/"),
           // `details` and `locations` are the two keys the shared finding
           // serializer now adds to every finding. This producer proves no exact
           // file or line, so `locations` carries the narrowest scope the run

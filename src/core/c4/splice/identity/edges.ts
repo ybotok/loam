@@ -14,10 +14,13 @@
  * Both keys are built from fields BOTH `Rel` and `ScannedRel` carry, because
  * the same edge must key identically as today's addition and as a statement in
  * the next archive's scan of the file it was written into. A field only one of
- * them has would make the merge disagree with itself one archive later.
+ * them has would make the merge disagree with itself one archive later. The one
+ * field the two read differently — the tags, which the parse inherits from the
+ * relationship's kind — is reconciled on the scanned side (`scannedStatementKey`).
  */
 import type { Elem, Rel } from "../../likec4.js";
 import type { ScannedRel } from "../../source-scan.js";
+import type { KindTags } from "../contract.js";
 
 /**
  * Which AUTHORED STATEMENT a parsed addition was written as — the key that
@@ -31,10 +34,31 @@ import type { ScannedRel } from "../../source-scan.js";
  * otherwise hand each other's bytes. Both endpoints, the title, all three spine
  * keys and the tags, because a pool entry shared by two additions gives the
  * second one the first one's authored source.
+ *
+ * The tags are a SET, and a parsed `Rel`'s are not the ones written in the
+ * statement: since LikeC4 1.59.0 a relationship kind can carry tags
+ * (`relationship publishes { #async }`), and the parse hands every edge of the
+ * kind its kind's tags, deduplicated against the statement's own (measured at
+ * the 1.59.2 pin). A scanned statement carries only what is written in it, so
+ * `scannedStatementKey` adds its kind's tags before keying — keyed as written,
+ * every edge of a tagged kind found no statement, and archive refused a delta
+ * `validate --feature` and `status` had called ready (`merge-failed`, or
+ * `usecase.flow-invalid` when the feature had flows; 2026-10).
  */
 export function relStatementKey(r: Rel | ScannedRel): string {
   const spine = [r.op ?? "", r.publishes ?? "", r.consumes ?? ""];
-  return JSON.stringify([r.source, r.target, r.title ?? "", ...spine, [...r.tags].sort()]);
+  return JSON.stringify([r.source, r.target, r.title ?? "", ...spine, [...new Set(r.tags)].sort()]);
+}
+
+/**
+ * A scanned statement's `relStatementKey`, with the tags its kind gives it —
+ * what the parse of the same statement carries. `kindTags` is the document's
+ * `specification.relationshipKindTags` (`../../parsed/specification.ts`); a
+ * document whose kinds carry no tags keys exactly as `relStatementKey` does.
+ */
+export function scannedStatementKey(s: ScannedRel, kindTags: KindTags): string {
+  const inherited = s.kind === undefined ? [] : (kindTags[s.kind] ?? []);
+  return relStatementKey({ ...s, tags: [...s.tags, ...inherited] });
 }
 
 /**

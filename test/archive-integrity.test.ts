@@ -910,34 +910,35 @@ Cancelling an order must release any payment hold it took.
 });
 
 /* ------------------------------------------------------------------ */
-/* 7. A new service arrives without its model                          */
+/* 7. A new service arrives with its model                             */
 /* ------------------------------------------------------------------ */
 
-describe("archive does not claim the docs are complete when they are not", () => {
-  it("names the missing model.likec4 and drops the closing claim", async () => {
+describe("archive writes the model of a service it creates, instead of leaving it missing", () => {
+  // It used to name the missing model.likec4 (`service.no-model`, an error the
+  // next `validate --all` repeated) and withhold the closing claim. The model
+  // it writes now is empty and extends the map — test/archive-new-service-model.test.ts
+  // has the case for it; a service arriving on the map ALONE, with no directory,
+  // still owes one (write-path-integrity's closing-claim block).
+  it("names the model it creates, and points nobody at loam adopt for it", async () => {
     const p = await makeProject(coherentFixture());
     try {
       const res = await runLoam(p.workDir, "archive", "FEAT-1");
       expect(res.code).toBe(0);
-      expect(res.out).toContain("services/payment-split-service/model.likec4");
-      expect(res.out).toContain("loam adopt");
-      expect(res.out).not.toContain("living spec + landscape are now complete + current.");
+      expect(res.out).toContain("created services/payment-split-service/model.likec4");
+      expect(res.out).not.toContain("loam adopt");
+      expect(p.exists("services/payment-split-service/model.likec4")).toBe(true);
     } finally {
       await p.destroy();
     }
   });
 
-  it("carries the same finding in --json, for a dry run too", async () => {
+  it("carries no service.no-model in --json, for a dry run too", async () => {
     const p = await makeProject(coherentFixture());
     try {
       for (const argv of [["archive", "FEAT-1", "--dry-run", "--json"], ["archive", "FEAT-1", "--json"]]) {
         const res = await runLoam(p.workDir, ...argv);
-        const warn = (JSON.parse(res.stdout).warnings as Array<{ code: string; gates: boolean }>).find(
-          (w) => w.code === "service.no-model",
-        );
-        expect(warn).toBeDefined();
-        // Non-gating: the feature is coherent and the merge is correct.
-        expect(warn!.gates).toBe(false);
+        const codes = (JSON.parse(res.stdout).warnings as Array<{ code: string }>).map((w) => w.code);
+        expect(codes).not.toContain("service.no-model");
       }
     } finally {
       await p.destroy();

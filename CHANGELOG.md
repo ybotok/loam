@@ -48,6 +48,63 @@ Until now the event rule was written only in the examples README.
   same way. `node:a -[kind]-> node:b` reads as a deployment edge. The kind is read past, not
   compared, because loam identifies an edge by its two endpoints.
 
+### Fixed — `loam archive` splices what LikeC4 reads, where a reader expects it, and gives a service it creates its model
+
+No code, flag or payload key was added. SCHEMA.md "How archive writes, and how unarchive undoes it"
+states the rules.
+
+- **An edge whose relationship kind carries a tag archives.** With `relationship publishes { #async }`
+  in the specification, every `-[publishes]->` (or `.publishes`) edge the delta added was refused as
+  `merge-failed` ("cannot locate the '…' relationship in delta.likec4") by an archive
+  `validate --feature` and `loam status` had called ready, and a feature with flows got
+  `usecase.flow-invalid` from `validate --feature` instead. The splice now matches a statement with
+  its kind's tags. **Exit code:** `loam archive` and `archive --dry-run` exit 0 where they exited 1
+  on that shape; `validate --feature`, `validate --all` (per active feature) and `loam status` no
+  longer carry the `usecase.flow-invalid` — or, for a feature with `deployment/`, the
+  `deployment.doc-invalid` — and exit 0 where they exited 1. With the merge preview readable again,
+  `validate --feature` also checks a consumed message against the map the archive leaves, so on that
+  shape it can now report `spine.message-unproduced` where it said nothing.
+- **An extending model is read with the kinds it borrows from the map.** In a service's extending
+  `model.likec4`, a dotted edge (`a .delivers b`) and a kind-first declaration (`container outbox …`)
+  were invisible to the splice: an edge the archive routed into the model landed above the dotted
+  edge and its comment, a delta restating a dotted edge wrote a second copy at exit 0, and a child of
+  a kind-first container was refused (`merge-failed`, "nests under … which is neither in the living
+  landscape nor added by this delta"). **Exit code:** that last shape exits 0 where it exited 1 —
+  `loam archive`, and `validate --feature` and `loam status` for a feature with flows or
+  `deployment/`, which reported the same refusal as `usecase.flow-invalid` / `deployment.doc-invalid`.
+- **An addition with no anchor lands above the comment written over the statement after it, and
+  where it lands no longer depends on unrelated edges.** On a hand-written map, an edge from a
+  service the same archive adds was spliced between a section comment and the edge it explains, and
+  turning one unrelated edge round moved it to another section. The relationship walk now sorts only
+  within the region's ascending tail, and a comment directly above a statement or the model's
+  closing brace stays with what follows it — in the landscape and in a service model alike. The bytes
+  an archive writes change only for those shapes; placement stays order-independent.
+- **A service the archive creates gets `services/<svc>/model.likec4`.** For a service the feature
+  carries `specs/<svc>/` for, the fleet does not enumerate and the merged map draws (the living map,
+  or an element the delta adds, bound to it or titled with its name), the archive writes an empty extending
+  model (a header comment and `model { }`) and routes whatever the delta draws inside the service
+  into it, where those containers used to land on the map. `loam archive --json`'s `plan` gains a
+  `create` row for that path, the run prints `architecture: created services/<svc>/model.likec4 …`,
+  and `warnings[]` no longer carries `service.no-model` for that service — so the closing "complete
+  + current" line is no longer withheld for it, and `validate --all` reports no `service.no-model`
+  after it. `service.no-model` is still filed (error, `gates: false`) for a service the map gains with
+  no `specs/<svc>/`, which `validate --all` then reports as `landscape.binding-unknown`, and for a
+  `specs/<svc>/` the merged map never draws (an unknown service only `--approve` merges), when the
+  merge creates its directory anyway. The archive
+  never picks a subsystem — the service lands unfiled at `services/<svc>/` unless its directory
+  already exists — and when the tree has a subsystem it prints
+  `loam subsystem move <svc> --into <subsystem>`. `unarchive` deletes the created model. The
+  shipped example's FEAT-101 now archives with no warning and a fleet that is clean after
+  `loam subsystem sync`.
+- **The feature gate previews that routing.** A `features/<FEAT>/usecases/` hop into a container
+  the delta draws inside a service the feature introduces resolved against the preview's map, passed,
+  and was copied into `architecture/usecases/`, naming a container that now lives in the service's
+  model. **Exit code:** `loam validate --feature`, `validate --all` (per active feature) and
+  `loam archive` (`not-coherent`; `--approve` does not override it) now refuse that shape with
+  `usecase.flow-invalid` where they passed, and `loam status` no longer calls that feature ready. A
+  `features/<FEAT>/deployment/` document naming such a container is refused the same way, with
+  `deployment.doc-invalid`.
+
 ## [0.2.0-alpha.10] - 2026-10-21
 
 Everything on `main` since `0.2.0-alpha.9`. Still a prerelease on the `alpha` line.

@@ -13,7 +13,9 @@
  * FOUR REASONS, each a breach the next `validate --all` reports:
  *
  *  - a plan finding of ERROR severity that does not gate — `service.no-model`,
- *    the directory this archive creates with no model in it. Read off the
+ *    a service this archive brings in without writing its model (a binding the
+ *    map gains with no directory; one whose directory the archive creates and
+ *    the merged map draws gets an empty model, `plan/landscape.ts`). Read off the
  *    severity, not a code list: the plan files an error exactly when it knows
  *    validate will, and a second list here is the copy that drifts;
  *  - an advisory that orders this feature behind another one still in flight

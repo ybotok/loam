@@ -28,9 +28,11 @@ import { planWrite, readUtf8 } from "../../../core/staging/writes.js";
 import { planLandscapeMerge } from "../../../core/c4/splice/landscape-merge.js";
 import { spliceModel } from "../../../core/c4/splice/model/merge.js";
 import { titleOf } from "../../../core/c4/splice/identity/edges.js";
-import { parseServiceId } from "../../../core/kernel/ids/service.js";
-import { landscapePath as landscapeFile } from "../../../core/repo/paths.js";
+import { parseServiceId, type PathableService } from "../../../core/kernel/ids/service.js";
+import { isPathInside } from "../../../core/kernel/path-safety.js";
+import { landscapePath as landscapeFile, unfiledServicePaths } from "../../../core/repo/paths.js";
 import { enumeratedServiceIds } from "../../../core/repo/service-target.js";
+import { createdServiceModels } from "../../../core/c4/service-model/created/models.js";
 import { extendingModels } from "../../../core/c4/service-model/fleet/extending.js";
 import { modelMergeErrors } from "./model/extending.js";
 import { type Gated, type Plan } from "./state.js";
@@ -51,6 +53,26 @@ export async function planLandscape(
   const deltaLikec4 = featurePaths(featureDir).delta;
   const { writes, planWarns, architectureServices } = plan;
   const landscapePath = landscapeFile(config.docsDir);
+  // "New" is enumeration membership, not an existsSync of services/<svc>/ at
+  // the root: a FILED service exists wherever the tree walk found it, and the
+  // root probe would grade every filed service as newly created here.
+  const enumerated = new Set<string>(await enumeratedServiceIds(config.docsDir));
+  // The empty extending model of every service this archive creates and the
+  // merged map draws — the rule, and the case for writing it, are
+  // `createdServiceModels`'s. With no delta or no map there is no merge, and
+  // no model.
+  const fresh =
+    deltaDoc === undefined || !existsSync(landscapePath)
+      ? []
+      : await createdServiceModels({
+          docsDir: config.docsDir,
+          featureDir,
+          featureId: id,
+          drawn: [...(await config.fleet.loadLikeC4(landscapePath)).elements, ...deltaDoc.elements.filter((e) => e.tags.includes(id))],
+          fleet: config.fleet,
+        });
+  // The services that leave this archive with a model.likec4 it wrote.
+  const modelled = new Set<string>();
   if (deltaDoc !== undefined) {
     const delta = deltaDoc;
     if (delta.errors.length > 0) {
@@ -95,10 +117,14 @@ export async function planLandscape(
         newEls,
         newRels,
         featureId: id,
+        // The tags a relationship kind gives every edge of it: the parsed
+        // additions carry them, the delta's statements do not.
+        deltaKindTags: delta.specification?.relationshipKindTags ?? {},
         // A service whose model EXTENDS the map owns its own interior, so the
         // merge routes what is nested under it into that model instead of the
-        // map (verification 2026-09-04, E1).
-        models: await extendingModels(config.docsDir, config.fleet),
+        // map (verification 2026-09-04, E1) — and so does a service this
+        // archive creates, whose model is written below.
+        models: [...(await extendingModels(config.docsDir, config.fleet)), ...fresh],
       });
       // A service can arrive on the ARCHITECTURE axis alone: an element this
       // merge ADDS, carrying a `metadata { service }` binding, with no
@@ -125,7 +151,12 @@ export async function planLandscape(
         say(`      + ${titleOf(delta.elements, r.source)} -> ${titleOf(delta.elements, r.target)}  "${r.title ?? ""}"`);
       }
       for (const additions of plan.models) {
-        const content = spliceModel({ additions, deltaText, featureId: id });
+        const content = spliceModel({
+          additions,
+          deltaText,
+          featureId: id,
+          deltaKindTags: delta.specification?.relationshipKindTags ?? {},
+        });
         // The model's own parse net, and it has to be a PROJECT one: an
         // extending model resolves against the map, and against the map this
         // very archive would leave — so the merged landscape goes into the set
@@ -148,8 +179,10 @@ export async function planLandscape(
           );
         }
         writes.push(planWrite(join(config.docsDir, ...additions.model.path.split("/")), content));
+        const created = fresh.some((m) => m.path === additions.model.path);
+        if (created) modelled.add(additions.model.service);
         say(
-          `  architecture: merged into ${additions.model.path} — ` +
+          `  architecture: ${created ? "created" : "merged into"} ${additions.model.path} — ` +
             `+${additions.els.length} element(s), +${additions.rels.length} relationship(s)`,
         );
         for (const e of additions.els) say(`      + ${e.title} (${e.kind})`);
@@ -161,30 +194,44 @@ export async function planLandscape(
       say(`\n  architecture: no landscape.likec4 — ${newEls.length} element(s) not merged`);
     }
   }
+  // A created service the delta drew no interior for still gets its model:
+  // empty, which is the whole of what the archive knows about its inside.
+  for (const model of fresh.filter((m) => !modelled.has(m.service))) {
+    writes.push(planWrite(join(config.docsDir, ...model.path.split("/")), model.text));
+    modelled.add(model.service);
+    say(`  architecture: created ${model.path} — empty; ${model.service}'s containers go in an \`extend\` block there`);
+  }
 
-  // A service this archive BRINGS INTO EXISTENCE arrives without the one file
-  // `validate` demands of every service: its own model.likec4. The merge cannot
-  // write it — the delta's tagged subtree is a landscape-level box, not a
-  // container model, and inventing a plausible one is the kind of quiet fiction
-  // the rest of loam exists to prevent — so the archive says so instead, and
-  // stops claiming the docs are complete. Non-gating: the feature is coherent
-  // and the merge is correct; what is missing is the next step, and refusing
-  // here would make onboarding a new service impossible in one command.
-  // "New" is enumeration membership, not an existsSync of services/<svc>/ at
-  // the root: a FILED service exists wherever the tree walk found it, and the
-  // root probe would grade every filed service as newly created here.
-  const enumerated = new Set<string>(await enumeratedServiceIds(config.docsDir));
+  // A service this archive BRINGS INTO EXISTENCE without writing its model
+  // arrives without the one file `validate` demands of every service. Two
+  // shapes: one arriving on the architecture axis alone — a binding the map
+  // gains with no `specs/<svc>/` in the feature, so no directory either, and a
+  // model would be the one document in a directory the archive invented — and
+  // a `specs/<svc>/` the merged map never draws, which the gate calls an unknown
+  // service and only `--approve` brings here. The archive says so instead, and
+  // stops claiming the docs are complete. Non-gating: the merge is correct;
+  // what is missing is the next step, and refusing here would make onboarding
+  // a new service impossible in one command.
   const newServices = [...new Set([...deltaServices, ...architectureServices])].filter(
     (svc) => !enumerated.has(svc),
   );
-  for (const svc of newServices) {
-    // Two shapes of the same debt: a service with a requirement delta gets its
-    // directory from this merge, one that arrives only in the landscape gets no
-    // directory at all — and `validate --all` reports the two under different
-    // codes, both errors: the directory with no model is the service target's
-    // `service.no-model`, the binding with no directory behind it the fleet
-    // map's `landscape.binding-unknown`. The message names the one that fires.
-    const owed = deltaServices.some((d) => d === svc)
+  await sayUnfiled(config, fresh.map((m) => m.service), say);
+  // Whether a planned write lands in the service's would-be directory — the
+  // spec merge writes nothing for a delta that leaves no requirements, and then
+  // there is no directory to speak of.
+  const createsDir = (svc: PathableService): boolean => {
+    const dir = unfiledServicePaths(config.docsDir, svc).dir;
+    return writes.some((w) => w.content !== null && isPathInside(dir, w.path));
+  };
+  for (const svc of newServices.filter((s) => !modelled.has(s))) {
+    // `validate --all` reports the two under different codes, both errors: the
+    // directory a requirement delta creates with no model in it is the service
+    // target's `service.no-model`; a binding with no directory behind it, the
+    // fleet map's `landscape.binding-unknown`. The message names the one that
+    // fires, and a service for which neither lands is owed nothing.
+    const createsItsDir = deltaServices.some((d) => d === svc) && createsDir(svc);
+    if (!createsItsDir && !architectureServices.has(svc)) continue;
+    const owed = createsItsDir
       ? { creates: `this archive creates services/${svc}/, but nothing writes services/${svc}/model.likec4`, reports: "service.no-model" }
       : { creates: `this archive puts '${svc}' in the landscape, but the fleet has no services/${svc}/ at all`, reports: "landscape.binding-unknown" };
     // An ERROR that does not gate — the two questions `Issue` keeps apart
@@ -200,6 +247,22 @@ export async function planLandscape(
       subject: svc,
       message: `${svc}: ${owed.creates} — 'loam validate --all' will report ${owed.reports}, an error, until it exists. Run 'loam adopt --service ${svc}' from the service repo, or write the model by hand.`,
     });
+  }
+}
+
+/**
+ * The one step left for a service the archive creates in a tree that files its
+ * services: moving it there. Printed only when the tree has a subsystem — in a
+ * flat tree every service is unfiled and that is normal, never a finding — and
+ * never as a guess at WHICH subsystem: the map's nesting is not a placement the
+ * tree may read.
+ */
+async function sayUnfiled(config: { docsDir: DocsDir; fleet: FleetContext }, created: string[], say: (line?: string) => void): Promise<void> {
+  // No `services/` yet is a flat tree too — and the walk refuses a docs repo without one.
+  if (created.length === 0 || !existsSync(join(config.docsDir, "services"))) return;
+  if ((await config.fleet.fleetTree(config.docsDir)).subsystems.length === 0) return;
+  for (const svc of created) {
+    say(`  ${svc}: created unfiled, at services/${svc}/ — 'loam subsystem move ${svc} --into <subsystem>' files it`);
   }
 }
 

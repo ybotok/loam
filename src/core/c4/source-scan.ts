@@ -55,7 +55,10 @@ export interface ScannedRel {
   publishes?: string;
   /** `metadata { consumes '...' }` — see `Rel.consumes`. */
   consumes?: string;
+  /** The tags WRITTEN in the statement — never its kind's, which LikeC4 adds to the parsed `Rel` (`splice/identity/edges.ts`). */
   tags: string[];
+  /** The relationship kind the head names — `-[kind]->` or `.kind` — absent for a plain `->`. */
+  kind?: string;
   start: number;
   end: number;
   indent: string;
@@ -89,6 +92,32 @@ export interface ScannedModel {
 }
 
 /**
+ * Kinds a document uses without declaring them, because its project does: an EXTENDING model has no
+ * `specification` and borrows the map's. Without them its `kind name` declarations and `a .kind b` edges read
+ * as property lines — archive spliced around such an edge, duplicated it, and refused a child of such a
+ * container as nesting under nothing (2026-10). `kindsDeclared` reads them off the map's text.
+ */
+export interface ScanKinds {
+  kinds: ReadonlySet<string>;
+  relKinds: ReadonlySet<string>;
+}
+
+/** The element and relationship kinds the `specification` blocks of `text` declare — with `also`'s, when given. */
+export function kindsDeclared(text: string, also?: ScanKinds): ScanKinds {
+  const { code } = maskSource(text);
+  const kinds = new Set(also?.kinds);
+  const relKinds = new Set(also?.relKinds);
+  for (const sm of code.matchAll(/\bspecification\s*\{/g)) {
+    const sClose = matchBrace(code, sm.index + sm[0].length - 1);
+    if (sClose === -1) continue;
+    for (const em of code.slice(sm.index, sClose).matchAll(/\b(element|relationship)\s+([A-Za-z_][\w-]*)/g)) {
+      (em[1] === "element" ? kinds : relKinds).add(em[2]!);
+    }
+  }
+  return { kinds, relKinds };
+}
+
+/**
  * Locate every element and relationship declaration inside the top-level
  * `model { ... }` blocks of a LikeC4 source, with the byte range each one
  * occupies. This is the splice map `loam archive` merges the landscape with:
@@ -102,7 +131,7 @@ export interface ScannedModel {
  *
  * Both declaration forms are recognised — `name = kind ...` always, and
  * `kind name ...` for any kind the document's own `specification` block
- * declares. Relationship endpoints are resolved the way LikeC4 reads them:
+ * declares, or `borrowed` names. Relationship endpoints are resolved the way LikeC4 reads them:
  * innermost enclosing scope outward, then the top level, then a unique leaf
  * name anywhere; `it`/`this` (and an omitted source) mean the enclosing
  * element. A name that resolves nowhere is left as written — the caller's
@@ -111,7 +140,7 @@ export interface ScannedModel {
  * Returns null when there is no model block at all. Callers only hand in documents
  * LikeC4 has already parsed, so the scan can trust balanced braces.
  */
-export function scanModel(text: string): ScannedModel | null {
+export function scanModel(text: string, borrowed?: ScanKinds): ScannedModel | null {
   const masked = maskSource(text);
   const { code, literals } = masked;
   // EVERY top-level `model { }` block, and only those (`topLevelBlocks`): a
@@ -135,15 +164,7 @@ export function scanModel(text: string): ScannedModel | null {
   // Element kinds from the specification block(s): the `<kind> <name>`
   // declaration form is recognisable only by its first token being a kind.
   // Relationship kinds likewise, for the `source .kind target` edge form.
-  const kinds = new Set<string>();
-  const relKinds = new Set<string>();
-  for (const sm of code.matchAll(/\bspecification\s*\{/g)) {
-    const sClose = matchBrace(code, sm.index + sm[0].length - 1);
-    if (sClose === -1) continue;
-    for (const em of code.slice(sm.index, sClose).matchAll(/\b(element|relationship)\s+([A-Za-z_][\w-]*)/g)) {
-      (em[1] === "element" ? kinds : relKinds).add(em[2]!);
-    }
-  }
+  const { kinds, relKinds } = kindsDeclared(text, borrowed);
 
   const indentOf = (at: number): string => {
     const nl = text.lastIndexOf("\n", at - 1);
@@ -187,20 +208,8 @@ export function scanModel(text: string): ScannedModel | null {
   const bodylessEnd = (from: number, to: number): number => statementEnd(text, masked, { start: from, end: to });
 
   const elements: ScannedElement[] = [];
-  interface RawRel {
-    srcLit?: string;
-    tgtLit: string;
-    parent: string;
-    start: number;
-    end: number;
-    indent: string;
-    block: number;
-    title?: string;
-    op?: string;
-    publishes?: string;
-    consumes?: string;
-    tags: string[];
-  }
+  // A relationship as the walk meets it: endpoints as written, resolved below once every declaration is known.
+  type RawRel = Omit<ScannedRel, "source" | "target"> & { srcLit?: string; tgtLit: string; parent: string };
   const raw: RawRel[] = [];
   const stack: Array<{ id: string; el: ScannedElement }> = [];
 
@@ -318,6 +327,7 @@ export function scanModel(text: string): ScannedModel | null {
             publishes: keyedLiteral("publishes", meta),
             consumes: keyedLiteral("consumes", meta),
             tags,
+            kind: am.kind,
           });
         }
         i = Math.max(stmtEnd, headEnd);
@@ -358,18 +368,10 @@ export function scanModel(text: string): ScannedModel | null {
     return [base ?? segs[0]!, ...segs.slice(1)].join(".");
   };
 
-  const rels: ScannedRel[] = raw.map((r) => ({
-    source: resolve(r.srcLit, r.parent),
-    target: resolve(r.tgtLit, r.parent),
-    title: r.title,
-    op: r.op,
-    publishes: r.publishes,
-    consumes: r.consumes,
-    tags: r.tags,
-    start: r.start,
-    end: r.end,
-    indent: r.indent,
-    block: r.block,
+  const rels: ScannedRel[] = raw.map(({ srcLit, tgtLit, parent, ...r }) => ({
+    ...r,
+    source: resolve(srcLit, parent),
+    target: resolve(tgtLit, parent),
   }));
 
   elements.sort((a, b) => a.start - b.start);
@@ -377,7 +379,7 @@ export function scanModel(text: string): ScannedModel | null {
 }
 
 /**
- * A relationship head's endpoints as written, and where its arrow form ends —
+ * A relationship head's endpoints as written, its kind, and where its arrow form ends —
  * null for any other head. Three forms, each with the source omittable inside
  * an element: `a -> b`, `a -[kind]-> b`, and `a .kind b` for a relationship
  * kind the specification declares, which the scan used to skip as a property
@@ -389,10 +391,10 @@ export function scanModel(text: string): ScannedModel | null {
  * space is not a form worth reading — LikeC4 takes `a-` for the id and rejects
  * the document.
  */
-function relationHead(head: string, relKinds: ReadonlySet<string>): { src: string | undefined; tgt: string; length: number } | null {
-  const arrow = /^([A-Za-z_][\w.-]*)?\s*(?:-\[[^\]]*\])?->\s*([A-Za-z_][\w.-]*)/.exec(head);
-  if (arrow !== null) return { src: arrow[1], tgt: arrow[2]!, length: arrow[0].length };
+function relationHead(head: string, relKinds: ReadonlySet<string>): { src: string | undefined; tgt: string; kind?: string; length: number } | null {
+  const arrow = /^([A-Za-z_][\w.-]*)?\s*(?:-\[\s*([^\]]*?)\s*\])?->\s*([A-Za-z_][\w.-]*)/.exec(head);
+  if (arrow !== null) return { src: arrow[1], tgt: arrow[3]!, kind: arrow[2] || undefined, length: arrow[0].length };
   const dotted = /^(?:([A-Za-z_][\w.-]*)\s+)?\.([A-Za-z_][\w-]*)\s+([A-Za-z_][\w.-]*)/.exec(head);
   if (dotted === null || !relKinds.has(dotted[2]!)) return null;
-  return { src: dotted[1], tgt: dotted[3]!, length: dotted[0].length };
+  return { src: dotted[1], tgt: dotted[3]!, kind: dotted[2], length: dotted[0].length };
 }

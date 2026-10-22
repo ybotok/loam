@@ -3,9 +3,10 @@ import { parentIdOf } from "../../kernel/ids/fqn/ancestors.js";
 import { errorText, loadSource, type Elem, type Rel } from "../likec4.js";
 import { firstUnlocated, unlocatedReason } from "../locate/unlocated.js";
 import { elementService, serviceOf } from "../resolve/service.js";
-import { scanModel, type ScannedElement, type ScannedModel, type ScannedRel } from "../source-scan.js";
+import { kindsDeclared, scanModel, type ScannedElement, type ScannedModel, type ScannedRel } from "../source-scan.js";
 import { matchLineEndings, spliceSource } from "./authored-source.js";
 import {
+  assertSpliceVisible,
   LandscapeSpliceError,
   type ExtendingModel,
   type LandscapeMergeRequest,
@@ -13,18 +14,12 @@ import {
   type ModelAdditions,
 } from "./contract.js";
 import { assertMergeableDelta } from "./delta-blocks.js";
-import { relSortKey, relStatementKey } from "./identity/edges.js";
+import { relSortKey, relStatementKey, scannedStatementKey } from "./identity/edges.js";
 import { newAdditions } from "./identity/existing.js";
 import { planInteriors } from "./identity/interior.js";
 import { ownerOf } from "./identity/owner.js";
-import {
-  elementSpot,
-  nestedInsert,
-  relSpot,
-  topStatements,
-  type ModelRegion,
-  type Spot,
-} from "./placement.js";
+import { elementSpot, relSpot, topStatements, type ModelRegion } from "./placement.js";
+import { nestedInsert, type Spot } from "./text/spot.js";
 
 /* ------------------------------------------------------------------ */
 /* Merging                                                             */
@@ -85,6 +80,9 @@ import {
 export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<LandscapePlan> {
   const { landscapeText: text, deltaText, deltaElements, newEls, newRels, featureId } = merge;
   const models = merge.models ?? [];
+  // What every extending model borrows from this map: its kinds, without which
+  // a model's scan reads `container outbox` and `a .delivers b` as property lines.
+  const borrowed = kindsDeclared(text);
   // First, and before the early return for "nothing to add": a block this merge
   // cannot carry is lost whether or not the delta also has tagged elements to
   // splice. See delta-blocks.ts.
@@ -106,6 +104,7 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
     deltaElements,
     candidates: { els: newEls, rels: newRels },
     models,
+    borrowed,
   });
   if (added.collision !== undefined) {
     const { addition: e, living: m } = added.collision;
@@ -148,10 +147,11 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
   // delta source — full identity (`relStatementKey`), consumed one statement
   // per addition so duplicates stay duplicates. Built before the routing
   // because routing has to know WHERE an edge was written: one drawn inside a
-  // block that rides whole is already on the map.
+  // block that rides whole is already on the map. A statement is keyed with the
+  // tags its kind gives it, which the parsed addition carries and its text does not.
   const pool = new Map<string, ScannedRel[]>();
   for (const s of scan.rels) {
-    const k = relStatementKey(s);
+    const k = scannedStatementKey(s, merge.deltaKindTags ?? {});
     pool.set(k, [...(pool.get(k) ?? []), s]);
   }
 
@@ -160,7 +160,7 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
   const into = (model: ExtendingModel): ModelAdditions => {
     const existing = routed.get(model.path);
     if (existing !== undefined) return existing;
-    const fresh: ModelAdditions = { model, els: [], rels: [] };
+    const fresh: ModelAdditions = { model, els: [], rels: [], borrowed };
     routed.set(model.path, fresh);
     return fresh;
   };
@@ -225,15 +225,18 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
   // by each rescan, and a region assembled before a splice describes a document
   // that no longer exists.
   const modelRegion = (): ModelRegion => ({ text: content, stmts, blocks: requireModel().blocks });
-  const applyAt = (at: number, insert: string): void => {
+  // Every insert must be one the next scan sees (`assertSpliceVisible`).
+  const applyAt = (at: number, insert: string, what: string): void => {
+    const before = livingScan;
     content = content.slice(0, at) + insert + content.slice(at);
     rescan();
+    assertSpliceVisible(before, livingScan, what);
   };
-  const applyTop = (spot: Spot, block: string): void => {
+  const applyTop = (spot: Spot, block: string, what: string): void => {
     // A bare spot shares its line with other text (the closing brace, or a
     // statement the block displaces) — it brings its own newlines; a
     // line-start spot slots between lines.
-    applyAt(spot.at, spot.bare ? `\n${block}\n` : `${block}\n`);
+    applyAt(spot.at, spot.bare ? `\n${block}\n` : `${block}\n`, what);
   };
 
   // Placement walks the scanned statement layout, so a declaration the scan
@@ -290,7 +293,7 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
     const dot = e.id.lastIndexOf(".");
     if (dot === -1) {
       const spot = elementSpot(modelRegion(), e.id, elementService(e));
-      applyTop(spot, spliceSource(deltaText, src, { featureId, indent: "  ", omit }));
+      applyTop(spot, spliceSource(deltaText, src, { featureId, indent: "  ", omit }), e.id);
       spliced.push({ start: src.start, end: src.end });
       continue;
     }
@@ -306,7 +309,7 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
       parent,
       spliceSource(deltaText, src, { featureId, indent: parent.indent + "  ", omit }),
     );
-    applyAt(nested.at, nested.insert);
+    applyAt(nested.at, nested.insert, e.id);
     spliced.push({ start: src.start, end: src.end });
   }
 
@@ -326,7 +329,7 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
     // safety-netted by the re-parse below), never which service a check
     // grades.
     const spot = relSpot(modelRegion(), serviceOf(deltaElements, r.source), key);
-    applyTop(spot, spliceSource(deltaText, s, { featureId, indent: "  " }));
+    applyTop(spot, spliceSource(deltaText, s, { featureId, indent: "  " }), `${r.source} -> ${r.target}`);
   }
 
   // The safety net: prove the computed landscape parses before anything is

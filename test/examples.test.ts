@@ -247,35 +247,20 @@ describe("examples/docs vs loam list suites", () => {
 });
 
 describe("examples/docs vs loam archive FEAT-101 --dry-run", () => {
-  it("plans a coherent seven-file merge plus the move, warning only that the new service has no model", async () => {
+  it("plans a coherent eight-file merge plus the move, the new service's model among them, and warns of nothing", async () => {
     const res = await runLoam(workDir, "archive", "FEAT-101", "--dry-run", "--json");
     expect(res.code).toBe(0);
     const payload = JSON.parse(res.stdout);
     expect(payload.ok).toBe(true);
     expect(payload.feature).toBe("FEAT-101");
     expect(payload.archived).toBe(false);
-    // FEAT-101 creates services/payment-split-service/ — spec, arch spec and
-    // contract — and the landscape gains the element, but nothing writes the
-    // service's own model.likec4. Archive used to close with "complete and
-    // current" and leave `validate --all` reporting a service it had just
-    // created as incomplete; it says so up front now. At the severity validate
-    // gives the same directory (an error — it used to read `warn` here and
-    // `error` one command later), and it never gates: `gates: false`.
-    expect(payload.warnings).toEqual([
-      {
-        severity: "error",
-        code: "service.no-model",
-        gates: false,
-        overridable: true,
-        subject: "payment-split-service",
-        message: expect.stringContaining("model.likec4"),
-        // The two keys the shared finding serializer adds to every finding.
-        // This producer proves no exact file or line, so `locations` carries
-        // the narrowest scope the run proved — the feature being archived.
-        details: [],
-        locations: [{ path: "features/archive/FEAT-101-payment-splitting", role: "scope" }],
-      },
-    ]);
+    // FEAT-101 creates services/payment-split-service/ — spec, arch spec,
+    // contract, and the model the archive writes for a service it creates,
+    // holding the `api` container the delta draws inside it — and the landscape
+    // gains the element. Nothing is owed: until the archive wrote the model it
+    // warned `service.no-model` here, and `validate --all` reported the
+    // directory it had just created as incomplete.
+    expect(payload.warnings).toEqual([]);
     expect(payload.overridden).toEqual([]);
     // The asyncapi update is the event axis's half of the merge: the delta's
     // pinned quotes leave the living slots alone (no *-modified warning above),
@@ -289,6 +274,7 @@ describe("examples/docs vs loam archive FEAT-101 --dry-run", () => {
       { path: "services/payment-split-service/openapi.yaml", action: "create" },
       { path: "services/payment-service/asyncapi.yaml", action: "update" },
       { path: "architecture/landscape.likec4", action: "update" },
+      { path: "services/payment-split-service/model.likec4", action: "create" },
       {
         path: "features/FEAT-101-payment-splitting",
         action: "move",

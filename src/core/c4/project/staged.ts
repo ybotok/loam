@@ -53,6 +53,7 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { errorText, loadFile, type LoadedDoc } from "../likec4.js";
+import { createdServiceModels } from "../service-model/created/models.js";
 import type { ExtendingModel } from "../splice/contract.js";
 import { planLandscapeMerge } from "../splice/landscape-merge.js";
 import { inOrder } from "../../kernel/concurrency.js";
@@ -277,6 +278,21 @@ async function mergedLandscape(req: StagedProjectRequest): Promise<MergedLandsca
       reason: `delta.likec4 has ${delta.errors.length} parse error(s) — a feature's own documents cannot be graded against a map that does not parse`,
     };
   }
+  // The models the archive will CREATE route exactly as the living ones do —
+  // a new service's interior lands in its new model, never on the map — so a
+  // preview asking for the routing gets them too (`createdServiceModels` says why).
+  const models =
+    req.models === undefined
+      ? undefined
+      : [
+          ...req.models,
+          ...(await createdServiceModels({
+            docsDir: req.docsDir,
+            featureDir: req.featureDir,
+            featureId: req.featureId,
+            drawn: [...(await (req.load ?? loadFile)(landscape)).elements, ...delta.elements.filter((e) => e.tags.includes(req.featureId))],
+          })),
+        ];
   try {
     const plan = await planLandscapeMerge({
       landscapeText: await text(landscape),
@@ -285,7 +301,11 @@ async function mergedLandscape(req: StagedProjectRequest): Promise<MergedLandsca
       newEls: delta.elements.filter((e) => e.tags.includes(req.featureId)),
       newRels: delta.relationships.filter((r) => r.tags.includes(req.featureId)),
       featureId: req.featureId,
-      ...(req.models === undefined ? {} : { models: req.models }),
+      // As `planLandscape` passes it: without the table every edge of a tagged
+      // kind is a statement the splice cannot locate, and the preview fails a
+      // feature's flows over a merge the archive itself computes.
+      deltaKindTags: delta.specification?.relationshipKindTags ?? {},
+      ...(models === undefined ? {} : { models }),
     });
     return plan.content === null ? { kind: "living" } : { kind: "merged", content: plan.content };
   } catch (err) {

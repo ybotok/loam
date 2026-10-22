@@ -1003,7 +1003,7 @@ describe("the closing completeness claim", () => {
     }
   });
 
-  it("names that service in --json, under the same code as one with a requirement delta", async () => {
+  it("names that service in --json, as service.no-model — the one shape that still owes it", async () => {
     const p = await makeProject(archOnlyFixture());
     try {
       const res = await runLoam(p.workDir, "archive", "FEAT-3", "--json");

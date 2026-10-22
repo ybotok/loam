@@ -22,7 +22,7 @@
  * loses a call the author drew.
  */
 import type { Elem, Rel } from "../../likec4.js";
-import { scanModel } from "../../source-scan.js";
+import { scanModel, type ScanKinds } from "../../source-scan.js";
 import type { ExtendingModel } from "../contract.js";
 import { modelDeclarations } from "./declared.js";
 import { relKey } from "./edges.js";
@@ -44,6 +44,13 @@ export interface ExistingRequest {
   candidates: { els: Elem[]; rels: Rel[] };
   /** The fleet's extending models, whose declarations count as existence too. */
   models: readonly ExtendingModel[];
+  /**
+   * The kinds those models borrow from the map. A model's `kind name`
+   * declaration or `a .kind b` edge the scan cannot see is one this join counts
+   * as missing: the archive spliced a second copy of an edge the model already
+   * drew in the dotted form (2026-10).
+   */
+  borrowed?: ScanKinds;
 }
 
 export interface Additions {
@@ -80,8 +87,8 @@ export interface Additions {
  * net with a message about nothing.
  */
 export function newAdditions(req: ExistingRequest): Additions {
-  const { livingEls, livingRels, bindEls, deltaElements, candidates, models } = req;
-  const modelScans = models.map((model) => ({ scan: scanModel(model.text) }));
+  const { livingEls, livingRels, bindEls, deltaElements, candidates, models, borrowed } = req;
+  const modelScans = models.map((model) => ({ scan: scanModel(model.text, borrowed) }));
   const declared = modelDeclarations(modelScans, bindEls);
   const haveIds = new Set([...livingEls.map((e) => e.id), ...declared.ids]);
   // The title join needs the matched element back, not just membership: the

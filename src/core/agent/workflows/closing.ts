@@ -228,9 +228,11 @@ export const LOAM_SHIP: CommandContent = {
    current consumers that overwrite lands on (\`asyncapi.message-modified\` likewise for
    a message; \`openapi.component-modified\` is the same story for a component the
    merged operations carry, with no consumer list),
-   \`service.no-model\` means a service arrives with no C4 centre behind it (an error,
-   the one \`validate --all\` will report until \`loam adopt\` writes the model — it never
-   blocks the merge, and the run prints it instead of claiming the docs complete), and
+   \`service.no-model\` means a service arrives on the map with no directory behind it
+   (an error, the one \`validate --all\` will report until \`loam adopt\` writes its
+   documents — it never blocks the merge, and the run prints it instead of claiming
+   the docs complete; a service whose directory the archive creates and the map
+   draws gets an empty extending model instead, and raises nothing), and
    \`delta.added-conflict\`
    means another feature in flight adds the same requirement — the first to archive
    lands it, and the other's archive is then refused (\`delta.added-duplicate\`: its
@@ -240,7 +242,10 @@ export const LOAM_SHIP: CommandContent = {
    into \`services/<svc>/spec.md\`, endpoints into \`services/<svc>/openapi.yaml\`,
    elements and edges into \`architecture/landscape.likec4\` and, for an addition nested
    under a service whose model EXTENDS the map, into that
-   \`services/<…>/<svc>/model.likec4\` instead — then moves the feature
+   \`services/<…>/<svc>/model.likec4\` instead — a service the archive creates and
+   the merged map draws gets that model too, written empty at \`services/<svc>/model.likec4\` and holding
+   whatever the delta drew inside the service; it lands unfiled, and
+   \`loam subsystem move <svc> --into <subsystem>\` files it — then moves the feature
    under \`features/archive/\`, whole: its verification record travels with it,
    the per-service \`verification/<id>.yaml\` files and any one-file
    \`verification.yaml\` alike, and \`loam verify $1\` reads it back afterwards as
