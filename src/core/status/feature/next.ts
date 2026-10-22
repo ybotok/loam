@@ -101,10 +101,10 @@ export function featureNext(state: FeatureState, boundService: string | undefine
         // Not "the service is not in the living docs": a service adopted
         // without a contract is the commoner case, and that wording sent a
         // reader looking for a directory that was right there. And not "the
-        // operations it governs" either — this step also fires for a service
-        // the feature INTRODUCES, where owesContract asks nothing about
-        // operations and the delta may tag none, so naming them promised the
-        // author a list they would go looking for and not find.
+        // operations it governs" either — what owes the file may be an edge
+        // the delta draws INTO the service rather than any `Operations:` line
+        // (owesContract), so naming governed operations promised the author a
+        // list they would go looking for and not find.
         statement: `Write ${api.path} — nothing gives ${svc} a living openapi.yaml, so this feature is the only thing that can write down its API surface.`,
         command: `loam delta ${id} --service ${svc} --json`,
         artifact: "openapi",

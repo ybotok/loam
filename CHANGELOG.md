@@ -105,6 +105,46 @@ states the rules.
   `features/<FEAT>/deployment/` document naming such a container is refused the same way, with
   `deployment.doc-invalid`.
 
+### Fixed — what a feature introduces is graded the way the archived fleet grades it
+
+No code, flag or `--json` key was added. A feature's delta was read with a narrower idea of "a
+service" than the fleet census `validate --all` applies once the archive lands, and `loam status`
+owed a contract to every service a feature introduces whether or not anything could ever call it.
+
+- **`service.no-requirement-delta` (warn) fires only for a new service of ours**: a tagged
+  `softwareSystem` at service level that is not `#external`, not a grouping (an element standing
+  for no service that contains one), has no `services/<id>/` and is not already drawn by the living
+  map. A delta's `#external` producer, and the stub of a living element — read with the living
+  element's tags, so a re-declared `#external` system stays external — no longer raise it.
+- **The verification checklist's `service.exists` claims follow the same reading**, so
+  `loam verify` and `loam tasks` lose the claim and unit for an `#external` element, a grouping, and the
+  stub of a living `#external` system — and GAIN one for a new service drawn inside a group the
+  delta declares (the shape the shipped `FEAT-101` uses for `payment-split-service`), which a
+  dotted id used to hide. Only a grouping is looked through: what a delta draws inside any other
+  element (a container of a system with no directory yet, an endpoint inside an `#external`
+  vendor) is still not a service, and the stub of a service that already has a directory is asked
+  about only when tagged at top level, as before. A record answering the old checklist of such a
+  feature reads stale and is answered again.
+- **`c4.uncovered` (warn) no longer asks a grouping for a `Covers:` line**; the service inside it
+  is graded as before.
+- **`loam status` owes an `openapi.yaml` on evidence, in both forms.** A service with no living
+  contract, that no other feature in flight carries one for, owes it when the feature writes an
+  `Operations:` line for it or a tagged delta edge calling an operation on it — the links
+  `spec-api.op-undefined` and `c4-api.op-undefined` grade. A new service nothing calls now reads
+  `openapi` `done` (`required: false`), drops `next.author-openapi`, and leaves the fleet form's
+  `missing[]`, so the feature's stage can move from `missing` to `ready`. An adopted service with
+  no contract that a tagged edge calls with an op now owes one (`required: true`, `missing`,
+  `next.author-openapi`, `<svc>/openapi` in `missing[]`) where status said "none owed" beside the
+  gate's error. When the delta does not parse, the old answer stands. The evidence is the
+  feature's own: another feature's edge into a service this one introduces is that feature's
+  `c4-api.op-undefined` / `c4-api.op-pending`, not a contract this one owes.
+- **`loam archive` does not create a living `openapi.yaml` from a contract that describes nothing**
+  (no path, webhook or component): the plan prints `openapi: <svc> — nothing to merge …, no living
+  openapi.yaml created` instead of `created ()`, and `archive --json`'s plan carries no write for it.
+
+Exit codes: `validate --strict`, which escalates warnings, can exit 0 where one of the warnings
+above was the only one.
+
 ## [0.2.0-alpha.10] - 2026-10-21
 
 Everything on `main` since `0.2.0-alpha.9`. Still a prerelease on the `alpha` line.

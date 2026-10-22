@@ -21,7 +21,7 @@ import { compareIds, type FeatureEntry, type ServiceEntry } from "../../repo/ent
 import { featurePaths, featureSpecPaths, landscapePath } from "../../repo/paths.js";
 import { featureTitle, listFeatures, listServices } from "../../repo/repo.js";
 import { introducingFeatures } from "../../projection/introduced.js";
-import { contractOwners, contractsHeldElsewhere, owesContract } from "../contracts.js";
+import { contractEvidence, contractOwners, contractsHeldElsewhere, owesContract } from "../contracts.js";
 import { readInterruptedCommit } from "../interrupted.js";
 import {
   undocumented,
@@ -31,7 +31,7 @@ import {
   type FleetStatusReport,
   type InterruptedCommit,
 } from "../report.js";
-import { governedServices, scanDeltas } from "../scan.js";
+import { scanDeltas } from "../scan.js";
 import { fullyVerified, verificationState } from "../verification.js";
 import { fleetNext, groupServiceSteps, perServiceSteps, type Binding } from "./next.js";
 import type { DocsDir } from "../../kernel/ids/dirs.js";
@@ -192,11 +192,12 @@ async function fleetFeature(
   const missing: string[] = [];
   if (!existsSync(paths.intent)) missing.push("intent");
   if (feature.services.length === 0) missing.push("spec");
-  // Requirement text, not a coherence run: `Operations:` lines are read off the
-  // same cached parse `list` already pays for, and the contract question needs
-  // them (owesContract). No LikeC4 workspace is spun here, which is the cost
-  // this form actually refuses.
-  const governs = governedServices(await scanDeltas(docsDir, feature, feature.services, context));
+  // Requirement text and the delta's op-linked edges, not a coherence run: the
+  // `Operations:` lines are read off the same cached parse `list` already pays
+  // for, and the delta off the parse the dependency graph above already made
+  // through this context — so the contract question (owesContract) spins no
+  // LikeC4 workspace of its own, which is the cost this form refuses.
+  const evidence = await contractEvidence(docsDir, feature, await scanDeltas(docsDir, feature, feature.services, context), context);
   for (const svc of feature.services) {
     const p = featureSpecPaths(feature.dir, svc);
     // EITHER corpus satisfies it. What a service delta owes is a requirement
@@ -212,7 +213,7 @@ async function fleetFeature(
     if (!existsSync(p.spec) && !existsSync(p.archSpec)) missing.push(`${svc}/spec`);
     // The same question featureArtifacts asks, through the same function: the
     // two forms must never disagree about whether a feature owes a contract.
-    if (owesContract(living.get(svc), contracted.has(svc), governs.has(svc)) && !existsSync(p.openapi)) {
+    if (owesContract(living.get(svc), contracted.has(svc), evidence(svc)) && !existsSync(p.openapi)) {
       missing.push(`${svc}/openapi`);
     }
   }

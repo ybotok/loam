@@ -69,6 +69,6 @@ export async function scanDeltas(
 }
 
 /** Services this feature sends at least one operation to — see contracts.ts's `owesContract`. */
-export function governedServices(scans: DeltaScan[]): ReadonlySet<string> {
+export function governedServices(scans: readonly DeltaScan[]): ReadonlySet<string> {
   return new Set(scans.filter((s) => s.operations > 0).map((s) => s.service));
 }

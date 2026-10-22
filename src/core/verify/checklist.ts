@@ -28,10 +28,10 @@ import { readFile } from "node:fs/promises";
 import { readAsyncapi } from "../asyncapi/read.js";
 import { type Elem } from "../c4/likec4.js";
 import { elementService, serviceResolver } from "../c4/resolve/service.js";
-import { ACTOR_KINDS, INFRA_KINDS } from "../vocabulary/maturity.js";
+import { livingMapOf, readDeltaSystem } from "../c4/resolve/systems.js";
 import { scenarioGherkin } from "../vocabulary/steps.js";
 import { operationIds, operations } from "../openapi/doc.js";
-import { featurePaths, featureSpecPaths } from "../repo/paths.js";
+import { featurePaths, featureSpecPaths, landscapePath } from "../repo/paths.js";
 import { locateServicePaths } from "../repo/service-target.js";
 import { featureSpecServices } from "../repo/repo.js";
 import { enumeratedServiceIds } from "../repo/service-target.js";
@@ -107,7 +107,13 @@ export interface Checklist {
 /**
  * Derive the checklist from a feature's own artifacts. No code is read here and
  * none should be: the whole design rests on the questions being computed from
- * documents that do not change between runs.
+ * documents that do not change between runs. Those are the feature's own
+ * files, read against the fleet they merge into — the `services/`
+ * enumeration, which says which elements stand for a service, and, for a
+ * tagged element no directory answers for, the living map, whose tags the
+ * merge keeps (`../c4/resolve/systems.ts`). A map that does not parse
+ * leaves the delta to answer alone, which is the answer given before the map
+ * was asked.
  */
 export async function featureChecklist(
   docsDir: DocsDir,
@@ -156,38 +162,55 @@ export async function featureChecklist(
       // service, and the resolver asks WHICH service an endpoint belongs to,
       // and a set that answered the second question only left the first one
       // reading a title as unknown that the very next line resolved.
-      const known = new Set<string>([
-        ...(await enumeratedServiceIds(docsDir, ctx)),
-        ...specServices,
-      ]);
+      const living = new Set<string>(await enumeratedServiceIds(docsDir, ctx));
+      const known = new Set<string>([...living, ...specServices]);
+      // The living map, parsed only for a tagged element no directory answers for.
+      const systems = { elements, known, living, livingMap: livingMapOf(landscapePath(docsDir), (path) => ctx.loadLikeC4(path)) };
       for (const e of elements) {
         if (!e.tags.includes(featureId)) continue;
-        // A dotted id is a container INSIDE a service, an actor is nobody's
-        // repository, and the fleet's own infrastructure — a `database`,
-        // `queue`, `topic`, `cache` or `bucket` — has no repository either.
-        // None of the three is a service that has to exist.
+        // Only a SYSTEM of ours is a service that has to exist — the fleet
+        // census's reading, applied to the map this merge leaves
+        // (`../c4/resolve/systems.ts` holds it and says what it skips). An
+        // element inside a service is its container, an actor is nobody's
+        // repository, an `#external` system is somebody else's, a grouping is
+        // scenery for the services under it, and the fleet's own
+        // infrastructure — a `database`, `queue`, `topic`, `cache` or
+        // `bucket` — has no repository either. None of them is a service that
+        // has to exist.
         //
         // The infra skip closes a claim no repository could ever answer: a
         // delta that draws a fleet-level `database` minted `service.exists` for
         // it, and `loam verify` then asked somebody to point at the code that
-        // proves a Postgres has a services/ directory. It is the SAME shape as
-        // the container-and-actor skips beside it — an element that is not a
-        // team's system — not a new kind of exemption.
+        // proves a Postgres has a services/ directory. The `#external` and
+        // grouping skips close the same kind of claim: a tagged producer
+        // outside the fleet, or the domain a new service is drawn inside, each
+        // became a `loam tasks` unit asking for a service to be built.
         //
-        // STANDING FOR A SERVICE still wins, because that is a claim about
-        // this repo rather than a guess at one, and it is the same predicate
-        // every other surface applies — `commands/validate/fleet/census.ts`'s
-        // `standsForService`, spelled here rather than imported because core
-        // may not reach into commands. Both of its rungs matter: a `database`
-        // carrying `metadata { service '<id>' }` names a directory the author
-        // says exists, and one whose TITLE names a real `services/<id>/` names
-        // a directory the enumeration just read. Testing the binding alone made
-        // an adopted store a service on every other surface and infrastructure
-        // here, so its `service.exists` claim silently went missing from the
-        // checklist that is supposed to hold every promise the feature made.
-        const standsFor = e.service !== undefined || known.has(e.title);
-        const infra = !standsFor && INFRA_KINDS.has(e.kind.toLowerCase());
-        if (e.id.includes(".") || ACTOR_KINDS.has(e.kind.toLowerCase()) || infra) continue;
+        // STANDING FOR A SERVICE still wins over the infra kind, because that is
+        // a claim about this repo rather than a guess at one. Both of its rungs
+        // matter: a `database` carrying `metadata { service '<id>' }` names a
+        // directory the author says exists, and one whose TITLE names a real
+        // `services/<id>/` names a directory the enumeration just read. Testing
+        // the binding alone made an adopted store a service on every other
+        // surface and infrastructure here, so its `service.exists` claim
+        // silently went missing from the checklist that is supposed to hold
+        // every promise the feature made.
+        //
+        // DEPTH IS NOT A FACT ABOUT A SERVICE. This used to skip every dotted
+        // id as a container, so the new service a delta draws inside the map's
+        // own group — FEAT-101 in the shipped example — was never asked about
+        // at all. A grouping the delta declares is looked through; any other
+        // level is what its children belong to.
+        //
+        // The stub of a service that already has a directory keeps exactly the
+        // answer it always had — asked about when tagged at top level, never
+        // when nested — because the question is not this module's to reopen
+        // here: nesting it inside the map's group must not turn a service
+        // somebody adopted into "create service" at the head of `loam tasks`,
+        // and the top-level claim is pinned on purpose (an adopted store named
+        // by its title is a promise the feature makes about it).
+        const reading = await readDeltaSystem(e, systems);
+        if (reading === "none" || (reading === "living" && e.id.includes("."))) continue;
         const svc = elementService(e);
         exists.push(claim("service.exists", svc, [svc], `service '${svc}' exists`));
       }

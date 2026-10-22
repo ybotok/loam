@@ -107,8 +107,8 @@ export function participantsOf(scan: ReadScan, views: readonly ParsedView[]): Pa
  *
  * "Stands for a service" is `commands/validate/fleet/census.ts`'
  * `standsForService`, spelled here rather than imported because core may not
- * reach into commands — as `core/gate/partners.ts` and `core/verify/checklist.ts`
- * spell it.
+ * reach into commands — as `core/gate/partners.ts` spells it, and as
+ * `core/c4/resolve/systems.ts` does for the feature-scope graders.
  *
  * A tag a KIND declares (`element topic { #external }`) arrives on every element
  * of that kind in the parsed model, so a topic counts without repeating it.

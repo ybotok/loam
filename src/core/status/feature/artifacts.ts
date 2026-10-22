@@ -108,8 +108,8 @@ export interface Grading {
   verification: VerificationState;
   /** Operations some OTHER feature's contract already holds. */
   contracted: ReadonlySet<string>;
-  /** Operations this feature's own requirements govern. */
-  governs: ReadonlySet<string>;
+  /** Per service, whether this feature wrote anything that joins into its contract (`contractEvidence`). */
+  evidence: (service: string) => boolean | undefined;
   /** The enumeration's entries by id — where each living service is and what it has (owesContract reads both). */
   living: ReadonlyMap<string, ServiceEntry>;
   /**
@@ -126,7 +126,7 @@ export function featureArtifacts(
   services: readonly PathableService[],
   grading: Grading,
 ): ArtifactState[] {
-  const { blocking, verification, contracted, governs, living, capabilities } = grading;
+  const { blocking, verification, contracted, evidence, living, capabilities } = grading;
   const paths = featurePaths(feature.dir);
   const rel = (abs: string): string => repoPath(docsDir, abs);
   const faults = blocking.map((f) => ({ artifact: faultedArtifact(f.code, f.subject), subject: f.subject }));
@@ -184,7 +184,7 @@ export function featureArtifacts(
       fileState(
         "openapi",
         { service: svc, path: rel(p.openapi), exists: existsSync(p.openapi) },
-        owesContract(living.get(svc), contracted.has(svc), governs.has(svc)),
+        owesContract(living.get(svc), contracted.has(svc), evidence(svc)),
         faulted("openapi", svc),
       ),
     );
