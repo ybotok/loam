@@ -4,8 +4,8 @@
  *
  * The report: a model that is parsed alone must re-declare every element it
  * talks about, so `kafka`, `uaa` and each peer service appear twice with two
- * kinds, two titles, two tag lists and two bindings — 78 double declarations in
- * a 56-service fleet, and the copies had already drifted (`#platform` on the
+ * kinds, two titles, two tag lists and two bindings — dozens of double declarations
+ * across one fleet, and the copies had already drifted (`#platform` on the
  * map's elements, missing from the models'). Nothing read two documents
  * together, so nothing could say so.
  *

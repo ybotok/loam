@@ -1,30 +1,39 @@
 # loam
 
-**Architecture-first semantic integrity and change governance for evolving software systems.**
+**One docs repo for a system of many services — C4 architecture, API contracts and requirements as
+plain files, checked by a CLI to still agree. Your agent writes them; loam checks them.**
 
 ![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![node: >=22.22.3](https://img.shields.io/badge/node-%3E%3D22.22.3-brightgreen.svg)
 [![CI](https://github.com/ybotok/loam/actions/workflows/ci.yml/badge.svg)](https://github.com/ybotok/loam/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@ybotok/loam/alpha.svg?label=npm%20alpha)](https://www.npmjs.com/package/@ybotok/loam)
 
-> **Pre-release: `0.2.0-alpha.13`** is the version this checkout's `package.json` names, on the 0.2
-> line of [`@ybotok/loam`](https://www.npmjs.com/package/@ybotok/loam). Whether npm serves it is not
-> something this file can know — a version is cut before its publish runs, and a publish can fail
-> after — so **the npm dist-tags are the source of truth**: the badge above reads the `alpha` tag, and
-> `npm view @ybotok/loam dist-tags` prints every tag. Prereleases publish under `alpha`, so
-> `npm i @ybotok/loam@alpha` installs the newest one that did. `latest` is moved onto a release by
-> hand once it has published, so a plain `npm i @ybotok/loam` resolves to an earlier release until it
-> is moved. See [Status](#status).
+With coding agents writing the code, the bottleneck has moved to context. A change that crosses
+three services means reading the architecture, a pile of OpenAPI files and the requirements — and
+then keeping all of it in sync, which in practice nobody does.
 
-`loam` keeps an authored C4 model, requirements, API and event contracts, permissions, domain
-vocabulary and verification evidence in explicit agreement as a system changes. The same lifecycle
-governs a modular monolith, a distributed service fleet, or a hybrid of both; the CLI and filesystem
-call each governed implementation boundary a `service`, but it need not be a network service.
+`loam` keeps those documents in one repository — the C4 model in [LikeC4](https://likec4.dev),
+OpenAPI and AsyncAPI contracts, requirements with Gherkin scenarios — and does two things with them:
 
-For an existing boundary, `loam` briefs an agent to document it **by reading its code**, then checks
-the result without pretending to extract architectural meaning itself. Forward changes start from
-an authored C4 delta: `loam` projects it onto each affected boundary, generates digest-stamped
-Gherkin, and checks that behavior, architecture, contracts and evidence still join.
+- **It hands over only the slice a change needs.** `loam context <service>` assembles one service's
+  requirements, contracts and the edges around it as one briefing, and
+  `loam delta <FEAT> --service <id>` projects a feature onto one service — what an agent or a
+  reviewer reads instead of the whole corpus.
+- **It checks, deterministically, that the documents still agree.** Every operation a call between
+  two services names must exist in the provider's contract; removing an operation another service
+  still consumes is refused; and "done" says whether it rests on a passing test or only on an
+  agent's word.
+
+It never guesses what code means. For an existing service an agent reads the code and writes the
+docs, and loam checks the result; a forward change starts from a C4 delta that loam projects onto
+every service it touches, with generated Gherkin, before it merges into the living docs. No server,
+no database: delete loam and the files still make sense. A modular monolith works too — see
+[system shapes](#one-lifecycle-several-system-shapes).
+
+> **Early alpha, MIT.** Works with Claude Code, Cursor, GitHub Copilot, Codex, Gemini CLI and other
+> agent tools. Every fleet is shaped differently and no test suite covers them all — if you run one
+> and try loam, or can tell why it would not fit yours,
+> [open an issue](https://github.com/ybotok/loam/issues).
 
 ## Contents
 
@@ -160,6 +169,15 @@ network.
 npm install -g @ybotok/loam
 loam --version
 ```
+
+> **Pre-release: `0.2.0-alpha.13`** is the version this checkout's `package.json` names, on the 0.2
+> line of [`@ybotok/loam`](https://www.npmjs.com/package/@ybotok/loam). Whether npm serves it is not
+> something this file can know — a version is cut before its publish runs, and a publish can fail
+> after — so **the npm dist-tags are the source of truth**: the badge at the top reads the `alpha`
+> tag, and `npm view @ybotok/loam dist-tags` prints every tag. Prereleases publish under `alpha`, so
+> `npm i @ybotok/loam@alpha` installs the newest one that did. `latest` is moved onto a release by
+> hand once it has published, so a plain `npm i @ybotok/loam` resolves to an earlier release until it
+> is moved. See [Status](#status).
 
 `loam doctor` is the wiring check, not the install check: run where no `loam.json` is in scope, it
 reports `doctor.config-missing` and exits 1 by design. Save it for after `loam init`.

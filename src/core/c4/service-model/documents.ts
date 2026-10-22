@@ -53,8 +53,8 @@ export async function modelProjectDocuments(docsDir: DocsDir, modelPath: string)
  *
  * The fleet's prefetch stages one project per extending model, and asking the
  * single-model form above per service would readdir the map's directory once
- * per service — 56 walks of the same tree on the 56-service shape this axis was
- * measured against, for one answer that cannot differ between them.
+ * per service — one walk of the same tree per service on the fleet shape this
+ * axis was measured against, for one answer that cannot differ between them.
  */
 export async function modelProjectSets(
   docsDir: DocsDir,

@@ -5,8 +5,8 @@
  * A STANDALONE model has to re-declare every element it talks about: it is
  * parsed alone, so `kafka`, `uaa` and each peer service appear a second time,
  * with a second kind, a second title, a second tag list and a second binding.
- * Nothing compared the copies. Measured on the fleet that filed the report: 78
- * double declarations across 56 services, and the copies had already drifted —
+ * Nothing compared the copies. Measured on the fleet that filed the report: dozens
+ * of double declarations, and the copies had already drifted —
  * `#platform` was on the map's elements and missing from the models'.
  *
  * WHAT IS COMPARED, and why exactly these four. `kind`, `title`, the tag SET and
