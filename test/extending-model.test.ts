@@ -2,7 +2,7 @@
  * A `model.likec4` that EXTENDS the fleet map, end to end.
  *
  * The report this answers: every shared element was declared once per document,
- * so a 56-service fleet carried 78 double declarations whose tags had already
+ * so one fleet carried dozens of double declarations whose tags had already
  * drifted, and nothing compared them. The fix is a second shape — a model that
  * declares no kinds, re-declares no partner, and says what is inside the element
  * the map already binds with `extend <fqn> { … }` — parsed INSIDE the

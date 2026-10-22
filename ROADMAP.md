@@ -184,12 +184,12 @@ cannot be behind the documents it projected.
 
 **Landed 2026-09-04** in `f751909`, from three problem reports that turned out to be one cause,
 with a fourth landing beside it in the same change. #010 measured the cause: a service model must
-parse alone, so it re-declares its own `specification` and every partner it names — 78 double
-declarations in a 56-service fleet with four services adopted, projected to ~448 at full adoption —
+parse alone, so it re-declares its own `specification` and every partner it names — one double
+declaration per partner per adopted service, growing with every service adopted —
 and the copies had already diverged, `#platform` missing from every copy of the broker and the
 identity provider but the map's, with no finding code for "two documents describe one element
-differently" because no check read two documents together. #009 measured the symptom: 57 flat
-entries in the renderer's project picker, 52 of them a single box, forced by the per-service
+differently" because no check read two documents together. #009 measured the symptom: one flat
+entry per service in the renderer's project picker, most of them a single box, forced by the per-service
 project file `0.2.0-alpha.5` had to write **because** the models could not share a project. #011 is
 the structural proposal, every claim of it executed against copies of `examples/docs`: `extend`
 resolves across documents of one project, a model rewritten that way makes its containers visible
@@ -419,7 +419,7 @@ not by a drawing verb; drawing stays LikeC4's, and the row says so now.
 **Rejected.** A new command, because the report's problem was a missing file, not a missing verb,
 and a verb would have put loam between a team and its renderer for good. The agent writing the file
 from the adopt brief, because a file written by hand per service is the state the report found —
-one of four adopted services had one — and loam already writes the root file and knows every
+most adopted services had none — and loam already writes the root file and knows every
 service directory. A generated-and-compared file with a `-stale` grade, because the bytes cannot go
 stale and a compare would fight the `title` and styles LikeC4 lets a team add. Grading in `doctor`
 alone, because the gap is per service and `doctor` reports on the repository, not on its services;
@@ -435,7 +435,7 @@ billing-core, `service-fleet` beside `fleet`), disclosed in SCHEMA rather than e
 because the picker shows the id.
 
 **Superseded for extending models, one day later.** The last of those costs — one picker entry per
-adopted service — is what report #009 measured at 57 entries, and the entry that opens this list is
+adopted service — is what report #009 measured, and the entry that opens this list is
 what removed its cause rather than its symptom: a model that extends the fleet map shares the root
 project with it, so it is owed no project file and adds no entry, and `loam subsystem sync` writes
 the file only for a model that stands alone. Everything measured here still holds for that shape,
