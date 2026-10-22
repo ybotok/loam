@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { loadFile, type Elem, type LoadedDoc, type Rel } from "../c4/likec4.js";
 import { elementService, serviceResolver } from "../c4/resolve/service.js";
-import { infrastructureKind } from "../c4/resolve/direction.js";
+import { infrastructureKind } from "../c4/direction/direction.js";
 import { livingMapOf, readDeltaSystem } from "../c4/resolve/systems.js";
 import { extendingModels } from "../c4/service-model/fleet/extending.js";
 import { serviceIdProblem } from "../kernel/ids/service.js";

@@ -17,7 +17,7 @@
  * there does.
  */
 import { type Rel } from "../../c4/likec4.js";
-import { eventKeys, unboundSentence } from "../../c4/resolve/direction.js";
+import { eventKeys, unboundSentence } from "../../c4/direction/direction.js";
 import { type PathableService, type RawServiceId } from "../../kernel/ids/service.js";
 import type { Issue } from "../../vocabulary/issue.js";
 import { locateServicePaths } from "../../repo/service-target.js";
@@ -42,7 +42,7 @@ export interface EventCoherenceRequest {
   taggedRels: Rel[];
   /** The element→service resolver over the delta's elements plus the enumerated fleet. */
   svcOf: (id: string) => string;
-  /** The infrastructure kind of a delta element or its ancestor (core/c4/resolve/direction.ts) — a key bound there is on the wrong end. */
+  /** The infrastructure kind of a delta element or its ancestor (core/c4/direction/direction.ts) — a key bound there is on the wrong end. */
   infraKindOf: (id: string) => string | undefined;
   context?: FleetContext;
   /** The retired index, shared with the contract axis so one call walks `features/archive/` once at most. */
@@ -283,7 +283,7 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
   // Tagged edges: `publishes` binds the edge's SOURCE, `consumes` its
   // TARGET — the same reading validate's event spine takes of the living
   // landscape, applied to the delta, from the one statement of the rule
-  // (core/c4/resolve/direction.ts).
+  // (core/c4/direction/direction.ts).
   // Every consumption this merge would add, collected as the two loops below
   // walk the edges and the lines, and asked for a producer at the end
   // (./produced.ts) — `spine.message-unproduced` at feature scope.

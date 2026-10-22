@@ -50,7 +50,7 @@
  * records the caller fills.
  */
 import { type Elem, type Rel } from "../../../../core/c4/likec4.js";
-import { infrastructureKind } from "../../../../core/c4/resolve/direction.js";
+import { infrastructureKind } from "../../../../core/c4/direction/direction.js";
 import { DATASTORE_KIND } from "../../../../core/vocabulary/maturity.js";
 import { type Finding } from "../../../../core/vocabulary/report.js";
 import { type AttestedModel, type NestedStore } from "./attest.js";
@@ -82,7 +82,7 @@ export interface CensusInput {
  * descendant.
  *
  * EITHER DIRECTION, where the element's end of the edge is infrastructure
- * (`infrastructureKind` in core/c4/resolve/direction.ts, among the elements
+ * (`infrastructureKind` in core/c4/direction/direction.ts, among the elements
  * that stand for no service). A
  * database, a topic or a bucket never initiates anything, so an edge between it
  * and a service says that the service uses it, whichever way the arrow points.

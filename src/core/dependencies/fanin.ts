@@ -67,7 +67,7 @@ export interface FanInRequest {
  *     caller, whether or not the edge carries an `op` (an op edge and a plain
  *     edge are one claim of dependence each);
  *  2. a drawn edge carrying `consumes` — the rule of
- *     core/c4/resolve/direction.ts: `consumes` binds the edge's TARGET as
+ *     core/c4/direction/direction.ts: `consumes` binds the edge's TARGET as
  *     the consumer, so the source is what it consumes from, and an edge drawn
  *     producer→consumer is fan-in on the SOURCE. Such an edge contributes
  *     join 2 ONLY: on the event spine THE ARROW FOLLOWS THE MESSAGE (the

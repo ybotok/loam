@@ -21,10 +21,12 @@
  * the only trace. `spine.message-unbound` names that silence. Both scopes read
  * the binding from `eventKeys` below, so the rule is written down once.
  *
- * It sits in this package for `./external.ts`'s reason: it is a question about
- * the resolved model (which endpoint of an edge a key belongs to, and what kind
- * of thing that endpoint is), and the caller's `serviceResolver` is what turns
- * an endpoint into a service.
+ * It is a question about the resolved model (which endpoint of an edge a key
+ * belongs to, and what kind of thing that endpoint is), which is why it sat in
+ * `../resolve/` beside `external.ts` until that package reached six files. It
+ * was the one module there that resolves no service itself: the caller's
+ * `serviceResolver` (`../resolve/service.ts`) is what turns an endpoint into a
+ * service, so the edge reading stands as a package of its own.
  */
 import { ancestorIds } from "../../kernel/ids/fqn/ancestors.js";
 import { INFRA_KINDS } from "../../vocabulary/maturity.js";

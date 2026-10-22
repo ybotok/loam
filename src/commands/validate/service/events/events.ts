@@ -19,7 +19,7 @@ import {
   type RawServiceId,
 } from "../../../../core/kernel/ids/service.js";
 import { type LoadedDoc } from "../../../../core/c4/likec4.js";
-import { eventKeys, infrastructureKind, unboundSentence } from "../../../../core/c4/resolve/direction.js";
+import { eventKeys, infrastructureKind, unboundSentence } from "../../../../core/c4/direction/direction.js";
 import { type ServicePaths } from "../../../../core/repo/paths.js";
 import { type Finding } from "../../../../core/vocabulary/report.js";
 import { type Requirement } from "../../../../core/document/spec.js";
@@ -83,7 +83,7 @@ export async function eventAxisFindings(axis: EventAxis): Promise<Finding[]> {
   // `eventEdges` without a word, so a consume edge drawn from the consumer to
   // the topic graded nothing and said nothing. A key bound to an `#external`
   // system is NOT this case — an outside producer or consumer, which the
-  // drawing states correctly (core/c4/resolve/direction.ts says why). Raised on
+  // drawing states correctly (core/c4/direction/direction.ts says why). Raised on
   // the service at the unbound end, because it is the one with a drawing to fix.
   const knownIds: ReadonlySet<string> = known;
   if (readable) {

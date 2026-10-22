@@ -180,7 +180,7 @@ export interface Rel {
    * message and the consumer lives in another repository entirely. Which side of
    * an edge owes the declaration is read from the key AND the arrow: `consumes`
    * binds the TARGET, so a consume edge points away from the topic, at its
-   * consumer (`./resolve/direction.ts`; reversed, `spine.message-unbound`).
+   * consumer (`./direction/direction.ts`; reversed, `spine.message-unbound`).
    */
   consumes?: string;
   tags: string[];
