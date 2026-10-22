@@ -303,8 +303,8 @@ function supersedes(delta: RealizingDoc | undefined, living: Requirement): boole
  * A `#req-` tagged flow realizing the promise is NOT consulted, and that is the
  * other subject rather than a gap: the tag names the requirement directly, so a
  * removal turns it into `usecase.requirement-unresolved` on the living view —
- * loud, in the document that has to change, and nothing here would make it
- * louder.
+ * an error the delta walk raises before the archive, naming that view
+ * (`core/usecases/delta/modified.ts`), and nothing here would make it louder.
  *
  * A REMOVED spelled by heading resolves through the living document, so it
  * grades exactly what the merge would delete. One that selects nothing is

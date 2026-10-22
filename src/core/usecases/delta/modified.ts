@@ -1,6 +1,7 @@
 /**
- * `usecase.requirement-modified` — a LIVING flow whose `#req-` tag claims a
- * requirement this feature rewrites.
+ * The LIVING flows whose `#req-` tag claims a requirement this feature changes:
+ * `usecase.requirement-modified` for one it rewrites, and
+ * `usecase.requirement-unresolved` for one it takes away.
  *
  * THE HOLE. A `#req-` tag joins a flow to one named promise, and the join is by
  * id. A MODIFIED requirement keeps its id and replaces its whole text, so after
@@ -16,29 +17,55 @@
  * the author reads one against the other while the feature is still open — and
  * redraws the flow in the same change where it no longer holds.
  *
+ * A REMOVAL IS THE FLEET'S OWN ERROR, ONE ARCHIVE EARLY. The merge deletes the
+ * promise and leaves the tag, so the very next `validate --all` reports the flow
+ * `usecase.requirement-unresolved` — while the feature gate had said nothing and
+ * the archive had exited 0 (the real-fleet review, 2026-10-21). That grade holds
+ * no judgement about the drawing: the tag resolves to nothing, whatever the flow
+ * shows. So it is raised here under the SAME code, at the same severity, with
+ * the VIEW as its subject as at fleet altitude — the fleet's grade predicted,
+ * not a second opinion beside it — and as an error it gates the archive.
+ * `--approve` may walk past it, for `capability.remove-requirement-realized`'s
+ * reason one carrier over: retiring a promise something still claims is the
+ * author's call about the feature, loam reads the flow perfectly well (this is
+ * no `usecase.flow-invalid` blindness), and the living docs then carry exactly
+ * the error this named.
+ *
+ * GRADED AGAINST WHAT THE MERGE LEAVES, not against the REMOVED list. Each
+ * document's after-side is the merge's own fold (`applyRequirementDelta`), so a
+ * removal the same delta re-adds — or re-spells under an id that flattens to the
+ * same tag — leaves the tag resolving and earns nothing, exactly as the fleet
+ * will grade it. And only a claim that resolves TODAY is asked about: one that
+ * is already broken is `validate --all`'s finding now, and reporting it again
+ * here would be one mistake counted twice.
+ *
  * TWO ALTITUDES, TWO SCOPES — the ones `validate --all` resolves the tag with.
  * A flow in `architecture/` keeps a BUSINESS promise: its `#req-` tag is scoped
  * by its `#cap-` tag to a capability document (`core/capabilities/usecase-join.ts`),
- * so it is asked about the capability requirements this feature modifies. A
+ * so it is asked about the capability requirements this feature changes. A
  * flow beside a service's model keeps that SERVICE's promise: its `#req-` tag is
  * scoped by the directory to the ids of that service's spec.md and arch.spec.md
  * (`commands/validate/service/usecases/tags.ts`), so it is asked about the
- * service requirements this feature modifies there — and only the services the
- * feature's `specs/` touch can hold one. The feature's own `usecases/` are not
- * living and are graded against the new text already (`../grade/feature.ts`).
- * A REMOVED requirement is not this code's: the merge leaves its tag resolving
- * to nothing, which is `usecase.requirement-unresolved`.
+ * service requirements this feature changes there — and only the services the
+ * feature's `specs/` touch can hold one. BOTH documents are that scope, so the
+ * one a touched service carries no delta for is read as it stands: without it
+ * an id the other document also declares would read as gone after the merge,
+ * and gate an archive the fleet then grades green. The feature's own
+ * `usecases/` are not living and are graded against the new text already
+ * (`../grade/feature.ts`).
  *
- * WHAT IT COSTS. Nothing, for a feature that modifies no requirement — which is
- * nearly every feature, and the caller does not call this then. For one that
- * does, a byte scan for the tag's own spelling (`req-<slug>`) over the
- * documents that could declare it, and a LikeC4 load only for a project one of
- * them is in: a tag name is one token, so a document without its characters
+ * WHAT IT COSTS. Nothing, for a feature that modifies and removes no
+ * requirement — which is nearly every feature, and the caller does not call
+ * this then. For one that does, a byte scan for the tag's own spelling
+ * (`req-<slug>`) over the documents that could declare it, the living document
+ * of a touched service's other axis, and a LikeC4 load only for a project one
+ * of them is in: a tag name is one token, so a document without its characters
  * cannot carry it. A project that does not parse is skipped, not reported —
  * `validate --all` owns that answer (`usecase.flow-invalid`, `landscape.invalid`),
- * and a warning about one requirement must not become a second report of a
+ * and a finding about one requirement must not become a second report of a
  * broken map.
  */
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import {
@@ -46,6 +73,7 @@ import {
   resolveCapabilityTags,
   resolveRequirementTags,
   tagSlug,
+  type RequirementClaim,
 } from "../../capabilities/usecase-join.js";
 import { gradableCapabilityIds } from "../../capabilities/findings.js";
 import type { CapabilityVocabulary } from "../../capabilities/capabilities.js";
@@ -55,10 +83,10 @@ import { architectureProjectDocuments } from "../../c4/project/architecture.js";
 import type { ParsedView } from "../../c4/parsed/dynamic-views.js";
 import type { LoadedDoc } from "../../c4/likec4.js";
 import type { ServiceModel } from "../../c4/service-model/load.js";
-import { replacementsOf } from "../../document/apply.js";
+import { applyRequirementDelta, replacementsOf, type Replacement } from "../../document/apply.js";
 import type { Requirement } from "../../document/spec.js";
 import type { DocsDir } from "../../kernel/ids/dirs.js";
-import type { ServicePaths } from "../../repo/paths.js";
+import { SPEC_AXES, type ServicePaths, type SpecAxis } from "../../repo/paths.js";
 import { compareIds } from "../../repo/entries.js";
 import type { Issue } from "../../vocabulary/issue.js";
 import { useCasesIn } from "../fleet.js";
@@ -73,12 +101,14 @@ export interface DeltaPair {
   living: readonly Requirement[];
 }
 
-/** One spec axis of a service the feature touches, and where that service lives — asked only for one whose delta modifies something. */
+/** One spec axis of a service the feature touches, and where that service lives — asked only for one whose delta changes something. */
 export interface ServiceDeltaPair extends DeltaPair {
+  /** Which of the service's two documents this is: the other is read as it stands when the feature carries no delta for it. */
+  axis: SpecAxis["key"];
   paths: () => Promise<ServicePaths>;
 }
 
-export interface ModifiedFlowRequest {
+export interface ChangedPromiseRequest {
   docsDir: DocsDir;
   /** The feature's capability deltas — what an `architecture/` flow's tag is asked about. */
   capabilities: readonly CapabilityDeltaDoc[];
@@ -101,6 +131,8 @@ export interface ModifiedFlowRequest {
    * workspace each.
    */
   architecture: () => Promise<LoadedDoc>;
+  /** A living requirements document, parsed — a touched service's axis the feature carries no delta for. Injected for the same reason again. */
+  readRequirements: (path: string) => Promise<Requirement[]>;
 }
 
 /** One living flow, located, and the scope its `#req-` tag resolves in. */
@@ -116,77 +148,150 @@ interface LivingFlow {
 
 type Altitude = "capability" | "service";
 
-export async function modifiedPromiseFlowIssues(req: ModifiedFlowRequest): Promise<Issue[]> {
-  // Per altitude, what a tag resolves against TODAY — each document's living
-  // ids, a service's two axes together, the one set its directory-scoped tag
-  // is read against — and which of those ids this feature modifies.
-  const tables: Record<Altitude, { living: Map<string, Set<string>>; modified: Map<string, Set<string>> }> = {
-    capability: { living: livingIds(req.capabilities), modified: modifiedIds(req.capabilities) },
-    service: { living: livingIds(req.services), modified: modifiedIds(req.services) },
+type Resolved = Extract<RequirementClaim, { kind: "resolved" }>;
+
+/**
+ * Per document id — a capability, or a service's two axes together, the one
+ * set its directory-scoped tag is read against — the ids a tag resolves
+ * against today and after the merge, and which living ids this feature
+ * rewrites or retires.
+ */
+interface Table {
+  living: Map<string, Set<string>>;
+  merged: Map<string, Set<string>>;
+  modified: Map<string, Set<string>>;
+  removed: Map<string, Set<string>>;
+}
+
+export async function changedPromiseFlowIssues(req: ChangedPromiseRequest): Promise<Issue[]> {
+  const tables: Record<Altitude, Table> = {
+    capability: tableOf(req.capabilities),
+    service: tableOf(await withUntouchedAxes(req)),
   };
   const flows = [
-    ...(await fleetFlows(req, tables.capability.modified)),
-    ...(await serviceFlows(req, tables.service.modified)),
+    ...(await fleetFlows(req, changedIds(tables.capability))),
+    ...(await serviceFlows(req, changedIds(tables.service))),
   ];
   const issues: Issue[] = [];
-  for (const { view, file, scope, altitude } of flows.sort((a, b) => compareIds(a.file, b.file) || compareIds(a.view.id, b.view.id))) {
-    const table = tables[altitude];
-    for (const claim of resolveRequirementTags(view.tags, scope, (id) => table.living.get(id))) {
-      if (claim.kind !== "resolved" || table.modified.get(claim.capability)?.has(claim.id) !== true) continue;
-      const whose =
-        altitude === "capability" ? `${claim.capability}#${claim.id}` : `${claim.capability}'s requirement ${claim.id}`;
-      issues.push({
-        severity: "warn",
-        code: "usecase.requirement-modified",
-        subject: claim.capability,
-        message:
-          `${file}: flow '${view.id}' is tagged #${claim.tag} — it claims ${whose}, which this feature MODIFIES. ` +
-          `The tag will still resolve after the archive and nothing grades what the flow draws against the new ` +
-          `wording: read the flow against the replacement, and redraw it in this change if it no longer keeps the promise.`,
-        locations: [{ path: file, role: "primary" }],
-      });
+  for (const flow of flows.sort((a, b) => compareIds(a.file, b.file) || compareIds(a.view.id, b.view.id))) {
+    const table = tables[flow.altitude];
+    const after = new Map(resolveRequirementTags(flow.view.tags, flow.scope, (id) => table.merged.get(id)).map((c) => [c.tag, c]));
+    for (const claim of resolveRequirementTags(flow.view.tags, flow.scope, (id) => table.living.get(id))) {
+      if (claim.kind !== "resolved") continue;
+      if (table.modified.get(claim.capability)?.has(claim.id) === true) issues.push(modifiedIssue(flow, claim));
+      else if (table.removed.get(claim.capability)?.has(claim.id) === true && after.get(claim.tag)?.kind !== "resolved") {
+        issues.push(removedIssue(flow, claim));
+      }
     }
   }
   return issues;
 }
 
+function whose(flow: LivingFlow, claim: Resolved): string {
+  return flow.altitude === "capability" ? `${claim.capability}#${claim.id}` : `${claim.capability}'s requirement ${claim.id}`;
+}
+
+function modifiedIssue(flow: LivingFlow, claim: Resolved): Issue {
+  return {
+    severity: "warn",
+    code: "usecase.requirement-modified",
+    subject: claim.capability,
+    message:
+      `${flow.file}: flow '${flow.view.id}' is tagged #${claim.tag} — it claims ${whose(flow, claim)}, which this feature MODIFIES. ` +
+      `The tag will still resolve after the archive and nothing grades what the flow draws against the new ` +
+      `wording: read the flow against the replacement, and redraw it in this change if it no longer keeps the promise.`,
+    locations: [{ path: flow.file, role: "primary" }],
+  };
+}
+
+function removedIssue(flow: LivingFlow, claim: Resolved): Issue {
+  return {
+    severity: "error",
+    code: "usecase.requirement-unresolved",
+    // The VIEW, as `validate --all` names it once the archive lands — so the
+    // prediction and the outcome are about one thing a reader opens.
+    subject: flow.view.id,
+    message:
+      `${flow.file}: flow '${flow.view.id}' is tagged #${claim.tag} — it claims ${whose(flow, claim)}, which this feature REMOVES. ` +
+      `After the archive the tag no longer resolves, and \`loam validate --all\` reports this flow with this same error: ` +
+      `drop the tag (or point it at the promise that replaces this one) in this change, or MODIFY the requirement ` +
+      `instead of removing it.`,
+    locations: [{ path: flow.file, role: "primary" }],
+  };
+}
+
 /**
- * The requirement ids each document's delta MODIFIES, by the id the LIVING
- * document gives them — selected by `replacementsOf`, the merge's own walk, so
- * a MODIFIED written by heading alone still names the id a tag carries. A
- * document the merge would refuse is skipped: the delta gate reports it, and
- * this warning has nothing true to say about a merge that cannot happen.
+ * Each document's table rows. The modified and removed ids are named by the id
+ * the LIVING document gives them — selected by `replacementsOf`, the merge's own
+ * walk, so a MODIFIED or REMOVED written by heading alone still names the id a
+ * tag carries — and the after-side is that same merge's result. A document the
+ * merge would refuse keeps its living ids on both sides and changes nothing:
+ * the delta gate reports it, and nothing here has a true thing to say about a
+ * merge that cannot happen.
  */
-function modifiedIds(docs: readonly DeltaPair[]): Map<string, Set<string>> {
-  const out = new Map<string, Set<string>>();
+function tableOf(docs: readonly DeltaPair[]): Table {
+  const table: Table = { living: new Map(), merged: new Map(), modified: new Map(), removed: new Map() };
   for (const doc of docs) {
-    let replaced;
+    let fold: { replaced: Replacement[]; merged: readonly Requirement[] };
     try {
-      replaced = replacementsOf([...doc.living], [...doc.reqs]);
+      fold = { replaced: replacementsOf([...doc.living], [...doc.reqs]), merged: applyRequirementDelta([...doc.living], [...doc.reqs]) };
     } catch {
-      continue;
+      fold = { replaced: [], merged: doc.living };
     }
-    for (const r of replaced) {
-      if (r.kind !== "MODIFIED" || r.living.id === undefined) continue;
-      out.set(doc.id, (out.get(doc.id) ?? new Set()).add(r.living.id));
+    idsInto(table.living, doc.id, doc.living);
+    idsInto(table.merged, doc.id, fold.merged);
+    for (const r of fold.replaced) {
+      if (r.living.id === undefined || (r.kind !== "MODIFIED" && r.kind !== "REMOVED")) continue;
+      const into = r.kind === "MODIFIED" ? table.modified : table.removed;
+      into.set(doc.id, (into.get(doc.id) ?? new Set()).add(r.living.id));
     }
+  }
+  return table;
+}
+
+/** A document's ids, unioned into its row — created even when empty, which is the `empty` arm's answer rather than `undocumented`'s. */
+function idsInto(rows: Map<string, Set<string>>, id: string, reqs: readonly Requirement[]): void {
+  const ids = rows.get(id) ?? new Set<string>();
+  for (const r of reqs) if (r.id !== undefined) ids.add(r.id);
+  rows.set(id, ids);
+}
+
+/** The ids each document's delta modifies or removes — what a flow has to mention to be asked about at all. */
+function changedIds(table: Table): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const rows of [table.modified, table.removed]) {
+    for (const [id, ids] of rows) out.set(id, new Set([...(out.get(id) ?? []), ...ids]));
   }
   return out;
 }
 
-function livingIds(docs: readonly DeltaPair[]): Map<string, Set<string>> {
-  const out = new Map<string, Set<string>>();
-  for (const doc of docs) {
-    const ids = out.get(doc.id) ?? new Set<string>();
-    for (const r of doc.living) if (r.id !== undefined) ids.add(r.id);
-    out.set(doc.id, ids);
+/**
+ * The service pairs, plus — for each service whose delta modifies or removes
+ * something — every document of it the feature carries no delta for, as it
+ * stands (`reqs: []`, so it changes nothing and only widens both sides).
+ * `requirementIdsOf` (`commands/validate/service/usecases/usecases.ts`) reads
+ * both documents for a service-local tag; so must this, or a tag the untouched
+ * document keeps resolving reads as broken.
+ */
+async function withUntouchedAxes(req: ChangedPromiseRequest): Promise<DeltaPair[]> {
+  const out: DeltaPair[] = [...req.services];
+  const asked = new Set<string>();
+  for (const pair of req.services) {
+    const own = req.services.filter((p) => p.id === pair.id);
+    if (asked.has(pair.id) || !own.some((p) => p.reqs.some((r) => r.kind === "MODIFIED" || r.kind === "REMOVED"))) continue;
+    asked.add(pair.id);
+    const paths = await pair.paths();
+    for (const axis of SPEC_AXES) {
+      if (own.some((p) => p.axis === axis.key) || !existsSync(paths[axis.key])) continue;
+      out.push({ id: pair.id, reqs: [], living: await req.readRequirements(paths[axis.key]) });
+    }
   }
   return out;
 }
 
 /** The tag spellings that could claim one of these ids. */
-function needlesFor(modified: ReadonlyMap<string, ReadonlySet<string>>): string[] {
-  return [...new Set([...modified.values()].flatMap((ids) => [...ids].map((id) => `${REQ_TAG_PREFIX}${tagSlug(id)}`)))];
+function needlesFor(changed: ReadonlyMap<string, ReadonlySet<string>>): string[] {
+  return [...new Set([...changed.values()].flatMap((ids) => [...ids].map((id) => `${REQ_TAG_PREFIX}${tagSlug(id)}`)))];
 }
 
 /** Does any of these documents contain one of the tag spellings at all? Unreadable fails closed, as `../fleet.ts`'s gate does. */
@@ -202,12 +307,12 @@ async function mentions(paths: readonly string[], needles: readonly string[]): P
   return false;
 }
 
-async function fleetFlows(req: ModifiedFlowRequest, modified: ReadonlyMap<string, ReadonlySet<string>>): Promise<LivingFlow[]> {
+async function fleetFlows(req: ChangedPromiseRequest, changed: ReadonlyMap<string, ReadonlySet<string>>): Promise<LivingFlow[]> {
   // The vocabulary ladder (`core/capabilities/findings.ts`): with nothing
   // declared no `#cap-` tag resolves, so no fleet flow can be said to claim anything.
   const declared = gradableCapabilityIds(req.vocabulary);
-  if (modified.size === 0 || declared === null) return [];
-  if (!(await mentions(await architectureProjectDocuments(req.docsDir), needlesFor(modified)))) return [];
+  if (changed.size === 0 || declared === null) return [];
+  if (!(await mentions(await architectureProjectDocuments(req.docsDir), needlesFor(changed)))) return [];
   const read = useCasesIn(await req.architecture(), req.known);
   if (read.kind !== "read") return [];
   return read.views.map((view) => ({
@@ -218,9 +323,9 @@ async function fleetFlows(req: ModifiedFlowRequest, modified: ReadonlyMap<string
   }));
 }
 
-async function serviceFlows(req: ModifiedFlowRequest, modified: ReadonlyMap<string, ReadonlySet<string>>): Promise<LivingFlow[]> {
+async function serviceFlows(req: ChangedPromiseRequest, changed: ReadonlyMap<string, ReadonlySet<string>>): Promise<LivingFlow[]> {
   const out: LivingFlow[] = [];
-  for (const [service, ids] of modified) {
+  for (const [service, ids] of changed) {
     // Sequential on purpose, for `../fleet.ts`'s gate's reason: nearly every
     // service answers from one readdir and a byte scan, and the rare one that
     // opens a workspace should not be raced by the ones that do not need one.

@@ -10,6 +10,28 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Fixed — a feature that removes a promise a living flow claims is refused before the archive
+
+No code, flag or payload key was added. SCHEMA.md "A promise a living flow keeps, removed" states
+the rule.
+
+- **`usecase.requirement-unresolved` is raised at feature scope for a living flow.** A feature that
+  REMOVES a requirement a living flow's `#req-` tag claims passed `validate --feature`, `loam status`
+  and the archive gate, archived at exit 0, and the next `validate --all` reported
+  `usecase.requirement-unresolved` against the flow. The walk that raises
+  `usecase.requirement-modified` now raises that error too, at both of its altitudes: an
+  `architecture/` flow scoped by its `#cap-` tag to a capability requirement the feature's capability
+  delta removes, and a flow beside a service's model naming one of that service's requirements the
+  feature's `specs/` delta removes. The message names the living flow file and the requirement, and
+  the subject is the view, as `validate --all` names it. It is an error and **it gates the archive,
+  which can turn a feature that archived before into a refusal**. `--approve` overrides it. The tag
+  is graded against what the merge leaves: a removal the same delta re-adds, or re-spells under an id
+  that flattens to the same tag, raises nothing, and a tag that does not resolve today is left to
+  `validate --all`, which already reports it.
+- **A service-local `#req-` tag is read against both of the service's documents in this walk.** When
+  the feature carried a delta for only one of spec.md and arch.spec.md, the other was not read, so an
+  id it declared did not count. It now does, for `usecase.requirement-modified` as well.
+
 ### Fixed — which way an edge points no longer decides a grade in silence
 
 One finding code was added: `spine.message-unbound` (warn). It is a new member of the frozen
