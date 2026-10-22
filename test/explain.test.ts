@@ -81,6 +81,10 @@ const TERM_NAMES = [
   "coherence",
   "vouch",
   "maturity",
+  "kind",
+  "legend",
+  "overview",
+  "purpose",
 ];
 
 describe("the fix-table parser reads the shipped /loam-check body", () => {

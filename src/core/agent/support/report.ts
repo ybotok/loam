@@ -65,6 +65,13 @@ prefer repository-relative paths. Do not copy source files, architecture/spec bo
 command output when a code and short excerpt prove the same fact. Review the finished report once
 more for secrets before handing it back.
 
+The fleet's own names are often confidential too: its services, topics, messages, operation ids and
+requirement ids. Write \`Minimal safe reproduction\` on neutral stand-ins — an order service, a
+payment service, a broker topic, a store — rebuilt until it shows the same finding or refusal, so the
+report can travel without the fleet. Where the excerpt under \`Actual\` must quote the fleet's own
+output, say in \`Sanitization\` that it does, so that whoever forwards the report knows that
+section stays behind.
+
 ## Write one separate report
 
 Create \`loam-reports/NNN-YYYY-MM-DD-<short-slug>.md\` in the directory holding the \`loam.json\` that

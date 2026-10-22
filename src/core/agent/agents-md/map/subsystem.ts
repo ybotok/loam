@@ -95,7 +95,9 @@ export const SUBSYSTEM_COMMANDS = `- \`loam subsystem <verb>\` manages the group
   \`sync\` refuses to rewrite either file while \`architecture/\` does not parse
   (\`action: "blocked"\`): fix the map first. Both are generated wholesale:
   an authored diagram of the same services belongs in the landscape or in a
-  file of your own name, never here. \`--json\` reports the subsystem file as
+  file of your own name, never here, and never as a \`view … of\` a subsystem or
+  service element, which would take the drill-down from these views
+  (\`loam instructions loam-drawing\` has the views that read). \`--json\` reports the subsystem file as
   \`path\`/\`action\` and the per-service one as \`serviceViews\`. \`loam adopt --subsystem <name>\` briefs a new
   service's baseline directly into a group, so adoption need not land unfiled.
 `;

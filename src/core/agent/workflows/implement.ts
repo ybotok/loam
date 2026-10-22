@@ -164,6 +164,10 @@ repository, which needs its own committed ./loam.json — if there is none,
    closes the unit, so step 3 is the command AFTER it, not the end of the run.
 6. Honour the contract: every operation in \`architecture.inbound\` must exist under
    exactly that operationId, and every one in \`architecture.outbound\` must be called.
+   The code you just wrote is evidence about the delta's edges. If an edge the
+   feature draws as \`connects\` is in fact a publish, a delivery, a read or a write,
+   redraw it in delta.likec4 with that kind (\`loam instructions loam-drawing\`) —
+   and step 7 applies, because that is a change to the feature's documents.
 7. If building made you change the feature's documents at all — a requirement's
    wording, an operation in its openapi.yaml — **\`loam rebase $1\`** before you
    validate. Every edit you make in the docs repo while other features are in

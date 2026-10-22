@@ -35,7 +35,8 @@ import {
 } from "./helpers/harness.js";
 import { SERVICE_DESCRIPTION_SENTINEL } from "../src/core/coherence/authoring/sentinels.js";
 import { docsRepoFiles } from "../src/core/docs.js";
-import { isLandscapeStub, LEGACY_LANDSCAPE_STUBS } from "../src/core/scaffold/landscape.js";
+import { isLandscapeStub } from "../src/core/scaffold/landscape.js";
+import { LEGACY_LANDSCAPE_STUBS } from "../src/core/scaffold/legacy.js";
 import { COMMIT_INTENT } from "../src/core/staging/interrupted.js";
 import { ARTIFACT_STATUSES } from "../src/core/status/report.js";
 import { FLEET_NEXT_LIMIT } from "../src/core/status/fleet/next.js";
@@ -1251,6 +1252,17 @@ describe("isLandscapeStub — the writer and the checker read one string", () =>
       true,
     );
     expect(stub).not.toContain("renders from its OWN directory");
+    // Generation 4 (v0.2.0-alpha.6 through .11) declared no relationship kind;
+    // the current stub declares seven. An untouched map from those releases is
+    // still the stub, though nothing in it can draw a kinded edge.
+    const unkinded = LEGACY_LANDSCAPE_STUBS.filter(
+      (s) => s.includes("views {") && !s.includes("  relationship publishes {"),
+    );
+    expect(unkinded.length).toBe(2);
+    expect(unkinded.at(-1)).toBe(LEGACY_LANDSCAPE_STUBS.at(-1));
+    for (const kind of ["publishes", "delivers", "reads", "writes", "readsWrites", "calls", "connects"]) {
+      expect(stub).toContain(`  relationship ${kind} {`);
+    }
   });
 });
 

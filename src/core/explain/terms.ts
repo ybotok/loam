@@ -49,8 +49,9 @@ import { LOAM_IMPLEMENT } from "../agent/workflows/implement.js";
 import { LOAM_AUTHORING } from "../agent/workflows/reference/authoring.js";
 import { LOAM_CODES } from "../agent/workflows/reference/codes.js";
 import { LOAM_DONE_CHECK } from "../agent/workflows/reference/done-check.js";
+import { LOAM_DRAWING } from "../agent/workflows/reference/drawing/drawing.js";
 import { LOAM_SPINE } from "../agent/workflows/reference/spine.js";
-import { DOCUMENT_TERMS } from "./terms/documents.js";
+import { DOCUMENT_TERMS, DRAWING_TERMS } from "./terms/documents.js";
 import { DONE_CHECK_TERMS } from "./terms/done-check.js";
 import type { PinSource, TermEntry, TermGroup } from "./terms/entry.js";
 import { STAGE_TERMS } from "./terms/stages.js";
@@ -76,6 +77,7 @@ export const PIN_SOURCE_TEXT: Record<PinSource, string> = {
   SPINE_PAGE: LOAM_SPINE.body,
   REFUSALS,
   AUTHORING: LOAM_AUTHORING.body,
+  DRAWING: LOAM_DRAWING.body,
   DONE_CHECK: LOAM_DONE_CHECK.body,
   CODES_PAGE: LOAM_CODES.body,
   CHECK: LOAM_CHECK.body,
@@ -88,9 +90,17 @@ export const PIN_SOURCE_TEXT: Record<PinSource, string> = {
  * The registry, by subject, in the order the bare `loam explain` listing
  * prints it: where a feature stands first, because `loam status` is the first
  * command a newcomer runs, then the two commands whose words its next steps
- * send a reader to, then the document vocabulary underneath all three.
+ * send a reader to, then the document vocabulary underneath all three, and
+ * last the words for drawing the map, which no command prints and every page
+ * that draws an edge uses.
  */
-export const TERM_GROUPS: readonly TermGroup[] = [STAGE_TERMS, DONE_CHECK_TERMS, TASK_TERMS, DOCUMENT_TERMS];
+export const TERM_GROUPS: readonly TermGroup[] = [
+  STAGE_TERMS,
+  DONE_CHECK_TERMS,
+  TASK_TERMS,
+  DOCUMENT_TERMS,
+  DRAWING_TERMS,
+];
 
 /** Every term, flat, in listing order — what the lookup searches and the `--json` listing returns. */
 export const TERMS: readonly TermEntry[] = TERM_GROUPS.flatMap((group) => group.terms);

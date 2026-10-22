@@ -50,11 +50,11 @@ const WORKFLOW_NAMES = [
 const SUPPORT_NAMES = ["loam-report"];
 
 /**
- * The four reference pages, in the order AGENTS.md's own index names them.
+ * The five reference pages, in the order AGENTS.md's own index names them.
  * They are on the menu but they are not workflows — see the separation test
  * below for why that distinction is asserted rather than assumed.
  */
-const REFERENCE_NAMES = ["loam-codes", "loam-spine", "loam-authoring", "loam-done-check"];
+const REFERENCE_NAMES = ["loam-codes", "loam-spine", "loam-authoring", "loam-done-check", "loam-drawing"];
 
 describe("the menu", () => {
   it("lists the six workflows when asked for none", async () => {

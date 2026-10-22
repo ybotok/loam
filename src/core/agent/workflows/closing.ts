@@ -241,6 +241,13 @@ export const LOAM_SHIP: CommandContent = {
    of a living document — the scenarios and the \`Covers:\` / \`Operations:\` / … entries
    its new text does not restate. None of it is a warning, and all of it is gone
    after the merge: restate in the delta anything that must survive, then re-run.
+   The plan also prints one note per document the merge CREATES, saying whether
+   the delta's title and \`## Purpose\` came across. A created document with no
+   purpose arrives with no narrative at all. And read what lands verbatim — the
+   requirement bodies, scenarios and contract descriptions — for review-time
+   wording such as "this delta" or "this feature": in a living document it points
+   at a change nobody will remember. Fix both in the delta before the merge
+   (\`loam instructions loam-authoring\`, "Writing for a person").
 4. \`loam archive $1 --json\`. It merges three axes into the living state — requirements
    into \`services/<svc>/spec.md\`, endpoints into \`services/<svc>/openapi.yaml\`,
    elements and edges into \`architecture/landscape.likec4\` and, for an addition nested
@@ -279,6 +286,11 @@ export const LOAM_SHIP: CommandContent = {
      decides what it is.
    - \`merge-failed\` — the merge could not be computed, or failed and was rolled
      back. Either way the living docs are unchanged; fix the reported cause, re-run.
+     "Could not resolve reference to RelationshipKind" means the delta draws a
+     relationship kind (\`-[publishes]->\`) that the living map's \`specification\`
+     does not declare: the archive copies the edge and never the declaration.
+     Declare the kind in \`architecture/landscape.likec4\` — it is vocabulary, not
+     a feature change — then re-run.
      A file loam cannot decode as UTF-8 refuses here by name rather than being
      rewritten with replacement characters. So does a living document that still
      holds git conflict markers — the \`spec.merge-conflict\` /

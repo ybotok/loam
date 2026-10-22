@@ -8,7 +8,10 @@
  * service (the `metadata { service '<id>' }` binding is what every loam join
  * reads — element ids are cosmetic), `#external` systems for the externals,
  * and PLAIN edges. No operationIds: those arrive with contracts, and a
- * templated guess would be the extractor this command exists not to be.
+ * templated guess would be the extractor this command exists not to be. No
+ * relationship kinds on the edges either, for the same reason — but the kinds
+ * themselves are DECLARED, as the scaffold's stub declares them, so whatever
+ * draws the next edge can name one.
  */
 import type { FleetSeed } from "./fleet-file.js";
 
@@ -107,6 +110,56 @@ export function renderLandscape(seed: FleetSeed): string {
     "  // used, so both are declared here whether or not this fleet uses them.",
     "  tag platform",
     "  tag external",
+    // The relationship kinds are DUPLICATED from core/scaffold/landscape.ts's
+    // LANDSCAPE_STUB for the views block's reason below, and test/seed.test.ts
+    // compares the two byte for byte the same way. Declared, never used: the
+    // calls below stay plain edges, because fleet.yaml says who calls whom and
+    // has no spelling for what an edge carries — choosing a kind here would be
+    // the guess this templater exists not to make. Declaring them is what lets
+    // the adoptions and feature deltas that follow draw kinded edges into this
+    // map, and lets an archive that copies one in still parse.
+    "",
+    "  // One kind per kind of traffic, each with one direction. The style is the",
+    "  // picture: amber for messages, green for data at rest, gray and dashed for",
+    "  // a connection nobody has given a direction yet. Never tag a kind: LikeC4",
+    "  // copies a kind's tags onto every edge of it.",
+    "  relationship publishes {",
+    "    color amber",
+    "    line solid",
+    "    head normal",
+    "  }",
+    "  relationship delivers {",
+    "    color amber",
+    "    line solid",
+    "    head normal",
+    "  }",
+    "  relationship reads {",
+    "    color green",
+    "    head none",
+    "    tail normal",
+    "  }",
+    "  relationship writes {",
+    "    color green",
+    "    head normal",
+    "  }",
+    "  relationship readsWrites {",
+    "    color green",
+    "    head normal",
+    "    tail normal",
+    "  }",
+    "  relationship calls {",
+    "    color secondary",
+    "    line solid",
+    "    head normal",
+    "  }",
+    "  relationship connects {",
+    "    color gray",
+    "    line dashed",
+    "    head none",
+    "    // A marker at the source: an edge with no arrowhead at either end is laid",
+    "    // out unconstrained, and enough of them flatten a view into one band.",
+    "    tail odot",
+    "  }",
     "}",
     "",
     "model {",

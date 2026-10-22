@@ -22,6 +22,7 @@ export type PinSource =
   | "SPINE_PAGE"
   | "REFUSALS"
   | "AUTHORING"
+  | "DRAWING"
   | "DONE_CHECK"
   | "CODES_PAGE"
   | "CHECK"

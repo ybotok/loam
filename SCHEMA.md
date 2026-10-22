@@ -811,6 +811,20 @@ as `topic -> service`, so no broker's consumers were ever counted toward
 `landscape.platform-candidate`. Both directions now count, from the map's edges and from an
 extending model's attested calls alike.
 
+**A relationship's KIND is drawing, never a join.** No reader in the table above reads a kind:
+`metadata { op }`, `publishes` and `consumes` are what every grade joins on, and `-[calls]->`
+changes what the renderer draws and nothing loam decides. The convention loam teaches is in
+`loam instructions loam-drawing`: one kind per kind of traffic — `publishes` from producer to topic,
+`delivers` from topic to consumer, `reads`, `writes` and `readsWrites` with a store edge always
+written service `->` store and the kind's style placing the arrowhead, `calls` for a request, and
+`connects` wherever no evidence gives a direction yet. The fleet map `loam init --create`
+scaffolds and the one `loam seed` templates both declare those seven kinds, and declare them only:
+seed's edges stay plain, because `fleet.yaml` says who calls whom and nothing about what an edge
+carries. One consequence is mechanical rather than a convention. `loam archive` splices a delta's
+edge into the map verbatim and never copies a `specification` declaration, so a kind the living
+map does not declare leaves the merged map unparseable and the archive refuses with
+`merge-failed`. Declare a kind in the map before a feature that draws one archives.
+
 ## `loam.json` — the wiring, one file per repository
 
 The docs repo is one repository; each governed implementation boundary is represented by a code
