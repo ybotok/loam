@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/ybotok/loam/main/docs/assets/loam-logo.png" alt="loam logo: a seedling whose leaves are diagram nodes, rooted in layered soil" width="128" align="right">
+
 # loam
 
 **One docs repo for a system of many services — C4 architecture, API contracts and requirements as
