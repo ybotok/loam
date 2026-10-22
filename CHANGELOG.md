@@ -10,6 +10,37 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Fixed — a feature that removes a promise a living flow claims is refused before the archive
+
+No code, flag or payload key was added. SCHEMA.md "A promise a living flow keeps, removed" states
+the rule.
+
+- **`usecase.requirement-unresolved` is raised at feature scope for a living flow.** A feature that
+  REMOVES a requirement a living flow's `#req-` tag claims passed `validate --feature`, `loam status`
+  and the archive gate, archived at exit 0, and the next `validate --all` reported
+  `usecase.requirement-unresolved` against the flow. The walk that raises
+  `usecase.requirement-modified` now raises that error too, at both of its altitudes: an
+  `architecture/` flow scoped by its `#cap-` tag to a capability requirement the feature's capability
+  delta removes, and a flow beside a service's model naming one of that service's requirements the
+  feature's `specs/` delta removes. The message names the living flow file and the requirement, and
+  the subject is the view, as `validate --all` names it. `--approve` overrides it. The tag is graded
+  against what the merge leaves: a removal the same delta re-spells under an id that flattens to the
+  same tag raises nothing, and a tag that does not resolve today is left to `validate --all`, which
+  already reports it. **Exit code:** `loam validate --feature`, `validate --all` (per active feature)
+  and `loam archive` (`not-coherent`) now exit 1 for such a feature where they exited 0, and
+  `loam status` no longer calls it ready.
+- **A MODIFIED that leaves a living flow's tag ambiguous is the same error, not the warning.** A
+  feature that MODIFIES a requirement a living flow claims and ADDS an id that flattens to the same
+  tag (`PAY-AUTH` beside `PAY.AUTH`) got only `usecase.requirement-modified`, whose message said the
+  tag would still resolve; after the archive `validate --all` reported `usecase.requirement-unresolved`.
+  It now gets that error, naming the colliding ids, with the same exit codes as above.
+- **A service-local `#req-` tag is read against both of the service's documents in this walk, as the
+  fleet reads it.** When the feature carried a delta for only one of spec.md and arch.spec.md, the
+  other was not read, so an id it declared did not count; and a requirement under a living document's
+  `## REMOVED Requirements` heading counted, though the fleet skips it. Both now match
+  `validate --all`. For `usecase.requirement-modified` this can only remove a warning, from a tag the
+  two documents already make ambiguous.
+
 ## [0.2.0-alpha.11] - 2026-10-22
 
 Everything on `main` since `0.2.0-alpha.10`. Still a prerelease on the `alpha` line. When this

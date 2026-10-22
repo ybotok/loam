@@ -17,6 +17,12 @@
  * names the flow while the feature is open — for an `architecture/` flow scoped
  * by `#cap-` to a capability requirement, and for a flow beside a service's
  * model scoped by its directory to that service's own requirements.
+ *
+ * WHAT STILL CLAIMS A PROMISE THE FEATURE TAKES AWAY. A REMOVED leaves the tag
+ * resolving to nothing, and the next `validate --all` reported it
+ * `usecase.requirement-unresolved` after an archive the feature gate had
+ * called clean. The same walk now raises that error first; each case pins the
+ * prediction to the outcome the fleet grades after the archive.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { droppedBy } from "../src/core/document/apply.js";
@@ -118,6 +124,25 @@ const FLEET_FLOW = `views {
 }
 `;
 
+/** payment-service's living spec.md: two promises. */
+const SERVICE_SPEC = `---\nservice: payment-service\n---\n\n# payment-service\n\n## Requirements\n\n### Requirement: Authorize\nRequirement-ID: PAY-AUTH\nThe service SHALL authorize through its domain.\n\n#### Scenario: Authorized\n- **Given** a card\n- **When** it is authorized\n- **Then** the domain records it\n\n### Requirement: Refund\nRequirement-ID: PAY-REFUND\nThe service SHALL refund a captured payment.\n\n#### Scenario: Refunded\n- **Given** a captured payment\n- **When** a refund is asked for\n- **Then** it is refunded\n`;
+
+/**
+ * payment-service with a flow of its own beside a standalone model — its own
+ * `specification` declares the tag, because the service directory is its own
+ * project — keeping PAY-AUTH, the first promise its living spec makes.
+ */
+const SERVICE_FLOW_FILES: Record<string, string> = {
+  "services/payment-service/spec.md": SERVICE_SPEC,
+  "services/payment-service/model.likec4": `specification {\n  element softwareSystem\n  element container\n  tag req-PAY-AUTH\n}\n\nmodel {\n  paymentService = softwareSystem 'payment-service' {\n    metadata { service 'payment-service' }\n    api = container 'api'\n    domain = container 'domain'\n    api -> domain 'authorizes'\n  }\n}\n`,
+  "services/payment-service/usecases/authorize.likec4": `views {\n  dynamic view uc_authorize {\n    #req-PAY-AUTH\n    paymentService.api -> paymentService.domain 'authorizes'\n  }\n}\n`,
+};
+
+/** A delta removing one requirement of `living`, by id and heading, pinned as `loam rebase` would pin it. */
+function removal(title: string, living: string, name: string, id: string): string {
+  return `# ${title} — delta for ${FEAT}\n\n## REMOVED Requirements\n\n### Requirement: ${name}\nRequirement-ID: ${id}\nBased-On: ${pinFor(living, name)}\n`;
+}
+
 function spec(service: string): string {
   return `---\nservice: ${service}\n---\n\n# ${service}\n`;
 }
@@ -143,6 +168,7 @@ async function project(files: Record<string, string>): Promise<Project> {
 interface Finding {
   code: string;
   severity: string;
+  subject?: string;
   message: string;
 }
 
@@ -271,23 +297,135 @@ describe("usecase.requirement-modified", () => {
   });
 
   it("names a service-local flow whose #req- tag claims that service's own requirement the feature MODIFIES", async () => {
-    // A standalone model — its own `specification` declares the tag, because
-    // the service directory is its own project.
-    const model = `specification {\n  element softwareSystem\n  element container\n  tag req-PAY-AUTH\n}\n\nmodel {\n  paymentService = softwareSystem 'payment-service' {\n    metadata { service 'payment-service' }\n    api = container 'api'\n    domain = container 'domain'\n    api -> domain 'authorizes'\n  }\n}\n`;
-    const flowDoc = `views {\n  dynamic view uc_authorize {\n    #req-PAY-AUTH\n    paymentService.api -> paymentService.domain 'authorizes'\n  }\n}\n`;
-    const living = `---\nservice: payment-service\n---\n\n# payment-service\n\n## Requirements\n\n### Requirement: Authorize\nRequirement-ID: PAY-AUTH\nThe service SHALL authorize through its domain.\n\n#### Scenario: Authorized\n- **Given** a card\n- **When** it is authorized\n- **Then** the domain records it\n`;
     const delta = `# payment-service — delta for ${FEAT}\n\n## MODIFIED Requirements\n\n### Requirement: Authorize\nRequirement-ID: PAY-AUTH\nThe service SHALL authorize through the wallet.\n\n#### Scenario: Authorized\n- **Given** a card\n- **When** it is authorized\n- **Then** the wallet records it\n`;
-    const p = await project({
-      "services/payment-service/spec.md": living,
-      "services/payment-service/model.likec4": model,
-      "services/payment-service/usecases/authorize.likec4": flowDoc,
-      [`${FEAT_DIR}/specs/payment-service/spec.md`]: delta,
-    });
+    const p = await project({ ...SERVICE_FLOW_FILES, [`${FEAT_DIR}/specs/payment-service/spec.md`]: delta });
     const res = await runLoam(p.workDir, "validate", "--feature", FEAT, "--json");
     const found = findings(res.stdout, "usecase.requirement-modified");
     expect(found, res.stdout).toHaveLength(1);
     expect(found[0]!.message).toContain("services/payment-service/usecases/authorize.likec4: flow 'uc_authorize' is tagged #req-PAY-AUTH");
     expect(found[0]!.message).toContain("payment-service's requirement PAY-AUTH");
+  });
+});
+
+describe("a living flow whose #req- tag claims a requirement the feature REMOVES", () => {
+  /** The issues an `archive --json` refusal lists, with the two verdicts it resolves per issue. */
+  function refusal(stdout: string): Array<Finding & { gates: boolean; overridable: boolean }> {
+    return (JSON.parse(stdout) as { issues: Array<Finding & { gates: boolean; overridable: boolean }> }).issues;
+  }
+
+  /** `[severity, subject]` per `usecase.requirement-unresolved` — the shape the feature scope and the fleet must agree on. */
+  function unresolved(stdout: string): Array<[string, string | undefined]> {
+    return findings(stdout, "usecase.requirement-unresolved").map((f) => [f.severity, f.subject]);
+  }
+
+  it("an architecture/ flow is usecase.requirement-unresolved at feature scope — the error validate --all reports once the archive lands", async () => {
+    const p = await project({
+      "architecture/usecases/charge.likec4": FLEET_FLOW,
+      [`${FEAT_DIR}/capabilities/checkout/spec.md`]: removal("checkout", LIVING_CAPABILITY, "Charge once", "CHK-ONCE"),
+    });
+    const before = await runLoam(p.workDir, "validate", "--feature", FEAT, "--json");
+    expect(unresolved(before.stdout), before.out).toEqual([["error", "uc_charge"]]);
+    const [found] = findings(before.stdout, "usecase.requirement-unresolved");
+    expect(found!.message).toContain("architecture/usecases/charge.likec4: flow 'uc_charge' is tagged #req-CHK-ONCE");
+    expect(found!.message).toContain("checkout#CHK-ONCE, which this feature REMOVES");
+
+    // It gates the archive, and `--approve` may walk past it — retiring a
+    // promise a flow somebody else owns still claims is a judgement, as
+    // `capability.remove-requirement-realized` is for a `Realizes:` line.
+    const refused = await runLoam(p.workDir, "archive", FEAT, "--json");
+    expect(refused.code, refused.out).toBe(1);
+    expect(refusal(refused.stdout).filter((i) => i.gates)).toEqual([
+      expect.objectContaining({ code: "usecase.requirement-unresolved", severity: "error", overridable: true, subject: "uc_charge" }),
+    ]);
+    const forced = await runLoam(p.workDir, "archive", FEAT, "--approve", "--json");
+    expect(forced.code, forced.out).toBe(0);
+
+    const after = await runLoam(p.workDir, "validate", "--all", "--json");
+    expect(unresolved(after.stdout), after.out).toEqual([["error", "uc_charge"]]);
+  });
+
+  it("a flow beside a service's model is the same error, scoped by its directory", async () => {
+    const p = await project({
+      ...SERVICE_FLOW_FILES,
+      [`${FEAT_DIR}/specs/payment-service/spec.md`]: removal("payment-service", SERVICE_SPEC, "Authorize", "PAY-AUTH"),
+    });
+    const before = await runLoam(p.workDir, "validate", "--feature", FEAT, "--json");
+    expect(unresolved(before.stdout), before.out).toEqual([["error", "uc_authorize"]]);
+    const [found] = findings(before.stdout, "usecase.requirement-unresolved");
+    expect(found!.message).toContain("services/payment-service/usecases/authorize.likec4: flow 'uc_authorize' is tagged #req-PAY-AUTH");
+    expect(found!.message).toContain("payment-service's requirement PAY-AUTH, which this feature REMOVES");
+
+    await runLoam(p.workDir, "archive", FEAT, "--approve", "--json");
+    const after = await runLoam(p.workDir, "validate", "--all", "--json");
+    expect(unresolved(after.stdout), after.out).toEqual([["error", "uc_authorize"]]);
+  });
+
+  it("is silent for a removal no flow claims, and for one the same merge re-spells under the flow's tag", async () => {
+    const elsewhere = await project({
+      "architecture/usecases/charge.likec4": FLEET_FLOW,
+      [`${FEAT_DIR}/capabilities/checkout/spec.md`]: removal("checkout", LIVING_CAPABILITY, "Honour the price", "CHK-PRICE"),
+    });
+    const quiet = await runLoam(elsewhere.workDir, "validate", "--feature", FEAT, "--json");
+    expect(unresolved(quiet.stdout), quiet.out).toEqual([]);
+
+    // CHK.ONCE flattens to the tag's own `CHK-ONCE`, so the tag resolves to it
+    // after the merge: graded against what the merge leaves, not the REMOVED list.
+    const respelled = await project({
+      "architecture/usecases/charge.likec4": FLEET_FLOW,
+      [`${FEAT_DIR}/capabilities/checkout/spec.md`]:
+        `${removal("checkout", LIVING_CAPABILITY, "Charge once", "CHK-ONCE")}\n## ADDED Requirements\n\n### Requirement: Charge exactly once\nRequirement-ID: CHK.ONCE\nA customer SHALL be charged exactly once per order.\n\n#### Scenario: One charge\n- **Given** an order\n- **When** it is paid\n- **Then** one charge is made\n`,
+    });
+    const before = await runLoam(respelled.workDir, "validate", "--feature", FEAT, "--json");
+    expect(unresolved(before.stdout), before.out).toEqual([]);
+    await runLoam(respelled.workDir, "archive", FEAT, "--approve", "--json");
+    const after = await runLoam(respelled.workDir, "validate", "--all", "--json");
+    expect(unresolved(after.stdout), after.out).toEqual([]);
+  });
+
+  it("is silent when the service's other document still declares the id — the tag reads both", async () => {
+    const p = await project({
+      ...SERVICE_FLOW_FILES,
+      "services/payment-service/arch.spec.md": `---\nservice: payment-service\n---\n\n# payment-service — architecture\n\n## Requirements\n\n### Requirement: Authorize through the domain\nRequirement-ID: PAY-AUTH\nThe service SHALL route every authorization through its domain container.\n\n#### Scenario: Routed\n- **Given** a card\n- **When** it is authorized\n- **Then** the domain container handles it\n`,
+      [`${FEAT_DIR}/specs/payment-service/spec.md`]: removal("payment-service", SERVICE_SPEC, "Authorize", "PAY-AUTH"),
+    });
+    const before = await runLoam(p.workDir, "validate", "--feature", FEAT, "--json");
+    expect(unresolved(before.stdout), before.out).toEqual([]);
+    await runLoam(p.workDir, "archive", FEAT, "--approve", "--json");
+    const after = await runLoam(p.workDir, "validate", "--all", "--json");
+    expect(unresolved(after.stdout), after.out).toEqual([]);
+  });
+
+  it("is not kept resolving by the other document's REMOVED heading, which neither the fleet nor the archive reads as a promise", async () => {
+    const p = await project({
+      ...SERVICE_FLOW_FILES,
+      "services/payment-service/arch.spec.md": `---\nservice: payment-service\n---\n\n# payment-service — architecture\n\n## REMOVED Requirements\n\n### Requirement: Authorize\nRequirement-ID: PAY-AUTH\n`,
+      [`${FEAT_DIR}/specs/payment-service/spec.md`]: removal("payment-service", SERVICE_SPEC, "Authorize", "PAY-AUTH"),
+    });
+    const before = await runLoam(p.workDir, "validate", "--feature", FEAT, "--json");
+    expect(unresolved(before.stdout), before.out).toEqual([["error", "uc_authorize"]]);
+    await runLoam(p.workDir, "archive", FEAT, "--approve", "--json");
+    const after = await runLoam(p.workDir, "validate", "--all", "--json");
+    expect(unresolved(after.stdout), after.out).toEqual([["error", "uc_authorize"]]);
+  });
+});
+
+describe("a living flow whose #req- tag a MODIFIED feature leaves ambiguous", () => {
+  it("is the error, not the warning, when an id the feature adds flattens to the same tag", async () => {
+    const delta = `# payment-service — delta for ${FEAT}\n\n## MODIFIED Requirements\n\n### Requirement: Authorize\nRequirement-ID: PAY-AUTH\nThe service SHALL authorize through the wallet.\n\n#### Scenario: Authorized\n- **Given** a card\n- **When** it is authorized\n- **Then** the wallet records it\n\n## ADDED Requirements\n\n### Requirement: Authorize offline\nRequirement-ID: PAY.AUTH\nThe service SHALL authorize offline.\n\n#### Scenario: Offline\n- **Given** no network\n- **When** a card is presented\n- **Then** it is authorized offline\n`;
+    const p = await project({ ...SERVICE_FLOW_FILES, [`${FEAT_DIR}/specs/payment-service/spec.md`]: delta });
+    const before = await runLoam(p.workDir, "validate", "--feature", FEAT, "--json");
+    // "The tag will still resolve after the archive" would be false here.
+    expect(findings(before.stdout, "usecase.requirement-modified"), before.out).toEqual([]);
+    const found = findings(before.stdout, "usecase.requirement-unresolved");
+    expect(found.map((f) => [f.severity, f.subject])).toEqual([["error", "uc_authorize"]]);
+    expect(found[0]!.message).toContain("payment-service's requirement PAY-AUTH, which this feature MODIFIES");
+    expect(found[0]!.message).toContain("2 requirements will flatten to 'PAY-AUTH'");
+
+    await runLoam(p.workDir, "archive", FEAT, "--approve", "--json");
+    const after = await runLoam(p.workDir, "validate", "--all", "--json");
+    expect(findings(after.stdout, "usecase.requirement-unresolved").map((f) => [f.severity, f.subject]), after.out).toEqual([
+      ["error", "uc_authorize"],
+    ]);
   });
 });
 

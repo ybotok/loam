@@ -2586,9 +2586,31 @@ tag scopes its `#req-` tag to a capability requirement this feature modifies, an
 altitude, where the directory is the scope — a flow beside a service's model whose `#req-` tag names
 one of that service's spec.md / arch.spec.md requirements the feature's `specs/` delta modifies. Read
 the flow against the replacement, and redraw it (or drop the tag) in the same change if it no longer
-keeps the promise. A REMOVED requirement is not this warning's: its tag stops resolving, which is
-`usecase.requirement-unresolved`. The cost is a byte scan for the tag's spelling, and a LikeC4 load
-only for a project a document carrying it is in; a feature that modifies nothing pays nothing.
+keeps the promise.
+
+**A promise a living flow keeps, removed, is the fleet's error one archive early.** A REMOVED
+requirement leaves the flow's `#req-` tag resolving to nothing, so the very next `validate --all`
+reports `usecase.requirement-unresolved` against the living flow. The same walk, over the same two
+altitudes and scopes, now raises that code at feature scope — **error**, gating the archive, with the
+view as its subject exactly as the fleet names it, and a message naming the living flow file and the
+requirement the feature removes. It is graded against what the merge leaves, not against the REMOVED
+list: a removal the same delta re-spells under an id that flattens to the same tag keeps the tag
+resolving and earns nothing; and a service-local tag reads BOTH of that service's documents, skipping
+a requirement under a `## REMOVED Requirements` heading as `validate --all` does, so an id the
+document the feature leaves alone still declares keeps it resolving too. The same verdict is asked of
+a MODIFIED: it keeps its id, but an id the feature adds beside it can flatten to the same tag, and
+then the flow earns this error (naming the colliding ids) instead of `usecase.requirement-modified`,
+whose "the tag will still resolve" would be false. Only a tag that resolves today is asked about —
+one already broken is `validate --all`'s finding now. `--approve`
+may override it, as it overrides `capability.remove-requirement-realized` for the same retirement
+seen through a `Realizes:` line: whether to retire a promise something still claims is the author's
+call, and the living docs then carry exactly the error named. The fix inside the feature is to drop
+the tag from the living flow (or point it at the promise that replaces this one) in the same change,
+or to MODIFY the requirement instead of removing it.
+
+The cost of both is a byte scan for the tag's spelling, the living document of a touched service's
+other axis, and a LikeC4 load only for a project a document carrying the tag is in; a feature that
+modifies and removes nothing pays nothing.
 
 **The archive refuses a promise nothing keeps, in both directions.**
 

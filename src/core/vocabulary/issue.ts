@@ -303,7 +303,7 @@ export type IssueCode =
   | "usecase.step-unlinked"
   /** a `#cap-` tag on a feature's own flow that resolves to no capability the merge would leave declared — validate's fleet-scope code, graded in feature scope */
   | "usecase.capability-unresolved"
-  /** a `#req-` tag on a feature's own flow that resolves to no requirement of the capability its `#cap-` tag names, as the merge would leave that document — or a flow with no resolving `#cap-` at all; validate's fleet-scope code, graded in feature scope */
+  /** a `#req-` tag on a feature's own flow that resolves to no requirement of the capability its `#cap-` tag names, as the merge would leave that document — or a flow with no resolving `#cap-` at all; validate's fleet-scope code, graded in feature scope. Also a LIVING flow — in `architecture/` or a service's own — whose resolving `#req-` tag this feature's merge breaks — by REMOVING the requirement it claims, or, beside a MODIFIED of it, by adding an id that flattens to the same tag: the fleet's error one archive early */
   | "usecase.requirement-unresolved"
   /** a LIVING flow — in `architecture/` or a service's own — whose `#req-` tag claims a requirement — a capability's, or that service's own — this feature MODIFIES: the tag still resolves after the archive and nothing grades the drawing against the new wording, so the author reads the flow against the replacement. A warning that never gates */
   | "usecase.requirement-modified"

@@ -589,7 +589,7 @@ model {
   loam.core.delta -> loam.core.document
   // A read index of its own when the caller threads none, for the one question in
   // the walk that loads a service model: which living flow claims a requirement the
-  // feature MODIFIES (core/usecases/delta/modified.ts takes the model reader injected).
+  // feature MODIFIES or REMOVES (core/usecases/delta/modified.ts takes the model reader injected).
   loam.core.delta -> loam.core.fleet_context
   loam.core.delta -> loam.core.repo
   loam.core.delta -> loam.core.usecases
