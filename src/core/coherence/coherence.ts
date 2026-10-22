@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { loadFile, type Elem, type LoadedDoc, type Rel } from "../c4/likec4.js";
 import { elementService, serviceResolver } from "../c4/resolve/service.js";
-import { readDeltaSystem } from "../c4/resolve/systems.js";
+import { livingMapOf, readDeltaSystem } from "../c4/resolve/systems.js";
 import { extendingModels } from "../c4/service-model/fleet/extending.js";
 import { serviceIdProblem } from "../kernel/ids/service.js";
 import { deltaShapeIssues } from "../delta/delta.js";
@@ -313,19 +313,16 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
   // living map draws — whatever the delta's tag says: re-declaring is not
   // introducing.
   // The living map is parsed only for a candidate no directory answers for.
-  const livingIds: ReadonlySet<string> = new Set(fleetIds);
-  let landscape: Promise<LoadedDoc | null> | undefined;
-  const livingMap = (): Promise<LoadedDoc | null> =>
-    (landscape ??= (async () => {
-      const lp = landscapePath(docsDir);
-      if (!existsSync(lp)) return null;
-      const doc = context === undefined ? await loadFile(lp) : await context.loadLikeC4(lp);
-      return doc.errors.length === 0 ? doc : null;
-    })());
+  const systems = {
+    elements,
+    known,
+    living: new Set<string>(fleetIds),
+    livingMap: livingMapOf(landscapePath(docsDir), (path) => (context === undefined ? loadFile(path) : context.loadLikeC4(path))),
+  };
   for (const e of taggedEls) {
     const svc: string = elementService(e);
-    if (e.kind !== "softwareSystem" || svcNames.some((n) => n === svc) || livingIds.has(svc)) continue;
-    if ((await readDeltaSystem(e, { elements, known, livingMap })) !== "service") continue;
+    if (e.kind !== "softwareSystem" || svcNames.some((n) => n === svc)) continue;
+    if ((await readDeltaSystem(e, systems)) !== "service") continue;
     issues.push({ severity: "warn", code: "service.no-requirement-delta", message: `new service ${svc} has no requirement delta under specs/` });
   }
 

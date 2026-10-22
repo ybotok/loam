@@ -172,7 +172,45 @@ describe("an #external producer a delta draws is somebody else's system", () => 
     });
 
     expect(ofCode(await findingsOf(f.dir, "--feature", "FEAT-302"), "service.no-requirement-delta")).toEqual([]);
-    expect(await existsClaims(f.dir, "FEAT-302")).not.toContain("stripe");
+    // Neither stub is work to do: not the external one, and not the adopted
+    // order-service, which a nested tag must not turn into "create service".
+    expect(await existsClaims(f.dir, "FEAT-302")).toEqual([]);
+
+    // Where the living map cannot be read, the delta answers alone — the
+    // reading every element had before the map was asked.
+    f.write("architecture/landscape.likec4", `${f.read("architecture/landscape.likec4")}\nmodel { broken (((\n`);
+    expect(await existsClaims(f.dir, "FEAT-302")).toEqual(["stripe"]);
+  });
+
+  it("what a delta draws INSIDE a system that is not a grouping belongs to that system", async () => {
+    // Only a grouping is looked through. A container drawn in a new system
+    // that has no directory yet is that system's, and an endpoint drawn
+    // inside a vendor is the vendor's — neither is a service of its own.
+    const f = await exampleFleet();
+    feature(f, "FEAT-307-webhooks", {
+      delta: [
+        "  marketplace = group 'Marketplace' {",
+        "    paymentService = softwareSystem 'payment-service'",
+        "  }",
+        "  stripe = softwareSystem 'stripe' {",
+        "    #external",
+        "    webhooks = container 'Webhooks' {",
+        "      #FEAT-307",
+        "    }",
+        "  }",
+        "  ledgerHub = softwareSystem 'ledger-hub' {",
+        "    #FEAT-307",
+        "    api = container 'API' {",
+        "      #FEAT-307",
+        "    }",
+        "  }",
+        "  stripe.webhooks -> marketplace.paymentService 'Notifies refunds' {",
+        "    #FEAT-307",
+        "  }",
+      ].join("\n"),
+      specs: { "payment-service/spec.md": added("payment-service", "FEAT-307", "Settle a refund the acquirer confirms") },
+    });
+    expect(await existsClaims(f.dir, "FEAT-307")).toEqual(["ledger-hub"]);
   });
 });
 

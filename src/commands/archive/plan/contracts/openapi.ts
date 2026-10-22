@@ -10,6 +10,7 @@
 import { existsSync } from "node:fs";
 import { parse } from "yaml";
 import { CodedFailure, repoPath } from "../../../../core/envelope/json.js";
+import { isRecord } from "../../../../core/kernel/records.js";
 import { planWrite, readUtf8 } from "../../../../core/staging/writes.js";
 import { featureSpecPaths } from "../../../../core/repo/paths.js";
 import { locateServicePaths } from "../../../../core/repo/service-target.js";
@@ -177,22 +178,16 @@ function describesNothing(text: string): boolean {
   try {
     doc = parse(text);
   } catch {
+    // Not a document this can classify, so it is content: created as before.
     return false;
   }
   if (doc === null || doc === undefined) return true;
-  if (typeof doc !== "object" || Array.isArray(doc)) return false;
-  const record = doc as Record<string, unknown>;
-  const components = record["components"];
-  const sections =
-    components === undefined || components === null
-      ? []
-      : typeof components === "object" && !Array.isArray(components)
-        ? Object.values(components as Record<string, unknown>)
-        : [components];
-  return [record["paths"], record["webhooks"], ...sections].every(isEmptyMapping);
+  if (!isRecord(doc)) return false;
+  const components = doc["components"];
+  const sections = components === undefined || components === null ? [] : isRecord(components) ? Object.values(components) : [components];
+  return [doc["paths"], doc["webhooks"], ...sections].every(isEmptyMapping);
 }
 
 function isEmptyMapping(value: unknown): boolean {
-  if (value === undefined || value === null) return true;
-  return typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0;
+  return value === undefined || value === null || (isRecord(value) && Object.keys(value).length === 0);
 }

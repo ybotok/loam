@@ -40,6 +40,12 @@ import { governedServices, type DeltaScan } from "./scan.js";
  * one regardless was loam telling an author to invent a contract — and authors
  * did, as `paths: {}` stubs the archive then published as living contracts.
  *
+ * The evidence is THIS feature's own, as every gate it mirrors is. Another
+ * feature in flight drawing an op-linked edge into a service this one
+ * introduces is that feature's `c4-api.op-undefined` (or `-pending`) to raise,
+ * on its own status; this one's gate says nothing about it, so neither does
+ * this projection.
+ *
  * `evidence` undefined means loam could not look — the delta does not parse —
  * and then the old reading stands: owed for a service the living docs have
  * never heard of, not for an adopted one. `delta.invalid` gates either way.

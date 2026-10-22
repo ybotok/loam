@@ -26,9 +26,9 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { readAsyncapi } from "../asyncapi/read.js";
-import { type Elem, type LoadedDoc } from "../c4/likec4.js";
+import { type Elem } from "../c4/likec4.js";
 import { elementService, serviceResolver } from "../c4/resolve/service.js";
-import { readDeltaSystem } from "../c4/resolve/systems.js";
+import { livingMapOf, readDeltaSystem } from "../c4/resolve/systems.js";
 import { scenarioGherkin } from "../vocabulary/steps.js";
 import { operationIds, operations } from "../openapi/doc.js";
 import { featurePaths, featureSpecPaths, landscapePath } from "../repo/paths.js";
@@ -107,7 +107,13 @@ export interface Checklist {
 /**
  * Derive the checklist from a feature's own artifacts. No code is read here and
  * none should be: the whole design rests on the questions being computed from
- * documents that do not change between runs.
+ * documents that do not change between runs. Those are the feature's own
+ * files, read against the fleet they merge into — the `services/`
+ * enumeration, which says which elements stand for a service, and, for a
+ * tagged element no directory answers for, the living map, whose tags the
+ * merge keeps (`../c4/resolve/systems.ts`). A map that does not parse
+ * leaves the delta to answer alone, which is the answer given before the map
+ * was asked.
  */
 export async function featureChecklist(
   docsDir: DocsDir,
@@ -156,19 +162,10 @@ export async function featureChecklist(
       // service, and the resolver asks WHICH service an endpoint belongs to,
       // and a set that answered the second question only left the first one
       // reading a title as unknown that the very next line resolved.
-      const known = new Set<string>([
-        ...(await enumeratedServiceIds(docsDir, ctx)),
-        ...specServices,
-      ]);
+      const living = new Set<string>(await enumeratedServiceIds(docsDir, ctx));
+      const known = new Set<string>([...living, ...specServices]);
       // The living map, parsed only for a tagged element no directory answers for.
-      let landscape: Promise<LoadedDoc | null> | undefined;
-      const livingMap = (): Promise<LoadedDoc | null> =>
-        (landscape ??= (async () => {
-          const lp = landscapePath(docsDir);
-          if (!existsSync(lp)) return null;
-          const doc = await ctx.loadLikeC4(lp);
-          return doc.errors.length === 0 ? doc : null;
-        })());
+      const systems = { elements, known, living, livingMap: livingMapOf(landscapePath(docsDir), (path) => ctx.loadLikeC4(path)) };
       for (const e of elements) {
         if (!e.tags.includes(featureId)) continue;
         // Only a SYSTEM of ours is a service that has to exist — the fleet
@@ -202,10 +199,18 @@ export async function featureChecklist(
         // DEPTH IS NOT A FACT ABOUT A SERVICE. This used to skip every dotted
         // id as a container, so the new service a delta draws inside the map's
         // own group — FEAT-101 in the shipped example — was never asked about
-        // at all. A level the delta draws itself and that stands for no
-        // service is looked through; one it does not draw still reads as the
-        // service it may be.
-        if ((await readDeltaSystem(e, { elements, known, livingMap })) === "none") continue;
+        // at all. A grouping the delta declares is looked through; any other
+        // level is what its children belong to.
+        //
+        // The stub of a service that already has a directory keeps exactly the
+        // answer it always had — asked about when tagged at top level, never
+        // when nested — because the question is not this module's to reopen
+        // here: nesting it inside the map's group must not turn a service
+        // somebody adopted into "create service" at the head of `loam tasks`,
+        // and the top-level claim is pinned on purpose (an adopted store named
+        // by its title is a promise the feature makes about it).
+        const reading = await readDeltaSystem(e, systems);
+        if (reading === "none" || (reading === "living" && e.id.includes("."))) continue;
         const svc = elementService(e);
         exists.push(claim("service.exists", svc, [svc], `service '${svc}' exists`));
       }
