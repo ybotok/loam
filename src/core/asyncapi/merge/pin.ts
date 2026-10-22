@@ -15,7 +15,7 @@
  * pinned on its own — SCHEMA.md's recorded decision.
  */
 import { isMap } from "yaml";
-import { writeTree } from "../../openapi/contract-tree.js";
+import { writeTreeOver } from "../../openapi/contract-tree.js";
 import { asyncapiRefusal } from "./error.js";
 import { readEventTree, slotPair } from "./markers.js";
 import {
@@ -110,5 +110,7 @@ export function pinAsyncapiSlots(featureText: string, livingText: string, servic
   }
 
   if (!edited) return { text: null, pins };
-  return { text: writeTree(doc, asyncapiRefusal("feature", service)), pins };
+  // Over the author's text, so the pins are the only lines this run changes
+  // (`writeTreeOver` says what re-serializing cost).
+  return { text: writeTreeOver(doc, featureText, asyncapiRefusal("feature", service)), pins };
 }

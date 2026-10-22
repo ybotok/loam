@@ -9,6 +9,12 @@
  * Wholesale rebuild prunes both without a second code path, and the sorted
  * serialization (`buildRecord`) is what makes a second run byte-identical.
  *
+ * The record is written OVER the author's text (`writeTreeOver`), so a run
+ * that rewrites it changes the record's own lines and no others. The
+ * whole-document print it used to take re-folded every long line of the
+ * feature contract, re-padded its flow sequences and turned its CRLF into LF
+ * — a diff the author had to read through to find the one key loam wrote.
+ *
  * This module must not import from `../merge/` — the merge reads
  * `./record.ts`, so a value edge back into `merge/` would be a package cycle.
  * That is also why an unreadable document is answered with "nothing to pin"
@@ -22,6 +28,7 @@ import { isDeepStrictEqual } from "node:util";
 import { parseDocument } from "yaml";
 import { isRecord } from "../../kernel/records.js";
 import { OPENAPI_BASELINES_KEY, valueDigest } from "../digest.js";
+import { writeTreeOver } from "../contract-tree.js";
 import { buildRecord, entryFor, readBaselineRecord, restatedSurfaces, surfaceIn, type RestatedSurface } from "./record.js";
 
 /** What happened to one restated surface's baseline entry. */
@@ -42,6 +49,16 @@ export interface SurfacePin {
   from: string | null;
   to: string | null;
 }
+
+/**
+ * The refusal for a document the printer cannot write. Not a merge error, for
+ * the header's reason. Unreachable in practice: the printer refuses only a
+ * document with parse errors or an alias `toJS` cannot resolve, and
+ * `planOpenapiBaselines` has already returned for both before it writes.
+ * Should it throw anyway, its message passes through, as it did when this
+ * module called `doc.toString()` bare.
+ */
+const unprintable = (detail: string): Error => new Error(detail);
 
 export interface OpenapiBaselinePlan {
   /** The rewritten contract, or null when the record already says what this run would write. */
@@ -135,7 +152,7 @@ export function planOpenapiBaselines(
   if (Object.keys(written).length === 0) {
     if (raw === undefined) return { text: null, pins };
     doc.deleteIn([OPENAPI_BASELINES_KEY]);
-    return { text: doc.toString(), pins };
+    return { text: writeTreeOver(doc, featureText, unprintable), pins };
   }
   // Deep-equal, not byte-equal: the comparison must ignore key order exactly as
   // the digests do, so a record an author reordered by hand is left in their
@@ -144,5 +161,5 @@ export function planOpenapiBaselines(
   // `loam rebase` promises.
   if (isDeepStrictEqual(raw, written)) return { text: null, pins };
   doc.setIn([OPENAPI_BASELINES_KEY], written);
-  return { text: doc.toString(), pins };
+  return { text: writeTreeOver(doc, featureText, unprintable), pins };
 }

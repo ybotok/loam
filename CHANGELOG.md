@@ -41,6 +41,19 @@ the rule.
   `validate --all`. For `usecase.requirement-modified` this can only remove a warning, from a tag the
   two documents already make ambiguous.
 
+### Fixed — `loam rebase` pins a feature's contract without re-printing it
+
+No code, flag, exit code or `--json` key was added or removed.
+
+- **A rebased `openapi.yaml` or `asyncapi.yaml` changes only where loam pins it.** Writing an
+  `x-loam-based-on` pin, or writing or removing the root `x-loam-baselines` record, re-printed the
+  feature's whole contract: every long scalar re-folded at 80 columns, every flow sequence
+  re-padded (`[a, b]` became `[ a, b ]`) and CRLF turned into LF. Now only the pin lines and the
+  record change and the rest of the file stays byte-for-byte as written, with the same fallback to
+  the whole-file write that the archive's merges use for a shape they cannot splice safely. A
+  contract an earlier rebase already re-printed stays as it is: rebasing it again does not bring
+  back the author's layout.
+
 ## [0.2.0-alpha.11] - 2026-10-22
 
 Everything on `main` since `0.2.0-alpha.10`. Still a prerelease on the `alpha` line. When this

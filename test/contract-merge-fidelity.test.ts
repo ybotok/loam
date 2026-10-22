@@ -11,6 +11,13 @@
  * replaced or removed are printed, and the result is verified to read back as
  * the merged tree, or the old whole-document write is used.
  *
+ * REBASE'S PINS. `loam rebase` writes into the AUTHOR's contract, not the
+ * living one, and it took the same whole-document write: stamping one
+ * `x-loam-based-on` re-folded every long line of the feature's openapi.yaml or
+ * asyncapi.yaml and turned it LF, so the rebase diff was mostly lines loam had
+ * no business touching. Its three writers — the operation pin, the slot pin and
+ * the `x-loam-baselines` record — now write over the feature's own text.
+ *
  * `info` DRIFT. Neither merge carries `info`, by design — but a delta that moved
  * it (a new version, a new description) lost the change with exit 0 and not a
  * word. `openapi.info-not-merged` / `asyncapi.info-not-merged` say so in the plan.
@@ -19,6 +26,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { parse, parseDocument, type Document } from "yaml";
 import { mergeAsyncapiSlots } from "../src/core/asyncapi/merge/merge.js";
 import { mergeOpenapiPaths } from "../src/core/openapi/merge/merge.js";
+import { planOpenapiBaselines } from "../src/core/openapi/baseline/plan.js";
 import { writeTreeOver } from "../src/core/openapi/contract-tree.js";
 import { LIVING_ASYNCAPI, LIVING_OPENAPI, coherentFixture, makeProject, runLoam, type Project } from "./helpers/harness.js";
 
@@ -233,5 +241,88 @@ describe("writeTreeOver on the shapes a range walk gets wrong", () => {
   it("takes a comment the library attaches across a blank line with the entry it is about", () => {
     const source = "paths:\n  /a:\n    x: [1, 2]\n\n  # deprecated, see /v2\n\n  /b:\n    y: 1\n";
     expect(edited(source, (doc) => doc.deleteIn(["paths", "/b"]))).toBe("paths:\n  /a:\n    x: [1, 2]\n\n");
+  });
+});
+
+describe("loam rebase stamps its pins and touches nothing else", () => {
+  /** `text` without the lines rebase writes: every in-value pin, and the root record with its entries. */
+  function unpinned(text: string): string {
+    return text.replace(/^ *x-loam-based-on: [0-9a-f]{16}\r\n/gm, "").replace(/^x-loam-baselines:\r\n(?: +.*\r\n)*/m, "");
+  }
+  const PIN = /^ *x-loam-based-on: [0-9a-f]{16}$/;
+
+  /** A living contract with a component, so the run writes the root record as well as the operation pin. */
+  const LIVING_WITH_SCHEMA = `${LIVING_OPENAPI}components:\n  schemas:\n    Payment:\n      type: object\n      required: [id]\n`;
+
+  /** The feature's openapi.yaml as an author on Windows writes it: CRLF, two long lines, two flow sequences. */
+  const FEATURE_OPENAPI_CRLF = `openapi: 3.1.0
+info:
+  title: payment-service
+  version: "1.0"
+  description: ${LONG}
+paths:
+  /payments/authorize:
+    post:
+      operationId: authorizePayment
+      summary: Authorize a payment, now with 3-D Secure for every card network that asks for it
+      tags: [payments, write]
+      responses:
+        "200":
+          description: Authorized
+components:
+  schemas:
+    Payment:
+      type: object
+      required: [id]
+`.replace(/\n/g, "\r\n");
+
+  /** The living event contract, restated with one edit, in CRLF. */
+  const FEATURE_EVENTS_CRLF = LIVING_EVENTS.replace(
+    "    action: send\n",
+    "    action: send\n    summary: Publish the authorization, now carrying the amount the card network approved\n",
+  ).replace(/\n/g, "\r\n");
+
+  it("leaves a CRLF feature contract byte-for-byte as written apart from the pin lines, on both axes", async () => {
+    // Before this, both files came back LF, with the description and the summary
+    // folded at 80 columns and every flow sequence written `[ a, b ]`.
+    const p = await project({
+      ...coherentFixture(),
+      "services/payment-service/openapi.yaml": LIVING_WITH_SCHEMA,
+      "services/payment-service/asyncapi.yaml": LIVING_EVENTS,
+      "features/FEAT-1-split/specs/payment-service/openapi.yaml": FEATURE_OPENAPI_CRLF,
+      "features/FEAT-1-split/specs/payment-service/asyncapi.yaml": FEATURE_EVENTS_CRLF,
+    });
+    const run = await runLoam(p.workDir, "rebase", "FEAT-1");
+    expect(run.code, run.out).toBe(0);
+
+    const api = await p.read("features/FEAT-1-split/specs/payment-service/openapi.yaml");
+    expect(unpinned(api)).toBe(FEATURE_OPENAPI_CRLF);
+    expect(added(FEATURE_OPENAPI_CRLF, api)).toEqual([
+      expect.stringMatching(PIN),
+      "x-loam-baselines:",
+      "  components:",
+      expect.stringMatching(/^ {4}schemas\/Payment: [0-9a-f]{16}$/),
+    ]);
+
+    const events = await p.read("features/FEAT-1-split/specs/payment-service/asyncapi.yaml");
+    expect(unpinned(events)).toBe(FEATURE_EVENTS_CRLF);
+    expect(added(FEATURE_EVENTS_CRLF, events)).toEqual([
+      expect.stringMatching(PIN),
+      expect.stringMatching(PIN),
+      expect.stringMatching(PIN),
+    ]);
+
+    // And a second run, with nothing left to pin, writes nothing.
+    expect((await runLoam(p.workDir, "rebase", "FEAT-1")).code).toBe(0);
+    expect(await p.read("features/FEAT-1-split/specs/payment-service/openapi.yaml")).toBe(api);
+    expect(await p.read("features/FEAT-1-split/specs/payment-service/asyncapi.yaml")).toBe(events);
+  });
+
+  it("a record left with nothing to pin is cut out the same way, its neighbours untouched", () => {
+    // The record's other write: every surface it named is gone from the delta,
+    // so the rebuilt record is empty and the key is deleted rather than set.
+    const stale = `${FEATURE_OPENAPI_CRLF.replace(/components:\r\n(?:.*\r\n)*$/, "")}x-loam-baselines:\r\n  components:\r\n    schemas/Payment: 0123456789abcdef\r\n`;
+    const plan = planOpenapiBaselines(stale, LIVING_WITH_SCHEMA);
+    expect(plan.text).toBe(FEATURE_OPENAPI_CRLF.replace(/components:\r\n(?:.*\r\n)*$/, ""));
   });
 });
