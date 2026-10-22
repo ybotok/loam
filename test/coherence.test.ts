@@ -920,11 +920,14 @@ describe("scaffold.placeholder: a scaffolded description on an untagged child ri
       const shipped = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
       expect(shipped.code).toBe(0);
       expect(p.exists("features/archive/FEAT-1-split/delta.likec4")).toBe(true);
-      // And the authored sentence is what reached the fleet map — the same
+      // And the authored sentence is what reached the living docs — the same
       // route the sentinel would have taken had the gate stayed tag-scoped.
-      expect(await p.read("architecture/landscape.likec4")).toContain(
+      // The container is the new service's interior, so it lands in the model
+      // the archive creates for that service, never on the fleet map.
+      expect(await p.read("services/payment-split-service/model.likec4")).toContain(
         "Writes the per-payee shares to the ledger",
       );
+      expect(await p.read("architecture/landscape.likec4")).not.toContain("Writes the per-payee shares to the ledger");
     } finally {
       await p.destroy();
     }
