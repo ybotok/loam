@@ -17,14 +17,8 @@ import { relSortKey, relStatementKey } from "./identity/edges.js";
 import { newAdditions } from "./identity/existing.js";
 import { planInteriors } from "./identity/interior.js";
 import { ownerOf } from "./identity/owner.js";
-import {
-  elementSpot,
-  nestedInsert,
-  relSpot,
-  topStatements,
-  type ModelRegion,
-  type Spot,
-} from "./placement.js";
+import { elementSpot, relSpot, topStatements, type ModelRegion } from "./placement.js";
+import { nestedInsert, type Spot } from "./text/spot.js";
 
 /* ------------------------------------------------------------------ */
 /* Merging                                                             */

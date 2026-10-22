@@ -33,7 +33,8 @@ import { scanModel, type ScannedModel, type ScannedRel } from "../../source-scan
 import { matchLineEndings, spliceSource } from "../authored-source.js";
 import { LandscapeSpliceError, type ModelAdditions } from "../contract.js";
 import { relStatementKey } from "../identity/edges.js";
-import { closeSpot, HOME_BLOCK, nestedInsert, spotAfter } from "../placement.js";
+import { HOME_BLOCK } from "../placement.js";
+import { closeSpot, nestedInsert, spotAfter } from "../text/spot.js";
 
 export interface ModelMergeRequest {
   /** One model's share of the merge, as `planLandscapeMerge` routed it. */

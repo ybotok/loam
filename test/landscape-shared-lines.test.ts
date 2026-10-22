@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 import { loadSource } from "../src/core/c4/likec4.js";
 import { planLandscapeMerge } from "../src/core/c4/splice/landscape-merge.js";
 import { scanModel } from "../src/core/c4/source-scan.js";
-import { spotAfter } from "../src/core/c4/splice/placement.js";
+import { spotAfter } from "../src/core/c4/splice/text/spot.js";
 
 const SPEC = `specification {
   element softwareSystem
