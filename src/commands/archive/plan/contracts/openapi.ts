@@ -8,6 +8,7 @@
  * leaves the living docs exactly as they were.
  */
 import { existsSync } from "node:fs";
+import { parse } from "yaml";
 import { CodedFailure, repoPath } from "../../../../core/envelope/json.js";
 import { planWrite, readUtf8 } from "../../../../core/staging/writes.js";
 import { featureSpecPaths } from "../../../../core/repo/paths.js";
@@ -76,6 +77,18 @@ export async function planOpenapiContracts(
       // "does the reader see a removal" let exactly that marker through into a
       // living contract, published to every consumer of the fleet.
       const content = stripOpenapiRemovalMarkers(featText, svc);
+      // A contract that describes nothing is not created, on the spec axis's
+      // rule for a delta that leaves no requirements (../specs.ts). A
+      // `paths: {}` stub is what an author wrote to quiet a status that used to
+      // demand a contract from every new service, and copying it in published
+      // "this service exposes nothing" as a living contract the fleet then
+      // joins against — announced as `created ()`. With no file, the service
+      // reads as one with no HTTP surface, which `service.no-openapi` already
+      // grades: silent while nothing calls it, an error once something does.
+      if (describesNothing(content)) {
+        say(`  openapi: ${svc} — nothing to merge (delta defines no paths or components), no living openapi.yaml created`);
+        continue;
+      }
       writes.push(planWrite(livingOpenapi, content));
       say(`  openapi: ${svc} — created (${ops.join(", ")})`);
     } else {
@@ -147,4 +160,39 @@ export async function planOpenapiContracts(
       }
     }
   }
+}
+
+/**
+ * Does this contract describe no surface at all — no path, no webhook, and no
+ * component in any section? Only the document's frame is left (`openapi`,
+ * `info`, `servers`, `tags`), which is a title and nothing anyone can call.
+ *
+ * Conservative in one direction: anything that is not an empty mapping where a
+ * mapping belongs counts as content, so a document this cannot classify is
+ * created exactly as before. The reader above has already refused one that
+ * does not parse.
+ */
+function describesNothing(text: string): boolean {
+  let doc: unknown;
+  try {
+    doc = parse(text);
+  } catch {
+    return false;
+  }
+  if (doc === null || doc === undefined) return true;
+  if (typeof doc !== "object" || Array.isArray(doc)) return false;
+  const record = doc as Record<string, unknown>;
+  const components = record["components"];
+  const sections =
+    components === undefined || components === null
+      ? []
+      : typeof components === "object" && !Array.isArray(components)
+        ? Object.values(components as Record<string, unknown>)
+        : [components];
+  return [record["paths"], record["webhooks"], ...sections].every(isEmptyMapping);
+}
+
+function isEmptyMapping(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  return typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0;
 }

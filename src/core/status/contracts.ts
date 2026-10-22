@@ -4,11 +4,13 @@
  * two must never disagree about whether a feature owes a contract.
  */
 import { existsSync } from "node:fs";
+import { calledServices } from "../coherence/calls/called.js";
 import type { FleetContext } from "../fleet-context.js";
 import { featureSpecPaths } from "../repo/paths.js";
-import type { ServiceEntry } from "../repo/entries.js";
+import type { FeatureEntry, ServiceEntry } from "../repo/entries.js";
 import { listFeatures } from "../repo/repo.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
+import { governedServices, type DeltaScan } from "./scan.js";
 
 /**
  * Does this feature owe `svc` an openapi.yaml?
@@ -24,25 +26,28 @@ import type { DocsDir } from "../kernel/ids/dirs.js";
  * docs already carry the contract, or another feature in flight brings it — the
  * same softening coherence applies with its `*-pending` codes, where an
  * operation "defined by another feature still in flight" is an ordering fact
- * and not a hole. And one way to owe nothing at all: a service that ALREADY
- * EXISTS under `services/`, has no living contract, and that this feature sends
- * no operation to. A UI or a worker nobody calls has no API to write down,
- * which is the reading `validate` and `list` already take — demanding one from
- * an adopted service of that shape would be loam telling an author to invent a
- * contract.
+ * and not a hole.
  *
- * That last exemption is deliberately withheld from a service the living docs
- * have never heard of. A feature that introduces a service and sends it no
- * operation still owes the file, because nothing else in the repository will
- * ever describe its surface, and `c4-api.op-undefined` fires on an op-tagged
- * delta edge whether or not any `Operations:` line was written — so answering
- * "none owed" there printed `(not written — none owed)` in the same payload as
- * an error about that very file.
+ * Otherwise the contract is owed exactly when something this feature wrote
+ * already joins into it (`evidence`, see {@link contractEvidence}): a
+ * requirement's `Operations:` line, or a tagged delta edge calling an
+ * operation on the service. Those are the two links the gates grade against
+ * the file — `spec-api.op-undefined` and `c4-api.op-undefined` — and the same
+ * two `service.no-openapi` reads once the service is living, where a service
+ * nothing joins into is the documented silence. A UI, a worker, a service whose
+ * only edges go OUT has no API to write down, and that holds for a service the
+ * feature introduces exactly as for an adopted one. Demanding a file from a new
+ * one regardless was loam telling an author to invent a contract — and authors
+ * did, as `paths: {}` stubs the archive then published as living contracts.
+ *
+ * `evidence` undefined means loam could not look — the delta does not parse —
+ * and then the old reading stands: owed for a service the living docs have
+ * never heard of, not for an adopted one. `delta.invalid` gates either way.
  */
 export function owesContract(
   entry: ServiceEntry | undefined,
   contracted: boolean,
-  governsOperations: boolean,
+  evidence: boolean | undefined,
 ): boolean {
   // Both living facts come off the ENUMERATION's entry rather than root
   // existsSync probes: a service filed into a subsystem lives wherever the
@@ -55,7 +60,26 @@ export function owesContract(
   // introduce-then-build ordering, and it must keep answering "none owed".
   if (entry?.has.openapi === true) return false;
   if (contracted) return false;
-  return entry === undefined || governsOperations;
+  return evidence ?? entry === undefined;
+}
+
+/**
+ * Per service, whether this feature wrote anything that joins into its
+ * contract — `true`/`false`, or `undefined` when the delta could not be read.
+ * One function for both status forms, so they cannot disagree about whether a
+ * feature owes a contract: the `Operations:` lines come off the scan they have
+ * already made, and the op-linked edges off the delta parse they have already
+ * paid for (the coherence pass in one, the dependency graph in the other).
+ */
+export async function contractEvidence(
+  docsDir: DocsDir,
+  feature: FeatureEntry,
+  scans: readonly DeltaScan[],
+  context: FleetContext,
+): Promise<(service: string) => boolean | undefined> {
+  const governs = governedServices(scans);
+  const called = await calledServices({ docsDir, featureDir: feature.dir, featureId: feature.id }, context);
+  return (service) => (governs.has(service) ? true : called === "unreadable" ? undefined : called.has(service));
 }
 
 /**

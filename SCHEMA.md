@@ -1914,7 +1914,9 @@ the CI escalation.
 - `c4.uncovered` (feature scope): a NEW tagged element or tagged edge in the feature's
   `delta.likec4` that no requirement across the feature's `arch.spec.md` deltas covers.
   Grouping-only elements follow the landscape checks' exemptions (`person`-kind elements,
-  `#external` tags). The `Covers:` line it offers is the spelling that survives the merge — an edge
+  `#external` tags, and a GROUPING — an element that stands for no service and contains one, such
+  as a new domain `group` drawn around a new service: there is no obligation a group can carry, and
+  the service inside it is graded on its own). The `Covers:` line it offers is the spelling that survives the merge — an edge
   by its endpoints' service names, an element by its service or the id the merge gives it.
 - `health.uncovered` (service scope): an alert or SLI declared in `services/<svc>/health.yaml` that
   no requirement in the LIVING `arch.spec.md` covers. This is the moment `health.yaml` stops being
@@ -2128,7 +2130,12 @@ emptiness-by-accident:
 - **requirement delta** — the axis that is nearly always present, because a feature that changes no
   requirement changes no promised behaviour. The exception is architecture-only work: a new service
   in the C4 delta with no `specs/<svc>/spec.md` gets `service.no-requirement-delta` as a warning,
-  not an error.
+  not an error. "New service" is the fleet census's reading of the map the merge leaves: a tagged
+  `softwareSystem` of ours at service level — not `#external`, not a grouping, not drawn inside a
+  service — that no `services/<id>/` answers for and the living map does not already draw. A
+  delta's `#external` producer owes no requirement delta, and neither does the stub of a living
+  element (whose living tags the merge keeps, so a re-declared `#external` system stays external
+  whatever the stub says).
 
 `intent.md` is where the "why" lives — the delta says what changed, and nothing else says what for —
 and the archive gate holds it to that: `intent.empty` (a warning that gates, `--approve`
@@ -2752,6 +2759,14 @@ the written content and copied components that resolves in **neither** document 
 overrides it — unlike the mechanical refusals, this one is a judgment call. External references —
 URLs, file paths, anything not starting `#/` — are out of scope: left untouched, never gated.
 
+A service with no living contract gets the feature's `openapi.yaml`, stripped of removal markers —
+unless that document describes nothing: no path, no webhook and no component in any section. Then no
+living `openapi.yaml` is created and the plan says `nothing to merge`, the spec axis's rule for a
+delta that leaves no requirements. A `paths: {}` stub published as a living contract says "this
+service exposes nothing" to every consumer that joins against it; with no file the service reads as
+one with no HTTP surface, which `service.no-openapi` already grades on evidence — silent while
+nothing calls it, an error once something does.
+
 `loam archive --json` speaks the same machine contract as everything else: on success (or
 `--dry-run`) the plan (`{path, action, to?}` per file), the non-blocking warnings, and whatever
 `--approve` overrode; on refusal a stable `error.code` — `not-coherent` and
@@ -2824,7 +2839,7 @@ the one file `features/<FEAT>/verification.yaml`. `loam verify <FEAT>` derives a
 
 | kind | one claim per | reads |
 |---|---|---|
-| `service.exists` | tagged top-level element the delta introduces | `delta.likec4` |
+| `service.exists` | tagged element the delta draws as a service of ours: at service level (a level the delta draws itself and that stands for no service — a group — is looked through; an undeclared one is not), and not a person, `#external`, unbound infrastructure or a grouping. The stub of a living element is read with the living element's tags | `delta.likec4` |
 | `api.exposes` | operationId the feature's openapi delta adds that the living one lacks | `specs/<svc>/openapi.yaml` |
 | `event.declares` | (direction, message) the feature's asyncapi delta declares that the living contract's send/receive sets lack — quotes and removals are never questions | `specs/<svc>/asyncapi.yaml` |
 | `c4.calls` | tagged edge carrying `metadata { op }` | `delta.likec4` |

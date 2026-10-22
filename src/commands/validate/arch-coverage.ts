@@ -17,6 +17,7 @@
 import { existsSync } from "node:fs";
 import { type Elem, type LoadedDoc, type Rel } from "../../core/c4/likec4.js";
 import { elementService, serviceResolver } from "../../core/c4/resolve/service.js";
+import { groupsServices } from "../../core/c4/resolve/systems.js";
 import { type PathableService } from "../../core/kernel/ids/service.js";
 import { landscapePath as landscapeFile } from "../../core/repo/paths.js";
 import { locateServicePaths } from "../../core/repo/service-target.js";
@@ -126,8 +127,12 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
   // the alerts — because no business scenario was ever going to mention them.
   // Grouping-only elements take the same exemptions the fleet map applies
   // (person kinds, #external) — one set, in core/vocabulary/maturity.ts, so
-  // "not a service" cannot mean two things. Warnings, never archive gates;
-  // `--strict` escalates.
+  // "not a service" cannot mean two things — and so does a GROUPING, an element
+  // that stands for no service and contains one (core/c4/resolve/systems.ts).
+  // A new domain drawn around a new service was asked for a `Covers:` line of
+  // its own: there is no obligation a group can carry, and the service inside
+  // it is graded on its own. Warnings, never archive gates; `--strict`
+  // escalates.
   //
   // Only requirements the archive will MERGE grant coverage here. In a delta,
   // BASE means "the living state, quoted": it merges nothing, emits no
@@ -177,7 +182,7 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
   );
 
   for (const e of taggedEls) {
-    if (ACTOR_KINDS.has(e.kind.toLowerCase()) || e.tags.includes(EXTERNAL_TAG)) continue;
+    if (ACTOR_KINDS.has(e.kind.toLowerCase()) || e.tags.includes(EXTERNAL_TAG) || groupsServices(e, elements, known)) continue;
     if (baseIds.has(e.id) || baseServices.has(elementService(e))) continue;
     if (activeCovers.some((c) => coversElement(c, e))) continue;
     // Spelled in the space it will live in, the line covers it too: the id the

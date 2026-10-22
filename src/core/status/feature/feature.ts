@@ -23,10 +23,10 @@ import { enumeratedServices } from "../../repo/service-target.js";
 import { useCaseBlastRadius } from "../../usecases/touch.js";
 import { issueFinding, type Issue } from "../../vocabulary/issue.js";
 import type { Finding } from "../../vocabulary/report.js";
-import { contractOwners, contractsHeldElsewhere } from "../contracts.js";
+import { contractEvidence, contractOwners, contractsHeldElsewhere } from "../contracts.js";
 import { readInterruptedCommit } from "../interrupted.js";
 import type { ArtifactStatus, FeatureStatusReport } from "../report.js";
-import { governedServices, scanDeltas, type DeltaScan } from "../scan.js";
+import { scanDeltas, type DeltaScan } from "../scan.js";
 import { fullyVerified, verificationState } from "../verification.js";
 import { featureArtifacts } from "./artifacts.js";
 import { featureNext, unshippable } from "./next.js";
@@ -78,7 +78,9 @@ export async function featureStatus(
   // The union of the two gates, and the set every verdict below is drawn from.
   const blocking = findings.filter(unshippable);
 
-  const governs = governedServices(scans);
+  // An archived feature owes nothing: its delta is history, and parsing it to
+  // say so would be the one LikeC4 read this form makes for no answer.
+  const evidence = feature.archived ? () => false : await contractEvidence(docsDir, feature, scans, context);
   // The whole feature is graded, then the view is narrowed — never the other
   // way round. `--service` is a lens on the table and the steps; a rollup that
   // moved with it would report a feature `ready` because the one service you
@@ -88,7 +90,7 @@ export async function featureStatus(
     blocking,
     verification,
     contracted: contractsHeldElsewhere(await contractOwners(docsDir, context), feature.id),
-    governs,
+    evidence,
     // Tolerant on purpose: status must keep answering in a docs repo whose
     // services/ is broken or missing — an unenumerable fleet is doctor's
     // diagnosis, and here it simply means every service reads as never-adopted.

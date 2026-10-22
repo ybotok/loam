@@ -108,7 +108,9 @@ async function recordVerified(fleet: string): Promise<void> {
   const res = await loamJson(fleet, "verify", FEAT, "--results", "report.json", "--record", "answers.json");
   expect(res.code, res.out).toBe(0);
   expect(res.payload.verdict).toBe("verified");
-  expect(res.payload.summary).toMatchObject({ claims: 19, confirmed: 19 });
+  // 20: the claims FEAT-101 makes, `service.exists` for the payment-split-service
+  // it draws inside the map's group among them.
+  expect(res.payload.summary).toMatchObject({ claims: 20, confirmed: 20 });
 }
 
 /** A scenario appended to payment-service's requirement delta: a new claim, so a new checklist. */
@@ -125,7 +127,7 @@ describe("gate --since grades an archived record against the checklist it shippe
     const { root, fleet } = await exampleFleet();
     deploy(root, "R");
 
-    // 1. FEAT-101 recorded verified, 19 of 19.
+    // 1. FEAT-101 recorded verified, 20 of 20.
     await recordVerified(fleet);
     // 2. A scenario appended after the record was written.
     await appendScenario(fleet, FEAT_DIR, "A declined card releases nothing and reports the decline");
@@ -133,7 +135,7 @@ describe("gate --since grades an archived record against the checklist it shippe
     const inFlight = await loamJson(fleet, "gate", "--service", "payment-service", "--strict");
     expect(inFlight.payload.features).toEqual([expect.objectContaining({ id: FEAT, state: "stale", verdict: "unverified" })]);
 
-    // 4. Archived, it used to read ["FEAT-101","recorded","verified","19/19"] with no finding.
+    // 4. Archived, it used to read ["FEAT-101","recorded","verified","20/20"] with no finding.
     const archived = await runLoam(fleet, "archive", FEAT);
     expect(archived.code, archived.out).toBe(0);
     const manifest = JSON.parse(await readFile(join(fleet, ARCHIVED_DIR, ".loam-before/manifest.json"), "utf8"));
@@ -151,8 +153,8 @@ describe("gate --since grades an archived record against the checklist it shippe
         archived: true,
         state: "stale",
         verdict: "unverified",
-        claims: 19,
-        confirmed: 19,
+        claims: 20,
+        confirmed: 20,
         checklistAtArchive: manifest.checklist,
       }),
     ]);

@@ -1,11 +1,12 @@
 import { existsSync } from "node:fs";
 import { loadFile, type Elem, type LoadedDoc, type Rel } from "../c4/likec4.js";
 import { elementService, serviceResolver } from "../c4/resolve/service.js";
+import { readDeltaSystem } from "../c4/resolve/systems.js";
 import { extendingModels } from "../c4/service-model/fleet/extending.js";
 import { serviceIdProblem } from "../kernel/ids/service.js";
 import { deltaShapeIssues } from "../delta/delta.js";
 import type { Issue } from "../vocabulary/issue.js";
-import { featurePaths } from "../repo/paths.js";
+import { featurePaths, landscapePath } from "../repo/paths.js";
 import { featureSpecServices } from "../repo/repo.js";
 import { enumeratedServiceIds, enumeratedServiceIndex } from "../repo/service-target.js";
 import { serviceOperationIds } from "../openapi/doc.js";
@@ -303,12 +304,29 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
     }
   }
 
-  // W3: a new service should carry a requirement delta.
+  // W3: a new service should carry a requirement delta. "New service" is the
+  // fleet census's reading of the map this merge leaves (../c4/resolve/systems.ts):
+  // a tagged `#external` producer, a grouping and a container are no service of
+  // ours, and asking each for a `specs/` delta put a unit of work nobody owes
+  // on the board and a warning the archived fleet never repeats. Nor is a
+  // service the fleet already holds new — its own directory, or a box the
+  // living map draws — whatever the delta's tag says: re-declaring is not
+  // introducing.
+  // The living map is parsed only for a candidate no directory answers for.
+  const livingIds: ReadonlySet<string> = new Set(fleetIds);
+  let landscape: Promise<LoadedDoc | null> | undefined;
+  const livingMap = (): Promise<LoadedDoc | null> =>
+    (landscape ??= (async () => {
+      const lp = landscapePath(docsDir);
+      if (!existsSync(lp)) return null;
+      const doc = context === undefined ? await loadFile(lp) : await context.loadLikeC4(lp);
+      return doc.errors.length === 0 ? doc : null;
+    })());
   for (const e of taggedEls) {
     const svc: string = elementService(e);
-    if (e.kind === "softwareSystem" && !svcNames.some((n) => n === svc)) {
-      issues.push({ severity: "warn", code: "service.no-requirement-delta", message: `new service ${svc} has no requirement delta under specs/` });
-    }
+    if (e.kind !== "softwareSystem" || svcNames.some((n) => n === svc) || livingIds.has(svc)) continue;
+    if ((await readDeltaSystem(e, { elements, known, livingMap })) !== "service") continue;
+    issues.push({ severity: "warn", code: "service.no-requirement-delta", message: `new service ${svc} has no requirement delta under specs/` });
   }
 
   // An explicit `metadata { service '<id>' }` binding, held to the same grammar
