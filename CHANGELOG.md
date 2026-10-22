@@ -10,6 +10,38 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+## [0.2.0-alpha.13] - 2026-10-22
+
+Everything on `main` since `0.2.0-alpha.12`. Still a prerelease on the `alpha` line. When this
+version was cut, `0.2.0-alpha.10`, `0.2.0-alpha.11` and `0.2.0-alpha.12` were tagged but none of
+their publishes had run (`alpha` and `latest` both named `0.2.0-alpha.9`), so a repository
+upgrading from alpha.9 takes alpha.10's, alpha.11's and alpha.12's sections below as well as this
+one; `npm view @ybotok/loam dist-tags` is the record of what installs.
+
+Almost all of it changes what an agent reads before it writes, not what a check grades. A fifth
+reference page, `loam instructions loam-drawing`, teaches seven relationship kinds with one arrow
+direction each, a direction only from evidence (`connects` otherwise), a `legend` view drawn from
+real edges, and overview views that answer one question at one altitude, measured at the LikeC4
+1.59.2 pin. `loam instructions loam-authoring` gains "Writing for a person": an intent.md that says
+how to read the feature, a plain-language `## Purpose` for each spec delta, and requirement bodies a
+person can read. The workflow pages point at both, and `loam explain` defines `kind`, `legend`,
+`overview` and `purpose`. The map `loam init --create` scaffolds and the one `loam seed` writes now
+declare the seven kinds in their `specification` block. A map an earlier loam scaffolded and nobody
+touched still reads as the stub, but it declares no kind: add the block from the drawing page before
+a feature draws a kinded edge, because `loam archive` refuses `merge-failed` on a kind the living
+map lacks and `validate --feature` and `loam status` do not predict that refusal yet.
+
+No document changes its exit code. The only runs that do are lookups of the new names:
+`loam instructions loam-drawing`, and `loam explain` on `kind`, `legend`, `overview`, `purpose` and
+their aliases (`publishes`, `delivers`, `arrow` and `direction` among them), exit 0 where they
+refused `unknown-target`.
+
+No stable code was added, renamed or retired — 360 in all, as at alpha.12, counted with
+`loam explain --codes --json` — and no flag, `--json` key or frontmatter field was added. The new
+page is a fifth entry of `loam instructions --json`'s `references[]` and the MCP resource
+`loam://instructions/loam-drawing`, and the four terms are new entries of `loam explain --json`'s
+`terms[]`.
+
 ### Added — `loam instructions loam-drawing`, and agent pages that teach a picture and a feature a person can read
 
 No code, flag or exit code was added or changed. The new page holds the convention.

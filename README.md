@@ -7,7 +7,7 @@
 [![CI](https://github.com/ybotok/loam/actions/workflows/ci.yml/badge.svg)](https://github.com/ybotok/loam/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@ybotok/loam/alpha.svg?label=npm%20alpha)](https://www.npmjs.com/package/@ybotok/loam)
 
-> **Pre-release: `0.2.0-alpha.12`** is the version this checkout's `package.json` names, on the 0.2
+> **Pre-release: `0.2.0-alpha.13`** is the version this checkout's `package.json` names, on the 0.2
 > line of [`@ybotok/loam`](https://www.npmjs.com/package/@ybotok/loam). Whether npm serves it is not
 > something this file can know — a version is cut before its publish runs, and a publish can fail
 > after — so **the npm dist-tags are the source of truth**: the badge above reads the `alpha` tag, and
@@ -267,7 +267,7 @@ jobs:
   edges:
     runs-on: ubuntu-latest
     env:
-      LOAM: "@ybotok/loam@0.2.0-alpha.12"   # an exact version: bump it in a PR of its own
+      LOAM: "@ybotok/loam@0.2.0-alpha.13"   # an exact version: bump it in a PR of its own
       BASE: origin/${{ github.base_ref }}
     steps:
       - uses: actions/checkout@v4
@@ -342,7 +342,7 @@ jobs:
   docs:
     runs-on: ubuntu-latest
     env:
-      LOAM: "@ybotok/loam@0.2.0-alpha.12"   # the docs repo's pin: move them together
+      LOAM: "@ybotok/loam@0.2.0-alpha.13"   # the docs repo's pin: move them together
       SERVICE: payment-service              # this repo's "service" in its loam.json
     steps:
       # Both repositories as siblings under the workspace, the way a laptop holds
@@ -429,7 +429,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - run: npm install -g @ybotok/loam@0.2.0-alpha.12
+      - run: npm install -g @ybotok/loam@0.2.0-alpha.13
       # "../docs" is outside the workspace, so git clone rather than actions/checkout;
       # the second command takes the token back out of the clone's config
       - run: |
@@ -445,7 +445,7 @@ environment's package versions, and spell the target from the repository root, b
 script starts is not documented:
 
 ```bash
-npm install -g @ybotok/loam@0.2.0-alpha.12
+npm install -g @ybotok/loam@0.2.0-alpha.13
 DOCS="$(git rev-parse --show-toplevel)/../docs"
 git clone --depth 1 "https://x-access-token:${LOAM_DOCS_READ_TOKEN}@github.com/acme/docs.git" "$DOCS"
 git -C "$DOCS" remote set-url origin https://github.com/acme/docs.git
@@ -689,7 +689,7 @@ always preserved byte for byte, with the entry printed for manual merge.
   maps, what is lost, what must be added.
 - [ROADMAP.md](ROADMAP.md) — the evidence-backed improvement plan, priorities, non-goals and exit
   criteria.
-- [CHANGELOG.md](CHANGELOG.md) — released beta.1–alpha.12 plus the changes on `main` under
+- [CHANGELOG.md](CHANGELOG.md) — released beta.1–alpha.13 plus the changes on `main` under
   `[Unreleased]`.
 - [docs/SERVICE-TEAMS.md](https://github.com/ybotok/loam/blob/main/docs/SERVICE-TEAMS.md) — one
   screen for a team whose repository is one service in the fleet: the commands, the slash
@@ -736,7 +736,7 @@ trails the tree.
 The package is published as [`@ybotok/loam`](https://www.npmjs.com/package/@ybotok/loam): the
 unscoped `loam` name is taken by an unrelated GDAL wrapper, so the package ships under the
 maintainer's own npm user scope. Releases are tag-driven and maintainer-only
-([CONTRIBUTING.md](CONTRIBUTING.md)). This checkout is `0.2.0-alpha.12` — a version pinned to
+([CONTRIBUTING.md](CONTRIBUTING.md)). This checkout is `0.2.0-alpha.13` — a version pinned to
 `package.json` by a drift test, so it is always the version of the checkout you are reading, and for
 that reason it says nothing about whether that version reached npm.
 `npm view @ybotok/loam dist-tags` is the answer to what installs.
