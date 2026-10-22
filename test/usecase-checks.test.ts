@@ -288,6 +288,104 @@ describe("usecase.step-contested — and the one finding it suppresses", () => {
   }, 60_000);
 });
 
+describe("usecase.step-contested — a fleet hop between two services the map joins by several operations", () => {
+  /**
+   * The landscape above with checkout-web calling payment-service THREE ways:
+   * two operations and one event. Every hop a fleet flow draws between the two
+   * is a hop between SERVICE elements — a fleet flow cannot name a container
+   * an extending model declares — so "draw the hop between the elements that
+   * name exactly one", the only repair the warning used to offer besides
+   * changing the map, was unreachable, and the warning was permanent on every
+   * such hop of every flow. The step's title is the author's way to pick.
+   */
+  const MULTI_OP = LANDSCAPE.replace(
+    "  web -> payments 'Calls authorizePayment' {\n    metadata { op 'authorizePayment' }\n  }\n",
+    "  web -> payments 'Calls authorizePayment' {\n    metadata { op 'authorizePayment' }\n  }\n" +
+      "  web -> payments 'Calls refundPayment' {\n    metadata { op 'refundPayment' }\n  }\n" +
+      "  web -> payments 'Announces the checkout' {\n    metadata { publishes 'checkout.Started' }\n  }\n",
+  );
+
+  async function graded(steps: string): Promise<string> {
+    // A `replace` that missed its anchor leaves ONE edge between the pair, and
+    // the first case below would then pass with no fix at all.
+    expect(MULTI_OP).toContain("op 'refundPayment'");
+    const p = await makeProject({
+      ...fleet({ "architecture/usecases/pay.likec4": usecase("uc_pay", "cap-checkout", steps) }),
+      "architecture/landscape.likec4": MULTI_OP,
+    });
+    try {
+      return (await runLoam(p.workDir, "validate", "--all", "--json")).stdout;
+    } finally {
+      await p.destroy();
+    }
+  }
+
+  it("attributes a hop whose title opens with one candidate's operation id or message name", async () => {
+    const stdout = await graded(
+      [
+        "    customer -> web 'opens the basket'",
+        "    web -> payments 'authorizePayment — authorizes the payment'",
+        // A reply is attributed to the call it answers, so its title picks
+        // among the CALL's candidates.
+        "    web <- payments 'authorizePayment: the authorization'",
+        "    web -> payments 'refundPayment'",
+        // A message name picks the edge that publishes it; that edge carries no
+        // `op`, and `usecase.step-unlinked` stays quiet because it is an event.
+        "    web -> payments 'checkout.Started — announced'",
+        "",
+      ].join("\n"),
+    );
+    // Before the title could pick, all four hops into payment-service were
+    // `usecase.step-contested`, and no edit to the flow could clear one.
+    expect(useCaseFindings(stdout)).toEqual([]);
+  }, 60_000);
+
+  it("still contests every hop whose title does not open with exactly one candidate's declared name", async () => {
+    const stdout = await graded(
+      [
+        "    web -> payments 'authorizes the payment'",
+        // The name must be set off by punctuation: as the first WORD of a
+        // sentence it is prose, which is what keeps verb-named operations from
+        // being picked by titles written before a title could pick anything.
+        "    web -> payments 'authorizePayment authorizes the payment'",
+        // Only the OPENING counts: a name later in the sentence is prose.
+        "    web -> payments 'takes the payment, then refundPayment'",
+        // A whole name, not a prefix of a longer one.
+        "    web -> payments 'authorizePaymentAsync'",
+        // Matched exactly, case included — an operationId is case-sensitive.
+        "    web -> payments 'AuthorizePayment'",
+        // A relationship's own title is prose nobody wrote to be matched.
+        "    web -> payments 'Calls authorizePayment'",
+        // A name this pair's candidates do not declare picks nothing, wherever
+        // else on the map it is declared.
+        "    web -> payments 'createOrder — places the order'",
+        "",
+      ].join("\n"),
+    );
+    const contested = codeFor(stdout, "usecase.step-contested");
+    expect(contested.map((f) => /step (\d+)/.exec(f.message)?.[1])).toEqual(["1", "2", "3", "4", "5", "6", "7"]);
+    expect(useCaseFindings(stdout)).toHaveLength(7);
+
+    // The repair is spelled out with the author's own title, and every
+    // candidate prints the names a title can open with — the message one too,
+    // which a bare `(no op)` would have hidden.
+    // The title repair leads; the container repair, which a fleet flow
+    // between two single-element services cannot use, comes last and says
+    // where it applies.
+    const message = contested[0]?.message ?? "";
+    expect(message).toContain("opening the step's title with that candidate's operation id");
+    expect(message).toContain("for example 'authorizePayment — authorizes the payment'");
+    expect(message.indexOf("opening the step's title")).toBeLessThan(
+      message.indexOf("where this project declares the elements behind each candidate"),
+    );
+    expect(contested[0]?.details).toEqual([
+      'web -> payments "Announces the checkout" (publishes: checkout.Started)',
+      'web -> payments "Calls authorizePayment" (op: authorizePayment)',
+      'web -> payments "Calls refundPayment" (op: refundPayment)',
+    ]);
+  }, 60_000);
+});
+
 describe("usecase.step-unlinked — and the three guards that keep it honest", () => {
   it("warns on a hop into a real service that names no operation, naming the provider", async () => {
     const p = await makeProject(

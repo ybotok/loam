@@ -33,7 +33,7 @@
  * once for the disagreement, and once for whichever candidate happened to carry
  * no operation at all.
  */
-import { attributeStep, type StepAttribution, type StepScope } from "../../c4/resolve/steps.js";
+import { attributeStep, pickingTitle, type StepAttribution, type StepScope } from "../../c4/resolve/steps.js";
 import type { Elem, Rel } from "../../c4/likec4.js";
 import type { ParsedStep, ParsedView } from "../../c4/parsed/dynamic-views.js";
 import { ACTOR_KINDS } from "../../vocabulary/maturity.js";
@@ -130,20 +130,51 @@ function unbackedFinding(hop: GradedStep, attribution: Unbacked, place: string):
   };
 }
 
-/** `web -> orders.api "Calls createOrder" (op: createOrder)`, or `(no op)` where the edge declares none. */
+/**
+ * `web -> orders.api "Calls createOrder" (op: createOrder)`, `(publishes: order.Placed)`,
+ * or `(no op)` where the edge declares no name at all.
+ *
+ * Every declared name is printed, the message ones included, because each is
+ * what the step's title can open with to pick this edge — a line that showed
+ * `no op` for a `publishes` edge would hide the one spelling that resolves it.
+ * An empty value is not printed: `op ''` parses, names nothing a title could
+ * open with, and `op: ` would read as a name somebody forgot to finish.
+ */
 function candidateLine(rel: Rel): string {
-  const op = rel.op === undefined ? "no op" : `op: ${rel.op}`;
-  return `${rel.source} -> ${rel.target} "${rel.title ?? ""}" (${op})`;
+  const names = [
+    ...(rel.op === undefined || rel.op === "" ? [] : [`op: ${rel.op}`]),
+    ...(rel.publishes === undefined || rel.publishes === "" ? [] : [`publishes: ${rel.publishes}`]),
+    ...(rel.consumes === undefined || rel.consumes === "" ? [] : [`consumes: ${rel.consumes}`]),
+  ];
+  return `${rel.source} -> ${rel.target} "${rel.title ?? ""}" (${names.length === 0 ? "no op" : names.join(", ")})`;
 }
 
 /**
- * A hop whose candidates disagree about the operation.
+ * A hop whose candidates disagree about the operation, and whose title picks
+ * none of them.
  *
  * WARN, not error, because the model is complete — every candidate is a
  * relationship somebody drew on purpose — and the honest answer is sometimes
  * "two paths, one flow". What loam refuses to do is pick: a guessed operation is
  * indistinguishable from a right one in every rollup built over the use case,
- * and it stays wrong invisibly.
+ * and it stays wrong invisibly. The AUTHOR can pick, by opening the step's
+ * title with the operation id it means (`pickedByTitle` in
+ * core/c4/resolve/steps.ts), and the message leads with that repair because it
+ * is the one that works in every scope. The older "draw the hop between the
+ * elements that name exactly one" is still offered, last and qualified: it works
+ * where the graded project declares those elements — a service's own flow over
+ * its containers, a map that draws a service's containers itself — and is
+ * closed on a fleet flow whose services are single elements on the map, which
+ * is the hop that had no repair at all before the title could pick.
+ *
+ * The example spells the author's own title behind a candidate's declared name,
+ * so the line to write is visible rather than described, and `pickingTitle`
+ * chooses it by trying it — an example that would leave the hop contested is
+ * never offered. Which candidate it names is otherwise arbitrary, the first
+ * that works, and the sentence says "for example" because of it: `details` is
+ * where the author finds the one meant. When no single name settles the
+ * disagreement — every name shared by candidates that still disagree — there is
+ * no example to give, and the sentence goes without one.
  *
  * `details` carries every candidate rather than the distinct ops, because the
  * repair is made on a RELATIONSHIP: the author has to find the edge that names
@@ -152,6 +183,7 @@ function candidateLine(rel: Rel): string {
  * any other — it is exactly as much of a disagreement as a second name.
  */
 function contestedFinding(hop: GradedStep, attribution: Contested, place: string): Finding {
+  const example = pickingTitle(attribution.rels, hop.step.title);
   return {
     severity: "warn",
     code: "usecase.step-contested",
@@ -160,8 +192,11 @@ function contestedFinding(hop: GradedStep, attribution: Contested, place: string
       `${place}: ${attribution.rels.length} relationships back ${attribution.from} -> ` +
       `${attribution.to} and they name ${attribution.ops.length} different operations, so nothing can say ` +
       "which one this hop exercises. loam names the candidates instead of picking one — a guessed operation " +
-      "reads exactly like a right one in every rollup built over this flow. Give the candidates one operation, " +
-      "or draw the hop between the elements that name exactly one.",
+      "reads exactly like a right one in every rollup built over this flow. Say which one the hop means by " +
+      "opening the step's title with that candidate's operation id (or the message it publishes or consumes), " +
+      `then punctuation before any further words${example === undefined ? "" : ` — for example '${example}'`}; ` +
+      "or give the candidates one operation; or, where this project declares the elements behind each " +
+      "candidate, draw the hop between them.",
     details: attribution.rels.map(candidateLine),
   };
 }
@@ -215,7 +250,10 @@ function contestedFinding(hop: GradedStep, attribution: Contested, place: string
  * `attributed` verdict with no `op` means every candidate agreed the hop names
  * no operation, which is the state this warn is about. Candidates that disagree
  * never reach here at all — that is the suppression, and it is why it cannot be
- * forgotten.
+ * forgotten. Candidates the step's title picked out of a disagreement do reach
+ * here, as the picked ones only, and a pick never lands on an edge declaring no
+ * name: a title picks by `op`, `publishes` or `consumes`, so a picked verdict
+ * either carries its `op` or is a message hop the first guard lets go.
  */
 function unlinkedProvider(attribution: Attributed, grading: StepGrading): string | null {
   if (attribution.op !== undefined) return null;

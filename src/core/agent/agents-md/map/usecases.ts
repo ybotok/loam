@@ -45,8 +45,13 @@ export const USECASE_VIEWS = `- Business use cases are \`dynamic view\`s, and \`
   while architecture/capabilities.yaml is absent or unreadable, like the rest of
   the capability axis; the three step codes are about the model, and a return
   hop written \`a <- b\` is attributed to the call it answers, so spell replies
-  that way rather than as fresh hops. Every message names the file the view was
-  written in, never the landscape.
+  that way rather than as fresh hops. Where the map joins one pair by several
+  edges naming different operations, open the step's title with the operation id
+  the hop means and then punctuation —
+  \`orders -> payments 'authorizePayment — authorizes the payment'\`
+  (or the message it publishes or consumes) — or the hop stays
+  \`usecase.step-contested\`: loam never picks one for you. Every message names
+  the file the view was written in, never the landscape.
 - A fleet flow says which test SUITES it runs in with \`#suite-<name>\` tags —
   a separate prefix from \`#cap-\`, many-to-many (one view may carry several),
   each declared as a \`tag suite-<name>\` in the landscape's \`specification\` so a

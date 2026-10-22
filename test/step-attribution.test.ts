@@ -22,12 +22,18 @@
  * place of a distinct-op count convicts a consistent model of contesting itself,
  * and a service tier that runs when the exact tier already matched contests a
  * step the model answers outright.
+ *
+ * The last describe is the step's TITLE, the one field besides the endpoints an
+ * attribution reads: it may pick among candidates that disagree, and every case
+ * there is either a pick that must happen or a guess that must not — a title
+ * whose prose happens to contain an operation name is the second kind.
  */
 import { describe, expect, it } from "vitest";
 import {
   attributeStep,
+  pickingTitle,
   type StepAttribution,
-  type StepEndpoints,
+  type StepReading,
   type StepScope,
 } from "../src/core/c4/resolve/steps.js";
 import { loadSource, type Elem, type Rel } from "../src/core/c4/likec4.js";
@@ -91,8 +97,8 @@ function rel(source: string, target: string, op?: string): Rel {
   return { source, target, ...(op === undefined ? {} : { op }), tags: [] };
 }
 
-/** The three fields an attribution reads off a step. */
-function hop(source: string, target: string, isBackward = false): StepEndpoints {
+/** An untitled step: the endpoints alone, which is all the tier and op rules read. */
+function hop(source: string, target: string, isBackward = false): StepReading {
   return { source, target, isBackward };
 }
 
@@ -325,5 +331,230 @@ describe("attributeStep counts distinct operations, never candidates", () => {
       rels: [first, second],
       op: "createOrder",
     });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* The title picks among candidates that disagree, and does nothing else */
+/* ------------------------------------------------------------------ */
+
+/**
+ * One caller, one provider, three edges between them — the shape a fleet map
+ * draws for a caller that reserves, reads and releases on one service, and the
+ * one that made every hop between the two contested for good.
+ */
+const MULTI_OP = `specification {
+  element service
+}
+model {
+  web = service 'checkout-web'
+  orders = service 'order-service'
+  web -> orders 'Calls createOrder' {
+    metadata { op 'createOrder' }
+  }
+  web -> orders 'Calls getOrder' {
+    metadata { op 'getOrder' }
+  }
+  web -> orders 'Calls cancelOrder' {
+    metadata { op 'cancelOrder' }
+  }
+}
+views {
+  dynamic view uc_order {
+    web -> orders 'createOrder — places the order'
+    web <- orders 'getOrder(orderId): the order as stored'
+    web -> orders 'places the order'
+  }
+}
+`;
+
+/** A step with a title — the literal form of what an author writes after the arrow. */
+function titled(source: string, target: string, title: string): StepReading {
+  return { source, target, isBackward: false, title };
+}
+
+describe("attributeStep lets the step's title pick among candidates that disagree", () => {
+  it("picks the candidate a real step's title opens with, for a call and for a reply", async () => {
+    const doc = await loadSource(MULTI_OP);
+    expect(doc.errors).toEqual([]);
+    const [call, reply, prose] = doc.views?.[0]?.steps ?? [];
+    const create = doc.relationships.find((r) => r.op === "createOrder");
+    const get = doc.relationships.find((r) => r.op === "getOrder");
+    const scope: StepScope = { elements: doc.elements, relationships: doc.relationships };
+
+    // The title reaches the join verbatim — the separator and everything after
+    // it included — which is what lets the opening be read at all.
+    expect(call?.title).toBe("createOrder — places the order");
+    expect(attributeStep(call!, scope)).toStrictEqual({
+      from: "web",
+      to: "orders",
+      verdict: "attributed",
+      tier: 1,
+      rels: [create],
+      op: "createOrder",
+    });
+    // A reply is attributed to the CALL it answers, so its title picks among
+    // the call's candidates. `(` ends a name as surely as a space does.
+    expect(attributeStep(reply!, scope)).toStrictEqual({
+      from: "web",
+      to: "orders",
+      verdict: "attributed",
+      tier: 1,
+      rels: [get],
+      op: "getOrder",
+    });
+    // Prose names nothing, and the hop stays exactly as contested as before,
+    // over all three candidates.
+    expect(attributeStep(prose!, scope)).toMatchObject({ verdict: "contested", rels: doc.relationships });
+  });
+
+  it("picks an edge by the message it publishes, which then carries no op", () => {
+    const call = rel("web", "orders", "createOrder");
+    const event: Rel = { ...rel("web", "orders"), publishes: "order.Placed" };
+    const scope = containerScope([call, event]);
+    expect(attributeStep(titled("web", "orders", "order.Placed — announced"), scope)).toStrictEqual({
+      from: "web",
+      to: "orders",
+      verdict: "attributed",
+      tier: 1,
+      rels: [event],
+    });
+  });
+
+  it("picks on the service tier too, among the container edges that tier found", () => {
+    // `web -> orders.api` names createOrder and `web -> orders.worker` names
+    // nothing: contested on tier 2 until the title says which.
+    const api = rel("web", "orders.api", "createOrder");
+    const worker = rel("web", "orders.worker");
+    expect(attributeStep(titled("web", "orders", "createOrder"), containerScope([api, worker]))).toStrictEqual({
+      from: "web",
+      to: "orders",
+      verdict: "attributed",
+      tier: 2,
+      rels: [api],
+      op: "createOrder",
+    });
+  });
+
+  it("reads only the opening, a whole name set off by punctuation, matched exactly — never prose", () => {
+    const scope = containerScope([rel("web", "orders", "read"), rel("web", "orders", "release")]);
+    // The control: this pair IS pickable, so every refusal below is the rule
+    // refusing rather than a scope nothing could pick from.
+    expect(attributeStep(titled("web", "orders", "read: the order"), scope)).toMatchObject({ op: "read" });
+    for (const title of [
+      // The guess the opening rule exists to refuse: the sentence contains
+      // `release` as a word, and the author meant the read.
+      "reads the order before release",
+      // The first WORD of a sentence is not a name either. A fleet whose
+      // operationIds are plain verbs has titles like this already, written
+      // before a title could pick anything.
+      "read the order",
+      // A prefix of a longer word is not the name.
+      "readAll — every order",
+      // An operationId is case-sensitive.
+      "Read the order",
+    ]) {
+      expect(attributeStep(titled("web", "orders", title), scope).verdict).toBe("contested");
+    }
+  });
+
+  it("treats `-` and `_` as continuing a name, so a longer name is never read as its prefix", () => {
+    const scope = containerScope([rel("web", "orders", "createOrder"), rel("web", "orders", "getOrder")]);
+    for (const title of ["createOrder-batch: every order", "createOrder_v2: the new shape"]) {
+      expect(attributeStep(titled("web", "orders", title), scope).verdict).toBe("contested");
+    }
+  });
+
+  it("reads the title inside the tier that answered, never reaching the other", () => {
+    // Tier 1 disagrees between createOrder and getOrder; only the service tier
+    // also holds a container edge naming searchOrders. A title naming it must
+    // not fall through to tier 2 when the exact tier's pick comes up empty.
+    const create = rel("web", "orders", "createOrder");
+    const get = rel("web", "orders", "getOrder");
+    const scope = containerScope([create, get, rel("web", "orders.api", "searchOrders")]);
+    expect(attributeStep(titled("web", "orders", "searchOrders: by date"), scope)).toStrictEqual({
+      from: "web",
+      to: "orders",
+      verdict: "contested",
+      tier: 1,
+      rels: [create, get],
+      ops: ["createOrder", "getOrder"],
+    });
+  });
+
+  it("treats `.` and `-` as part of a name, so a name that prefixes another never picks both", () => {
+    const short = { ...rel("orders", "web"), publishes: "order.placed" };
+    const long = { ...rel("orders", "web"), publishes: "order.placed.v2" };
+    const scope = containerScope([short, long, rel("orders", "web", "notifyCustomer")]);
+    expect(attributeStep(titled("orders", "web", "order.placed.v2 — the new shape"), scope)).toMatchObject({
+      verdict: "attributed",
+      rels: [long],
+    });
+    expect(attributeStep(titled("orders", "web", "order.placed, as before"), scope)).toMatchObject({
+      verdict: "attributed",
+      rels: [short],
+    });
+  });
+
+  it("stays contested over EVERY candidate when the picked ones still disagree", () => {
+    // One name declared as one edge's op and another edge's message: the title
+    // picked two candidates that disagree, which settles nothing.
+    const call = rel("web", "orders", "orderPlaced");
+    const event = { ...rel("web", "orders"), publishes: "orderPlaced" };
+    const other = rel("web", "orders", "getOrder");
+    expect(attributeStep(titled("web", "orders", "orderPlaced"), containerScope([call, event, other]))).toStrictEqual({
+      from: "web",
+      to: "orders",
+      verdict: "contested",
+      tier: 1,
+      rels: [call, event, other],
+      ops: ["orderPlaced", undefined, "getOrder"],
+    });
+  });
+
+  it("never overrules candidates that agree, and never backs a hop nothing backs", () => {
+    const agreed = rel("web", "orders", "createOrder");
+    // The title names an operation the backing edge does not carry. The model
+    // answers this hop outright, and a title is not evidence against it.
+    expect(attributeStep(titled("web", "orders", "getOrder"), containerScope([agreed]))).toMatchObject({
+      verdict: "attributed",
+      op: "createOrder",
+    });
+    expect(attributeStep(titled("web", "orders", "createOrder"), containerScope([]))).toStrictEqual({
+      from: "web",
+      to: "orders",
+      verdict: "unbacked",
+    });
+  });
+
+  it("never picks by an empty `op ''`, which parses and names nothing", () => {
+    // Every title starts with the empty string, so without the guard an
+    // `op ''` would be picked by any title opening with a separator.
+    const scope = containerScope([rel("web", "orders", ""), rel("web", "orders", "getOrder")]);
+    expect(attributeStep(titled("web", "orders", "— places the order"), scope).verdict).toBe("contested");
+  });
+});
+
+describe("pickingTitle offers only a title that would settle the hop", () => {
+  it("puts an operation id in front of the step's own title, and the result picks", () => {
+    const event = { ...rel("web", "orders"), publishes: "order.Placed" };
+    const rels = [event, rel("web", "orders", "createOrder"), rel("web", "orders", "getOrder")];
+    // Operation ids first, though the message edge comes first in candidate
+    // order: the warning is about operations.
+    const spelled = pickingTitle(rels, "places the order");
+    expect(spelled).toBe("createOrder — places the order");
+    expect(attributeStep(titled("web", "orders", spelled!), containerScope(rels))).toMatchObject({
+      op: "createOrder",
+    });
+    expect(pickingTitle(rels, undefined)).toBe("createOrder");
+  });
+
+  it("skips a name that candidates still disagreeing share, and offers nothing when every name is one", () => {
+    const call = rel("web", "orders", "orderPlaced");
+    const event = { ...rel("web", "orders"), publishes: "orderPlaced" };
+    expect(pickingTitle([call, event, rel("web", "orders", "getOrder")], "orderPlaced — x")).toBe(
+      "getOrder — orderPlaced — x",
+    );
+    expect(pickingTitle([call, event], "the order")).toBeUndefined();
   });
 });

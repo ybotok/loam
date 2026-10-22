@@ -38,7 +38,13 @@ export interface ParsedStep {
    */
   source: string;
   target: string;
-  /** The step's label, absent when the author wrote none. */
+  /**
+   * The step's label, absent when the author wrote none. Carried verbatim,
+   * because one join reads its opening characters: a title that opens with a
+   * candidate relationship's operation id or message name, set off by
+   * punctuation, picks that relationship where the map joins the pair by
+   * several (`pickedByTitle` in `../resolve/steps.ts`).
+   */
   title?: string;
   /** A `notes '...'` block on the step, decoded from LikeC4's rich-text shape. */
   notes?: string;
