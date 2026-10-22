@@ -179,6 +179,8 @@ export type IssueCode =
   | "spec-event.message-pending"
   /** a delta's `Consumes:` line or tagged `consumes` edge names a message nothing would send after the merge — no service's contract as the merge leaves it, no #external element on the living map or in the delta; validate's living-side code, graded in feature scope so the archive cannot land the consumer it would report */
   | "spine.message-unproduced"
+  /** a tagged edge's `publishes`/`consumes` key sits on an end that is infrastructure (a topic, queue or store, which neither publishes nor consumes) while a service sits at the other end — `publishes` binds the SOURCE and `consumes` the TARGET, so the key binds nothing and nothing grades it; an `#external` system at that end is an outside party and never raises it; validate's living-side code, graded in feature scope too. Warn: the drawing is legal, the link is lost */
+  | "spine.message-unbound"
   /** W1 — an operation is called but no requirement governs it */
   | "c4.op-ungoverned"
   /** W2 — the feature adds an operation no architecture edge consumes */

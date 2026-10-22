@@ -17,6 +17,7 @@
  * there does.
  */
 import { type Rel } from "../../c4/likec4.js";
+import { eventKeys, unboundSentence } from "../../c4/resolve/direction.js";
 import { type PathableService, type RawServiceId } from "../../kernel/ids/service.js";
 import type { Issue } from "../../vocabulary/issue.js";
 import { locateServicePaths } from "../../repo/service-target.js";
@@ -41,6 +42,8 @@ export interface EventCoherenceRequest {
   taggedRels: Rel[];
   /** The element→service resolver over the delta's elements plus the enumerated fleet. */
   svcOf: (id: string) => string;
+  /** The infrastructure kind of a delta element or its ancestor (core/c4/resolve/direction.ts) — a key bound there is on the wrong end. */
+  infraKindOf: (id: string) => string | undefined;
   context?: FleetContext;
   /** The retired index, shared with the contract axis so one call walks `features/archive/` once at most. */
   retired: RetiredLookup;
@@ -279,19 +282,30 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
 
   // Tagged edges: `publishes` binds the edge's SOURCE, `consumes` its
   // TARGET — the same reading validate's event spine takes of the living
-  // landscape, applied to the delta.
+  // landscape, applied to the delta, from the one statement of the rule
+  // (core/c4/resolve/direction.ts).
   // Every consumption this merge would add, collected as the two loops below
   // walk the edges and the lines, and asked for a producer at the end
   // (./produced.ts) — `spine.message-unproduced` at feature scope.
   const claims: ConsumeClaim[] = [];
   for (const r of taggedRels) {
-    const bound: { direction: "publishes" | "consumes"; message: string; name: string; edge: string }[] = [];
     const edge = `${svcOf(r.source)} → ${svcOf(r.target)}`;
-    if (r.publishes !== undefined) bound.push({ direction: "publishes", message: r.publishes, name: svcOf(r.source), edge });
-    if (r.consumes !== undefined) bound.push({ direction: "consumes", message: r.consumes, name: svcOf(r.target), edge });
-    for (const b of bound) {
+    for (const key of eventKeys(r)) {
+      const b = { direction: key.direction, message: key.message, name: svcOf(key.bound), edge };
       const pathable = await enumeratedTarget(b.name);
-      if (pathable === undefined) continue;
+      if (pathable === undefined) {
+        // The skip above, unless the key is bound to infrastructure and a
+        // service sits at the OTHER end: then it is on the wrong end of its
+        // edge and binds nothing, which the living spine reports under the
+        // same code once this delta merges. An `#external` system at the bound
+        // end is an outside producer or consumer, and stays skipped.
+        const kind = request.infraKindOf(key.bound);
+        const drawer = kind === undefined ? undefined : await enumeratedTarget(svcOf(key.other));
+        if (kind !== undefined && drawer !== undefined) {
+          issues.push({ severity: "warn", code: "spine.message-unbound", subject: drawer, message: `delta ${unboundSentence(r, key, kind)}` });
+        }
+        continue;
+      }
       // asyncapi.invalid already gates; one breach, one finding.
       if (declared.unreadable.has(pathable)) continue;
       if (b.direction === "consumes") claims.push({ service: pathable, message: b.message, source: "edge", via: `edge ${b.edge}` });

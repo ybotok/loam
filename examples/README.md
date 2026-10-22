@@ -94,8 +94,9 @@ nowhere, and `obligation.unapplied` is the warning in the table below.
 **On the event spine the arrow follows the message** — producer → topic for `publishes`, topic →
 consumer for `consumes` — and that is load-bearing rather than aesthetic. `publishes` binds the
 edge's source and `consumes` binds its target, so a consume edge drawn the other way round binds to
-nothing: the metadata parses, the document validates, and the check silently grades zero edges.
-Nothing in loam reports that today, which is why the landscape says so in a comment.
+nothing: the metadata parses, the document validates, and no contract is checked against the link.
+`spine.message-unbound` (warn) is what reports it, on the service at the end the key did not bind;
+SCHEMA.md's *Which way an edge points* lists every reader of the arrow and the drawing each expects.
 
 ## Four features, at four points in their life
 

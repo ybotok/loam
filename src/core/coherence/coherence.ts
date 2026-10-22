@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { loadFile, type Elem, type LoadedDoc, type Rel } from "../c4/likec4.js";
 import { elementService, serviceResolver } from "../c4/resolve/service.js";
+import { infrastructureKind } from "../c4/resolve/direction.js";
 import { extendingModels } from "../c4/service-model/fleet/extending.js";
 import { serviceIdProblem } from "../kernel/ids/service.js";
 import { deltaShapeIssues } from "../delta/delta.js";
@@ -349,7 +350,8 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
   // feature's asyncapi deltas (pins, markers, justification), the tagged
   // edges' publishes/consumes metadata, and the requirement deltas'
   // Publishes:/Consumes: lines (./events/events.ts owns the walk).
-  issues.push(...(await eventCoherence({ scope, svcNames, taggedRels, svcOf, context, retired, consumers, known })));
+  const infraKindOf = infrastructureKind(elements);
+  issues.push(...(await eventCoherence({ scope, svcNames, taggedRels, svcOf, infraKindOf, context, retired, consumers, known })));
 
   // The health axis's one merge question: an alert or SLI the living
   // arch.spec.md covers that this delta would leave covered by nothing.

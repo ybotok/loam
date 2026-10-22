@@ -114,7 +114,7 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   \`service.no-asyncapi\`, \`asyncapi.invalid\`, \`asyncapi.duplicate-message\`,
   \`asyncapi.payload-undescribed\`, \`asyncapi.ref-unresolved\`,
   \`spine.message-undefined\`, \`spec-event.message-undefined\`,
-  \`spine.message-unproduced\`, \`spine.message-external\`,
+  \`spine.message-unproduced\`, \`spine.message-external\`, \`spine.message-unbound\`,
   \`asyncapi.message-contested\`, \`event.messages-unlinked\`, \`event.ungoverned\`,
   \`event.covered\`; and the architecture spec axis: \`covers.unknown\`,
   \`health.invalid\`, \`health.uncovered\`, \`health.dependency-unmodelled\`.
@@ -150,7 +150,8 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   from while it lives on elsewhere, so the merge would put it back).
   The event axis is graded in feature scope too — the \`asyncapi.*\`
   baseline/removal/conflict codes, \`asyncapi.slot-revived\` (the same revival
-  on a channel, operation or message), plus \`c4-event.*\` and \`spec-event.*\`.
+  on a channel, operation or message), plus \`c4-event.*\`, \`spec-event.*\` and
+  \`spine.message-unbound\` (a tagged edge's event key bound to a topic or other infrastructure).
   Where a finding names another feature in flight (\`delta.*-pending\`,
   \`delta.added-conflict\`, \`delta.modified-conflict\`, \`spec-api.op-pending\`,
   \`c4-api.op-pending\`) the ORDER is the answer, and \`loam dependencies --json\`

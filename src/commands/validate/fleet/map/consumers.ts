@@ -50,6 +50,7 @@
  * records the caller fills.
  */
 import { type Elem, type Rel } from "../../../../core/c4/likec4.js";
+import { infrastructureKind } from "../../../../core/c4/resolve/direction.js";
 import { DATASTORE_KIND } from "../../../../core/vocabulary/maturity.js";
 import { type Finding } from "../../../../core/vocabulary/report.js";
 import { type AttestedModel, type NestedStore } from "./attest.js";
@@ -57,10 +58,14 @@ import { type AttestedModel, type NestedStore } from "./attest.js";
 export interface CensusInput {
   /** The map's own edges — a service-level twin is what the map carries of a container-level call. */
   relationships: Rel[];
-  /** The services/<id>/ directories that exist: a consumer is a source filed under a real one. */
+  /** Every element the map declares, at any depth: what says an endpoint is infrastructure. */
+  elements: Elem[];
+  /** The services/<id>/ directories that exist: a consumer is an edge's other end filed under a real one. */
   services: ReadonlySet<string>;
   /** The shared element→service resolver every edge join uses. */
   resolve: (id: string) => string;
+  /** `census.ts`'s predicate, for `DatastoreInput.standsForService`'s reason: a bound `database` is a service, not infrastructure. */
+  standsForService: (e: Elem) => boolean;
   /** What each service's own model attests (`./attest.ts`). */
   attested: readonly AttestedModel[];
 }
@@ -76,6 +81,24 @@ export interface CensusInput {
  * MODELS: a service whose own model attests an OUTBOUND call at the element or a
  * descendant.
  *
+ * EITHER DIRECTION, where the element's end of the edge is infrastructure
+ * (`infrastructureKind` in core/c4/resolve/direction.ts, among the elements
+ * that stand for no service). A
+ * database, a topic or a bucket never initiates anything, so an edge between it
+ * and a service says that the service uses it, whichever way the arrow points.
+ * Fleets draw a read both ways, as a call (`service -> store`) or as the data's
+ * flow (`store -> service`), and loam's own event doctrine draws every consumer
+ * as `topic -> service`. The census used to read only the edges INTO the
+ * element, so a reader drawn as data flow stopped counting: the second
+ * consumer of a shared store vanished and `landscape.datastore-shared` with
+ * it, and a broker's consumers were never counted toward
+ * `landscape.platform-candidate` at all, which made the "three of our services
+ * reach it" in `examples/docs` false.
+ * Elsewhere the direction still means something (an external system calling
+ * INTO the fleet is not one the callee consumes), so it is still read there.
+ * The model half follows the same rule: an INBOUND attested call counts when
+ * its counterpart is infrastructure.
+ *
  * The model half reads EXTENDING models only, and the reason is the id space. An
  * extending model's ids are the map's fully-qualified ids — one project — so the
  * join is exact. A standalone model's ids are its own file's, and
@@ -85,18 +108,24 @@ export interface CensusInput {
  */
 export function consumerCensus(input: CensusInput): (elementId: string) => string[] {
   const reaches = (elementId: string, id: string): boolean => id === elementId || id.startsWith(`${elementId}.`);
+  const infraKindOf = infrastructureKind(input.elements.filter((e) => !input.standsForService(e)));
+  const isInfra = (id: string): boolean => infraKindOf(id) !== undefined;
   return (elementId: string): string[] => {
     const out = new Set<string>();
-    for (const r of input.relationships) {
-      if (!reaches(elementId, r.target)) continue;
-      const svc = input.resolve(r.source);
+    const count = (id: string): void => {
+      const svc = input.resolve(id);
       if (input.services.has(svc)) out.add(svc);
+    };
+    for (const r of input.relationships) {
+      if (reaches(elementId, r.target)) count(r.source);
+      else if (reaches(elementId, r.source) && isInfra(r.source)) count(r.target);
     }
     for (const model of input.attested) {
       if (!model.extending) continue;
-      if (model.calls.some((c) => c.direction === "out" && reaches(elementId, c.counterpartId))) {
-        out.add(model.service);
-      }
+      const uses = model.calls.some(
+        (c) => reaches(elementId, c.counterpartId) && (c.direction === "out" || isInfra(c.counterpartId)),
+      );
+      if (uses) out.add(model.service);
     }
     return [...out].sort();
   };

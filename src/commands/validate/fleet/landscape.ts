@@ -345,7 +345,8 @@ export async function validateLandscape(
     fleet,
   });
   const attested = attestation.models;
-  const consumers = consumerCensus({ relationships: land.relationships, services, resolve: landSvcOf, attested });
+  const mapFacts = { relationships: land.relationships, elements: land.elements, services, resolve: landSvcOf };
+  const consumers = consumerCensus({ ...mapFacts, standsForService: isService, attested });
   // The shape advisories run LAST, over the same drawn set and resolver the
   // structural checks used. Any one of them suppresses `landscape.matched`
   // below on purpose: a map with a shape warning did not fully "agree".
