@@ -33,6 +33,10 @@
  * retired shape — that a service model "renders from its OWN directory" and
  * "each declares its own `specification` block" — which was written before an
  * extending model belonged to the root project.
+ * Generation 4 (v0.2.0-alpha.6 through .11): the extending shape's render
+ * paragraph and the shared-broker advice, with no relationship kinds — every
+ * edge a plain `->`, which is how a fleet drawn from deployment configuration
+ * ended with every arrow pointing into its broker and its stores.
  */
 export const LEGACY_LANDSCAPE_STUBS: readonly string[] = [
   `// The fleet map: every service in services/ appears here, and every call
@@ -134,6 +138,86 @@ model {
 // model or a feature delta renders from its OWN directory, e.g.
 // \`npx likec4 start services/<id>\`: each declares its own \`specification\`
 // block, so the renderer can only be given one of them at a time.) Keep views
+// scoped, because computing one is superlinear in the number of edges — the
+// \`fleet\` view below stays affordable precisely because it excludes the
+// platform hubs.
+//
+// One shape is worth getting right before the fleet is drawn: a shared broker.
+// Kafka as a single element becomes the node every service points at, and any
+// view over it is a star nobody can read. Model the TOPIC instead — a \`topic\`
+// nested inside the broker's element, edges pointing at \`kafka.<topic>\` — which
+// splits one hub of degree sixty into a dozen small ones and is the truer model
+// besides. Tag the KIND, not just the broker: LikeC4 does not inherit tags, so a
+// topic under an \`#external\` broker is not external itself and \`validate\` asks
+// for a services/ directory nobody owes.
+//
+//   specification {
+//     element topic {
+//       #external
+//       style { shape queue }
+//     }
+//   }
+
+specification {
+  element person
+  element softwareSystem
+  element container
+  element database
+
+  // Ubiquitous infrastructure — logging Kafka, auth, service discovery — takes
+  // one inbound edge per service, and by the third service the fleet view is a
+  // hairball. Tag those elements #platform: the fleet view excludes them
+  // without losing "who depends on the Identity Provider", which the platform
+  // view answers.
+  tag platform
+}
+
+model {
+}
+
+views {
+  view fleet {
+    include *
+    exclude element.tag = #platform
+  }
+  // The obvious spelling — \`include element.tag = #platform\` — draws the
+  // platform boxes with NO edges and no consumers. The predicate that works is
+  // the relationship form below.
+  view platform {
+    include * -> element.tag = #platform
+  }
+}
+`,
+  `// The fleet map: every service in services/ appears here, and every call
+// between two of them is an edge. This file is written by hand — loam never
+// guesses it, because "who calls whom" is the one fact no generator can read
+// off a repository.
+//
+// After \`loam adopt --service <id>\`, add the service here:
+//
+//   paymentService = softwareSystem 'payment-service' {
+//     description 'Owns payment authorization/capture'
+//     metadata { service 'payment-service' }   // binds the box to services/<id>/
+//   }
+//
+// and give each call the operationId it uses, so requirements, C4 and OpenAPI
+// can be cross-checked:
+//
+//   checkoutWeb -> paymentService 'Authorizes' {
+//     metadata { op 'authorizePayment' }
+//   }
+//
+// The \`views\` block at the bottom is for LikeC4's own tooling — loam reads
+// the model and never a view. Render with \`npx likec4 start\` from the docs
+// repo root, which likec4.config.json scopes to this directory. A service's
+// \`services/<id>/model.likec4\` EXTENDS this map: it declares no
+// \`specification\` block of its own, so it belongs to THIS project and renders
+// with it, containers and all. A model that declares its own \`specification\`
+// stands alone instead — it renders only from its own directory
+// (\`npx likec4 start services/<id>\`), and the \`exclude\` list in the root
+// likec4.config.json has to cover that directory or its declarations collide
+// with this file's. \`loam subsystem sync\` maintains both, so neither is
+// hand-edited. Keep views
 // scoped, because computing one is superlinear in the number of edges — the
 // \`fleet\` view below stays affordable precisely because it excludes the
 // platform hubs.

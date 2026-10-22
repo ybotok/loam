@@ -9,28 +9,36 @@
  * — and none of them is needed to form the question. That is the split this
  * page exists to make; ./reference.ts records why it had to be made at all.
  *
- * The text is the three AGENTS.md sections verbatim, in their original order,
- * so a cross-reference elsewhere in the corpus still names the same headings.
+ * The first three sections are the three AGENTS.md sections verbatim, in their
+ * original order, so a cross-reference elsewhere in the corpus still names the
+ * same headings. The fourth, "Writing for a person", was written for this page
+ * and never stood in AGENTS.md. A large real fleet was migrated into one feature
+ * whose every delta validated, and its reviewers still could not follow it: no
+ * purpose said what a service did, requirement bodies were a source document
+ * pasted whole, and "this delta" was copied into the living docs by the
+ * archive. No check reads prose, so this is where that lesson lives. Its
+ * examples are neutral; nothing from that fleet may enter this repository.
  */
 import type { CommandContent } from "../../contract.js";
 
 export const LOAM_AUTHORING: CommandContent = {
   name: "loam-authoring",
   description:
-    "Reference: the grammars you author against — arch.spec.md, the generated Gherkin suite, frontmatter",
+    "Reference: the grammars you author against — arch.spec.md, the generated Gherkin suite, frontmatter, and writing a feature a person can follow",
   // No arguments: one document, printed whole. See ./spine.ts for why the hint
   // is empty rather than a spelled-out "<none>".
   argumentHint: "",
   purpose:
-    "What each document you author by hand must contain: the architecture requirements axis and its `Covers:` line, how scenarios become an executable suite, and the frontmatter fields `loam vouch` stamps.",
+    "What each document you author by hand must contain: the architecture requirements axis and its `Covers:` line, how scenarios become an executable suite, the frontmatter fields `loam vouch` stamps, and how to write a feature's documents so a reviewer can follow them.",
   invocation: "loam instructions loam-authoring",
   placeholders: [],
   spine: [
     "The architecture spec axis",
     "The generated Gherkin suite",
     "Frontmatter — who vouched for this, and from what",
+    "Writing for a person",
   ],
-  body: `The grammars you author against: the architecture spec axis, the generated Gherkin suite, and frontmatter.
+  body: `The grammars you author against: the architecture spec axis, the generated Gherkin suite, frontmatter, and writing a feature a person can follow.
 
 ## The architecture spec axis
 
@@ -224,5 +232,104 @@ exists for a person's own scripted run; typing it on someone's behalf is
 writing their name. The generated command and skill files pre-approve loam's
 read-only and authoring verbs one by one and deliberately not this one: when
 the work is done, hand back and say a vouch is owed.
+
+## Writing for a person
+
+A feature is read by a reviewer before anyone builds it, and its requirements
+are read for years after \`loam archive\` copies them into the living docs. loam
+grades the joins and never the prose, so nothing in this section is checked: a
+delta can validate clean and still be one nobody can follow.
+
+**intent.md** opens with the problem in business terms — \`## Why\` and
+\`## Scope\`, the two sections the archive gate reads — and then carries the three
+things a reviewer looks for first:
+
+- \`## How to read this feature\`: two or three sentences saying which services
+  change, which document to open first, and which picture shows the change (the
+  delta's own view, or a flow under the feature's \`usecases/\`).
+- a business-requirement coverage table, one row per business requirement the
+  feature was asked to meet, naming what keeps it:
+
+      | Business requirement | Kept by | Where |
+      |---|---|---|
+      | A customer can split one payment between two cards | PAY-SPLIT-1 | payment-split-service spec.md |
+      | Every payee gets a receipt | uc_split_receipt | usecases/split-receipt.likec4 |
+
+- \`## Open questions\` (the scaffold already writes the heading) as a table, so
+  that a person can answer each question and a reader can see what each blocks:
+
+      | ID | Question | Blocks | Owner | Current default |
+      |---|---|---|---|---|
+      | Q1 | Is a split refunded per card or as a whole? | PAY-SPLIT-3 | payments-team | per card |
+
+  The current default is what gets built if nobody answers, so write one for
+  every question.
+
+**Each spec delta opens with a plain-language \`## Purpose\`**: what the service
+does in this change, written for someone who has never opened its code. Where
+the delta CREATES the living document — a new service's spec.md, a first
+arch.spec.md, a new capability — \`loam archive\` copies that section into the
+new document as its narrative. Where the living document already exists, the
+section stays with the archived delta, and the archive plan says so on that
+file's line; if the service's own narrative should change, edit the living
+document in the same change.
+
+**Write a long requirement body as a lead and bullets.** A new requirement
+states one behaviour. A requirement carried over from another source often
+arrives as one paragraph of SHALL sentences. Keep every sentence, but open with
+one line that says what the requirement is for, and give each SHALL sentence a
+bullet of its own:
+
+    ### Requirement: Split a payment
+    Requirement-ID: PAY-SPLIT-1
+
+    A payment can be divided between several payees.
+
+    - The service SHALL accept between two and five payees per split.
+    - The service SHALL reject a split whose shares do not add up to the authorized amount.
+
+**Expand every abbreviation the first time a document uses it**, in words a new
+reader knows: "service-level objective (SLO)", then "SLO".
+
+**Keep review-time wording out of what the archive copies.** "This delta", "this
+feature", "the new endpoint" and "we now" read correctly in review. But
+\`loam archive\` copies requirement bodies, scenarios and contract descriptions
+into living documents, where "this feature" points at a pull request that merged
+long ago. Write what the service does, not what the change does. Prose about the
+change belongs in \`intent.md\`, which stays with the feature.
+
+**A feature's vocabulary, decisions and flows travel with it.**
+
+- A word the feature brings is \`features/<FEAT>/glossary/<term>.md\`, which the
+  archive copies into \`glossary/\`. A term the living glossary already defines is
+  edited there instead, because the copy never overwrites
+  (\`glossary.term-exists\`).
+- A decision is \`features/<FEAT>/adrs/NNNN-<slug>.md\`. It stays with the
+  feature under \`features/archive/\`, and the living documents that link to it go
+  on resolving. A decision meant to outlive the change belongs in
+  \`architecture/adrs/\` or the service's own \`adrs/\` instead.
+- A flow that keeps a promise across services is
+  \`features/<FEAT>/usecases/<name>.likec4\`: a \`dynamic view\` tagged
+  \`#cap-<capability>\`, naming a capability the fleet declares, and
+  \`#req-<Requirement-ID>\`, naming the promise it keeps. A promise the feature's
+  own capability delta adds resolves too. \`usecase.capability-unresolved\` and
+  \`usecase.requirement-unresolved\` grade both tags before the archive.
+
+Link to all three from the deltas, written relative to the file you write in:
+\`loam archive\` re-points every link into the feature for the move.
+
+**Write a \`Covers:\` edge by service name**:
+\`Covers: order-service -> payment-service\`. An edge spelled by its endpoints'
+service names resolves the same before and after the archive. A delta's own
+element id may not, and \`covers.unknown\` at feature scope says when it would not.
+A kinded spelling such as \`order-service -[calls]-> payment-service\` is accepted,
+but the kind is read past rather than compared: it covers every edge from the
+first service to the second, whatever its kind. So write the plain arrow.
+
+**Draw a producer outside the fleet as an \`#external\` element**, with the edge
+it publishes on carrying \`metadata { publishes }\`, so that the consumer's
+\`Consumes:\` line has a producer to join to. \`loam instructions loam-spine\`
+("A message produced outside the fleet") has the join, and
+\`loam instructions loam-drawing\` has the drawing.
 `,
 };

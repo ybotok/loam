@@ -775,7 +775,7 @@ describe("AGENTS.md stays inside the budget its readers actually have", () => {
 describe("the reference pages are printed, never scaffolded", () => {
   it("every page is reachable by name from the binary", async () => {
     const dir = await throwawayDir();
-    expect(REFERENCE_PAGES.length).toBe(4);
+    expect(REFERENCE_PAGES.length).toBe(5);
     for (const page of REFERENCE_PAGES) {
       // Unwired on purpose: a page must print with no loam.json and no docs
       // repo, for the same reason the workflows must.

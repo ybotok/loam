@@ -1252,6 +1252,17 @@ describe("isLandscapeStub — the writer and the checker read one string", () =>
       true,
     );
     expect(stub).not.toContain("renders from its OWN directory");
+    // Generation 4 (v0.2.0-alpha.6 through .11) declared no relationship kind;
+    // the current stub declares seven. An untouched map from those releases is
+    // still the stub, though nothing in it can draw a kinded edge.
+    const unkinded = LEGACY_LANDSCAPE_STUBS.filter(
+      (s) => s.includes("views {") && !s.includes("  relationship publishes {"),
+    );
+    expect(unkinded.length).toBe(2);
+    expect(unkinded.at(-1)).toBe(LEGACY_LANDSCAPE_STUBS.at(-1));
+    for (const kind of ["publishes", "delivers", "reads", "writes", "readsWrites", "calls", "connects"]) {
+      expect(stub).toContain(`  relationship ${kind} {`);
+    }
   });
 });
 

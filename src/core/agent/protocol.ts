@@ -44,7 +44,7 @@ export const AGENT_COMMANDS: CommandContent[] = [...COMMANDS, ...SUPPORT];
 
 /**
  * Everything `loam instructions <name>` can print: the six workflows, support
- * protocol and four reference pages, in that order.
+ * protocol and five reference pages, in that order.
  *
  * The pages join the generated protocols HERE and nowhere else — not in
  * {@link AGENT_COMMANDS}, which is what scaffold.ts derives `SLASH_COMMANDS`

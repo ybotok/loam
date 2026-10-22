@@ -100,6 +100,8 @@ seventh lifecycle step.
    never an agent, later vouches for them. Draw the map's edges in the same pass:
    the brief's `landscape.touched` is the only place an edgeless element is named,
    and `landscape.service-isolated` (fleet scope) goes quiet on the first edge.
+   Give each edge a direction only from evidence, and draw it as `connects` where
+   there is none.
 2. **Understand** — start or resume with `loam status --json`; its ordered
    `next[]` is the work queue. Read `next[0].execution`: run it only when
    `runnable` is true; otherwise use `kind`, `cwd`, `needs` and `after`
@@ -167,6 +169,8 @@ a join.
 - `loam instructions loam-authoring` — arch requirements, generated Gherkin
   and frontmatter/vouch grammar.
 - `loam instructions loam-done-check` — verification evidence and verdicts.
+- `loam instructions loam-drawing` — relationship kinds and arrow direction, the
+  legend, and overview views a person can read. Read it before drawing an edge.
 
 Bare `loam instructions` lists the six workflows, the separate `loam-report`
 support protocol and these references. Generated agent command/skill files are

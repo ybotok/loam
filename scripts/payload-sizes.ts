@@ -141,6 +141,7 @@ const PAGES: readonly (readonly string[])[] = [
   ["loam-spine"],
   ["loam-authoring"],
   ["loam-done-check"],
+  ["loam-drawing"],
 ];
 
 function median(values: readonly number[]): number {

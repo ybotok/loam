@@ -281,9 +281,9 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
 - \`loam instructions [<page>] [args...]\` prints one of the six workflow
   protocols — \`loam-adopt\`, \`loam-feature\`, \`loam-implement\`, \`loam-check\`,
   \`loam-verify\`, \`loam-ship\` — with \`$1\`, \`$2\` filled in from the arguments you
-  pass, the \`loam-report\` support protocol, or one of the four reference pages —
-  \`loam-codes\`, \`loam-spine\`, \`loam-authoring\`, \`loam-done-check\` — which take
-  no arguments. With no argument at all it lists all three sets. The pages ship
+  pass, the \`loam-report\` support protocol, or one of the five reference pages —
+  \`loam-codes\`, \`loam-spine\`, \`loam-authoring\`, \`loam-done-check\`,
+  \`loam-drawing\` — which take no arguments. With no argument at all it lists all three sets. The pages ship
   inside the binary, so they describe the loam you are about to run rather than
   the one that scaffolded the repository; the command and skill files
   \`loam init\` writes are pointers at it, and so is AGENTS.md's own

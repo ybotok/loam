@@ -554,6 +554,32 @@ describe("element-id sanitizing and the views tripwire", () => {
     expect(viewsBlock(body)).toBe(viewsBlock(scaffoldLandscape()));
     expect(viewsBlock(body)).toContain("view platform");
   });
+
+  it("the seeded relationship kinds are byte-identical to the scaffold stub's — the same tripwire", () => {
+    // The kinds are the second block both writers carry. A seeded map that
+    // declared one kind fewer, or styled `connects` without its tail marker,
+    // would draw a different picture from a scaffolded one with nothing to say
+    // so. The edges stay plain in both: a kind is declared, never chosen.
+    const id = parseServiceId("checkout", "test fixture");
+    if (!id.ok) throw new Error(id.problem);
+    const body = renderLandscape({
+      services: [{ id: id.id, subsystem: null }],
+      subsystems: [],
+      externals: [],
+      calls: [],
+    });
+    const kindsBlock = (text: string): string => {
+      const start = text.indexOf("  // One kind per kind of traffic");
+      const end = text.indexOf("    tail odot\n  }\n");
+      expect(start, "no kinds block to compare — the tripwire must not pass vacuously").toBeGreaterThanOrEqual(0);
+      expect(end).toBeGreaterThan(start);
+      return text.slice(start, end);
+    };
+    expect(kindsBlock(body)).toBe(kindsBlock(scaffoldLandscape()));
+    for (const kind of ["publishes", "delivers", "reads", "writes", "readsWrites", "calls", "connects"]) {
+      expect(kindsBlock(body)).toContain(`  relationship ${kind} {`);
+    }
+  });
 });
 
 describe("a Windows checkout: line endings are not hand edits", () => {

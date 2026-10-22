@@ -54,21 +54,31 @@
  * THE MOVE WAS A MOVE. Every page's text is its AGENTS.md section verbatim.
  * Nothing was rewritten on the way, because a paraphrase is a second copy that
  * can drift — and removing one of those is what this whole change is for.
+ *
+ * THE FIFTH PAGE WAS NEVER A SECTION. `loam-drawing` (./drawing/drawing.ts)
+ * was written as a page from the start: how to draw the map so that a person
+ * can read it is consulted at the moment an edge or a view is drawn, which is
+ * the split rule above, and no AGENTS.md section ever held it. It came from a
+ * real fleet whose documents all validated while every picture of it was
+ * unreadable. The page carries the rest of that story.
  */
 import type { CommandContent } from "../../contract.js";
 import { LOAM_AUTHORING } from "./authoring.js";
 import { LOAM_CODES } from "./codes.js";
 import { LOAM_DONE_CHECK } from "./done-check.js";
+import { LOAM_DRAWING } from "./drawing/drawing.js";
 import { LOAM_SPINE } from "./spine.js";
 
 /**
- * The four pages, in the order AGENTS.md's own index names them — which is the
- * order their sections stood in the document they left, so a reader who knew
- * the file finds them where they were.
+ * The five pages, in the order AGENTS.md's own index names them. The first four
+ * stand in the order their sections stood in the document they left, so a
+ * reader who knew the file finds them where they were. The drawing page comes
+ * last because it never stood there.
  */
 export const REFERENCES: CommandContent[] = [
   LOAM_CODES,
   LOAM_SPINE,
   LOAM_AUTHORING,
   LOAM_DONE_CHECK,
+  LOAM_DRAWING,
 ];

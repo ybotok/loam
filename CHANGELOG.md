@@ -10,6 +10,68 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Added — `loam instructions loam-drawing`, and agent pages that teach a picture and a feature a person can read
+
+No code, flag or exit code was added or changed. The new page holds the convention.
+SCHEMA.md, "Which way an edge points", states the one part of it loam itself depends on.
+
+- **A fifth reference page, `loam instructions loam-drawing`**, also served over MCP as
+  `loam://instructions/loam-drawing` and listed as a fifth entry of `loam instructions --json`'s
+  `references[]`. It teaches how to draw the C4 model so a person can read it. It names seven
+  relationship kinds, each with one direction: `publishes` (producer to topic), `delivers` (topic
+  to consumer), `reads`, `writes` and `readsWrites` (always written service `->` store, with the
+  kind's style placing the arrowhead), `calls`, and `connects` for a connection whose direction
+  no evidence establishes. Kinds are declared once in the map's `specification` and again in a
+  delta that draws one, never carry a tag, and never use the dotted `a .kind b` form. A
+  `legend` view is drawn from real edges. The page also covers overview views, measured at the
+  LikeC4 1.59.2 pin: one question at one altitude; a single positive `where kind is …` filter,
+  because relationships of different kinds merged into one line render default gray; the
+  `include <parent>.* -> * where …` form, which renders an empty view at subsystem altitude;
+  `rank` rows; `tail odot` on a direction-less edge; numbered titles; and no authored
+  `view … of` a subsystem or service element. `AGENTS.md`'s "Reference pages" section lists the
+  page, and loam-adopt, loam-feature, loam-implement, loam-check and loam-ship point at it
+  wherever an edge is drawn or read.
+- **Adoption resolves directions, and a feature draws messages through the broker.** Step 3 of
+  loam-adopt gives every edge a kind, and a direction only from evidence: the code, a
+  `*_PRODUCER_*` or `*_CONSUMER_*` configuration name, or the service's own `asyncapi.yaml`.
+  Configuration that only names an address is drawn `connects`, and the adoption turns the
+  service's `connects` edges into real kinds. Its hand-back now says eight things; the new one
+  is every edge still drawn `connects`. loam-feature's delta step draws producer
+  `-[publishes]->` topic `-[delivers]->` consumer, and draws a producer outside the fleet as an
+  `#external` element. loam-implement redraws a `connects` edge once the code shows its kind.
+- **`loam instructions loam-authoring` gains "Writing for a person".** It covers intent.md's
+  `## How to read this feature`, a business-requirement coverage table, and `## Open questions`
+  as a table (ID, question, blocks, owner, current default). Each spec delta gets a
+  plain-language `## Purpose`, which is copied into a document the archive creates and stays
+  with the archived delta otherwise. A long requirement body becomes a one-line lead plus one
+  bullet per SHALL sentence, and abbreviations are expanded on first use. Wording such as
+  "this delta" or "this feature" stays out of what the archive copies. It also covers feature
+  glossary terms, feature ADRs, use cases tagged `#cap-`, and `Covers:` edges spelled by
+  service name. loam-feature's step 4 and loam-ship's dry-run step say the same in brief, and
+  loam-feature's analyze step writes open questions as table rows.
+- **`loam explain` knows the new words.** A fifth listing heading, "the picture — drawing the
+  map and writing for a person", holds `kind` (which also answers `publishes`, `delivers`,
+  `reads`, `writes`, `readsWrites`, `calls`, `connects`, `arrow` and `direction`), `legend`,
+  `overview` and `purpose`. `loam explain --json`'s `terms[]` gains the four.
+- **loam-report** rebuilds a reproduction on neutral stand-ins when the fleet's own names are
+  confidential, and its `Sanitization` section says when `Actual` quotes the fleet.
+
+### Changed — a new fleet map declares the seven relationship kinds
+
+- The `architecture/landscape.likec4` that `loam init --create` scaffolds, and the map
+  `loam seed` writes, now declare `publishes`, `delivers`, `reads`, `writes`, `readsWrites`,
+  `calls` and `connects` in their `specification` block, with the styles the drawing page
+  teaches. The stub's comment shows each kind in use. Seed's edges stay plain: `fleet.yaml`
+  says who calls whom and nothing about what an edge carries.
+- No `legend` view is scaffolded. A view names only elements the model declares, and a new map
+  declares none.
+- A map an earlier loam scaffolded and nobody touched still reads as the untouched stub:
+  `loam status` keeps its `next.author-landscape` step and `loam seed` still replaces it. Such a
+  map declares no kind, so add the block from `loam instructions loam-drawing` before a feature
+  draws a kinded edge. `loam archive` copies an edge and never a declaration, and refuses with
+  `merge-failed` on a kind the living map lacks. `loam validate --feature` and `loam status` do
+  not predict that refusal yet.
+
 ### Fixed — a feature that removes a promise a living flow claims is refused before the archive
 
 No code, flag or payload key was added. SCHEMA.md "A promise a living flow keeps, removed" states

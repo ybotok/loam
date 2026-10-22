@@ -345,7 +345,9 @@ layout, the cycle, what gates and what only advises, held under a 12,000-byte ce
 where it used to be 109,399 bytes), and the four **reference pages** it used to carry inline come
 out of the binary at the moment the question arises: `loam instructions loam-codes`, `loam-spine`,
 `loam-authoring` and `loam-done-check`, each taking no arguments and printing whole, listed beside
-the six workflows by a bare `loam instructions`. `init` writes no file for any of them, so nothing new landed in the repo.
+the six workflows by a bare `loam instructions`. A fifth reference page, `loam-drawing`, was never
+part of `AGENTS.md`: read it before drawing an edge or a view, for the relationship kinds, the
+legend and the overview views a person can read. `init` writes no file for any of them, so nothing new landed in the repo.
 
 | Workflow | When | What it drives |
 |---|---|---|

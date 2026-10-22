@@ -24,14 +24,16 @@
 export const EXPLAIN_COMMAND = `- \`loam explain [<subject>]\` answers "what does this mean and what do I do
   about it" from the binary itself: a finding code (\`spine.op-undefined\`), a
   refusal code (\`docs-busy\`), or a concept term — the words loam prints to a
-  person. \`loam explain\` alone lists the terms under four headings: the
+  person. \`loam explain\` alone lists the terms under five headings: the
   stages \`loam status\` reports (stage, which also answers missing, blocked and
   draft; ready; done), the done-check \`loam verify\` asks (claim; its five kinds
   service.exists, api.exposes, event.declares, c4.calls and scenario.tested;
   attested; verified), the work packet \`loam tasks\` lists (unit, frontier,
   describe, generate, implement), and the documents (delta, baseline, spine,
   axis, coherence, vouch, maturity, which also answers its rungs empty,
-  partial, documented and sourced). For finding codes the meaning-and-fix
+  partial, documented and sourced), and the picture (kind, which also answers
+  each relationship kind from publishes to connects; legend; overview;
+  purpose). For finding codes the meaning-and-fix
   text IS the /loam-check fix table, parsed at runtime from the same body \`loam instructions loam-check\` prints, so the
   two can never disagree; a code graded in more than one table (service scope
   and \`loam archive\` plan time, say) explains every context it appears in,

@@ -6,6 +6,14 @@
  * (`loam vouch`, and the maturity ladder `loam list` and the fleet scorecard
  * print). The first five are the oldest entries in the registry and carry
  * their re-pairing history in the comments beside their pins.
+ *
+ * The second group below, `DRAWING_TERMS`, is the words for drawing the map
+ * and writing a feature a person can follow. It is the vocabulary of the
+ * `loam-drawing` page and of `loam-authoring`'s "Writing for a person". It
+ * lives in this module rather than one of its own because ./ is at the
+ * five-file cap, and because those words are about the same documents: a
+ * relationship kind is part of landscape.likec4, and a `## Purpose` is part of
+ * a spec delta.
  */
 import type { TermGroup } from "./entry.js";
 
@@ -157,6 +165,92 @@ export const DOCUMENT_TERMS: TermGroup = {
       pins: [
         { source: "FEATURE", phrase: "a service at `empty` or `partial` has no baseline to" },
         { source: "AUTHORING", phrase: "the maturity rung stays `vouched`" },
+      ],
+    },
+  ],
+};
+
+export const DRAWING_TERMS: TermGroup = {
+  heading: "the picture — drawing the map and writing for a person",
+  terms: [
+    {
+      // The kind names are aliases because they are what an agent meets on an
+      // edge (`-[delivers]->`) and asks about; `readsWrites` is lowercased, as
+      // every alias is, because the lookup lowercases the subject first.
+      term: "kind",
+      aliases: [
+        "kinds",
+        "relationship-kind",
+        "arrow",
+        "direction",
+        "publishes",
+        "delivers",
+        "reads",
+        "writes",
+        "readswrites",
+        "calls",
+        "connects",
+      ],
+      paragraph:
+        "A relationship kind says what an edge carries, and so which way its arrow points. " +
+        "`publishes` runs from a producer to a topic and `delivers` from the topic to a consumer, beside the " +
+        "`metadata { publishes }` and `metadata { consumes }` the event spine joins on; `calls` is a synchronous request, " +
+        "beside `metadata { op }`; `reads`, `writes` and `readsWrites` are a service's use of a store, and a store edge is ALWAYS written " +
+        "service `->` store, with the arrowhead put where the data lands by the kind's style; `connects` is a " +
+        "connection whose direction nobody has established, drawn gray and dashed with no arrowhead. " +
+        "**Never guess a direction.** Give an edge a direction only from evidence: the code, a configuration name " +
+        "that says which side a service is on, or its own asyncapi.yaml. Configuration that only lists an address is " +
+        "`connects`, and adopting the service from its code resolves it. The kinds are declared once in " +
+        "architecture/landscape.likec4's `specification` block, and again in a feature delta that draws one, and the " +
+        "living map must declare a kind before a feature using it archives. No check reads a kind: it is the picture, and " +
+        "the metadata is the join. `loam instructions loam-drawing` has the styles.",
+      pins: [
+        { source: "DRAWING", phrase: "**Never guess a direction.** Give an edge a direction only from evidence:" },
+        { source: "DRAWING", phrase: "a store edge is ALWAYS written" },
+      ],
+    },
+    {
+      term: "legend",
+      aliases: ["legend-view"],
+      paragraph:
+        "A legend is a view in architecture/landscape.likec4 that draws ONE real " +
+        "edge of each kind the map uses, so a reader learns the colours from the fleet itself. It names real services, " +
+        "a real topic and a real store, each edge by both of its endpoints, and it gains a line when the map gains a " +
+        "kind. A view can name only elements the model declares, so `loam init` cannot scaffold one: the legend is " +
+        "written once the map has real edges of each kind.",
+      pins: [{ source: "DRAWING", phrase: "edge of each kind the map uses" }],
+    },
+    {
+      term: "overview",
+      aliases: ["overviews", "overview-view", "altitude"],
+      paragraph:
+        "An overview is a view a person reads to answer one question about the fleet. " +
+        "**One question per view, at one altitude.** A fleet overview draws subsystem boxes, not services, at most " +
+        "about 20 nodes and 25 drawn lines, and the generated subsystem and service views are its drill-down. Above " +
+        "service altitude LikeC4 merges every relationship between two boxes into one line, and a line merged from " +
+        "different kinds is drawn in the default gray, so filter by one kind: " +
+        "`where kind is publishes` keeps the line amber, while a `kind is not` or an `or` filter still merges. " +
+        "Never author a `view … of` a subsystem or service element, which would take the drill-down from loam's " +
+        "generated views. `loam instructions loam-drawing` lists the spellings that render nothing.",
+      pins: [
+        { source: "DRAWING", phrase: "**One question per view, at one altitude.**" },
+        { source: "DRAWING", phrase: "`where kind is publishes` keeps the line amber" },
+      ],
+    },
+    {
+      term: "purpose",
+      aliases: ["narrative"],
+      paragraph:
+        "A `## Purpose` section is the plain-language narrative of a spec delta: what the service does in the change, " +
+        "for someone who has never opened its code. " +
+        "Each spec delta opens with a plain-language `## Purpose`. Where the delta creates the living document — a " +
+        "new service's spec.md, a first arch.spec.md, a new capability — `loam archive` copies the section in as that " +
+        "document's narrative, beside the delta's title and frontmatter owner. Where the living document already exists, the " +
+        "section stays with the archived delta, and the archive plan says so; edit the living narrative directly when " +
+        "it should change. Nothing grades a purpose; `loam instructions loam-authoring`, \"Writing for a person\", has the shape.",
+      pins: [
+        { source: "AUTHORING", phrase: "Each spec delta opens with a plain-language `## Purpose`" },
+        { source: "AUTHORING", phrase: "section stays with the archived delta" },
       ],
     },
   ],

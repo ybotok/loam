@@ -85,6 +85,21 @@ const ANSWERED_BY: Record<string, string> = {
   documented: "maturity",
   sourced: "maturity",
   vouched: "vouch",
+  // The words of `loam instructions loam-drawing` and loam-authoring's
+  // "Writing for a person": each relationship kind is answered by the entry
+  // about kinds, because a kind is what an agent meets on an edge and asks
+  // about, and `readsWrites` reaches it lowercased like every subject.
+  kind: "kind",
+  publishes: "kind",
+  delivers: "kind",
+  reads: "kind",
+  writes: "kind",
+  readsWrites: "kind",
+  calls: "kind",
+  connects: "kind",
+  legend: "legend",
+  overview: "overview",
+  purpose: "purpose",
 };
 
 function termOf(subject: string): string | undefined {

@@ -93,13 +93,40 @@ export const LOAM_FEATURE: CommandContent = {
    - \`delta.likec4\` — new elements and edges, each tagged \`#$1\`; every call edge carries
      \`metadata { op '<operationId>' }\`; replace the scaffolded TODO description on each
      new service. For a requirements-only feature DELETE this
-     file: an empty delta is legal, but a scaffold left half-filled is not
+     file: an empty delta is legal, but a scaffold left half-filled is not.
+     Draw each edge with its relationship kind (\`-[calls]->\`, \`-[publishes]->\`,
+     \`-[delivers]->\`, …), and draw a direction only where the evidence shows
+     one: anything else is \`-[connects]->\`. A message runs producer
+     \`-[publishes]->\` topic and topic \`-[delivers]->\` consumer, never
+     producer \`->\` consumer. A producer outside the fleet is an \`#external\`
+     element whose edge carries \`metadata { publishes }\`. Declare every kind
+     you draw in the delta's own \`specification\`, and check that the living
+     map's declares it too. The archive copies the edge and never the
+     declaration, so a kind the map lacks refuses the archive (\`merge-failed\`)
+     even though validate and status call the feature ready.
+     \`loam instructions loam-drawing\` has the kinds and their styles
    - \`specs/<svc>/spec.md\` — the example requirement ships INSIDE the template's
      comment: copy it out, unindent, one behaviour per requirement, SHALL, at
      least one Given/When/Then scenario; add \`Operations:\` once the operation exists
    - \`specs/<svc>/arch.spec.md\` — the architectural obligations (outbox, retries,
      idempotency, alerts), same grammar; a \`Covers:\` line per requirement naming the
-     tagged elements/edges it accounts for, or \`c4.uncovered\` says nothing does
+     tagged elements/edges it accounts for, or \`c4.uncovered\` says nothing does.
+     Write an edge by its endpoints' service names
+     (\`order-service -> payment-service\`), which resolve the same before and
+     after the archive
+   - write every document for a reviewer who has never seen the code.
+     \`intent.md\` gains a \`## How to read this feature\` section, a
+     business-requirement coverage table, and \`## Open questions\` as a table
+     (ID, question, blocks, owner, current default). Each spec delta opens
+     with a plain-language \`## Purpose\`. A long requirement body becomes a
+     one-line lead plus one bullet per SHALL sentence. Every abbreviation is
+     expanded on first use. "This delta" and "this feature" stay out of
+     requirement bodies and contract descriptions, because the archive copies
+     those into the living docs. A word the feature brings goes in
+     \`glossary/<term>.md\` and a decision in \`adrs/\`, both inside the feature,
+     and a cross-service flow in \`usecases/<name>.likec4\`, tagged with a
+     \`#cap-\` that resolves. \`loam instructions loam-authoring\`, "Writing
+     for a person", has the shapes
    - \`specs/<svc>/openapi.yaml\` — define every operationId the edges reference.
      A self-contained document holding ONLY the operations this feature adds,
      changes or removes — never a copy of the living contract. An operation you
@@ -147,8 +174,9 @@ export const LOAM_FEATURE: CommandContent = {
      the living requirements verbatim, the edges one hop out, and this delta
    - the \`neighbours\` step 2b's \`loam explore\` reported
    Then write what the documents leave open under \`## Open questions\` in
-   \`intent.md\` (the scaffold already carries the heading), one line per question,
-   naming the requirement id or edge it is about:
+   \`intent.md\` (the scaffold already carries the heading), one table row per
+   question — ID, the question, what it blocks (the requirement id or edge it is
+   about), its owner, and the default that gets built if nobody answers:
    - a SHALL two engineers could build two ways — an unstated unit, bound,
      ordering, or an "eventually" with no window
    - a value, limit or window two services state differently (a refund window,
@@ -164,7 +192,8 @@ export const LOAM_FEATURE: CommandContent = {
    - each \`explore\` neighbour outside \`--touches\`: why it is untouched, or that
      it is a candidate — adding one means a \`specs/<svc>/\` delta in this feature,
      because that directory IS the feature's service list
-   Ask; do not answer for the author. A human answers by editing the file —
+   Ask; do not answer for the author. The default column records what the
+   documents imply today, not what you would choose. A human answers by editing the file —
    replacing a question with the decision, or with a change to the delta.
    Nothing is graded: an empty section is legal, and so is an answered one.
 5. **\`loam rebase $1\`** — the step between authoring and checking, and the one that

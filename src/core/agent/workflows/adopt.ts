@@ -93,6 +93,21 @@ thin baseline that validates is thin, not done.
    edges where the element stands alone, and the map's own housekeeping
    \`unchecked[]\` names: a placeholder tag to clear, a curated view to add the
    element to.
+   **Every edge you draw gets a relationship kind, and a direction you can
+   show.** \`calls\` is a request the code makes. \`publishes\` runs from the
+   producer to the topic and \`delivers\` from the topic to the consumer.
+   \`reads\`, \`writes\` and \`readsWrites\` are always written service \`->\` store,
+   with the arrowhead put where the data lands by the kind's style.
+   Take the direction from this service's code, from a configuration name that
+   says which side it is on (\`*_PRODUCER_*\`, \`*_CONSUMER_*\`, a consumer-group
+   id), or from its own \`asyncapi.yaml\` (\`send\` publishes, \`receive\` consumes).
+   Never take it from deployment configuration that only lists an address: that
+   says two things are connected and nothing more, so it is drawn \`connects\`.
+   You are reading the code now, so turn every \`connects\` edge that touches $1
+   into its real kind, and name in step 6 the ones the code did not settle. Use
+   the kinds the map's \`specification\` declares, and declare a missing one
+   there, once, in the same landscape edit. \`loam instructions loam-drawing\`
+   has the kinds, their styles and the views a person can read.
    **model.likec4 EXTENDS the fleet map.** It declares no \`specification\` block and
    no copy of anything the map already draws: its whole body is
    \`model { extend <fqn> { …containers… } }\`, where \`<fqn>\` is the FULLY-QUALIFIED
@@ -222,7 +237,7 @@ thin baseline that validates is thin, not done.
    \`sources.unverifiable-from-here\` (severity ok) appears per service as a
    confirmation, not work — so "keep going until validation is quiet" is the wrong
    loop; the two runs are the test.
-6. Hand back, and say seven things:
+6. Hand back, and say eight things:
    - what you could not determine from the code;
    - what the existing artifacts disagreed with;
    - which parts you are least sure of;
@@ -230,6 +245,9 @@ thin baseline that validates is thin, not done.
      each on why the baseline does not owe it. That list is the only account
      anybody gets of how much of the service was actually read; loam can name the
      paths, and it can never say whether skipping one was right;
+   - every edge touching the service that is still drawn \`connects\`, with what
+     would settle its direction. An unresolved edge looks finished on the map,
+     so this list is the one place that says it is not;
    - **two counts per operation**: how many decisions its code makes — permission
      checks, conditionally required fields, defaults and normalisations, refused
      transitions — and how many scenarios you wrote for it.

@@ -41,6 +41,20 @@ import { LEGACY_LANDSCAPE_STUBS } from "./legacy.js";
  * The `views` block below has a deliberate second copy: `core/c4/seed/template.ts` emits the
  * same two views into a seeded landscape (two strikes; extract on a third), and test/seed.test.ts
  * compares the two blocks byte for byte — comments included — so whichever copy drifts fails.
+ *
+ * The seven RELATIONSHIP kinds are scaffolded for the element kinds' reason:
+ * they are vocabulary, not a guess about this fleet. Declared here, every
+ * extending model and every adoption borrows them, so the first edge anybody
+ * draws can say what it carries and which way it points. A real fleet drawn
+ * without them ended with every arrow pointing into its broker and its stores,
+ * because deployment configuration says only that two things are connected. A
+ * declaration here also keeps a feature archivable: the archive copies a
+ * delta's edge into this file and never a declaration, so a kind this file
+ * lacks refuses the merge (`merge-failed`). A `legend` view is NOT scaffolded:
+ * a view names only elements the model declares, this model is empty, and an
+ * invented example would be a box every fleet check grades. The comment says
+ * when to write one. The kinds block has the same deliberate second copy in
+ * `core/c4/seed/template.ts`, pinned the same way by test/seed.test.ts.
  */
 export const LANDSCAPE_STUB = `// The fleet map: every service in services/ appears here, and every call
 // between two of them is an edge. This file is written by hand — loam never
@@ -57,9 +71,25 @@ export const LANDSCAPE_STUB = `// The fleet map: every service in services/ appe
 // and give each call the operationId it uses, so requirements, C4 and OpenAPI
 // can be cross-checked:
 //
-//   checkoutWeb -> paymentService 'Authorizes' {
+//   checkoutWeb -[calls]-> paymentService 'Authorizes' {
 //     metadata { op 'authorizePayment' }
 //   }
+//
+// Every edge says what it carries with one of the relationship kinds declared
+// below, and points the way the evidence says — never a guess:
+//
+//   checkoutWeb -[calls]-> orderService            a synchronous request
+//   orderService -[publishes]-> kafka.orderEvents   producer to topic
+//   kafka.orderEvents -[delivers]-> paymentService  topic to consumer
+//   paymentService -[reads]-> ordersDb              always service to store; the
+//                                                   style puts the head on the reader
+//   orderService -[connects]-> kafka                no direction established yet
+//
+// Configuration that only names an address says two things are connected and
+// nothing more: that is \`connects\`, and adopting the service from its code
+// turns it into the real kind. Once the map has a real edge of each kind, add
+// a \`legend\` view that draws one of each. \`loam instructions loam-drawing\`
+// has the whole convention.
 //
 // The \`views\` block at the bottom is for LikeC4's own tooling — loam reads
 // the model and never a view. Render with \`npx likec4 start\` from the docs
@@ -104,6 +134,48 @@ specification {
   // without losing "who depends on the Identity Provider", which the platform
   // view answers.
   tag platform
+
+  // One kind per kind of traffic, each with one direction. The style is the
+  // picture: amber for messages, green for data at rest, gray and dashed for
+  // a connection nobody has given a direction yet. Never tag a kind: LikeC4
+  // copies a kind's tags onto every edge of it.
+  relationship publishes {
+    color amber
+    line solid
+    head normal
+  }
+  relationship delivers {
+    color amber
+    line solid
+    head normal
+  }
+  relationship reads {
+    color green
+    head none
+    tail normal
+  }
+  relationship writes {
+    color green
+    head normal
+  }
+  relationship readsWrites {
+    color green
+    head normal
+    tail normal
+  }
+  relationship calls {
+    color secondary
+    line solid
+    head normal
+  }
+  relationship connects {
+    color gray
+    line dashed
+    head none
+    // A marker at the source: an edge with no arrowhead at either end is laid
+    // out unconstrained, and enough of them flatten a view into one band.
+    tail odot
+  }
 }
 
 model {
