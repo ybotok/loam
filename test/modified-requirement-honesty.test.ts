@@ -394,6 +394,39 @@ describe("a living flow whose #req- tag claims a requirement the feature REMOVES
     const after = await runLoam(p.workDir, "validate", "--all", "--json");
     expect(unresolved(after.stdout), after.out).toEqual([]);
   });
+
+  it("is not kept resolving by the other document's REMOVED heading, which neither the fleet nor the archive reads as a promise", async () => {
+    const p = await project({
+      ...SERVICE_FLOW_FILES,
+      "services/payment-service/arch.spec.md": `---\nservice: payment-service\n---\n\n# payment-service — architecture\n\n## REMOVED Requirements\n\n### Requirement: Authorize\nRequirement-ID: PAY-AUTH\n`,
+      [`${FEAT_DIR}/specs/payment-service/spec.md`]: removal("payment-service", SERVICE_SPEC, "Authorize", "PAY-AUTH"),
+    });
+    const before = await runLoam(p.workDir, "validate", "--feature", FEAT, "--json");
+    expect(unresolved(before.stdout), before.out).toEqual([["error", "uc_authorize"]]);
+    await runLoam(p.workDir, "archive", FEAT, "--approve", "--json");
+    const after = await runLoam(p.workDir, "validate", "--all", "--json");
+    expect(unresolved(after.stdout), after.out).toEqual([["error", "uc_authorize"]]);
+  });
+});
+
+describe("a living flow whose #req- tag a MODIFIED feature leaves ambiguous", () => {
+  it("is the error, not the warning, when an id the feature adds flattens to the same tag", async () => {
+    const delta = `# payment-service — delta for ${FEAT}\n\n## MODIFIED Requirements\n\n### Requirement: Authorize\nRequirement-ID: PAY-AUTH\nThe service SHALL authorize through the wallet.\n\n#### Scenario: Authorized\n- **Given** a card\n- **When** it is authorized\n- **Then** the wallet records it\n\n## ADDED Requirements\n\n### Requirement: Authorize offline\nRequirement-ID: PAY.AUTH\nThe service SHALL authorize offline.\n\n#### Scenario: Offline\n- **Given** no network\n- **When** a card is presented\n- **Then** it is authorized offline\n`;
+    const p = await project({ ...SERVICE_FLOW_FILES, [`${FEAT_DIR}/specs/payment-service/spec.md`]: delta });
+    const before = await runLoam(p.workDir, "validate", "--feature", FEAT, "--json");
+    // "The tag will still resolve after the archive" would be false here.
+    expect(findings(before.stdout, "usecase.requirement-modified"), before.out).toEqual([]);
+    const found = findings(before.stdout, "usecase.requirement-unresolved");
+    expect(found.map((f) => [f.severity, f.subject])).toEqual([["error", "uc_authorize"]]);
+    expect(found[0]!.message).toContain("payment-service's requirement PAY-AUTH, which this feature MODIFIES");
+    expect(found[0]!.message).toContain("2 requirements will flatten to 'PAY-AUTH'");
+
+    await runLoam(p.workDir, "archive", FEAT, "--approve", "--json");
+    const after = await runLoam(p.workDir, "validate", "--all", "--json");
+    expect(findings(after.stdout, "usecase.requirement-unresolved").map((f) => [f.severity, f.subject]), after.out).toEqual([
+      ["error", "uc_authorize"],
+    ]);
+  });
 });
 
 describe("droppedBy", () => {

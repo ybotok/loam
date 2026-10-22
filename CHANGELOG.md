@@ -23,14 +23,23 @@ the rule.
   `architecture/` flow scoped by its `#cap-` tag to a capability requirement the feature's capability
   delta removes, and a flow beside a service's model naming one of that service's requirements the
   feature's `specs/` delta removes. The message names the living flow file and the requirement, and
-  the subject is the view, as `validate --all` names it. It is an error and **it gates the archive,
-  which can turn a feature that archived before into a refusal**. `--approve` overrides it. The tag
-  is graded against what the merge leaves: a removal the same delta re-adds, or re-spells under an id
-  that flattens to the same tag, raises nothing, and a tag that does not resolve today is left to
-  `validate --all`, which already reports it.
-- **A service-local `#req-` tag is read against both of the service's documents in this walk.** When
-  the feature carried a delta for only one of spec.md and arch.spec.md, the other was not read, so an
-  id it declared did not count. It now does, for `usecase.requirement-modified` as well.
+  the subject is the view, as `validate --all` names it. `--approve` overrides it. The tag is graded
+  against what the merge leaves: a removal the same delta re-spells under an id that flattens to the
+  same tag raises nothing, and a tag that does not resolve today is left to `validate --all`, which
+  already reports it. **Exit code:** `loam validate --feature`, `validate --all` (per active feature)
+  and `loam archive` (`not-coherent`) now exit 1 for such a feature where they exited 0, and
+  `loam status` no longer calls it ready.
+- **A MODIFIED that leaves a living flow's tag ambiguous is the same error, not the warning.** A
+  feature that MODIFIES a requirement a living flow claims and ADDS an id that flattens to the same
+  tag (`PAY-AUTH` beside `PAY.AUTH`) got only `usecase.requirement-modified`, whose message said the
+  tag would still resolve; after the archive `validate --all` reported `usecase.requirement-unresolved`.
+  It now gets that error, naming the colliding ids, with the same exit codes as above.
+- **A service-local `#req-` tag is read against both of the service's documents in this walk, as the
+  fleet reads it.** When the feature carried a delta for only one of spec.md and arch.spec.md, the
+  other was not read, so an id it declared did not count; and a requirement under a living document's
+  `## REMOVED Requirements` heading counted, though the fleet skips it. Both now match
+  `validate --all`. For `usecase.requirement-modified` this can only remove a warning, from a tag the
+  two documents already make ambiguous.
 
 ### Fixed — which way an edge points no longer decides a grade in silence
 

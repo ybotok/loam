@@ -109,7 +109,8 @@ export const USECASE_VIEWS = `- Business use cases are \`dynamic view\`s, and \`
   \`usecase.requirement-unresolved\` (error, gates, \`--approve\`-overridable) in
   the same places, naming the living flow: the tag will resolve to nothing, and
   \`validate --all\` would report exactly that after the archive. Drop the tag in
-  the same change, or MODIFY the requirement instead.
+  the same change, or MODIFY the requirement instead. A MODIFIED gets the same
+  error, not the warning, when an id the feature adds flattens to that tag.
 - A FEATURE brings a flow the way it brings every other axis: write it at
   \`features/<FEAT>/usecases/<name>.likec4\` — the same views-only document, in the
   feature's own directory — and \`loam archive\` copies it into

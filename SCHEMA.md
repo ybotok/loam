@@ -2594,10 +2594,14 @@ reports `usecase.requirement-unresolved` against the living flow. The same walk,
 altitudes and scopes, now raises that code at feature scope — **error**, gating the archive, with the
 view as its subject exactly as the fleet names it, and a message naming the living flow file and the
 requirement the feature removes. It is graded against what the merge leaves, not against the REMOVED
-list: a removal the same delta re-adds, or re-spells under an id that flattens to the same tag, keeps
-the tag resolving and earns nothing; and a service-local tag reads BOTH of that service's documents,
-so an id the document the feature leaves alone still declares keeps it resolving too. Only a tag that
-resolves today is asked about — one already broken is `validate --all`'s finding now. `--approve`
+list: a removal the same delta re-spells under an id that flattens to the same tag keeps the tag
+resolving and earns nothing; and a service-local tag reads BOTH of that service's documents, skipping
+a requirement under a `## REMOVED Requirements` heading as `validate --all` does, so an id the
+document the feature leaves alone still declares keeps it resolving too. The same verdict is asked of
+a MODIFIED: it keeps its id, but an id the feature adds beside it can flatten to the same tag, and
+then the flow earns this error (naming the colliding ids) instead of `usecase.requirement-modified`,
+whose "the tag will still resolve" would be false. Only a tag that resolves today is asked about —
+one already broken is `validate --all`'s finding now. `--approve`
 may override it, as it overrides `capability.remove-requirement-realized` for the same retirement
 seen through a `Realizes:` line: whether to retire a promise something still claims is the author's
 call, and the living docs then carry exactly the error named. The fix inside the feature is to drop

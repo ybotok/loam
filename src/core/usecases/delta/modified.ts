@@ -33,11 +33,14 @@
  *
  * GRADED AGAINST WHAT THE MERGE LEAVES, not against the REMOVED list. Each
  * document's after-side is the merge's own fold (`applyRequirementDelta`), so a
- * removal the same delta re-adds — or re-spells under an id that flattens to the
- * same tag — leaves the tag resolving and earns nothing, exactly as the fleet
- * will grade it. And only a claim that resolves TODAY is asked about: one that
- * is already broken is `validate --all`'s finding now, and reporting it again
- * here would be one mistake counted twice.
+ * removal the same delta re-spells under an id that flattens to the same tag
+ * leaves the tag resolving and earns nothing, exactly as the fleet will grade
+ * it. The same verdict is asked of a MODIFIED: it keeps its id, but
+ * an id this feature adds beside it may flatten to the same tag, and then the
+ * merge breaks the tag too — the error, not the warning, whose "the tag will
+ * still resolve" would be false. And only a claim that resolves TODAY is asked
+ * about: one that is already broken is `validate --all`'s finding now, and
+ * reporting it again here would be one mistake counted twice.
  *
  * TWO ALTITUDES, TWO SCOPES — the ones `validate --all` resolves the tag with.
  * A flow in `architecture/` keeps a BUSINESS promise: its `#req-` tag is scoped
@@ -178,13 +181,22 @@ export async function changedPromiseFlowIssues(req: ChangedPromiseRequest): Prom
     const after = new Map(resolveRequirementTags(flow.view.tags, flow.scope, (id) => table.merged.get(id)).map((c) => [c.tag, c]));
     for (const claim of resolveRequirementTags(flow.view.tags, flow.scope, (id) => table.living.get(id))) {
       if (claim.kind !== "resolved") continue;
-      if (table.modified.get(claim.capability)?.has(claim.id) === true) issues.push(modifiedIssue(flow, claim));
-      else if (table.removed.get(claim.capability)?.has(claim.id) === true && after.get(claim.tag)?.kind !== "resolved") {
-        issues.push(removedIssue(flow, claim));
-      }
+      const change = changeOf(table, claim);
+      if (change === null) continue;
+      // The merge's verdict first, for either change: a MODIFIED keeps its id,
+      // but an id this feature adds beside it can flatten to the same tag, and
+      // then the warning's "the tag will still resolve" would be false.
+      const later = after.get(claim.tag);
+      if (later !== undefined && later.kind !== "resolved") issues.push(brokenIssue(flow, claim, { change, later }));
+      else if (change === "MODIFIES") issues.push(modifiedIssue(flow, claim));
     }
   }
   return issues;
+}
+
+function changeOf(table: Table, claim: Resolved): "MODIFIES" | "REMOVES" | null {
+  if (table.modified.get(claim.capability)?.has(claim.id) === true) return "MODIFIES";
+  return table.removed.get(claim.capability)?.has(claim.id) === true ? "REMOVES" : null;
 }
 
 function whose(flow: LivingFlow, claim: Resolved): string {
@@ -204,7 +216,28 @@ function modifiedIssue(flow: LivingFlow, claim: Resolved): Issue {
   };
 }
 
-function removedIssue(flow: LivingFlow, claim: Resolved): Issue {
+/**
+ * The tag the merge breaks. Two ways, and each has its own fix: a removal
+ * leaves nothing the tag names, and an id this feature adds can flatten to the
+ * same tag as the one it claims — the only way a MODIFIED, which keeps its id,
+ * can break it at all.
+ */
+function brokenIssue(
+  flow: LivingFlow,
+  claim: Resolved,
+  broken: { change: "MODIFIES" | "REMOVES"; later: Exclude<RequirementClaim, { kind: "resolved" }> },
+): Issue {
+  const { change, later } = broken;
+  const [why, fix] =
+    later.kind === "many"
+      ? [
+          `${later.ids.length} requirements will flatten to '${later.slug}' (${later.ids.join(", ")}), so nothing in the tag can say which promise the flow keeps`,
+          "rename one of the colliding ids in this change",
+        ]
+      : [
+          "nothing it names is left",
+          "drop the tag (or point it at the promise that replaces this one) in this change, or MODIFY the requirement instead of removing it",
+        ];
   return {
     severity: "error",
     code: "usecase.requirement-unresolved",
@@ -212,10 +245,9 @@ function removedIssue(flow: LivingFlow, claim: Resolved): Issue {
     // prediction and the outcome are about one thing a reader opens.
     subject: flow.view.id,
     message:
-      `${flow.file}: flow '${flow.view.id}' is tagged #${claim.tag} — it claims ${whose(flow, claim)}, which this feature REMOVES. ` +
-      `After the archive the tag no longer resolves, and \`loam validate --all\` reports this flow with this same error: ` +
-      `drop the tag (or point it at the promise that replaces this one) in this change, or MODIFY the requirement ` +
-      `instead of removing it.`,
+      `${flow.file}: flow '${flow.view.id}' is tagged #${claim.tag} — it claims ${whose(flow, claim)}, which this feature ${change}. ` +
+      `After the archive the tag no longer resolves — ${why} — and \`loam validate --all\` reports this flow with this ` +
+      `same error: ${fix}.`,
     locations: [{ path: flow.file, role: "primary" }],
   };
 }
@@ -228,17 +260,23 @@ function removedIssue(flow: LivingFlow, claim: Resolved): Issue {
  * merge would refuse keeps its living ids on both sides and changes nothing:
  * the delta gate reports it, and nothing here has a true thing to say about a
  * merge that cannot happen.
+ *
+ * TODAY'S side leaves out a living requirement sitting under a REMOVED heading,
+ * as both fleet indexes do (`capabilityRequirementIndex`, `requirementIdsOf`):
+ * a tag resolving only through one is already the fleet's error. The fold
+ * still runs on the whole living list, because that is the archive's input.
  */
 function tableOf(docs: readonly DeltaPair[]): Table {
   const table: Table = { living: new Map(), merged: new Map(), modified: new Map(), removed: new Map() };
   for (const doc of docs) {
+    const living = doc.living.filter((r) => r.kind !== "REMOVED");
     let fold: { replaced: Replacement[]; merged: readonly Requirement[] };
     try {
       fold = { replaced: replacementsOf([...doc.living], [...doc.reqs]), merged: applyRequirementDelta([...doc.living], [...doc.reqs]) };
     } catch {
-      fold = { replaced: [], merged: doc.living };
+      fold = { replaced: [], merged: living };
     }
-    idsInto(table.living, doc.id, doc.living);
+    idsInto(table.living, doc.id, living);
     idsInto(table.merged, doc.id, fold.merged);
     for (const r of fold.replaced) {
       if (r.living.id === undefined || (r.kind !== "MODIFIED" && r.kind !== "REMOVED")) continue;
@@ -270,12 +308,17 @@ function changedIds(table: Table): Map<string, Set<string>> {
  * something — every document of it the feature carries no delta for, as it
  * stands (`reqs: []`, so it changes nothing and only widens both sides).
  * `requirementIdsOf` (`commands/validate/service/usecases/usecases.ts`) reads
- * both documents for a service-local tag; so must this, or a tag the untouched
- * document keeps resolving reads as broken.
+ * both documents for a service-local tag, skipping a requirement under a
+ * REMOVED heading; so must this, or a tag the untouched document keeps
+ * resolving reads as broken — and one only a REMOVED entry there answers reads
+ * as kept, though the archive leaves that document as it is.
  */
 async function withUntouchedAxes(req: ChangedPromiseRequest): Promise<DeltaPair[]> {
   const out: DeltaPair[] = [...req.services];
   const asked = new Set<string>();
+  // Sequential, and it costs nothing worth racing: a feature names a handful of
+  // services, each read is one memoised document, and most services here
+  // already have both axes in the feature or no second document at all.
   for (const pair of req.services) {
     const own = req.services.filter((p) => p.id === pair.id);
     if (asked.has(pair.id) || !own.some((p) => p.reqs.some((r) => r.kind === "MODIFIED" || r.kind === "REMOVED"))) continue;
@@ -283,7 +326,8 @@ async function withUntouchedAxes(req: ChangedPromiseRequest): Promise<DeltaPair[
     const paths = await pair.paths();
     for (const axis of SPEC_AXES) {
       if (own.some((p) => p.axis === axis.key) || !existsSync(paths[axis.key])) continue;
-      out.push({ id: pair.id, reqs: [], living: await req.readRequirements(paths[axis.key]) });
+      const living = (await req.readRequirements(paths[axis.key])).filter((r) => r.kind !== "REMOVED");
+      out.push({ id: pair.id, reqs: [], living });
     }
   }
   return out;

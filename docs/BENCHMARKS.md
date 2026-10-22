@@ -124,19 +124,19 @@ loam `0.2.0-alpha.10` · fleet `examples/docs` · service `payment-service` · b
 | adopt brief, per-service part | `loam adopt --service payment-service --json --targets` | 25,201 | ~6,300 |
 | an adopt session before it reads code | the `loam-adopt` page + the full brief | 78,846 | ~19,712 |
 | one code, median of 360 | `loam explain <code> --json` | 605 | ~151 |
-| one code, smallest / largest | `loam explain <code> --json` | 272 / 3,500 | ~68 / ~875 |
-| the whole code vocabulary | `loam explain --codes --json` | 251,108 | ~62,777 |
+| one code, smallest / largest | `loam explain <code> --json` | 272 / 3,640 | ~68 / ~910 |
+| the whole code vocabulary | `loam explain --codes --json` | 251,248 | ~62,812 |
 
 | page | invocation | bytes | ~tokens | with `--no-fix-tables` |
 |---|---|---|---|---|
 | `loam-adopt` | `loam instructions loam-adopt payment-service` | 18,364 | ~4,591 | same bytes |
 | `loam-feature` | `loam instructions loam-feature FEAT-101 "Split payments"` | 11,568 | ~2,892 | same bytes |
 | `loam-implement` | `loam instructions loam-implement FEAT-101 payment-service` | 11,149 | ~2,787 | same bytes |
-| `loam-check` | `loam instructions loam-check FEAT-101` | 133,124 | ~33,281 | 3,542 (~886) |
+| `loam-check` | `loam instructions loam-check FEAT-101` | 133,264 | ~33,316 | 3,542 (~886) |
 | `loam-verify` | `loam instructions loam-verify FEAT-101` | 13,594 | ~3,399 | 9,771 (~2,443) |
 | `loam-ship` | `loam instructions loam-ship FEAT-101` | 8,288 | ~2,072 | same bytes |
 | `loam-report` | `loam instructions loam-report` | 7,359 | ~1,840 | same bytes |
-| `loam-codes` | `loam instructions loam-codes` | 63,296 | ~15,824 | same bytes |
+| `loam-codes` | `loam instructions loam-codes` | 63,397 | ~15,849 | same bytes |
 | `loam-spine` | `loam instructions loam-spine` | 18,647 | ~4,662 | same bytes |
 | `loam-authoring` | `loam instructions loam-authoring` | 12,198 | ~3,050 | same bytes |
 | `loam-done-check` | `loam instructions loam-done-check` | 12,882 | ~3,221 | same bytes |
