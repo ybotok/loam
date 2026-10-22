@@ -35,7 +35,8 @@ import {
 } from "./helpers/harness.js";
 import { SERVICE_DESCRIPTION_SENTINEL } from "../src/core/coherence/authoring/sentinels.js";
 import { docsRepoFiles } from "../src/core/docs.js";
-import { isLandscapeStub, LEGACY_LANDSCAPE_STUBS } from "../src/core/scaffold/landscape.js";
+import { isLandscapeStub } from "../src/core/scaffold/landscape.js";
+import { LEGACY_LANDSCAPE_STUBS } from "../src/core/scaffold/legacy.js";
 import { COMMIT_INTENT } from "../src/core/staging/interrupted.js";
 import { ARTIFACT_STATUSES } from "../src/core/status/report.js";
 import { FLEET_NEXT_LIMIT } from "../src/core/status/fleet/next.js";
