@@ -577,31 +577,48 @@ describe("Covers: spelled in the delta's own ids", () => {
 /* ------------------------------------------------------------------ */
 
 describe("archive --dry-run says what the real run says in place of its closing line", () => {
-  it("prints the plan's service.no-model in text, as --json and the real run do — and never claims the docs complete", async () => {
+  /**
+   * FEAT-101, plus a service it puts on the map ALONE — a binding with no
+   * `specs/<svc>/`, so no directory and no model. Since the archive writes the
+   * model of every service whose directory it creates, that is the shape that
+   * still owes `service.no-model` (payment-split-service no longer does).
+   */
+  async function withMapOnlyService(): Promise<Fleet> {
     const f = await exampleFleet(["FEAT-101-payment-splitting"]);
+    const rel = "features/FEAT-101-payment-splitting/delta.likec4";
+    const anchor = "  marketplace = group 'Marketplace' {\n";
+    const text = f.read(rel).replace(/\r\n/g, "\n");
+    expect(text).toContain(anchor);
+    const mapOnly = "    fraudCheck = softwareSystem 'fraud-check' {\n      #FEAT-101\n      metadata {\n        service 'fraud-check'\n      }\n    }\n";
+    f.write(rel, text.replace(anchor, anchor + mapOnly));
+    return f;
+  }
+
+  it("prints the plan's service.no-model in text, as --json and the real run do — and never claims the docs complete", async () => {
+    const f = await withMapOnlyService();
     const dry = await runLoam(f.dir, "archive", "FEAT-101", "--dry-run");
     expect(dry.code).toBe(0);
-    const owed = dry.stdout.indexOf("⚠ payment-split-service: this archive creates services/payment-split-service/");
+    const owed = dry.stdout.indexOf("⚠ fraud-check: this archive puts 'fraud-check' in the landscape");
     expect(owed).toBeGreaterThan(dry.stdout.indexOf("plan — "));
     expect(owed).toBeLessThan(dry.stdout.indexOf("dry run — nothing was written."));
     expect(dry.stdout).not.toContain("complete + current");
 
     const real = await runLoam(f.dir, "archive", "FEAT-101");
     expect(real.code).toBe(0);
-    expect(real.stdout).toContain("⚠ payment-split-service: this archive creates services/payment-split-service/");
+    expect(real.stdout).toContain("⚠ fraud-check: this archive puts 'fraud-check' in the landscape");
     expect(real.stdout).not.toContain("complete + current");
   });
 
-  it("files service.no-model at the severity validate gives the same directory, without gating the merge", async () => {
-    const f = await exampleFleet(["FEAT-101-payment-splitting"]);
+  it("files service.no-model at the severity validate gives the same fact, without gating the merge", async () => {
+    const f = await withMapOnlyService();
     const dry = await runLoam(f.dir, "archive", "FEAT-101", "--dry-run", "--json");
     const warnings = (JSON.parse(dry.stdout) as { warnings: Finding[] }).warnings;
-    expect(ofCode(warnings, "service.no-model")).toMatchObject([
-      { severity: "error", gates: false, subject: "payment-split-service" },
-    ]);
+    expect(ofCode(warnings, "service.no-model")).toMatchObject([{ severity: "error", gates: false, subject: "fraud-check" }]);
 
     expect((await runLoam(f.dir, "archive", "FEAT-101")).code).toBe(0);
-    const after = ofCode(await findingsOf(f.dir, "--all"), "service.no-model");
-    expect(after.map((x) => x.severity)).toEqual(["error"]);
+    // A binding with no directory behind it: the fleet map's code, at the same severity.
+    const after = await findingsOf(f.dir, "--all");
+    expect(ofCode(after, "landscape.binding-unknown").map((x) => x.severity)).toEqual(["error"]);
+    expect(ofCode(after, "service.no-model")).toEqual([]);
   });
 });

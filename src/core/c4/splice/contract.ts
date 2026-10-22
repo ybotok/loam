@@ -1,4 +1,5 @@
 import type { Elem, Rel } from "../likec4.js";
+import type { ScanKinds, ScannedModel } from "../source-scan.js";
 
 /**
  * A landscape merge the splicer could not compute. Every one is mechanical —
@@ -8,6 +9,28 @@ import type { Elem, Rel } from "../likec4.js";
  * the splicer itself never names a CLI code.
  */
 export class LandscapeSpliceError extends Error {}
+
+/**
+ * Refuse a splice the splice map cannot see once it has landed — the document
+ * scanned the same number of statements after the insert as before it.
+ *
+ * Every insert adds at least one declaration or edge, so an unchanged count
+ * means the bytes went somewhere the scan reads as nothing: inside a comment or
+ * a string. LikeC4 reads it the same way, so the parse net passes a document
+ * that simply lacks the addition, and the archive printed "+1 relationship(s)"
+ * over an edge that was never there (review, 2026-10-22, on a block comment
+ * whose last line starts with `//`). Placement is meant never to do this; this
+ * is what turns a placement bug into `merge-failed` instead of silent loss.
+ */
+export function assertSpliceVisible(before: ScannedModel | null, after: ScannedModel | null, what: string): void {
+  const count = (s: ScannedModel | null): number => (s === null ? 0 : s.elements.length + s.rels.length);
+  if (count(after) > count(before)) return;
+  throw new LandscapeSpliceError(
+    `placing '${what}' would land it where neither the splice map nor LikeC4 reads it — inside a comment or a string — ` +
+      `so the merge would lose it while reporting it merged; nothing was written. Move the comment it would land in, ` +
+      `then re-run, and report the shape`,
+  );
+}
 
 /**
  * A service whose `model.likec4` EXTENDS the fleet map — the document that owns
@@ -32,7 +55,21 @@ export interface ModelAdditions {
   model: ExtendingModel;
   els: Elem[];
   rels: Rel[];
+  /**
+   * The kinds the model borrows from the map it extends, read off the landscape
+   * this merge spliced: a model declares none of its own, and its scan cannot
+   * see a `kind name` declaration or an `a .kind b` edge without them.
+   */
+  borrowed: ScanKinds;
 }
+
+/**
+ * The tags each relationship kind of the DELTA gives every edge of that kind —
+ * its `specification.relationshipKindTags`. The parsed additions carry them and
+ * the delta's statements do not, so the splice needs the table to match one to
+ * the other (`./identity/edges.ts`, `scannedStatementKey`).
+ */
+export type KindTags = Readonly<Record<string, readonly string[]>>;
 
 export interface LandscapePlan {
   /** The merged landscape source, or null when everything was already there. */
@@ -66,6 +103,8 @@ export interface LandscapeMergeRequest {
   /** The delta's relationships tagged with the feature. */
   newRels: Rel[];
   featureId: string;
+  /** The delta's relationship kinds' tags. Omitted reads as a delta whose kinds carry none. */
+  deltaKindTags?: KindTags;
   /**
    * The fleet's extending models. Omitted (or empty) is the pre-extending
    * behaviour byte for byte: every addition lands on the map.

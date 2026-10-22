@@ -2,7 +2,7 @@ import { type Elem } from "../likec4.js";
 import { elementService, serviceOf } from "../resolve/service.js";
 import type { ScannedBlock, ScannedModel } from "../source-scan.js";
 import { relSortKey } from "./identity/edges.js";
-import { closeSpot, lineStartAt, spotAfter, type Spot } from "./text/spot.js";
+import { aboveComments, closeSpot, lineStartAt, spotAfter, type Spot } from "./text/spot.js";
 
 /* ------------------------------------------------------------------ */
 /* Landscape placement — where a top-level addition lands               */
@@ -35,6 +35,17 @@ import { closeSpot, lineStartAt, spotAfter, type Spot } from "./text/spot.js";
  *    statement must order by key, not by which archived first. With no such
  *    neighborhood it falls to the trailing region, cluster-head-key-sorted
  *    the same insertion-sort way, after the trailing elements.
+ *  - The relationship walk sorts only within the region's ASCENDING TAIL — the
+ *    run loam's own insertions keep sorted — and stops where the existing order
+ *    descends (`relSpot` has the case and the order-independence argument). A
+ *    hand-written region is sorted by nobody, so walking into it made the spot
+ *    depend on how unrelated edges happened to be drawn. The element walk is
+ *    left unbounded: the map's top-level elements are few, a new service among
+ *    them misfiles nothing, and its bytes are pinned as they always were.
+ *  - A walk that stops BEFORE a statement, or at the closing brace, lands above
+ *    the comment written directly over it (`aboveComments` in `./text/spot.ts`):
+ *    a comment is about what follows it, and an addition between the two
+ *    misfiles under it.
  *
  * A landscape may hold SEVERAL top-level `model { }` blocks, and LikeC4 reads
  * them as one model. Placement keeps every rule above and adds one: an
@@ -231,6 +242,25 @@ function relClusterHeads(stmts: TopStmt[]): number[] {
   return heads;
 }
 
+/**
+ * Where a relationship lands: after its source's neighborhood, or — with none —
+ * in the trailing region, insertion-sorted among the cluster heads.
+ *
+ * The trailing walk sorts only within the region's ASCENDING TAIL: it steps left
+ * past a cluster whose head sorts above the new key only while that head also
+ * sorts at or below the head of the cluster after it. The insertions loam makes
+ * keep that tail sorted, so on a region loam wrote the walk is the plain
+ * insertion sort it always was; a hand-written region is sorted by nobody, and
+ * walking into it made the landing spot a function of unrelated edges — an edge
+ * drawn `svc -> kafka` let a new edge walk past it, the same edge turned round
+ * (`kafka -[delivers]-> svc`, a head that sorts lower) stopped the walk, and the
+ * addition landed sixty lines away under a comment about something else
+ * (2026-10). Order-independence survives the bound: the statements before the
+ * tail never change, because an addition sorting below the tail's first head
+ * becomes its new first head, and that still sorts below the statement the tail
+ * broke from — so every archive inserts into the same sorted run, whatever
+ * order they land in.
+ */
 export function relSpot(region: ModelRegion, sourceService: string, key: string): Spot {
   const anchored = anchoredRelSpot(region, sourceService, key);
   if (anchored !== null) return anchored;
@@ -243,6 +273,7 @@ export function relSpot(region: ModelRegion, sourceService: string, key: string)
   while (i >= 0 && stmts[i]!.kind === "rel") {
     const j = heads[i]!;
     if (!(stmts[j]!.key > key)) break;
+    if (before !== undefined && stmts[j]!.key > before.key) break;
     before = stmts[j];
     i = j - 1;
   }
@@ -276,14 +307,20 @@ function anchoredRelSpot(region: ModelRegion, sourceService: string, key: string
 }
 
 /**
- * Insertion before an existing statement: at the start of its line when only
- * whitespace precedes it there, at the statement itself — bare, displacing it
- * onto a fresh line — when other text shares the line (a statement written on
- * the `model {` line, say). The unguarded line start spliced the block BEFORE
- * the model keyword, and the parse net refused a perfectly legal landscape.
+ * Insertion before an existing statement: above the comment written directly
+ * over it when only whitespace precedes it on its line, at the statement itself
+ * — bare, displacing it onto a fresh line — when other text shares the line (a
+ * statement written on the `model {` line, say). The unguarded line start
+ * spliced the block BEFORE the model keyword, and the parse net refused a
+ * perfectly legal landscape.
+ *
+ * Above the comment, because a comment written over a statement is about that
+ * statement, or heads the section it opens: inserted at the statement's own
+ * line, an addition landed between a six-line explanation and the edge it
+ * explains (2026-10). `aboveComments` says which lines count.
  */
 function beforeSpot(text: string, before: TopStmt): Spot {
   const ls = lineStartAt(text, before.start);
-  if (/^[ \t]*$/.test(text.slice(ls, before.start))) return { at: ls, bare: false };
+  if (/^[ \t]*$/.test(text.slice(ls, before.start))) return { at: aboveComments(text, ls), bare: false };
   return { at: before.start, bare: true };
 }

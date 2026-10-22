@@ -55,11 +55,55 @@ export function spotAfter(text: string, close: number, end: number): Spot {
   return at > close ? closeSpot(text, close) : { at, bare: false };
 }
 
-/** The last resort: directly before the model's closing brace. */
+/**
+ * The last resort: directly before the model's closing brace — above a comment
+ * written directly over the brace, for the reason `aboveComments` gives.
+ */
 export function closeSpot(text: string, close: number): Spot {
   const ls = lineStartAt(text, close);
-  if (/^[ \t]*$/.test(text.slice(ls, close))) return { at: ls, bare: false };
+  if (/^[ \t]*$/.test(text.slice(ls, close))) return { at: aboveComments(text, ls), bare: false };
   return { at: close, bare: true };
+}
+
+/**
+ * The start of the run of comment lines written directly above the line that
+ * starts at `at` — `at` itself when there is none. A blank line ends the run: a
+ * comment separated from what follows it by a blank line stands alone, and
+ * stays where it is. So does a line that is not comment from its first
+ * character to `at` — code, the `model {` line — and a line that starts INSIDE
+ * a block comment or a string opened above it, whatever it looks like: the last
+ * line of `/* retired … // old edge *\/` reads as a line comment on its own,
+ * and splicing at its start put the addition inside the block comment, where
+ * the map parsed clean and the edge was gone at exit 0 (review, 2026-10-22).
+ * Which lines are inside what is read off one pass over the whole text, never
+ * off the line.
+ *
+ * Every walk in `../placement.ts` that stops before a statement or at the
+ * closing brace lands here, and the rule has to be the same at both for
+ * placement to stay order-independent: each splits the lines between two
+ * statements at the same point, so an addition landing there first and one
+ * landing beside it second compose to the bytes the opposite order writes.
+ */
+export function aboveComments(text: string, at: number): number {
+  const { comments, literals } = maskSource(text);
+  const inside = (p: number): boolean => [...comments, ...literals].some((s) => s.start < p && p < s.end);
+  let top = at;
+  while (top > 0) {
+    const above = lineStartAt(text, top - 1);
+    if (text.slice(above, top).trim() === "" || inside(above) || !onlyComments(text.slice(above, at))) break;
+    top = above;
+  }
+  return top;
+}
+
+/** Whether `text` holds nothing but whitespace and complete comments. */
+function onlyComments(text: string): boolean {
+  let rest = pastComments(text);
+  while (rest.startsWith("//")) {
+    const eol = rest.search(/[\r\n]/);
+    rest = eol === -1 ? "" : pastComments(rest.slice(eol));
+  }
+  return rest === "";
 }
 
 export function lineStartAt(text: string, at: number): number {

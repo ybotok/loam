@@ -522,10 +522,12 @@ model {
   loam.core.brief -> loam.core.repo
   loam.core.brief -> loam.core.vocabulary
 
-  // For `repoPath` alone, and from one leaf: `c4/service-model/fleet/` spells an
-  // extending model's path the way the merge's messages and writes spell it, and
-  // a second copy of that one line is how two spellings of a repo-relative path
-  // start disagreeing. The envelope's OUTPUT half is not reached from here.
+  // For `repoPath` alone, and from two leaves: `c4/service-model/fleet/` and
+  // `c4/service-model/created/` spell an extending model's path — a living one,
+  // and the one the archive creates for a new service — the way the merge's
+  // messages and writes spell it, and a second copy of that one line is how two
+  // spellings of a repo-relative path start disagreeing. The envelope's OUTPUT
+  // half is not reached from here.
   loam.core.c4 -> loam.core.envelope
   loam.core.c4 -> loam.core.kernel
   loam.core.c4 -> loam.core.repo

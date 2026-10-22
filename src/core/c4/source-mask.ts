@@ -32,14 +32,18 @@ export interface SourceLiteral extends SourceSpan {
  *
  * A blank is not nothing, which is why the literals and the URIs are listed
  * beside it: both are TOKENS the grammar reads, and a reader that only sees the
- * spaces reads `description 'x'` as the word `description` alone. Comments are
- * listed nowhere, because to the grammar they are exactly the blank they become.
+ * spaces reads `description 'x'` as the word `description` alone. To the
+ * grammar a comment is exactly the blank it becomes; the comments are listed
+ * for the splice, which must never put a byte inside one, and cannot tell from
+ * a blank line alone whether it is inside a block comment.
  */
 export interface MaskedSource {
   code: string;
   literals: SourceLiteral[];
   /** Every URI token (`uriEnd`), in document order. */
   uris: SourceSpan[];
+  /** Every comment, `//` or `/* … *\/`, in document order — an unclosed one runs to the end. */
+  comments: SourceSpan[];
 }
 
 /**
@@ -92,6 +96,7 @@ export function maskSource(text: string): MaskedSource {
   const out = text.split("");
   const literals: SourceLiteral[] = [];
   const uris: SourceSpan[] = [];
+  const comments: SourceSpan[] = [];
   type State = "code" | "squote" | "dquote" | "markdown" | "lineComment" | "blockComment";
   let state: State = "code";
   let litStart = -1;
@@ -121,11 +126,9 @@ export function maskSource(text: string): MaskedSource {
           litStart = i;
           lit = "";
           out[i] = " ";
-        } else if (ch === "/" && next === "/") {
-          state = "lineComment";
-          out[i] = " ";
-        } else if (ch === "/" && next === "*") {
-          state = "blockComment";
+        } else if (ch === "/" && (next === "/" || next === "*")) {
+          state = next === "/" ? "lineComment" : "blockComment";
+          litStart = i;
           out[i] = " ";
         }
         break;
@@ -162,11 +165,14 @@ export function maskSource(text: string): MaskedSource {
         // the `\n`, `a -> b // why` with a bare `\r` before the next edge hid
         // that edge — `validate --all --base` never graded its op, and archive
         // refused the map on a relationship count.
-        if (ch === "\n" || ch === "\r") state = "code";
-        else out[i] = " ";
+        if (ch === "\n" || ch === "\r") {
+          comments.push({ start: litStart, end: i });
+          state = "code";
+        } else out[i] = " ";
         break;
       case "blockComment":
         if (ch === "*" && next === "/") {
+          comments.push({ start: litStart, end: i + 2 });
           state = "code";
           out[i] = " ";
           out[i + 1] = " ";
@@ -177,7 +183,8 @@ export function maskSource(text: string): MaskedSource {
         break;
     }
   }
-  return { code: out.join(""), literals, uris };
+  if (state === "lineComment" || state === "blockComment") comments.push({ start: litStart, end: text.length });
+  return { code: out.join(""), literals, uris, comments };
 }
 
 /** Index of the `}` matching the `{` at `open`, over MASKED code; -1 when unbalanced. */

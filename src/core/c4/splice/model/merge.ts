@@ -29,10 +29,10 @@
  * holds the merged MAP the model must be proven against.
  */
 import type { Elem } from "../../likec4.js";
-import { scanModel, type ScannedModel, type ScannedRel } from "../../source-scan.js";
+import { scanModel, type ScanKinds, type ScannedModel, type ScannedRel } from "../../source-scan.js";
 import { matchLineEndings, spliceSource } from "../authored-source.js";
-import { LandscapeSpliceError, type ModelAdditions } from "../contract.js";
-import { relStatementKey } from "../identity/edges.js";
+import { assertSpliceVisible, LandscapeSpliceError, type KindTags, type ModelAdditions } from "../contract.js";
+import { relStatementKey, scannedStatementKey } from "../identity/edges.js";
 import { HOME_BLOCK } from "../placement.js";
 import { closeSpot, nestedInsert, spotAfter } from "../text/spot.js";
 
@@ -42,12 +42,14 @@ export interface ModelMergeRequest {
   /** delta.likec4 as authored — the bytes the additions are spliced from. */
   deltaText: string;
   featureId: string;
+  /** The delta's relationship kinds' tags — the landscape merge's own reason (`../identity/edges.ts`). */
+  deltaKindTags?: KindTags;
 }
 
 /** The merged model source. Refuses (never guesses) when the delta or the model cannot be read. */
 export function spliceModel(req: ModelMergeRequest): string {
   const { additions, deltaText, featureId } = req;
-  const { model } = additions;
+  const { model, borrowed } = additions;
   const scan = scanModel(deltaText);
   if (scan === null) {
     throw new LandscapeSpliceError("delta.likec4 has no model block — nothing to splice the additions from");
@@ -55,12 +57,15 @@ export function spliceModel(req: ModelMergeRequest): string {
   const byId = new Map(scan.elements.map((e) => [e.id, e]));
   const pool = new Map<string, ScannedRel[]>();
   for (const s of scan.rels) {
-    const k = relStatementKey(s);
+    const k = scannedStatementKey(s, req.deltaKindTags ?? {});
     pool.set(k, [...(pool.get(k) ?? []), s]);
   }
 
-  let content = withModelBlock(model.text);
-  let live = read(content, model.path);
+  // Read with the map's kinds: the model declares none, and a `container
+  // outbox` frame or an `a .delivers b` edge it cannot see is a parent with
+  // nowhere to nest into, or an anchor the next edge lands above.
+  let content = withModelBlock(model.text, borrowed);
+  let live = read(content, model.path, borrowed);
   // The delta ranges already carried over, so a child whose parent is itself
   // new is recognised as riding inside the parent's text — the same rule the
   // landscape merge states, and the reason `node` inside a new `cache` is never
@@ -68,9 +73,12 @@ export function spliceModel(req: ModelMergeRequest): string {
   const spliced: Array<{ start: number; end: number }> = [];
   const rides = (start: number, end: number): boolean =>
     spliced.some((r) => start >= r.start && end <= r.end);
-  const applyAt = (at: number, insert: string): void => {
+  // Every insert must be one the next scan sees — the landscape merge's backstop.
+  const applyAt = (at: number, insert: string, what: string): void => {
+    const before = live;
     content = content.slice(0, at) + insert + content.slice(at);
-    live = read(content, model.path);
+    live = read(content, model.path, borrowed);
+    assertSpliceVisible(before, live, what);
   };
 
   // Ancestors first, exactly as the landscape merge orders them: a spliced
@@ -93,7 +101,7 @@ export function spliceModel(req: ModelMergeRequest): string {
       block: (indent) => spliceSource(deltaText, src, { featureId, indent }),
       parent: parentIdOf(e),
     });
-    applyAt(at, insert);
+    applyAt(at, insert, e.id);
     spliced.push({ start: src.start, end: src.end });
   }
 
@@ -117,7 +125,7 @@ export function spliceModel(req: ModelMergeRequest): string {
     const anchor = top.at(-1);
     const spot = anchor === undefined ? closeSpot(content, close) : spotAfter(content, close, anchor.end);
     const block = spliceSource(deltaText, s, { featureId, indent: `${base}  ` });
-    applyAt(spot.at, spot.bare ? `\n${block}\n` : `${block}\n`);
+    applyAt(spot.at, spot.bare ? `\n${block}\n` : `${block}\n`, `${r.source} -> ${r.target}`);
   }
   // The delta's newlines are not necessarily this model's, and a merge that left
   // both conventions in one file is noise in every editor and every diff — the
@@ -175,8 +183,8 @@ function elementInsert(req: ElementInsert): [number, string] {
  * the parent gains the `extend` block rather than refusing — and the caller's
  * parse net proves the result either way.
  */
-function withModelBlock(text: string): string {
-  if (scanModel(text) !== null) return text;
+function withModelBlock(text: string, borrowed: ScanKinds): string {
+  if (scanModel(text, borrowed) !== null) return text;
   const pad = text === "" || text.endsWith("\n") ? "" : "\n";
   return `${text}${pad}model {\n}\n`;
 }
@@ -190,8 +198,8 @@ function withModelBlock(text: string): string {
  * splice destroyed the block it was writing into: mechanical, so it refuses at
  * plan time with nothing written, exactly as the parse nets do.
  */
-function read(content: string, path: string): ScannedModel {
-  const scan = scanModel(content);
+function read(content: string, path: string, borrowed: ScanKinds): ScannedModel {
+  const scan = scanModel(content, borrowed);
   if (scan === null) {
     throw new LandscapeSpliceError(
       `merging this feature's additions left ${path} without a model block — nothing was written; re-run after reporting it`,

@@ -27,12 +27,12 @@ specification {
   // CONTAINS services rather than being one.
   element group
   element softwareSystem
-  // Declared here because archive SPLICES a delta's additions verbatim: FEAT-101's
-  // new system carries its `api` container along, and the kind has to be legal in
-  // THIS document for the merged landscape to parse (archive refuses otherwise).
-  // Only a NEW service arrives this way — one that already has an extending model
-  // takes the addition into that model instead, and this file never grows an
-  // interior.
+  // Declared here for the service models, which declare no kinds of their own.
+  // FEAT-101's new system draws an `api` container inside it, and archive
+  // creates services/payment-split-service/model.likec4 with the service and
+  // splices the container in there — never into this file, which holds no
+  // service's interior. That model borrows its kinds from this block, so the
+  // kind has to be legal HERE for it to parse (archive refuses otherwise).
   element container
   // Declared here for the SERVICE MODELS, and nothing in this file uses it.
   // This fleet writes every `database` element inside the service that owns it,
