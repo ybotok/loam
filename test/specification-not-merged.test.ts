@@ -251,6 +251,27 @@ describe("a declaration in another architecture/ document", () => {
       await f.done();
     }
   });
+
+  it("a color to move is quoted as the document holding it spells it, whatever value the delta's copy carries", async () => {
+    const f = await exampleFleet([
+      [`${FEAT}/delta.likec4`, "  tag FEAT-101\n", "  tag FEAT-101\n  color brand #ff0000\n"],
+      [
+        `${FEAT}/delta.likec4`,
+        "      description 'Splits a payment across payees'\n",
+        "      description 'Splits a payment across payees'\n      style {\n        color brand\n      }\n",
+      ],
+    ]);
+    try {
+      await writeFile(join(f.dir, "architecture/palette.likec4"), "specification {\n  color brand #00ff00\n}\n", "utf8");
+      const { findings } = await validateFeature(f.dir);
+      const hit = findings.filter((x) => x.code === CODE);
+      expect(hit, JSON.stringify(findings)).toHaveLength(1);
+      expect(hit[0]!.message).toContain("Move `color brand #00ff00` from architecture/palette.likec4");
+      expect(hit[0]!.message).not.toContain("#ff0000");
+    } finally {
+      await f.done();
+    }
+  });
 });
 
 /** The merge itself: the refusal behind the gate, with the names as data. */

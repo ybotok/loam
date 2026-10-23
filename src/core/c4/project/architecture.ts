@@ -21,6 +21,8 @@
 import { readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import type { LoadedDoc } from "../likec4.js";
+import type { ProjectDocument } from "../splice/vocabulary/undeclared.js";
+import { inOrder } from "../../kernel/concurrency.js";
 import { excludingPath, readRootExclude } from "../root-project/exclude.js";
 import { architectureDocuments } from "./documents.js";
 import { asLoadedDoc, loadProject } from "./load.js";
@@ -114,15 +116,14 @@ export async function architectureProjectDocuments(docsDir: DocsDir): Promise<st
  * read is left out rather than failing the merge: the model's own parse net
  * stages the same file and names it.
  */
-export async function projectDocumentsBesideMap(docsDir: DocsDir): Promise<Array<{ path: string; text: string }>> {
+export async function projectDocumentsBesideMap(docsDir: DocsDir): Promise<ProjectDocument[]> {
   const map = resolve(landscapePath(docsDir));
-  const out: Array<{ path: string; text: string }> = [];
-  for (const path of await architectureProjectDocuments(docsDir)) {
-    if (resolve(path) === map) continue;
+  const others = (await architectureProjectDocuments(docsDir)).filter((path) => resolve(path) !== map);
+  const read = await inOrder(others, async (path): Promise<ProjectDocument | null> => {
     const text = await readFile(path, "utf8").catch(() => null);
-    if (text !== null) out.push({ path: relative(docsDir, path).split(/[\\/]/).join("/"), text });
-  }
-  return out;
+    return text === null ? null : { path: relative(docsDir, path).split(/[\\/]/).join("/"), text };
+  });
+  return read.filter((doc): doc is ProjectDocument => doc !== null);
 }
 
 /**

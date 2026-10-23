@@ -86,8 +86,12 @@ export interface ProjectDocument {
 interface Destination {
   document: string;
   declared: Vocabulary;
-  /** Where else a name is declared, for a document proved alone — undefined where nothing else is read. */
-  elsewhere?: (table: SpecificationTable, name: string) => string | undefined;
+  /**
+   * Where else a name is declared, for a document proved alone — undefined
+   * where nothing else is read — with that document's own line for a color,
+   * whose value is part of what moves.
+   */
+  elsewhere?: (table: SpecificationTable, name: string) => { path: string; declaration?: string } | undefined;
   /** The delta ranges carried into it whole. */
   ranges: readonly SourceRange[];
   /** Delta ranges cut out of those on the way — a split block's children, which go elsewhere. */
@@ -107,11 +111,11 @@ interface UndeclaredRequest {
 /** `tag <name>` at a specification block's own level. A tag starts with a letter or `_`, as a kind does. */
 const TAG_DECLARATION = /\btag\s+([A-Za-z_][\w-]*)/g;
 /** `color <name> <value>` at a specification block's own level — a custom color, value and all. */
-const COLOR_DECLARATION = /\bcolor\s+([A-Za-z_][\w-]*)\s+([^\n]*\S)/g;
+const COLOR_DECLARATION = /\bcolor[ \t]+([A-Za-z_][\w-]*)[ \t]+([^\s(]+(?:\([^)\n]*\))?)/g;
 /** `#name` in model code — a tag reference. Never inside a word, never a second `#`. */
 const TAG_REFERENCE = /(?<![\w#-])#([A-Za-z_][\w-]*)/g;
 /** `color <name>` in model code — inside a `style { }`, or on an edge. */
-const COLOR_REFERENCE = /(?<![\w-])color\s+([A-Za-z_][\w-]*)/g;
+const COLOR_REFERENCE = /(?<![\w-])color[ \t]+([A-Za-z_][\w-]*)/g;
 
 /**
  * Each `specification` block's body as its OWN level reads: nested blocks
@@ -203,8 +207,11 @@ function undeclaredNames(req: UndeclaredRequest): UndeclaredName[] {
       const key = JSON.stringify([dest.document, table, name]);
       if (seen.has(key)) return;
       seen.add(key);
-      const declaration = table === "color" ? delta.colorLines.get(name) : undefined;
-      const declaredIn = dest.elsewhere?.(table, name);
+      // Quoted from the document that holds it when the fix is to move it: a
+      // delta's copy of a color may carry another value than the living one.
+      const other = dest.elsewhere?.(table, name);
+      const declaredIn = other?.path;
+      const declaration = other !== undefined ? other.declaration : table === "color" ? delta.colorLines.get(name) : undefined;
       out.push({
         table,
         name,
@@ -275,8 +282,8 @@ export function additionsUndeclared(req: RoutedAdditions): UndeclaredName[] {
   const byId = new Map(scan.elements.map((e) => [e.id, e]));
   const blocks = (els: readonly Elem[]): SourceRange[] => els.flatMap((e) => byId.get(e.id) ?? []);
   const map = declaredVocabulary(req.landscapeText);
-  const others = req.project.map((doc) => ({ path: doc.path, declared: declaredVocabulary(doc.text) }));
-  const project = together(map, ...others.map((doc) => doc.declared));
+  const others = req.project.map((doc) => ({ path: doc.path, ...readDeclarations(doc.text) }));
+  const project = together(map, ...others.map((doc) => doc.vocabulary));
   return undeclaredNames({
     deltaText: req.deltaText,
     scan,
@@ -286,7 +293,12 @@ export function additionsUndeclared(req: RoutedAdditions): UndeclaredName[] {
       {
         document: MAP_DOCUMENT,
         declared: map,
-        elsewhere: (table, name) => others.find((doc) => doc.declared[table].has(name))?.path,
+        elsewhere: (table, name) => {
+          const doc = others.find((d) => d.vocabulary[table].has(name));
+          if (doc === undefined) return undefined;
+          const declaration = table === "color" ? doc.colorLines.get(name) : undefined;
+          return { path: doc.path, ...(declaration === undefined ? {} : { declaration }) };
+        },
         ranges: [...blocks(req.map.els), ...statementRanges(req.map.rels, scan, kindTags)],
         omit: req.map.omit,
       },
