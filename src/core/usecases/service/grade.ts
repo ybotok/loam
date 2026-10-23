@@ -11,6 +11,14 @@
  * finding says the view is. A second verdict→code mapping here would be the
  * drift that package's banner forbids.
  *
+ * IN `core/` SINCE A FEATURE CAN CARRY SERVICE FLOWS. It began as
+ * `commands/validate/service/usecases/`, the service target's own package; a
+ * feature's `specs/<svc>/usecases/` flows are graded by the archive gate and
+ * `loam status` through `core/coherence/`, which may not import a command —
+ * and a second copy of this grader for that scope is exactly the drift above.
+ * The fleet grader moved down one package over for the same reason
+ * (`../grade/usecases.ts`).
+ *
  * ONLY VIEWS CARRYING A RESERVED TAG ARE GRADED, as at fleet altitude and for
  * the same reason: a service's `views.likec4` full of hand-drawn diagrams must
  * not turn red on upgrade. The reader applies the opt-in; this module never
@@ -33,18 +41,18 @@
  */
 import { existsSync } from "node:fs";
 import { relative } from "node:path";
-import type { LikeC4Error } from "../../../../core/c4/likec4.js";
-import type { Requirement } from "../../../../core/document/spec.js";
-import type { ServicePaths } from "../../../../core/repo/paths.js";
-import type { ParsedView } from "../../../../core/c4/parsed/dynamic-views.js";
-import { serviceResolver } from "../../../../core/c4/resolve/service.js";
-import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
-import { compareIds } from "../../../../core/repo/entries.js";
-import type { ServiceFlowScan } from "../../../../core/usecases/service/flows.js";
-import type { Finding } from "../../../../core/vocabulary/report.js";
-import { errorText } from "../../../../core/c4/likec4.js";
-import { CAP_TAG_PREFIX, REQ_TAG_PREFIX } from "../../../../core/capabilities/usecase-join.js";
-import { stepFindings, type StepGrading } from "../../../../core/usecases/grade/steps.js";
+import type { LikeC4Error } from "../../c4/likec4.js";
+import type { Requirement } from "../../document/spec.js";
+import type { ServicePaths } from "../../repo/paths.js";
+import type { ParsedView } from "../../c4/parsed/dynamic-views.js";
+import { serviceResolver } from "../../c4/resolve/service.js";
+import type { DocsDir } from "../../kernel/ids/dirs.js";
+import { compareIds } from "../../repo/entries.js";
+import type { ServiceFlowScan } from "./flows.js";
+import type { Finding } from "../../vocabulary/report.js";
+import { errorText } from "../../c4/likec4.js";
+import { CAP_TAG_PREFIX, REQ_TAG_PREFIX } from "../../capabilities/usecase-join.js";
+import { stepFindings, type StepGrading } from "../grade/steps.js";
 import { serviceTagFindings, type ServiceTagScope } from "./tags.js";
 
 /** What the service's use-case grades run over. */
@@ -94,7 +102,7 @@ function flowInvalidFinding(scope: ServiceUseCaseScope, errors: readonly LikeC4E
       `${scope.service}: ${named} has ${errors.length} error(s) — every .likec4 beside model.likec4 is one LikeC4 ` +
       "project, read the way the renderer reads it, and the renderer refuses the whole project over one broken " +
       "file; no flow in it was graded. model.likec4 itself parses and is graded alone.",
-    // The hint first, for `c4.invalid`'s reason (`../model/grade.ts`):
+    // The hint first, for `c4.invalid`'s reason (`commands/validate/service/model/grade.ts`):
     // `capDetails` keeps ten lines, one broken document can carry more than ten
     // errors, and a diagnosis appended after them is dropped exactly when the
     // reader needs it.

@@ -41,7 +41,7 @@ import { eventAxisFindings } from "./events/events.js";
 import { archAxisFindings, readServiceSpecs } from "./specs.js";
 import { modelFindings } from "./model/grade.js";
 import { divergedFindings } from "./model/diverged.js";
-import { requirementIdsOf, serviceUseCaseFindings } from "./usecases/usecases.js";
+import { requirementIdsOf, serviceUseCaseFindings } from "../../../core/usecases/service/grade.js";
 import { readServiceFlows, type ServiceFlowScan } from "../../../core/usecases/service/flows.js";
 import { unknownDirectiveFindings } from "../../../core/document/grammar/directives.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";

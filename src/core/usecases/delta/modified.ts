@@ -48,7 +48,7 @@
  * so it is asked about the capability requirements this feature changes. A
  * flow beside a service's model keeps that SERVICE's promise: its `#req-` tag is
  * scoped by the directory to the ids of that service's spec.md and arch.spec.md
- * (`commands/validate/service/usecases/tags.ts`), so it is asked about the
+ * (`../service/tags.ts`), so it is asked about the
  * service requirements this feature changes there — and only the services the
  * feature's `specs/` touch can hold one. BOTH documents are that scope, so the
  * one a touched service carries no delta for is read as it stands: without it
@@ -307,7 +307,7 @@ function changedIds(table: Table): Map<string, Set<string>> {
  * The service pairs, plus — for each service whose delta modifies or removes
  * something — every document of it the feature carries no delta for, as it
  * stands (`reqs: []`, so it changes nothing and only widens both sides).
- * `requirementIdsOf` (`commands/validate/service/usecases/usecases.ts`) reads
+ * `requirementIdsOf` (`../service/grade.ts`) reads
  * both documents for a service-local tag, skipping a requirement under a
  * REMOVED heading; so must this, or a tag the untouched document keeps
  * resolving reads as broken — and one only a REMOVED entry there answers reads
