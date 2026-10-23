@@ -1,6 +1,7 @@
 /**
- * `delta.specification-not-merged`: the feature's additions use a kind or a tag
- * the living map does not declare, so `loam archive` cannot merge them.
+ * `delta.specification-not-merged`: the feature's additions use a kind, a tag or
+ * a custom color the living map does not declare, so `loam archive` cannot merge
+ * them.
  *
  * THE FIX IS A FINDING, NOT A MERGE THAT COPIES DECLARATIONS. The archive could
  * have been taught to add the missing declarations to the map's specification
@@ -27,7 +28,9 @@
  *    in the same change (`openapi.info-not-merged`). The difference is only
  *    that here the merge cannot succeed without it, so this is an error.
  *
- * So the gate says what the archive would refuse, and the one line to add.
+ * So the gate says what the archive would refuse, and the line to add — or, for a
+ * name another `architecture/` document declares out of the landscape's sight,
+ * the declaration to move.
  *
  * ASKED OF THE ARCHIVE'S OWN MERGE. The names come from `planLandscapeMerge`,
  * through the same preview every feature-side gate reads
@@ -38,7 +41,7 @@
  * And only when it can matter, because the preview parses the living map — a
  * LikeC4 workspace spin the clean path must not pay. A delta parses alone, so
  * every name its model uses is one its own specification declares: when the
- * map declares all of those too (the feature tag aside — the splice strips
+ * landscape declares all of those too (the feature tag aside — the splice strips
  * it), no addition can be missing anything, and that is settled from the two
  * files' text.
  */
@@ -70,7 +73,7 @@ export interface UnmergedRequest {
   models: () => Promise<ExtendingModel[]>;
 }
 
-const TABLES: readonly SpecificationTable[] = ["element", "relationship", "tag"];
+const TABLES: readonly SpecificationTable[] = ["element", "relationship", "tag", "color"];
 
 /**
  * One error per declaration the map is missing. The caller asks only of a
@@ -105,7 +108,9 @@ export async function unmergedSpecificationIssues(req: UnmergedRequest): Promise
     ...(req.load === undefined ? {} : { load: req.load }),
     models: await req.models(),
   });
-  if (merged.kind !== "failed" || merged.missing === undefined) return [];
+  // On any arm: a name only a routed model lacks leaves the map previewable,
+  // and the merge reports it beside the content instead of refusing.
+  if (merged.missing === undefined) return [];
 
   const byLine = new Map<string, UndeclaredName[]>();
   for (const u of merged.missing) byLine.set(declarationLine(u), [...(byLine.get(declarationLine(u)) ?? []), u]);

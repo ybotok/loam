@@ -828,9 +828,10 @@ edge into the map verbatim and never copies a `specification` declaration, so a 
 map does not declare would leave the merged map unparseable. **Declare a kind in the map before,
 or in the same change as, the feature that draws one.** The feature gate says so first:
 `loam validate --feature` and `loam status <FEAT>` report `delta.specification-not-merged` (error,
-gates the archive, `--approve` does not override it) for every element kind, relationship kind or
-tag an addition uses that `architecture/landscape.likec4`'s own `specification` does not declare,
-naming the line to add — `relationship publishes`. A map written before 0.2.0-alpha.13 declares no
+gates the archive, `--approve` does not override it) for every element kind, relationship kind,
+tag or custom color an addition uses that `architecture/landscape.likec4`'s own `specification`
+does not declare, naming the line to add — `relationship publishes`; a custom color is named with
+the value the delta gives it. A map written before 0.2.0-alpha.13 declares no
 relationship kinds, so every kinded edge a feature draws over one owes such a line.
 
 Why a finding, and not an archive that copies the missing declaration: the map is the extending
@@ -847,10 +848,13 @@ finding is an error.
 
 What is graded is what the merge would write, once it has routed each addition: the tagged
 additions and everything riding inside a new element's block, each against the document it lands
-in. The landscape is read against its own `specification` alone — the merge proves it parses
-alone, so a kind declared in another `architecture/` document does not count — and an extending
-model against the map's plus its own, so a tags-only `specification` beside an `extend` serves what
-is routed into that model. A kind the delta declares and no addition draws is nothing, an edge the
+in. The landscape is read against its own `specification` alone, because the merge proves it
+parses alone: a name another `architecture/` document declares (a palette, say) does not reach
+it, and the finding then names that document and asks for the declaration to be MOVED into the
+landscape, since declaring it in both is a duplicate the renderer refuses. An extending model is
+read the way the archive proves it, inside the `architecture/` project with the merged map in it,
+so whatever that project declares serves what is routed into the model, and so does a tags-only
+`specification` beside its `extend`. A kind the delta declares and no addition draws is nothing, an edge the
 map already draws is no addition whatever kind the delta writes it with, and the feature's own tag
 is stripped on the way over. The gate asks the archive's own merge, and only when the delta's
 `specification` declares a name the map's does not, so a delta that only quotes the map's
@@ -2968,8 +2972,8 @@ still parses — and because splicing is text surgery, the computed landscape is
 before anything is written**: a result LikeC4 rejects — a splice bug, or legal inputs the living
 document cannot absorb, like an edge naming an element the delta declares only as untagged context
 and the map has never drawn — refuses the archive at plan time (`merge-failed`, nothing written),
-the same discipline as the unparseable delta. An element kind, relationship kind or tag the
-`specification` block never declares does not get that far: the merge refuses it by name before
+the same discipline as the unparseable delta. An element kind, relationship kind, tag or custom
+color the `specification` block never declares does not get that far: the merge refuses it by name before
 it places a byte, and the feature gate predicts it as `delta.specification-not-merged` ("Which
 way an edge points" has the rule and why the archive does not copy the declaration). A living declaration the splice map cannot locate refuses the same way rather
 than be spliced around blind — most often one sharing its line with another statement, which is

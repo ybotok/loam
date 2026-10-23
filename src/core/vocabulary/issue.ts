@@ -72,7 +72,8 @@ export function issueFinding(i: Issue): Finding {
  * to read an axis. That is the same line `delta.likec4`'s unparseable case is
  * refused on, one merge over. `delta.specification-not-merged` is the mechanical
  * kind again: the merged map would not parse, so approving the feature would
- * only move the refusal from this gate to the merge's parse net.
+ * only move the refusal from this gate to the merge, which refuses the same
+ * additions by name.
  *
  * `archive` refuses these under the same `not-coherent` envelope and spells
  * this verdict per issue as the additive `overridable` key, so a `--json`
@@ -127,7 +128,7 @@ export type IssueCode =
   | "delta.invalid"
   /** the delta declares elements or edges but none carry the feature tag — loam cannot see any of it */
   | "delta.nothing-tagged"
-  /** the delta's additions use an element kind, relationship kind or tag the living map's specification does not declare — the archive never copies a specification declaration, so its merge would not parse; declaring it in architecture/landscape.likec4 is the fix, and no re-run succeeds without it */
+  /** the delta's additions use an element kind, relationship kind, tag or custom color that the specification of the document they would land in cannot see declared — the archive never copies a specification declaration, so its merge would not parse; declaring it in (or moving it into) architecture/landscape.likec4 is the fix, and no re-run succeeds without it */
   | "delta.specification-not-merged"
   /** E1 — a requirement governs an operation its service's OpenAPI does not define */
   | "spec-api.op-undefined"

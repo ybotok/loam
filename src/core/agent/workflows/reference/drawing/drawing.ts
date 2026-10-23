@@ -169,9 +169,11 @@ on a map that lacks the kind the merged map would not parse.
 \`delta.specification-not-merged\` (an error), naming the line to add — for
 example \`relationship publishes\` in \`architecture/landscape.likec4\`'s
 \`specification\` — and \`loam archive\` refuses until it is there, \`--approve\` or
-not. The same holds for an element kind and a tag. A kind is vocabulary, not a
-change, so adding it to the map's \`specification\` is an ordinary edit to the
-living map, made in the feature's change or in one before it.
+not. The same holds for an element kind, a tag and a custom color. A kind is
+vocabulary, not a change, so adding it to the map's \`specification\` is an
+ordinary edit to the living map, made in the feature's change or in one before
+it. When another \`architecture/\` document already declares it, the finding says
+so: move that declaration into the landscape rather than declaring it twice.
 
 Two spellings to avoid:
 

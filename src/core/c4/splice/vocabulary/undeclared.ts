@@ -1,18 +1,17 @@
 /**
  * The specification names the merge's additions would carry into a document
- * that does not declare them — the one class of `merge-failed` that was
- * nobody's to predict.
+ * whose parse cannot see them declared.
  *
  * A delta is self-contained: it parses alone, so its own `specification { }`
- * declares every kind and tag it uses, copies of the map's and new ones alike.
- * The archive carries none of that block over. It merges what carries the
- * feature tag, and a declaration in a specification can carry no tag, so a
- * delta's declarations are context exactly as its untagged stubs are (SCHEMA.md,
- * "Which way an edge points" and "Who declares kinds and tags"). An addition
- * drawing `-[publishes]->` on a map that predates the kind therefore lands as a
- * reference to nothing: the merged landscape does not parse and the archive
- * refuses at its parse net, while `validate --feature` and `loam status` had
- * called the feature ready — the delta parses, and nothing at feature scope
+ * declares every kind, tag and custom color it uses, copies of the map's and
+ * new ones alike. The archive carries none of that block over. It merges what
+ * carries the feature tag, and a declaration in a specification can carry no
+ * tag, so a delta's declarations are context exactly as its untagged stubs are
+ * (SCHEMA.md, "Which way an edge points" and "Who declares kinds and tags"). An
+ * addition drawing `-[publishes]->` on a map that predates the kind therefore
+ * lands as a reference to nothing: the merged document does not parse and the
+ * archive refuses at its parse net, while `validate --feature` and `loam status`
+ * had called the feature ready — the delta parses, and nothing at feature scope
  * compared its vocabulary with the map's (0.2.0-alpha.13's known gap).
  *
  * WHAT IS READ IS WHAT IS WRITTEN. The question is asked of the delta ranges the
@@ -24,42 +23,45 @@
  * tag of their own — LikeC4 does not inherit tags — and they reach the map in
  * their parent's bytes all the same.
  *
- * AGAINST WHAT EACH DOCUMENT'S PARSE NET READS. The landscape is proved alone
- * (`../landscape-merge.ts`), so only its own specification counts there: a kind
- * declared in another `architecture/` document is not borrowed, which is the
- * rule the splice's own kind reading already follows. An extending model is
- * proved beside the merged map (`commands/archive/plan/model/extending.ts`), so
- * what it declares itself counts for what is routed into it — the tags-only
- * `specification { }` SCHEMA calls legal beside an `extend`.
+ * AGAINST WHAT EACH DOCUMENT'S PARSE NET READS. The landscape is proved ALONE
+ * (`../landscape-merge.ts`), so only its own specification counts there — which
+ * is why a name another `architecture/` document declares is reported for it
+ * too, as a declaration to MOVE rather than one to add: declared twice, it is a
+ * duplicate in the project the renderer reads. An extending model is proved
+ * inside the `architecture/` project with the merged map in it
+ * (`commands/archive/plan/model/extending.ts`, `modelMergeErrors`), so what that
+ * project declares serves what is routed into the model, and so does the model's
+ * own tags-only `specification { }`, which SCHEMA calls legal beside an `extend`.
  *
  * Text-level on purpose. The merge is text surgery and its net is a parse of
  * the text it composed, so the names are read off the same bytes: element kinds
  * through the parsed delta by the scanned id (the scan does not record a kind),
- * relationship kinds as the scan reads them off the arrow, and tags as `#name`
- * tokens in the masked code — never from the parsed tags, which since LikeC4
- * 1.59.0 include those a kind hands down from the delta's own specification and
- * which the spliced text therefore never spells.
+ * relationship kinds as the scan reads them off the arrow, tags as `#name` and
+ * custom colors as `color <name>` tokens in the masked code — never from the
+ * parsed tags, which since LikeC4 1.59.0 include those a kind hands down from
+ * the delta's own specification and which the spliced text therefore never
+ * spells. Each token is kept only when the delta declares it, which is what
+ * keeps a built-in color (`color amber`) and a stray `#` out.
  */
 import type { Elem, Rel } from "../../likec4.js";
 import { maskSource, matchBrace } from "../../source-mask.js";
 import { kindsDeclared, type ScannedModel, type ScannedRel } from "../../source-scan.js";
 import type { SourceRange } from "../authored-source.js";
-import { relStatementKey, scannedStatementKey } from "../identity/edges.js";
+import type { KindTags, ModelAdditions } from "../contract.js";
+import { relStatementKey, statementPool } from "../identity/edges.js";
 
 /**
- * `../contract.ts`'s `KindTags`, and below its `ModelAdditions`, spelled
- * structurally: the contract imports this module for the refusal it throws, and
- * importing them back would make the two files a cycle.
+ * The four tables of a `specification { }` block a model statement can
+ * reference. Deployment node kinds are the fifth, and no merge carries one: a
+ * delta's `deployment { }` block is refused before anything is planned
+ * (`../delta-blocks.ts`).
  */
-type KindTagTable = Readonly<Record<string, readonly string[]>>;
-
-/** The three tables of a `specification { }` block whose names a model statement can reference. */
-export type SpecificationTable = "element" | "relationship" | "tag";
+export type SpecificationTable = "element" | "relationship" | "tag" | "color";
 
 /** The names one document's `specification` blocks declare, per table. */
 export type Vocabulary = Readonly<Record<SpecificationTable, ReadonlySet<string>>>;
 
-/** One name an addition uses that the document it lands in does not declare. */
+/** One name an addition uses that the document it lands in cannot see declared. */
 export interface UndeclaredName {
   table: SpecificationTable;
   name: string;
@@ -67,12 +69,25 @@ export interface UndeclaredName {
   document: string;
   /** The first declaration that uses it — an element id, or `source -> target`. */
   usedBy: string;
+  /** The delta's own declaration, verbatim, where the name alone is not one: a custom color carries its value. */
+  declaration?: string;
+  /** Another `architecture/` document that declares it, out of sight of a document proved alone. */
+  declaredIn?: string;
+}
+
+/** Another document of the `architecture/` project, beside the landscape. */
+export interface ProjectDocument {
+  /** Repo-relative, `/`-separated. */
+  path: string;
+  text: string;
 }
 
 /** One document the merge writes additions into, and what its parse net reads them against. */
 interface Destination {
   document: string;
   declared: Vocabulary;
+  /** Where else a name is declared, for a document proved alone — undefined where nothing else is read. */
+  elsewhere?: (table: SpecificationTable, name: string) => string | undefined;
   /** The delta ranges carried into it whole. */
   ranges: readonly SourceRange[];
   /** Delta ranges cut out of those on the way — a split block's children, which go elsewhere. */
@@ -89,66 +104,98 @@ interface UndeclaredRequest {
   destinations: readonly Destination[];
 }
 
-/** `tag <name>` inside a specification block. A tag starts with a letter or `_`, as a kind does. */
+/** `tag <name>` at a specification block's own level. A tag starts with a letter or `_`, as a kind does. */
 const TAG_DECLARATION = /\btag\s+([A-Za-z_][\w-]*)/g;
+/** `color <name> <value>` at a specification block's own level — a custom color, value and all. */
+const COLOR_DECLARATION = /\bcolor\s+([A-Za-z_][\w-]*)\s+([^\n]*\S)/g;
 /** `#name` in model code — a tag reference. Never inside a word, never a second `#`. */
 const TAG_REFERENCE = /(?<![\w#-])#([A-Za-z_][\w-]*)/g;
+/** `color <name>` in model code — inside a `style { }`, or on an edge. */
+const COLOR_REFERENCE = /(?<![\w-])color\s+([A-Za-z_][\w-]*)/g;
+
+/**
+ * Each `specification` block's body as its OWN level reads: nested blocks
+ * blanked. `color amber` inside a kind's `style { }` is a use of a color, not
+ * the declaration of one, and only the block's own statements declare.
+ */
+function specificationLevels(masked: string): string[] {
+  const out: string[] = [];
+  for (const sm of masked.matchAll(/\bspecification\s*\{/g)) {
+    const open = sm.index + sm[0].length - 1;
+    const close = matchBrace(masked, open);
+    if (close === -1) continue;
+    const body = masked.slice(open + 1, close);
+    let level = "";
+    for (let i = 0; i < body.length; ) {
+      const inner = body.indexOf("{", i);
+      if (inner === -1) {
+        level += body.slice(i);
+        break;
+      }
+      const shut = matchBrace(body, inner);
+      const end = shut === -1 ? body.length : shut + 1;
+      level += body.slice(i, inner) + " ".repeat(end - inner);
+      i = end;
+    }
+    out.push(level);
+  }
+  return out;
+}
+
+/** What `text` declares, and each custom color's declaration as written. */
+function readDeclarations(text: string): { vocabulary: Vocabulary; colorLines: ReadonlyMap<string, string> } {
+  const { kinds, relKinds } = kindsDeclared(text);
+  const tags = new Set<string>();
+  const colorLines = new Map<string, string>();
+  for (const level of specificationLevels(maskSource(text).code)) {
+    for (const m of level.matchAll(TAG_DECLARATION)) tags.add(m[1]!);
+    for (const m of level.matchAll(COLOR_DECLARATION)) colorLines.set(m[1]!, `color ${m[1]!} ${m[2]!}`);
+  }
+  return { vocabulary: { element: kinds, relationship: relKinds, tag: tags, color: new Set(colorLines.keys()) }, colorLines };
+}
 
 /**
  * Every name `text`'s `specification` blocks declare. The kinds are
- * `kindsDeclared`'s reading — the splice's own — and the tags are read the same
- * way, off the masked code, so a declaration inside a comment or a string is no
- * declaration here either.
+ * `kindsDeclared`'s reading — the splice's own — and tags and colors are read
+ * the same way, off the masked code, so a declaration inside a comment or a
+ * string is no declaration here either.
  */
 export function declaredVocabulary(text: string): Vocabulary {
-  const { kinds, relKinds } = kindsDeclared(text);
-  const { code } = maskSource(text);
-  const tags = new Set<string>();
-  for (const sm of code.matchAll(/\bspecification\s*\{/g)) {
-    const close = matchBrace(code, sm.index + sm[0].length - 1);
-    if (close === -1) continue;
-    for (const tm of code.slice(sm.index, close).matchAll(TAG_DECLARATION)) tags.add(tm[1]!);
-  }
-  return { element: kinds, relationship: relKinds, tag: tags };
+  return readDeclarations(text).vocabulary;
 }
 
-/** What two documents declare together — a model's project is the map plus the model. */
-function bothDeclare(a: Vocabulary, b: Vocabulary): Vocabulary {
-  return {
-    element: new Set([...a.element, ...b.element]),
-    relationship: new Set([...a.relationship, ...b.relationship]),
-    tag: new Set([...a.tag, ...b.tag]),
-  };
+/** What several documents declare together — a project is the union of its documents' blocks. */
+function together(...all: readonly Vocabulary[]): Vocabulary {
+  const union = (table: SpecificationTable): Set<string> => new Set(all.flatMap((v) => [...v[table]]));
+  return { element: union("element"), relationship: union("relationship"), tag: union("tag"), color: union("color") };
 }
 
 /**
  * The statement each addition is spliced from, matched the way the splice
- * matches it: one fresh pool per document, consumed in addition order, so two
- * statements of one identity hand out their bytes in the order the merge takes
- * them. An addition with no statement is the splice's to refuse, by name.
+ * matches it: one pool of its own per document (`statementPool`), taken in
+ * addition order. An addition with no statement is the splice's to refuse, by
+ * name.
  */
-function statementRanges(rels: readonly Rel[], scan: ScannedModel, kindTags: KindTagTable): ScannedRel[] {
-  const pool = new Map<string, ScannedRel[]>();
-  for (const s of scan.rels) {
-    const k = scannedStatementKey(s, kindTags);
-    pool.set(k, [...(pool.get(k) ?? []), s]);
-  }
+function statementRanges(rels: readonly Rel[], scan: ScannedModel, kindTags: KindTags): ScannedRel[] {
+  const pool = statementPool(scan, kindTags);
   return rels.flatMap((r) => pool.get(relStatementKey(r))?.shift() ?? []);
 }
 
-/** Every name an addition uses that the document it lands in does not declare, first use first. */
+/** Every name an addition uses that the document it lands in cannot see declared, first use first. */
 function undeclaredNames(req: UndeclaredRequest): UndeclaredName[] {
   const { scan, featureId } = req;
   const { code } = maskSource(req.deltaText);
-  // A `#name` the delta does not declare as a tag is no tag — the delta parsed,
-  // so every tag its model code spells is one its specification declares.
-  const deltaTags = declaredVocabulary(req.deltaText).tag;
+  // A token the delta does not declare is no reference — the delta parsed, so
+  // every tag and custom color its model code uses is one its specification
+  // declares, and a built-in color is one it does not.
+  const delta = readDeclarations(req.deltaText);
   const kindOf = new Map(req.deltaElements.map((e) => [e.id, e.kind]));
   const out: UndeclaredName[] = [];
   const seen = new Set<string>();
 
   for (const dest of req.destinations) {
     const omit = dest.omit ?? [];
+    const cut = (at: number): boolean => omit.some((o) => at >= o.start && at < o.end);
     const kept = (at: SourceRange, range: SourceRange): boolean =>
       at.start >= range.start && at.end <= range.end && !omit.some((o) => at.start >= o.start && at.end <= o.end);
     const note = (table: SpecificationTable, name: string, usedBy: string): void => {
@@ -156,7 +203,16 @@ function undeclaredNames(req: UndeclaredRequest): UndeclaredName[] {
       const key = JSON.stringify([dest.document, table, name]);
       if (seen.has(key)) return;
       seen.add(key);
-      out.push({ table, name, document: dest.document, usedBy });
+      const declaration = table === "color" ? delta.colorLines.get(name) : undefined;
+      const declaredIn = dest.elsewhere?.(table, name);
+      out.push({
+        table,
+        name,
+        document: dest.document,
+        usedBy,
+        ...(declaration === undefined ? {} : { declaration }),
+        ...(declaredIn === undefined ? {} : { declaredIn }),
+      });
     };
     for (const range of dest.ranges) {
       const els = scan.elements.filter((e) => e.extend !== true && kept(e, range));
@@ -166,18 +222,23 @@ function undeclaredNames(req: UndeclaredRequest): UndeclaredName[] {
         if (kind !== undefined) note("element", kind, e.id);
       }
       for (const r of rels) if (r.kind !== undefined) note("relationship", r.kind, `${r.source} -> ${r.target}`);
-      // The innermost declaration a tag is written in, which is the one it tags.
+      // The innermost declaration a token is written in, which is the one it belongs to.
       const owner = (at: number): string => {
         const holds = [...els, ...rels].filter((d) => at >= d.start && at < d.end);
         const inner = holds.sort((a, b) => a.end - a.start - (b.end - b.start))[0];
         if (inner === undefined) return "";
         return "id" in inner ? inner.id : `${inner.source} -> ${inner.target}`;
       };
-      for (const m of code.slice(range.start, range.end).matchAll(TAG_REFERENCE)) {
+      const text = code.slice(range.start, range.end);
+      for (const m of text.matchAll(TAG_REFERENCE)) {
         const at = range.start + m.index;
         const name = m[1]!;
-        if (name === featureId || !deltaTags.has(name) || omit.some((o) => at >= o.start && at < o.end)) continue;
-        note("tag", name, owner(at));
+        if (name !== featureId && delta.vocabulary.tag.has(name) && !cut(at)) note("tag", name, owner(at));
+      }
+      for (const m of text.matchAll(COLOR_REFERENCE)) {
+        const at = range.start + m.index;
+        const name = m[1]!;
+        if (delta.vocabulary.color.has(name) && !cut(at)) note("color", name, owner(at));
       }
     }
   }
@@ -192,26 +253,30 @@ export interface RoutedAdditions {
   deltaElements: readonly Elem[];
   featureId: string;
   /** The delta's relationship kinds' tags — how a statement is matched to its addition. */
-  kindTags: KindTagTable;
+  kindTags: KindTags;
   /** What lands on the map, and the split blocks' children its bytes leave behind. */
   map: { els: readonly Elem[]; rels: readonly Rel[]; omit: readonly SourceRange[] };
-  /** What each extending model takes — its path, its living text, and its share. */
-  models: readonly { model: { path: string; text: string }; els: readonly Elem[]; rels: readonly Rel[] }[];
+  /** What each extending model takes. */
+  models: readonly Pick<ModelAdditions, "model" | "els" | "rels">[];
+  /** The `architecture/` project's other documents — what a model is proved beside. */
+  project: readonly ProjectDocument[];
 }
 
 /** The landscape as a finding names it — the merge itself knows the file only as text. */
-const MAP_DOCUMENT = "architecture/landscape.likec4";
+export const MAP_DOCUMENT = "architecture/landscape.likec4";
 
 /**
  * `undeclaredNames` over the documents one routed merge writes: the map, read
- * against its own specification, and each extending model, read against the
- * map's plus its own.
+ * against its own specification alone, and each extending model, read against
+ * the whole `architecture/` project's plus its own.
  */
 export function additionsUndeclared(req: RoutedAdditions): UndeclaredName[] {
   const { scan, kindTags } = req;
   const byId = new Map(scan.elements.map((e) => [e.id, e]));
   const blocks = (els: readonly Elem[]): SourceRange[] => els.flatMap((e) => byId.get(e.id) ?? []);
   const map = declaredVocabulary(req.landscapeText);
+  const others = req.project.map((doc) => ({ path: doc.path, declared: declaredVocabulary(doc.text) }));
+  const project = together(map, ...others.map((doc) => doc.declared));
   return undeclaredNames({
     deltaText: req.deltaText,
     scan,
@@ -221,21 +286,36 @@ export function additionsUndeclared(req: RoutedAdditions): UndeclaredName[] {
       {
         document: MAP_DOCUMENT,
         declared: map,
+        elsewhere: (table, name) => others.find((doc) => doc.declared[table].has(name))?.path,
         ranges: [...blocks(req.map.els), ...statementRanges(req.map.rels, scan, kindTags)],
         omit: req.map.omit,
       },
       ...req.models.map((m) => ({
         document: m.model.path,
-        declared: bothDeclare(map, declaredVocabulary(m.model.text)),
+        declared: together(project, declaredVocabulary(m.model.text)),
         ranges: [...blocks(m.els), ...statementRanges(m.rels, scan, kindTags)],
       })),
     ],
   });
 }
 
+/**
+ * `additionsUndeclared` as the merge asks it: the rest of the `architecture/`
+ * project is read only when the landscape and the models alone leave a name
+ * unseen, so a merge that only quotes the map's vocabulary reads nothing more.
+ */
+export async function undeclaredInMerge(
+  req: Omit<RoutedAdditions, "project">,
+  project?: () => Promise<readonly ProjectDocument[]>,
+): Promise<UndeclaredName[]> {
+  const alone = additionsUndeclared({ ...req, project: [] });
+  if (alone.length === 0 || project === undefined) return alone;
+  return additionsUndeclared({ ...req, project: await project() });
+}
+
 /** The specification line that declares `u` — what the author writes, verbatim. */
-export function declarationLine(u: Pick<UndeclaredName, "table" | "name">): string {
-  return `${u.table} ${u.name}`;
+export function declarationLine(u: Pick<UndeclaredName, "table" | "name" | "declaration">): string {
+  return u.declaration ?? `${u.table} ${u.name}`;
 }
 
 /**
@@ -249,11 +329,24 @@ export function undeclaredMessage(missing: readonly UndeclaredName[]): string {
   const uses = [...byLine]
     .map(([line, us]) => `\`${line}\` (by ${us.map((u) => `${u.usedBy}, landing in ${u.document}`).join("; ")})`)
     .join(", ");
-  const lines = [...byLine.keys()].map((line) => `\`${line}\``).join(", ");
+  const groups = [...byLine.values()];
+  const add = groups.filter((us) => us[0]!.declaredIn === undefined).map((us) => `\`${declarationLine(us[0]!)}\``);
+  const move = groups.flatMap((us) => {
+    const from = us[0]!.declaredIn;
+    return from === undefined ? [] : [`\`${declarationLine(us[0]!)}\` from ${from}`];
+  });
+  const fixes = [
+    ...(add.length === 0 ? [] : [`Declare ${add.join(", ")} in architecture/landscape.likec4's specification, in this change or before it`]),
+    ...(move.length === 0
+      ? []
+      : [
+          `Move ${move.join(", ")} into architecture/landscape.likec4's specification: the merge proves the landscape ` +
+            `alone, where another document's declaration does not reach, and declaring it in both is a duplicate`,
+        ]),
+  ];
   return (
     `the delta's additions use ${uses}, which architecture/landscape.likec4's specification does not declare. ` +
     `The archive never copies a specification declaration — the delta's own is the copy that lets it parse alone — ` +
-    `so what it would write does not parse, and it refuses. Declare ${lines} in architecture/landscape.likec4's ` +
-    `specification, in this change or before it`
+    `so what it would write does not parse, and it refuses. ${fixes.join(". ")}`
   );
 }

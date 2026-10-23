@@ -29,10 +29,10 @@
  * holds the merged MAP the model must be proven against.
  */
 import type { Elem } from "../../likec4.js";
-import { scanModel, type ScanKinds, type ScannedModel, type ScannedRel } from "../../source-scan.js";
+import { scanModel, type ScanKinds, type ScannedModel } from "../../source-scan.js";
 import { matchLineEndings, spliceSource } from "../authored-source.js";
 import { assertSpliceVisible, LandscapeSpliceError, type KindTags, type ModelAdditions } from "../contract.js";
-import { relStatementKey, scannedStatementKey } from "../identity/edges.js";
+import { relStatementKey, statementPool } from "../identity/edges.js";
 import { HOME_BLOCK } from "../placement.js";
 import { closeSpot, nestedInsert, spotAfter } from "../text/spot.js";
 
@@ -55,11 +55,7 @@ export function spliceModel(req: ModelMergeRequest): string {
     throw new LandscapeSpliceError("delta.likec4 has no model block — nothing to splice the additions from");
   }
   const byId = new Map(scan.elements.map((e) => [e.id, e]));
-  const pool = new Map<string, ScannedRel[]>();
-  for (const s of scan.rels) {
-    const k = scannedStatementKey(s, req.deltaKindTags ?? {});
-    pool.set(k, [...(pool.get(k) ?? []), s]);
-  }
+  const pool = statementPool(scan, req.deltaKindTags ?? {});
 
   // Read with the map's kinds: the model declares none, and a `container
   // outbox` frame or an `a .delivers b` edge it cannot see is a parent with

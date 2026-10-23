@@ -17,23 +17,27 @@ does not override it), closing the gap 0.2.0-alpha.13 named. A feature delta dra
 `-[publishes]->` over a map that declares no relationship kinds — any map written before alpha.13,
 `examples/docs`' among them — passed `loam validate --feature` at exit 0, `loam status <FEAT>`
 called it ready, and `loam archive` then refused with `merge-failed` ("Could not resolve reference
-to RelationshipKind named 'publishes'"). An element kind or a tag the map lacked went the same way.
+to RelationshipKind named 'publishes'"). An element kind, a tag or a custom color the map lacked went the same way.
 
 - **`loam validate --feature` exits 1 and `loam status <FEAT>` says `draft`** for each element
-  kind, relationship kind or tag the feature's additions use that the living
+  kind, relationship kind, tag or custom color the feature's additions use that the living
   `architecture/landscape.likec4`'s `specification` does not declare. The message names the line
-  to add (`relationship publishes`), the addition that uses it, and the document it would land in;
-  `locations[]` names the landscape (`primary`) and the feature's `delta.likec4` (`related`). A
-  name is graded where the archive would write it: an addition routed into an extending
-  `model.likec4` is read against the map's specification plus that model's own. A kind the delta
-  declares and no addition draws, and the feature's own tag, are never reported.
+  to add (`relationship publishes`; a custom color with its value), the addition that uses it, and
+  the document it would land in; `locations[]` names the landscape (`primary`) and the feature's
+  `delta.likec4` (`related`). A name is graded where the archive would write it: an addition
+  routed into an extending `model.likec4` is read inside the `architecture/` project, as the
+  archive proves that model, so a declaration anywhere in that project serves it. A name only
+  another `architecture/` document declares, used on the map, is reported with that document and
+  asked to MOVE into the landscape, because the merge proves the landscape alone and a second
+  declaration would be a duplicate. A kind the delta declares and no addition draws, and the
+  feature's own tag, are never reported.
 - **`loam archive` and `archive --dry-run` refuse such a feature as `not-coherent`**, where they
   refused `merge-failed`, with the issue carrying `overridable: false`; `--approve` no longer
   reaches the merge for it. Nothing is written, as before.
 - **The merge names the declaration itself.** A merge whose additions use an undeclared name is
   refused before it splices anything, with the same message, and still as `merge-failed`. The
-  LikeC4 parse net behind it keeps refusing everything else, and its hint no longer guesses at a
-  missing kind.
+  LikeC4 parse nets behind it keep refusing everything else. A feature's flows and topology are
+  still graded over the merge preview when only a routed model lacks a name.
 - `loam instructions loam-drawing`, the feature and ship workflow pages, the `loam-codes` page and
   the `/loam-check` table say what happens and what to add. SCHEMA.md, "Which way an edge points",
   says why the archive does not copy the declaration instead.

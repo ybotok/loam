@@ -18,6 +18,7 @@
  * command-layer business: it is about which validate target a failed read is
  * filed against.
  */
+import { readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import type { LoadedDoc } from "../likec4.js";
 import { excludingPath, readRootExclude } from "../root-project/exclude.js";
@@ -102,6 +103,26 @@ export async function architectureProjectDocuments(docsDir: DocsDir): Promise<st
   if (exclude === null || exclude.length === 0) return paths;
   const map = resolve(landscapePath(docsDir));
   return paths.filter((path) => resolve(path) === map || excludingPath(exclude, relative(docsDir, path)) === null);
+}
+
+/**
+ * That project's documents OTHER than the landscape, as text, each named
+ * docs-relative — what the archive proves an extending model beside, minus the
+ * map the merge is computing. The landscape merge reads their specifications so
+ * a kind or tag declared in, say, a palette document serves what it routes into
+ * a model (`../splice/vocabulary/undeclared.ts`). A document that cannot be
+ * read is left out rather than failing the merge: the model's own parse net
+ * stages the same file and names it.
+ */
+export async function projectDocumentsBesideMap(docsDir: DocsDir): Promise<Array<{ path: string; text: string }>> {
+  const map = resolve(landscapePath(docsDir));
+  const out: Array<{ path: string; text: string }> = [];
+  for (const path of await architectureProjectDocuments(docsDir)) {
+    if (resolve(path) === map) continue;
+    const text = await readFile(path, "utf8").catch(() => null);
+    if (text !== null) out.push({ path: relative(docsDir, path).split(/[\\/]/).join("/"), text });
+  }
+  return out;
 }
 
 /**

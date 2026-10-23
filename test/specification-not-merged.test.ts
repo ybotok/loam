@@ -17,7 +17,7 @@ import { cp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadSource } from "../src/core/c4/likec4.js";
-import { UndeclaredNamesError, type ExtendingModel } from "../src/core/c4/splice/contract.js";
+import { UndeclaredNamesError, type ExtendingModel, type LandscapeMergeRequest } from "../src/core/c4/splice/contract.js";
 import { planLandscapeMerge } from "../src/core/c4/splice/landscape-merge.js";
 import { makeTmpDir, runLoam, treeHashes } from "./helpers/harness.js";
 
@@ -178,12 +178,75 @@ describe("the other two tables, in the document each addition lands in", () => {
     }
   });
 
+  it("a custom color, named with the value the delta gives it", async () => {
+    const f = await exampleFleet([
+      [`${FEAT}/delta.likec4`, "  tag FEAT-101\n", "  tag FEAT-101\n  color brand #ff0000\n"],
+      [
+        `${FEAT}/delta.likec4`,
+        "      description 'Splits a payment across payees'\n",
+        "      description 'Splits a payment across payees'\n      style {\n        color brand\n      }\n",
+      ],
+    ]);
+    try {
+      const { findings } = await validateFeature(f.dir);
+      const hit = findings.filter((x) => x.code === CODE);
+      expect(hit, JSON.stringify(findings)).toHaveLength(1);
+      expect(hit[0]!.message).toContain("Declare `color brand #ff0000` in architecture/landscape.likec4's specification");
+    } finally {
+      await f.done();
+    }
+  });
+
   it("the shipped example fleet earns nothing: every name its delta declares, the map declares too", async () => {
     const f = await exampleFleet([]);
     try {
       const { code, findings } = await validateFeature(f.dir);
       expect(findings.filter((x) => x.code === CODE)).toEqual([]);
       expect(code).toBe(0);
+    } finally {
+      await f.done();
+    }
+  });
+});
+
+describe("a declaration in another architecture/ document", () => {
+  /** A palette beside the map — one more document of the `architecture/` project. */
+  const palette = async (dir: string): Promise<void> => writeFile(join(dir, "architecture/palette.likec4"), "specification {\n  tag pci\n}\n", "utf8");
+  const PCI_DECLARED: Edit = [`${FEAT}/delta.likec4`, "  tag FEAT-101\n", "  tag FEAT-101\n  tag pci\n"];
+
+  it("serves what is routed into an extending model, which the archive proves inside that project", async () => {
+    const f = await exampleFleet([
+      PCI_DECLARED,
+      [
+        `${FEAT}/delta.likec4`,
+        "    paymentService = softwareSystem 'payment-service'\n",
+        "    paymentService = softwareSystem 'payment-service' {\n      ledger = container 'ledger' {\n        #FEAT-101 #pci\n      }\n    }\n",
+      ],
+    ]);
+    try {
+      await palette(f.dir);
+      const { findings } = await validateFeature(f.dir);
+      expect(findings.filter((x) => x.code === CODE), JSON.stringify(findings)).toEqual([]);
+      const run = await runLoam(f.dir, "archive", "FEAT-101");
+      expect(run.code, run.stdout + run.stderr).toBe(0);
+      expect(await readFile(join(f.dir, "services/payment-service/model.likec4"), "utf8")).toContain("ledger = container 'ledger'");
+    } finally {
+      await f.done();
+    }
+  });
+
+  it("does not reach the landscape, which is proved alone — and the fix is to move it, not to declare it twice", async () => {
+    const f = await exampleFleet([
+      PCI_DECLARED,
+      [`${FEAT}/delta.likec4`, "      #FEAT-101\n      description 'Splits", "      #FEAT-101 #pci\n      description 'Splits"],
+    ]);
+    try {
+      await palette(f.dir);
+      const { findings } = await validateFeature(f.dir);
+      const hit = findings.filter((x) => x.code === CODE);
+      expect(hit, JSON.stringify(findings)).toHaveLength(1);
+      expect(hit[0]!.message).toContain("Move `tag pci` from architecture/palette.likec4 into architecture/landscape.likec4's specification");
+      expect(hit[0]!.message).not.toContain("Declare `tag pci`");
     } finally {
       await f.done();
     }
@@ -212,7 +275,12 @@ model {
 `;
 
 /** One merge of a delta declaring `spec` beside the map's kinds, with `body` as its model. */
-async function plan(spec: string, body: string, models: ExtendingModel[] = []): ReturnType<typeof planLandscapeMerge> {
+async function plan(
+  spec: string,
+  body: string,
+  models: ExtendingModel[] = [],
+  options: Pick<LandscapeMergeRequest, "projectDocuments" | "undeclared"> = {},
+): ReturnType<typeof planLandscapeMerge> {
   const deltaText = `specification {\n  element group\n  element softwareSystem\n  element container\n  tag external\n  tag FEAT-7\n${spec}}\n\nmodel {\n${body}}\n`;
   const d = await loadSource(deltaText);
   expect(d.errors, "the delta must parse alone, or the case proves nothing").toEqual([]);
@@ -225,6 +293,7 @@ async function plan(spec: string, body: string, models: ExtendingModel[] = []): 
     featureId: "FEAT-7",
     deltaKindTags: d.specification?.relationshipKindTags ?? {},
     models,
+    ...options,
   });
 }
 
@@ -280,5 +349,31 @@ describe("planLandscapeMerge names the declaration it would need", () => {
     // ...and the tags-only specification SCHEMA calls legal beside an `extend` serves it.
     const p = await plan("  tag pci\n", nested, [model("specification {\n  tag pci\n}\n\nmodel {\n}\n")]);
     expect(p.models.map((m) => m.els.map((e) => e.id))).toEqual([["shop.orders.outbox"]]);
+    // So does another `architecture/` document, asked only once the map and the model fall short.
+    let asked = 0;
+    const project = async (): Promise<Array<{ path: string; text: string }>> => {
+      asked += 1;
+      return [{ path: "architecture/palette.likec4", text: "specification {\n  tag pci\n}\n" }];
+    };
+    const viaProject = await plan("  tag pci\n", nested, [model("model {\n}\n")], { projectDocuments: project });
+    expect(viaProject.undeclared).toBeUndefined();
+    expect(asked).toBe(1);
+    await plan("", `${STUBS}  shop.payments -> shop.orders 'Calls notify' {\n    #FEAT-7\n  }\n`, [], { projectDocuments: project });
+    expect(asked, "a merge every document already declares for reads nothing more").toBe(1);
+  });
+
+  it("a preview is told what only a routed model lacks and goes on; what the map lacks refuses it either way", async () => {
+    const model: ExtendingModel = { service: "order-service", path: "services/order-service/model.likec4", text: "model {\n}\n" };
+    const routed = `  shop = group 'Shop' {\n    orders = softwareSystem 'order-service' {\n      outbox = container 'outbox' {\n        #FEAT-7 #pci\n      }\n    }\n    payments = softwareSystem 'payment-service'\n  }\n  shop.payments -> shop.orders 'Calls notify' {\n    #FEAT-7\n  }\n`;
+    const p = await plan("  tag pci\n", routed, [model], { undeclared: "report" });
+    expect(p.content, "the map still merges, so the flows drawn over it still grade").toContain("shop.payments -> shop.orders 'Calls notify'");
+    expect((p.undeclared ?? []).map((u) => [u.table, u.name, u.document])).toEqual([["tag", "pci", "services/order-service/model.likec4"]]);
+    const onMap = await plan(
+      "  relationship calls\n",
+      `${STUBS}  shop.orders -[calls]-> shop.payments 'Calls capture' {\n    #FEAT-7\n  }\n`,
+      [],
+      { undeclared: "report" },
+    ).catch((err: unknown) => err);
+    expect(onMap).toBeInstanceOf(UndeclaredNamesError);
   });
 });

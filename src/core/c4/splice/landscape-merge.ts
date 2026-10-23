@@ -3,7 +3,7 @@ import { parentIdOf } from "../../kernel/ids/fqn/ancestors.js";
 import { errorText, loadSource, type Elem, type Rel } from "../likec4.js";
 import { firstUnlocated, unlocatedReason } from "../locate/unlocated.js";
 import { elementService, serviceOf } from "../resolve/service.js";
-import { kindsDeclared, scanModel, type ScannedElement, type ScannedModel, type ScannedRel } from "../source-scan.js";
+import { kindsDeclared, scanModel, type ScannedElement, type ScannedModel } from "../source-scan.js";
 import { matchLineEndings, spliceSource } from "./authored-source.js";
 import {
   assertSpliceVisible,
@@ -15,13 +15,13 @@ import {
   type ModelAdditions,
 } from "./contract.js";
 import { assertMergeableDelta } from "./delta-blocks.js";
-import { relSortKey, relStatementKey, scannedStatementKey } from "./identity/edges.js";
+import { relSortKey, relStatementKey, statementPool } from "./identity/edges.js";
 import { newAdditions } from "./identity/existing.js";
 import { planInteriors } from "./identity/interior.js";
 import { ownerOf } from "./identity/owner.js";
 import { elementSpot, relSpot, topStatements, type ModelRegion } from "./placement.js";
 import { nestedInsert, type Spot } from "./text/spot.js";
-import { additionsUndeclared } from "./vocabulary/undeclared.js";
+import { MAP_DOCUMENT, undeclaredInMerge } from "./vocabulary/undeclared.js";
 
 /* ------------------------------------------------------------------ */
 /* Merging                                                             */
@@ -151,11 +151,7 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
   // because routing has to know WHERE an edge was written: one drawn inside a
   // block that rides whole is already on the map. A statement is keyed with the
   // tags its kind gives it, which the parsed addition carries and its text does not.
-  const pool = new Map<string, ScannedRel[]>();
-  for (const s of scan.rels) {
-    const k = scannedStatementKey(s, merge.deltaKindTags ?? {});
-    pool.set(k, [...(pool.get(k) ?? []), s]);
-  }
+  const pool = statementPool(scan, merge.deltaKindTags ?? {});
 
   const interiors = planInteriors({ scan, deltaElements, owner, addedEls });
   const routed = new Map<string, ModelAdditions>();
@@ -203,17 +199,24 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
   // LikeC4's "Could not resolve reference" and a guess at the cause; this names
   // the declaration to add, and is what the feature gate reads to predict the
   // refusal (`../project/staged.ts`, `core/coherence/specification/`).
-  const missing = additionsUndeclared({
-    landscapeText: text,
-    deltaText,
-    scan,
-    deltaElements,
-    featureId,
-    kindTags: merge.deltaKindTags ?? {},
-    map: { els: mapEls, rels: mapRels, omit: interiors.omit },
-    models: [...routed.values()],
-  });
-  if (missing.length > 0) throw new UndeclaredNamesError(missing);
+  const undeclared = await undeclaredInMerge(
+    {
+      landscapeText: text,
+      deltaText,
+      scan,
+      deltaElements,
+      featureId,
+      kindTags: merge.deltaKindTags ?? {},
+      map: { els: mapEls, rels: mapRels, omit: interiors.omit },
+      models: [...routed.values()],
+    },
+    merge.projectDocuments,
+  );
+  // A preview may go on past what only a MODEL lacks — the map it stages parses
+  // either way — and never past what the landscape's own text lacks.
+  if (undeclared.length > 0 && (merge.undeclared !== "report" || undeclared.some((u) => u.document === MAP_DOCUMENT))) {
+    throw new UndeclaredNamesError(undeclared);
+  }
 
   const spliced: Array<{ start: number; end: number }> = [];
   const rides = (start: number, end: number): boolean =>
@@ -382,5 +385,5 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
     }
   }
 
-  return { content: touchesMap ? content : null, addedEls: mapEls, addedRels: mapRels, models: [...routed.values()] };
+  return { content: touchesMap ? content : null, addedEls: mapEls, addedRels: mapRels, models: [...routed.values()], ...(undeclared.length === 0 ? {} : { undeclared }) };
 }

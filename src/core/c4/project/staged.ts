@@ -61,7 +61,7 @@ import { inOrder } from "../../kernel/concurrency.js";
 import { decodeDocument } from "../../kernel/document-bytes.js";
 import type { DocsDir, FeatureDir } from "../../kernel/ids/dirs.js";
 import { featurePaths, landscapePath } from "../../repo/paths.js";
-import { architectureDir, generatedArchitectureDocuments } from "./architecture.js";
+import { architectureDir, generatedArchitectureDocuments, projectDocumentsBesideMap } from "./architecture.js";
 import { architectureDocuments } from "./documents.js";
 import { asLoadedDoc, loadProject } from "./load.js";
 
@@ -220,11 +220,15 @@ export async function stageMergedProject(req: StagedProjectRequest): Promise<Sta
 }
 
 /** What the landscape looks like after this feature's C4 delta is spliced in. */
-export type MergedLandscape =
-  /** The delta adds nothing, or there is none — the living landscape stands. */
-  | { kind: "living" }
-  /** The merge preview, as authored bytes. */
-  | { kind: "merged"; content: string }
+type MergedLandscape =
+  /**
+   * Nothing reaches the map — the delta adds nothing, or there is none, or
+   * every addition is routed into a model — and the living landscape stands.
+   * `missing` as on `failed`, for what a routed model lacks.
+   */
+  | { kind: "living"; missing?: readonly UndeclaredName[] }
+  /** The merge preview, as authored bytes — with `missing` as on `failed`, for what a routed model lacks. */
+  | { kind: "merged"; content: string; missing?: readonly UndeclaredName[] }
   /** The merge could not be computed; `planLandscape` owns the refusal and says why. */
   | {
       kind: "failed";
@@ -323,8 +327,14 @@ export async function mergedLandscape(req: Omit<StagedProjectRequest, "documents
       // feature's flows over a merge the archive itself computes.
       deltaKindTags: delta.specification?.relationshipKindTags ?? {},
       ...(models === undefined ? {} : { models }),
+      // As `planLandscape` passes it, for the model it routes into; and REPORTED
+      // rather than refused where only a model lacks a name, because the map
+      // this stages parses either way and the flows drawn over it still grade.
+      projectDocuments: () => projectDocumentsBesideMap(req.docsDir),
+      undeclared: "report",
     });
-    return plan.content === null ? { kind: "living" } : { kind: "merged", content: plan.content };
+    const missing = plan.undeclared === undefined ? {} : { missing: plan.undeclared };
+    return plan.content === null ? { kind: "living", ...missing } : { kind: "merged", content: plan.content, ...missing };
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     return { kind: "failed", reason, ...(err instanceof UndeclaredNamesError ? { missing: err.missing } : {}) };

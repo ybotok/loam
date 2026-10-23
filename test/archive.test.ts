@@ -2039,7 +2039,8 @@ model {
     // The input the net above used to be proved with: a `container` child on a
     // map that declares no `container`. Predicted at the gate now — the archive
     // never copies a specification declaration — and not overridable, because
-    // approving it would only move the refusal to the parse net.
+    // approving it would only move the refusal to the merge, which refuses the
+    // same addition by name.
     const p = await makeProject({
       "architecture/landscape.likec4": LANDSCAPE,
       "features/FEAT-21-engine/delta.likec4": NESTED_CHILD_DELTA,

@@ -272,10 +272,11 @@ export const LOAM_SHIP: CommandContent = {
      path the merge would write mechanically, they arrive with
      \`overridable: false\`, and the fix is a rename, never the flag.
      \`delta.specification-not-merged\` arrives the same way: the delta's additions
-     use a kind or tag (\`-[publishes]->\`, an \`element queue\`, a \`#pci\`) the living
-     map's \`specification\` does not declare, and the archive copies the addition,
-     never the declaration. Add the line it names to
-     \`architecture/landscape.likec4\` — it is vocabulary, not a feature change — then
+     use a kind, tag or custom color (\`-[publishes]->\`, an \`element queue\`, a
+     \`#pci\`) the living map's \`specification\` does not declare, and the archive
+     copies the addition, never the declaration. Add the line it names to
+     \`architecture/landscape.likec4\` — it is vocabulary, not a feature change — or
+     move it there from the \`architecture/\` document the message names, then
      re-run.
      \`openapi.remove-marker-path-level\` arrives
      here too: an \`x-loam-remove\` written beside the methods instead of inside the
