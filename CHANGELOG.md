@@ -10,6 +10,44 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+## [0.2.0-alpha.14] - 2026-10-23
+
+Everything on `main` since `0.2.0-alpha.13`. Still a prerelease on the `alpha` line. When this
+version was cut, `alpha` and `latest` both named `0.2.0-alpha.13`, so a repository upgrading from it
+takes this section alone. One still on `0.2.0-alpha.9` takes alpha.13's section and the three below
+it as well: `0.2.0-alpha.10`, `0.2.0-alpha.11` and `0.2.0-alpha.12` were tagged and never
+published. `npm view @ybotok/loam dist-tags` is the record of what installs.
+
+Both changes move a refusal from after the archive to before it. A feature now carries its
+services' own flows: a `dynamic view` at `features/<FEAT>/specs/<svc>/usecases/<name>.likec4` is
+graded at feature scope — by `validate --feature`, `validate --all` per active feature,
+`loam status <FEAT>` and the archive gate — with the grader `validate --service` runs, against the
+service's project as the archive would leave it. `loam archive` writes it to
+`services/<…>/<svc>/usecases/<name>.likec4` (unfiled `services/<svc>/` for a service the feature
+creates), and `loam unarchive` takes it back. A document at a living flow's path replaces that
+flow, and one holding only comments retires it, both only when the feature modifies or removes
+every requirement the living flow claims. And the gap alpha.13 named is closed: additions that use
+an element kind, relationship kind, tag or custom color the living `architecture/landscape.likec4`
+does not declare are reported at feature scope as `delta.specification-not-merged`, with the line
+to add, and `loam status <FEAT>` says `draft` for them, where it called the feature ready.
+
+Exit codes move in both directions. Such a delta makes `validate --feature` and `validate --all`
+exit 1, where they exited 0; `loam archive` and `archive --dry-run` still exit 1 for it, but refuse
+`not-coherent` before the merge, where they refused `merge-failed`, and `--approve` does not
+override it. A feature whose service flow is broken, undeclared, empty, replaces a living flow
+without a pin on every promise it keeps, or retires a flow that does not exist makes
+`validate --feature`, `validate --all` and `loam archive` exit 1, where they exited 0 and left the
+flow ungraded. One case goes the other way: a feature that removes a requirement a living service
+flow claims, and redraws or retires that flow at the slot, exits 0 where it exited 1 on
+`usecase.requirement-unresolved`.
+
+Two stable codes were added and none renamed or retired: `delta.specification-not-merged` and
+`usecase.flow-unknown`, both errors `--approve` does not override — 362 in all, against 360 at
+alpha.13, counted with `loam explain --codes --json`. No flag, `--json` key or frontmatter field
+was added. `archive --json`'s `plan[].action` has a new value, `delete`, for a retired flow, and a
+snapshot manifest row of a deleted file carries the additive `removed: true` (layout version 4
+still), which an older loam's `unarchive` reads as drift.
+
 ### Fixed — the feature gate predicts the archive's refusal of a kind the living map does not declare
 
 One stable code is added, `delta.specification-not-merged` (error, gates the archive, `--approve`
