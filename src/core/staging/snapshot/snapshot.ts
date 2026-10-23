@@ -107,6 +107,8 @@ export async function writeSnapshot(request: SnapshotRequest): Promise<void> {
       ...key,
       existed: s.before !== null,
       after: sha256(s.content ?? Buffer.alloc(0)),
+      // A delete leaves absence, which no digest spells (`SnapshotEntry.removed`).
+      ...(s.content === null && s.before !== null ? { removed: true as const } : {}),
       before: s.before === null ? null : sha256(s.before),
     });
     if (s.before !== null) {

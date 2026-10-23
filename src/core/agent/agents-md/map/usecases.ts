@@ -96,8 +96,8 @@ export const USECASE_VIEWS = `- Business use cases are \`dynamic view\`s, and \`
   \`metadata { op }\`) still warns, exactly as on the fleet map. A \`#cap-\` tag on
   such a flow is \`usecase.capability-unresolved\`: a capability is claimed on the
   fleet map, never inside one service. A resolved service-local \`#req-\` keeps its
-  own grade and nothing else — it is not \`keptBy\`, not \`Covers:\`, and no feature
-  carries one yet.
+  own grade and nothing else — it is not \`keptBy\` and not \`Covers:\`. A feature
+  carries one at \`features/<FEAT>/specs/<svc>/usecases/<name>.likec4\` (below).
 - A feature that MODIFIES a requirement a LIVING flow claims — an \`architecture/\`
   flow's \`#req-\` tag on a capability requirement, or a service-local flow's on
   that service's own — gets \`usecase.requirement-modified\` (warn, never gates)
@@ -105,7 +105,9 @@ export const USECASE_VIEWS = `- Business use cases are \`dynamic view\`s, and \`
   feature, \`loam status <FEAT>\`, the archive): the tag still resolves after
   the merge, so nothing else would say the drawing now answers to new words.
   Read the flow against the replacement and redraw it in the same change if it
-  no longer keeps the promise. A feature that REMOVES such a requirement gets
+  no longer keeps the promise — a service flow under \`usecases/\` through the
+  feature's own slot (below), whose document at the same path silences the
+  warning because the archive replaces the flow. A feature that REMOVES such a requirement gets
   \`usecase.requirement-unresolved\` (error, gates, \`--approve\`-overridable) in
   the same places, naming the living flow: the tag will resolve to nothing, and
   \`validate --all\` would report exactly that after the archive. Drop the tag in
@@ -134,4 +136,25 @@ export const USECASE_VIEWS = `- Business use cases are \`dynamic view\`s, and \`
   whatever shape the service models take — \`features/**\` stays excluded from the
   root LikeC4 project, and the delta is pointed at alone
   (\`npx likec4 start features/<FEAT>\`).
+- A FEATURE brings a SERVICE's flow beside that service's other deltas:
+  \`features/<FEAT>/specs/<svc>/usecases/<name>.likec4\`, which \`loam archive\` writes
+  to \`services/<…>/<svc>/usecases/<name>.likec4\` and \`loam unarchive\` takes back.
+  It is graded where the feature is graded, by the grader \`validate --service\`
+  runs, against the project the archive leaves: the service's model with the
+  delta's interior routed into it (for a service the feature creates, the model
+  the archive writes), the map for an extending model, and its living flows; and
+  its \`#req-\` tags against the ids that service's spec.md and arch.spec.md have
+  after the merge — an id the feature ADDS or MODIFIES resolves, one it REMOVES
+  does not. A tag for an id the feature ADDS is declared by the document itself,
+  a tags-only \`specification { tag req-<slug> }\` at its top, which the archive
+  copies with the flow; a tag some block the project already reads declares
+  must NOT be declared again (\`usecase.flow-invalid\`, a duplicate). Unlike a fleet
+  flow it may REPLACE the living file at its path, and a document holding only
+  comments RETIRES it — but only when EVERY requirement that living flow claims is
+  one this feature MODIFIES or REMOVES (restating an unchanged one is enough),
+  whose \`Based-On:\` pins then cover the redraw; otherwise \`usecase.flow-exists\`.
+  An EMPTY document is neither, and is \`usecase.flow-invalid\`. A retirement naming no living flow is
+  \`usecase.flow-unknown\`. \`--approve\` moves none of the three. The slot addresses
+  \`usecases/\` only: a flow in \`views.likec4\` or inside model.likec4 is edited in
+  place, or moved into \`usecases/\` by a direct edit first.
 `;

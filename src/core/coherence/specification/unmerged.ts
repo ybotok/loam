@@ -34,7 +34,7 @@
  *
  * ASKED OF THE ARCHIVE'S OWN MERGE. The names come from `planLandscapeMerge`,
  * through the same preview every feature-side gate reads
- * (`../../c4/project/staged.ts`), with the fleet's extending models passed so
+ * (`../../c4/project/merge/preview.ts`), with the fleet's extending models passed so
  * an addition is judged in the document the archive would really put it in. A
  * second reading beside the merge would be a second opinion about it.
  *
@@ -48,7 +48,8 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import type { LoadedDoc } from "../../c4/likec4.js";
-import { mergedLandscape } from "../../c4/project/staged.js";
+import { projectDocumentsBesideMap } from "../../c4/project/architecture.js";
+import { mergedLandscape } from "../../c4/project/merge/preview.js";
 import type { ExtendingModel } from "../../c4/splice/contract.js";
 import {
   declarationLine,
@@ -67,7 +68,7 @@ export interface UnmergedRequest {
   docsDir: DocsDir;
   featureDir: FeatureDir;
   featureId: string;
-  /** The caller's memoised LikeC4 read, when it has one — the preview's own reason (`StagedProjectRequest.load`). */
+  /** The caller's memoised LikeC4 read, when it has one — the preview's own reason (`MergePreviewRequest.load`). */
   load?: (path: string) => Promise<LoadedDoc>;
   /** The fleet's extending models, read only when the preview runs. */
   models: () => Promise<ExtendingModel[]>;
@@ -107,6 +108,7 @@ export async function unmergedSpecificationIssues(req: UnmergedRequest): Promise
     featureId: req.featureId,
     ...(req.load === undefined ? {} : { load: req.load }),
     models: await req.models(),
+    projectDocuments: () => projectDocumentsBesideMap(req.docsDir),
   });
   // On any arm: a name only a routed model lacks leaves the map previewable,
   // and the merge reports it beside the content instead of refusing.

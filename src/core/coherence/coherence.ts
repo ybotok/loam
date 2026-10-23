@@ -6,6 +6,7 @@ import { livingMapOf, readDeltaSystem } from "../c4/resolve/systems.js";
 import { extendingModels } from "../c4/service-model/fleet/extending.js";
 import { serviceIdProblem } from "../kernel/ids/service.js";
 import { deltaShapeIssues } from "../delta/delta.js";
+import { featureServiceFlowIssues } from "../delta/flows/service.js";
 import type { Issue } from "../vocabulary/issue.js";
 import { featurePaths, landscapePath } from "../repo/paths.js";
 import { featureSpecServices } from "../repo/repo.js";
@@ -23,8 +24,8 @@ import { authoringIssues } from "./authoring/scaffold.js";
 import { droppedHealthCoverage } from "./covers/health.js";
 import { unmergedSpecificationIssues } from "./specification/unmerged.js";
 import { glossaryDeltaIssues } from "../glossary/delta.js";
-import { flowDeltaIssues } from "../usecases/delta/flows.js";
-import { deploymentDeltaIssues, readFeatureDeployments } from "../deployment/delta.js";
+import { featureFlows, flowDeltaIssues, USECASE_SUBDIR } from "../usecases/delta/flows.js";
+import { deploymentDeltaIssues, featureDeployments, readFeatureDeployments } from "../deployment/delta.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
 /**
@@ -70,6 +71,22 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
   // already holds must be caught before the copy, not after it has replaced an
   // authored hop sequence.
   issues.push(...(await flowDeltaIssues(docsDir, featureDir)));
+  // The same axis one project down: a flow beside a service's model, which a
+  // feature may also REPLACE or RETIRE — and graded, not only collided, because
+  // it is drawn over interior this feature routes in (`core/delta/flows/service.ts`).
+  issues.push(
+    ...(await featureServiceFlowIssues({
+      docsDir,
+      featureDir,
+      featureId,
+      // What else this archive writes under `architecture/`: the two slots above.
+      architecture: async () => [
+        ...(await featureFlows(featureDir)).map((flow) => ({ rel: `${USECASE_SUBDIR}/${flow.rel}`, path: flow.path })),
+        ...(await featureDeployments(featureDir)),
+      ],
+      ...(context === undefined ? {} : { context }),
+    })),
+  );
   issues.push(...(await deploymentDeltaIssues(docsDir, featureDir)));
 
   // And the topology's second question, which the collision check above cannot

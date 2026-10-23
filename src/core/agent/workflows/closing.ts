@@ -215,7 +215,8 @@ export const LOAM_SHIP: CommandContent = {
    dry run in step 3 refuses on them too — and the only way past without the
    pins is a human's \`--approve\`.
 3. \`loam archive $1 --dry-run --json\` first. \`plan[]\` is every file the merge would
-   write (\`create\` / \`update\`, then the final \`move\` into \`features/archive/\`) —
+   write (\`create\` / \`update\`, \`delete\` for a service flow the feature retires,
+   then the final \`move\` into \`features/archive/\`) —
    including an \`update\` for each of the feature's own documents whose links the
    move re-expresses, at its path before the move, and for each document outside
    the feature (another feature in flight, a living ADR) whose links into it the
@@ -255,7 +256,12 @@ export const LOAM_SHIP: CommandContent = {
    \`services/<…>/<svc>/model.likec4\` instead — a service the archive creates and
    the merged map draws gets that model too, written empty at \`services/<svc>/model.likec4\` and holding
    whatever the delta drew inside the service; it lands unfiled, and
-   \`loam subsystem move <svc> --into <subsystem>\` files it — then moves the feature
+   \`loam subsystem move <svc> --into <subsystem>\` files it. Each
+   \`specs/<svc>/usecases/<name>.likec4\` lands at \`services/<…>/<svc>/usecases/<name>.likec4\`
+   — created, REPLACING the living flow of that name, or, for a document holding
+   only comments, RETIRING it; each was graded at the gate against the project this
+   merge leaves, and a replacement or retirement only when every requirement the
+   living flow claims is MODIFIED or REMOVED by the feature — then moves the feature
    under \`features/archive/\`, whole: its verification record travels with it,
    the per-service \`verification/<id>.yaml\` files and any one-file
    \`verification.yaml\` alike, and \`loam verify $1\` reads it back afterwards as
@@ -325,7 +331,8 @@ export const LOAM_SHIP: CommandContent = {
 Archived by mistake? \`loam unarchive $1\` restores the living docs from the snapshot
 archive left in \`features/archive/$1*/.loam-before/\` and re-opens the feature. Do not
 hand-edit the living docs back instead: the previous text of a \`MODIFIED\` requirement
-is in that snapshot and nowhere else, so anything you write by hand is a guess. It
+is in that snapshot and nowhere else, so anything you write by hand is a guess — and so
+is a service flow the archive replaced or retired, which the undo writes back. It
 refuses under \`snapshot-corrupt\` when a pre-image's bytes no longer match the digest
 the archive recorded — \`--force\` does not override that one, because the damage is
 to the undo itself — and under \`snapshot-missing\` for an archive older than the

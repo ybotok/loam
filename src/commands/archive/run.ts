@@ -8,7 +8,6 @@
  * on every axis is staged
  * and swapped. `--dry-run` returns between the second and the third.
  */
-import { existsSync } from "node:fs";
 import { rename } from "node:fs/promises";
 import { CodedFailure, emitJson, repoPath, sayExplain } from "../../core/envelope/json.js";
 import {
@@ -31,12 +30,12 @@ import { serviceViewsState, viewsState } from "../../core/repo/tree/render/stale
 import { loadArchitecture } from "../../core/c4/project/architecture.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { gate } from "./plan/gate.js";
-import { issueJson, printPlan, refuseJson, type ArchiveOptions } from "./plan/refusal.js";
+import { issueJson, printPlan, refuseJson, writeAction, type ArchiveOptions } from "./plan/refusal.js";
 import { planCapabilities, planGlossary, planSpecs } from "./plan/specs.js";
 import { planOpenapiContracts } from "./plan/contracts/openapi.js";
 import { planAsyncapiContracts } from "./plan/contracts/asyncapi.js";
 import { contractConsumers } from "./plan/contracts/consumers.js";
-import { planDeployments, planFlows, planLandscape } from "./plan/landscape.js";
+import { planDeployments, planFlows, planLandscape, planServiceFlows } from "./plan/landscape.js";
 import { planFeatureLinks, planInboundLinks } from "./plan/document/links.js";
 import { emptyPlan } from "./plan/state.js";
 import { checklistAtArchive } from "./shipped.js";
@@ -95,8 +94,12 @@ export async function archiveLocked(
   // copy is create-only and refused at the gate if the living tree already holds
   // one (`core/usecases/delta/flows.ts`), and it is ordered after the landscape
   // merge so a reader of the plan sees the map change before the sequence drawn
-  // on it.
+  // on it. The service-local flows follow for the same reason one document
+  // down — after the model merge that gives them their containers — and are the
+  // one copy that may replace or retire a living file, gated at the gate
+  // (`core/usecases/delta/service/grade.ts`).
   await planFlows(config, gated, planned, say);
+  await planServiceFlows(read, gated, planned, say);
   await planDeployments(config, gated, planned, say);
   // After the merges, because it is the move rather than a merge: the feature's own
   // documents ride the rename into features/archive/, and their links out of
@@ -157,7 +160,7 @@ export async function archiveLocked(
   const overridden = opts.approve === true ? [...gating, ...planGates] : [];
   const plan: Array<Record<string, unknown>> = writes.map((w) => ({
     path: repoPath(config.docsDir, w.path),
-    action: existsSync(w.path) ? "update" : "create",
+    action: writeAction(w),
   }));
   plan.push({ path: `features/${dirName}`, action: "move", to: `features/archive/${dirName}` });
   const payload = (archived: boolean): Record<string, unknown> => ({

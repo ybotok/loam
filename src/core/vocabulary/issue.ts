@@ -65,7 +65,8 @@ export function issueFinding(i: Issue): Finding {
  * living definition in the same change) costs one `git mv` and loses nothing.
  * `usecase.flow-exists` is the same act one axis over: the merge would copy a
  * feature's flow over a living one, and an ordered hop sequence is recorded
- * nowhere else either. `usecase.flow-invalid` is the other kind of exception —
+ * nowhere else either. `usecase.flow-unknown` is its inverse — a retirement of a
+ * flow that does not exist — and no approval makes one exist. `usecase.flow-invalid` is the other kind of exception —
  * not a deletion but a BLINDNESS: loam could not read the feature's flows
  * against the map its own merge would leave, so it graded nothing, and
  * `--approve` overrides loam's judgment about coherence and never its ability
@@ -88,6 +89,7 @@ const NEVER_OVERRIDABLE: ReadonlySet<IssueCode> = new Set<IssueCode>([
   "deployment.doc-reserved",
   "usecase.flow-invalid",
   "delta.specification-not-merged",
+  "usecase.flow-unknown",
 ]);
 
 export function approveOverrides(i: Issue): boolean {
@@ -299,7 +301,7 @@ export type IssueCode =
   /** a `features/<FEAT>/glossary/<term>.md` whose term the living glossary already defines — the merge is a whole-file copy, so it would replace an authored definition wholesale. An error with no legal reading, which is why `--approve` changes nothing about it: a feature-local glossary document INTRODUCES a term, and rewriting one belongs in a pull request where git produces the conflict */
   | "glossary.term-exists"
   /* --- the use-case axis: a flow a feature introduces --- */
-  /** a `features/<FEAT>/usecases/*.likec4` that could not be read against the map this feature's own merge would leave behind — a parse error, an unresolved element, or a landscape merge that itself refuses. The flows were not graded, and archiving would copy them into `architecture/` for the next reader's `loam validate --all` to fail on. Mechanical rather than a judgement, which is why `--approve` does not move it */
+  /** a `features/<FEAT>/usecases/*.likec4` that could not be read against the map this feature's own merge would leave behind — a parse error, an unresolved element, or a landscape merge that itself refuses. The flows were not graded, and archiving would copy them into `architecture/` for the next reader's `loam validate --all` to fail on. The same for a service's own `features/<FEAT>/specs/<svc>/usecases/*.likec4`, read against that service's project as the merge would leave it (its model with the delta's interior routed in, or the model the archive creates) — and such a document holding nothing at all, neither a flow nor a retirement. Mechanical rather than a judgement, which is why `--approve` does not move it */
   | "usecase.flow-invalid"
   /** a hop of a feature's own flow that no relationship on the map its merge would leave backs — validate's fleet-scope code, graded in feature scope against the merge preview, so the archive cannot land a flow `validate --all` then convicts */
   | "usecase.step-unbacked"
@@ -313,8 +315,10 @@ export type IssueCode =
   | "usecase.requirement-unresolved"
   /** a LIVING flow — in `architecture/` or a service's own — whose `#req-` tag claims a requirement — a capability's, or that service's own — this feature MODIFIES: the tag still resolves after the archive (unless an id the feature adds flattens to it too — then it is `usecase.requirement-unresolved` instead) and nothing grades the drawing against the new wording, so the author reads the flow against the replacement. A warning that never gates */
   | "usecase.requirement-modified"
-  /** a `features/<FEAT>/usecases/<name>.likec4` whose flow the living `architecture/` already holds — the merge is a whole-file copy, so it would replace an authored hop sequence wholesale. An error with no legal reading, which is why `--approve` changes nothing about it: a feature-local flow INTRODUCES a use case, and rewriting one belongs in a pull request where git produces the conflict */
+  /** a `features/<FEAT>/usecases/<name>.likec4` whose flow the living `architecture/` already holds — the merge is a whole-file copy, so it would replace an authored hop sequence wholesale. An error with no legal reading, which is why `--approve` changes nothing about it: a feature-local flow INTRODUCES a use case, and rewriting one belongs in a pull request where git produces the conflict. Also a `features/<FEAT>/specs/<svc>/usecases/<name>.likec4` whose living twin beside the service's model claims a requirement of that service this feature does not MODIFY or REMOVE, or claims none: a service flow is replaced or retired only through EVERY promise it keeps, whose `Based-On:` pins are the collision a second feature redrawing the same file would hit */
   | "usecase.flow-exists"
+  /** a `features/<FEAT>/specs/<svc>/usecases/<name>.likec4` holding no LikeC4 statement — the marker that RETIRES the living flow at that path — where the service holds no such flow: the archive would remove nothing while reporting a retirement. A misnamed document, or one whose flow another change already took away; `--approve` cannot make something exist to retire */
+  | "usecase.flow-unknown"
   /* --- the deployment axis: the topology a feature introduces --- */
   /** a `features/<FEAT>/deployment/<name>.likec4` whose file the living `architecture/` already holds — the merge is a whole-file copy, so it would replace an authored topology wholesale. An error with no legal reading, which is why `--approve` changes nothing about it: a feature-local deployment document INTRODUCES topology, and rewriting one belongs in a pull request where git produces the conflict. The same act, and the same severity, as `usecase.flow-exists` one axis over */
   | "deployment.doc-exists"

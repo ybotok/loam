@@ -32,14 +32,16 @@ import { titleOf } from "../../../core/c4/splice/identity/edges.js";
 import { parseServiceId, type PathableService } from "../../../core/kernel/ids/service.js";
 import { isPathInside } from "../../../core/kernel/path-safety.js";
 import { landscapePath as landscapeFile, unfiledServicePaths } from "../../../core/repo/paths.js";
-import { enumeratedServiceIds } from "../../../core/repo/service-target.js";
+import { enumeratedServiceIds, locateServicePaths } from "../../../core/repo/service-target.js";
+import { featureSpecServices } from "../../../core/repo/repo.js";
 import { createdServiceModels } from "../../../core/c4/service-model/created/models.js";
 import { extendingModels } from "../../../core/c4/service-model/fleet/extending.js";
 import { modelMergeErrors } from "./model/extending.js";
 import { type Gated, type Plan } from "./state.js";
-import { CodedFailure } from "../../../core/envelope/json.js";
+import { CodedFailure, repoPath } from "../../../core/envelope/json.js";
 import { featurePaths } from "../../../core/repo/paths.js";
 import { featureFlows, livingFlowPath, USECASE_SUBDIR } from "../../../core/usecases/delta/flows.js";
+import { featureServiceFlows, livingServiceFlowPath, SERVICE_FLOW_DIR } from "../../../core/usecases/delta/service/slot.js";
 import { featureDeployments, livingDeploymentPath } from "../../../core/deployment/delta.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 import type { FleetContext } from "../../../core/fleet-context.js";
@@ -299,6 +301,50 @@ export async function planFlows(
   for (const flow of flows) {
     plan.writes.push(planWrite(livingFlowPath(config.docsDir, flow.rel), await readUtf8(flow.path)));
     say(`  use case: ${flow.rel} — created architecture/${USECASE_SUBDIR}/${flow.rel}`);
+  }
+}
+
+/**
+ * The flows this feature brings for a SERVICE, written beside its model — under
+ * `services/<…>/<svc>/usecases/`, at the path the document has inside
+ * `features/<FEAT>/specs/<svc>/usecases/` (`core/usecases/delta/service/slot.ts`).
+ *
+ * Unlike `planFlows`, not create-only. A document whose living twin exists
+ * REPLACES it, and one holding no LikeC4 statement RETIRES it — a delete. Both
+ * were allowed at the gate only when the twin claims a requirement this feature
+ * MODIFIES or REMOVES (`usecase.flow-exists` otherwise), and a retirement of
+ * nothing was refused there too (`usecase.flow-unknown`); so a twin missing
+ * here is a race since the gate, and refused as one rather than reported done.
+ * A service this archive creates is unfiled, which is where `locateServicePaths`
+ * answers for an id the tree does not hold yet.
+ *
+ * `unarchive` needs nothing new: an overwrite's pre-image and a delete's are in
+ * the snapshot like every other write, and a create is undone by deleting.
+ */
+export async function planServiceFlows(
+  config: { docsDir: DocsDir; fleet: FleetContext },
+  gated: Gated,
+  plan: Plan,
+  say: (line?: string) => void,
+): Promise<void> {
+  const docs = await featureServiceFlows(gated.featureDir, await featureSpecServices(gated.featureDir, config.fleet));
+  for (const doc of docs) {
+    const target = livingServiceFlowPath((await locateServicePaths(config.docsDir, doc.service, config.fleet)).dir, doc.rel);
+    const file = repoPath(config.docsDir, target);
+    const at = `${doc.service}/${SERVICE_FLOW_DIR}/${doc.rel}`;
+    if (doc.kind === "flow") {
+      const act = existsSync(target) ? "replaced" : "created";
+      plan.writes.push(planWrite(target, await readUtf8(doc.path)));
+      say(`  use case: ${at} — ${act} ${file}`);
+    } else if (doc.kind === "retirement" && existsSync(target)) {
+      plan.writes.push({ path: target, content: null });
+      say(`  use case: ${at} — retired ${file}`);
+    } else {
+      // Both arms were refused at the gate, with no `--approve` past them
+      // (`usecase.flow-unknown`, and `usecase.flow-invalid` for an empty
+      // document): reaching here is the tree moving under the gate.
+      throw new CodedFailure("merge-failed", `${file} is not what the gate graded ${at} against — nothing was written; re-run`);
+    }
   }
 }
 

@@ -34,10 +34,10 @@ import {
   resolveRequirementTags,
   tagSlug,
   type RequirementClaim,
-} from "../../../../core/capabilities/usecase-join.js";
-import type { ParsedView } from "../../../../core/c4/parsed/dynamic-views.js";
-import { compareIds } from "../../../../core/repo/entries.js";
-import type { Finding } from "../../../../core/vocabulary/report.js";
+} from "../../capabilities/usecase-join.js";
+import type { ParsedView } from "../../c4/parsed/dynamic-views.js";
+import { compareIds } from "../../repo/entries.js";
+import type { Finding } from "../../vocabulary/report.js";
 
 /** What the tag grades resolve against: the service, and its own identified requirements. */
 export interface ServiceTagScope {

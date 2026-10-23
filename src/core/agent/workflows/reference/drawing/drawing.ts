@@ -43,6 +43,7 @@ export const LOAM_DRAWING: CommandContent = {
     "The legend",
     "Overview views that read",
     "A feature's message flows",
+    "A service's own flow in a feature",
   ],
   body: `Drawing the fleet so that a person can read it: one relationship kind per kind of traffic, an arrow only where evidence gives one, a legend, and overview views that each answer one question.
 
@@ -283,5 +284,32 @@ produced outside the fleet", has the full join):
     crm -[publishes]-> kafka.crmEvents 'CustomerUpdated' {
       metadata { publishes 'crm.CustomerUpdated' }
     }
+
+## A service's own flow in a feature
+
+A flow inside one service is drawn over that service's containers, in
+\`features/<FEAT>/specs/<svc>/usecases/<name>.likec4\`, and it may name a container
+the same feature's \`delta.likec4\` adds: the gate reads it against the model the
+archive will write. Spell each element by the id the merged model gives it —
+the map's path for an extending model (\`marketplace.orderService.refunds\`), the
+model's own for a standalone one. A tag for a requirement the feature adds is
+declared in the document, above the view:
+
+    specification {
+      tag req-ORD-REFUND
+    }
+
+    views {
+      dynamic view uc_track_refund {
+        #req-ORD-REFUND
+        title 'Track a refund'
+        marketplace.orderService.domain -> marketplace.orderService.refunds 'hands the refund over'
+        marketplace.orderService.refunds -> marketplace.orderService.db 'records the refund state'
+      }
+    }
+
+The tag goes before the title (a tag after it does not parse), and each hop
+needs a relationship the merged model draws, or \`usecase.step-unbacked\` says
+which one is missing.
 `,
 };

@@ -114,13 +114,22 @@ export function sayRecovery(r: CommitRecovery): void {
   console.log("");
 }
 
+/**
+ * What a planned write does to its file, decided BEFORE the commit — afterwards
+ * everything reads as an update. One spelling for the dry run's lines and the
+ * `--json` plan's `action`, so the two cannot disagree about a file. `delete`
+ * is the one act an archive takes on a living file only on request: a feature
+ * document retiring the service flow at its path (`core/usecases/delta/service/slot.ts`).
+ */
+export function writeAction(w: PlannedWrite): "create" | "update" | "delete" {
+  if (w.content === null) return "delete";
+  return existsSync(w.path) ? "update" : "create";
+}
+
 /** The full plan, as files: what a dry run shows instead of doing. */
 export function printPlan(docsDir: string, writes: PlannedWrite[], dirName: string, owed: readonly string[]): void {
   console.log(`\n  plan — ${writes.length} file(s):`);
-  for (const w of writes) {
-    const verb = existsSync(w.path) ? "update" : "create";
-    console.log(`    ${verb}  ${repoPath(docsDir, w.path)}`);
-  }
+  for (const w of writes) console.log(`    ${writeAction(w)}  ${repoPath(docsDir, w.path)}`);
   console.log(`    move    features/${dirName} → features/archive/${dirName}`);
   // What the real run would print in place of "complete + current" (../closing.ts).
   if (owed.length > 0) console.log("");

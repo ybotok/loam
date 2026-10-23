@@ -198,7 +198,7 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
   // below and in the archive's model staging would refuse the same merge, with
   // LikeC4's "Could not resolve reference" and a guess at the cause; this names
   // the declaration to add, and is what the feature gate reads to predict the
-  // refusal (`../project/staged.ts`, `core/coherence/specification/`).
+  // refusal (`../project/merge/preview.ts`, `core/coherence/specification/`).
   const undeclared = await undeclaredInMerge(
     {
       landscapeText: text,

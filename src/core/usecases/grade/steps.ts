@@ -11,7 +11,7 @@
  * TWO SCOPES, ONE GRADER. The fleet target grades the `architecture/` project's
  * views and the service target grades a service's own project — every `.likec4`
  * beside `model.likec4`, read the way the renderer reads it
- * (`commands/validate/service/usecases/`). Both call `stepFindings` below with
+ * (`../service/grade.ts`). Both call `stepFindings` below with
  * their own `StepGrading`; what differs is only where a finding says the view
  * is (`place`). A second copy of the verdict→code mapping per scope is the
  * drift this package's banner forbids, which is why the intra-service case is

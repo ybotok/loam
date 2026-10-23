@@ -18,11 +18,11 @@ acceptance tests, and implementation evidence remain ordinary files in repositor
 state inside a service. The CLI is small enough to audit, and every writer — not only archive — now
 commits through a locked, journaled transaction that a crash cannot leave half-applied.
 
-The tree contains **533 TypeScript modules in 168 source packages**, with an acyclic package graph
+The tree contains **540 TypeScript modules in 170 source packages**, with an acyclic package graph
 checked by
 [scripts/package-graph.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-graph.mjs). The
 CLI exposes **30 commands** from [src/cli.ts](https://github.com/ybotok/loam/blob/main/src/cli.ts),
-and the suite stands at **206 test files**. Those four counts are deliberately stated OUTSIDE the
+and the suite stands at **207 test files**. Those four counts are deliberately stated OUTSIDE the
 dated snapshot below: each derives from the tree in one readdir, so
 [test/docs-facts.test.ts](https://github.com/ybotok/loam/blob/main/test/docs-facts.test.ts) grades
 them live and this paragraph cannot quietly trail the code the way its predecessor did.
@@ -388,6 +388,26 @@ mentions a reserved prefix anywhere in its bytes — an untagged sibling is neve
 the workspace is loaded a project that does not read is one `usecase.flow-invalid` whether or not a
 view opted in.
 
+#### A feature carries a service's own flows
+
+**Built 2026-10-23** on its own branch; the merge commit that lands it on `main` is its record.
+Promoted from Later (the item's trigger fired; see there). Built: `features/<FEAT>/specs/<svc>/usecases/<name>.likec4`,
+graded at feature scope by the service target's own grader against the project the archive leaves
+— the merge preview kept its MODEL half for it (`previewMerge`), so a hop into a container the delta
+routes into an extending model, or into the model the archive creates, resolves — with the
+requirement ids the merge leaves; archived into `services/<…>/<svc>/usecases/` and taken back by
+`unarchive`. Two departures from the plan written in Later: the route is NOT create-only, because
+the case that triggered it is a REDRAW — a same-path document replaces the living flow and a
+comments-only one retires it, gated on the feature MODIFYING or REMOVING every requirement the
+living flow claims, whose `Based-On:` pins are the collision the overwrite rides on
+(`usecase.flow-exists` otherwise, new `usecase.flow-unknown` for retiring nothing; "some claimed
+promise changed" was the first draft, and a review reproduced two features burying each other's
+redraw under it); and the snapshot did need one additive field, `removed: true`, because an archive
+had never deleted a file before. Rejected: an explicit retire list (a second document per feature to
+say what one file already can), and declaring an added `#req-` tag in the map (invisible to a
+standalone model's project). Open: the feature gate does not predict `c4.fleet-project-invalid` for
+a tag two services declare locally.
+
 #### The service model, renderable from the fleet root
 
 **Landed 2026-09-03**, from one problem report. The root `likec4.config.json` that
@@ -713,17 +733,12 @@ item gets promoted — it went from here to `## Now` and from there to
   for every fleet that never writes one. Promote only on evidence from a second fleet, after living
   with the disclosure — the first report classified itself `inconclusive`, and one fleet is not
   enough to qualify an invariant that says placement is never part of any identity.
-- **A feature brings an intra-service flow.** `features/<FEAT>/specs/<svc>/usecases/<name>.likec4`,
-  copied create-only by `loam archive` into `services/<…>/<svc>/usecases/` and taken back by
-  `loam unarchive`, graded before the copy against the service's own LikeC4 project with the
-  feature's `specs/<svc>/` requirement deltas in `#req-` scope — `usecase.flow-exists` and
-  `usecase.flow-invalid` reused, never `--approve`-overridable. Deliberately NOT built with the
-  living slot (2026-09-03): the version-3 snapshot manifest already carries an artifact path with a
-  directory in it, so nothing about the undo changes when it lands, and no model delta exists to
-  preview — what it waits for is one fleet asking for a container-level flow to ship in the same
-  change as the `arch.spec.md` requirement it answers. Until then a service-local flow is written
-  directly into the service directory in the same pull request, where git produces the conflict;
-  building the feature route ahead of that evidence is the invented need the non-goals forbid.
+- **A feature brings an intra-service flow** — promoted 2026-10-23, when the trigger this item named
+  fired: a docs-repo maintainer drawing service-local flows from component tests needed the redrawn
+  flow of a MODIFIED requirement, and the flows of a service a feature creates, to ship in the
+  feature. See "A feature carries a service's own flows" under
+  [Recently landed](#recently-landed) for what was built and where it departs from the plan written
+  here.
 - **A subsystem-scoped use-case slot.** A flow whose hops all sit inside one subsystem's subtree
   looks like it wants a home between the two that exist — `architecture/usecases/` is the fleet's
   slot, `services/<…>/<svc>/usecases/` is one service's. Deliberately NOT built (2026-09-07), and

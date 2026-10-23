@@ -116,8 +116,22 @@ export interface SnapshotEntry {
   artifact?: string;
   /** False when archive CREATED the file: restoring it means deleting it again. */
   existed: boolean;
-  /** sha256 of what archive wrote, so unarchive can tell its own merge from later edits. */
+  /**
+   * sha256 of what archive wrote, so unarchive can tell its own merge from later
+   * edits — the digest of NO bytes on a `removed` row, which is how every row
+   * has always been spelled and so is not, alone, a sign of a delete.
+   */
   after: string;
+  /**
+   * True when archive DELETED the file — a feature retiring a service flow
+   * (`core/usecases/delta/service/slot.ts`): what it left is absence, and
+   * restoring means writing the pre-image back. Additive and omitted on every
+   * other row, so the layout version does not move; an older loam reads such a
+   * row as a file changed since the archive and refuses the undo without
+   * `--force` — a refusal, never a wrong restore. Only ever on a row that
+   * `existed`: an archive deletes nothing that was not there.
+   */
+  removed?: true;
   /**
    * sha256 of the pre-image beside this manifest — the bytes `unarchive` will
    * RESTORE. Null when archive created the file (there is no pre-image).
