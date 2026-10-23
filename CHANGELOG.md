@@ -10,6 +10,37 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Fixed — the feature gate predicts the archive's refusal of a kind the living map does not declare
+
+One stable code is added, `delta.specification-not-merged` (error, gates the archive, `--approve`
+does not override it), closing the gap 0.2.0-alpha.13 named. A feature delta drawing
+`-[publishes]->` over a map that declares no relationship kinds — any map written before alpha.13,
+`examples/docs`' among them — passed `loam validate --feature` at exit 0, `loam status <FEAT>`
+called it ready, and `loam archive` then refused with `merge-failed` ("Could not resolve reference
+to RelationshipKind named 'publishes'"). An element kind or a tag the map lacked went the same way.
+
+- **`loam validate --feature` exits 1 and `loam status <FEAT>` says `draft`** for each element
+  kind, relationship kind or tag the feature's additions use that the living
+  `architecture/landscape.likec4`'s `specification` does not declare. The message names the line
+  to add (`relationship publishes`), the addition that uses it, and the document it would land in;
+  `locations[]` names the landscape (`primary`) and the feature's `delta.likec4` (`related`). A
+  name is graded where the archive would write it: an addition routed into an extending
+  `model.likec4` is read against the map's specification plus that model's own. A kind the delta
+  declares and no addition draws, and the feature's own tag, are never reported.
+- **`loam archive` and `archive --dry-run` refuse such a feature as `not-coherent`**, where they
+  refused `merge-failed`, with the issue carrying `overridable: false`; `--approve` no longer
+  reaches the merge for it. Nothing is written, as before.
+- **The merge names the declaration itself.** A merge whose additions use an undeclared name is
+  refused before it splices anything, with the same message, and still as `merge-failed`. The
+  LikeC4 parse net behind it keeps refusing everything else, and its hint no longer guesses at a
+  missing kind.
+- `loam instructions loam-drawing`, the feature and ship workflow pages, the `loam-codes` page and
+  the `/loam-check` table say what happens and what to add. SCHEMA.md, "Which way an edge points",
+  says why the archive does not copy the declaration instead.
+
+The bare fleet `loam status`, which grades no feature, is unchanged. 361 stable codes, counted with
+`loam explain --codes --json`.
+
 ## [0.2.0-alpha.13] - 2026-10-22
 
 Everything on `main` since `0.2.0-alpha.12`. Still a prerelease on the `alpha` line. When this

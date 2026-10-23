@@ -172,10 +172,10 @@ export async function planLandscape(
             "merge-failed",
             `the merged ${additions.model.path} would not parse (${errors.length} error(s): ${errors.slice(0, 3).join("; ")}) — ` +
               `nothing was written. This model is read beside architecture/landscape.likec4 and nothing else, so an addition ` +
-              `fits only if the map declares its kind and every element it names. Most often it is a kind or tag missing from ` +
-              `the map's specification block, or a reference to ANOTHER service's interior, which lives in that service's own ` +
-              `model and is not in this project — draw that call service to service on the map instead. Fix the map's ` +
-              `specification or the delta, then re-run`,
+              `fits only if every element it names is in that project (a kind or tag the map does not declare is refused ` +
+              `before this, by name). Most often it is a reference to ANOTHER service's interior, which lives in that ` +
+              `service's own model and is not in this project — draw that call service to service on the map instead. ` +
+              `Fix the delta, then re-run`,
           );
         }
         writes.push(planWrite(join(config.docsDir, ...additions.model.path.split("/")), content));

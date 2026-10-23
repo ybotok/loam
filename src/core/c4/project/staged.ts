@@ -54,8 +54,9 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { errorText, loadFile, type LoadedDoc } from "../likec4.js";
 import { createdServiceModels } from "../service-model/created/models.js";
-import type { ExtendingModel } from "../splice/contract.js";
+import { UndeclaredNamesError, type ExtendingModel } from "../splice/contract.js";
 import { planLandscapeMerge } from "../splice/landscape-merge.js";
+import type { UndeclaredName } from "../splice/vocabulary/undeclared.js";
 import { inOrder } from "../../kernel/concurrency.js";
 import { decodeDocument } from "../../kernel/document-bytes.js";
 import type { DocsDir, FeatureDir } from "../../kernel/ids/dirs.js";
@@ -219,13 +220,22 @@ export async function stageMergedProject(req: StagedProjectRequest): Promise<Sta
 }
 
 /** What the landscape looks like after this feature's C4 delta is spliced in. */
-type MergedLandscape =
+export type MergedLandscape =
   /** The delta adds nothing, or there is none — the living landscape stands. */
   | { kind: "living" }
   /** The merge preview, as authored bytes. */
   | { kind: "merged"; content: string }
   /** The merge could not be computed; `planLandscape` owns the refusal and says why. */
-  | { kind: "failed"; reason: string };
+  | {
+      kind: "failed";
+      reason: string;
+      /**
+       * Present when the merge refused because its additions use specification
+       * names a document it writes does not declare — the one refusal a feature
+       * gate files as a finding of its own (`core/coherence/specification/`).
+       */
+      missing?: readonly UndeclaredName[];
+    };
 
 /**
  * The merge preview, computed with the SAME function `loam archive` commits
@@ -265,9 +275,16 @@ type MergedLandscape =
  * A throw is `failed` rather than propagated. Every `LandscapeSpliceError` this
  * can raise is one `planLandscape` raises again — with its own message, its own
  * refusal code, and before anything is written — so throwing here would only
- * decide which of two identical refusals an author reads first.
+ * decide which of two identical refusals an author reads first. One of them is
+ * also handed back as DATA: additions using a specification name a document
+ * the merge writes does not declare (`UndeclaredNamesError`). That refusal is
+ * the feature gate's to predict — `core/coherence/specification/` files it as
+ * `delta.specification-not-merged`, the only reason this is exported — because
+ * nothing else at feature scope could see it, and the archive met it only at a
+ * parse net, after `validate --feature` and `loam status` had called the
+ * feature ready.
  */
-async function mergedLandscape(req: StagedProjectRequest): Promise<MergedLandscape> {
+export async function mergedLandscape(req: Omit<StagedProjectRequest, "documents">): Promise<MergedLandscape> {
   const deltaPath = featurePaths(req.featureDir).delta;
   const landscape = landscapePath(req.docsDir);
   if (!existsSync(deltaPath) || !existsSync(landscape)) return { kind: "living" };
@@ -309,7 +326,8 @@ async function mergedLandscape(req: StagedProjectRequest): Promise<MergedLandsca
     });
     return plan.content === null ? { kind: "living" } : { kind: "merged", content: plan.content };
   } catch (err) {
-    return { kind: "failed", reason: err instanceof Error ? err.message : String(err) };
+    const reason = err instanceof Error ? err.message : String(err);
+    return { kind: "failed", reason, ...(err instanceof UndeclaredNamesError ? { missing: err.missing } : {}) };
   }
 }
 

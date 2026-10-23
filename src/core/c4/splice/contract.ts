@@ -1,5 +1,6 @@
 import type { Elem, Rel } from "../likec4.js";
 import type { ScanKinds, ScannedModel } from "../source-scan.js";
+import { undeclaredMessage, type UndeclaredName } from "./vocabulary/undeclared.js";
 
 /**
  * A landscape merge the splicer could not compute. Every one is mechanical —
@@ -9,6 +10,20 @@ import type { ScanKinds, ScannedModel } from "../source-scan.js";
  * the splicer itself never names a CLI code.
  */
 export class LandscapeSpliceError extends Error {}
+
+/**
+ * The one splice refusal a feature gate has to tell apart from the rest: the
+ * additions use a specification name the document they land in does not
+ * declare, which no amount of splicing can fix (`./vocabulary/undeclared.ts`).
+ * It carries the names as data because the gate files them as its own finding
+ * — `delta.specification-not-merged` — rather than reading them back out of a
+ * message, and every other refusal stays `merge-failed`'s alone.
+ */
+export class UndeclaredNamesError extends LandscapeSpliceError {
+  constructor(readonly missing: readonly UndeclaredName[]) {
+    super(undeclaredMessage(missing));
+  }
+}
 
 /**
  * Refuse a splice the splice map cannot see once it has landed — the document

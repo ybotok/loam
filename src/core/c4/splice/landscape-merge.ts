@@ -8,6 +8,7 @@ import { matchLineEndings, spliceSource } from "./authored-source.js";
 import {
   assertSpliceVisible,
   LandscapeSpliceError,
+  UndeclaredNamesError,
   type ExtendingModel,
   type LandscapeMergeRequest,
   type LandscapePlan,
@@ -20,6 +21,7 @@ import { planInteriors } from "./identity/interior.js";
 import { ownerOf } from "./identity/owner.js";
 import { elementSpot, relSpot, topStatements, type ModelRegion } from "./placement.js";
 import { nestedInsert, type Spot } from "./text/spot.js";
+import { additionsUndeclared } from "./vocabulary/undeclared.js";
 
 /* ------------------------------------------------------------------ */
 /* Merging                                                             */
@@ -195,6 +197,24 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
   }
   const touchesMap = mapEls.length > 0 || mapRels.length > 0;
 
+  // Routing is decided, nothing is placed yet: the moment to ask whether every
+  // document this merge writes declares what its additions use. The parse nets
+  // below and in the archive's model staging would refuse the same merge, with
+  // LikeC4's "Could not resolve reference" and a guess at the cause; this names
+  // the declaration to add, and is what the feature gate reads to predict the
+  // refusal (`../project/staged.ts`, `core/coherence/specification/`).
+  const missing = additionsUndeclared({
+    landscapeText: text,
+    deltaText,
+    scan,
+    deltaElements,
+    featureId,
+    kindTags: merge.deltaKindTags ?? {},
+    map: { els: mapEls, rels: mapRels, omit: interiors.omit },
+    models: [...routed.values()],
+  });
+  if (missing.length > 0) throw new UndeclaredNamesError(missing);
+
   const spliced: Array<{ start: number; end: number }> = [];
   const rides = (start: number, end: number): boolean =>
     spliced.some((r) => start >= r.start && end <= r.end);
@@ -334,8 +354,11 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
 
   // The safety net: prove the computed landscape parses before anything is
   // written. Splice bugs — and legal inputs the living document cannot absorb,
-  // like a kind its specification never declares — refuse here, at plan time,
-  // instead of corrupting the one file the whole fleet reads. Skipped when
+  // like an edge naming an element the delta declares only as untagged context
+  // and the map has never drawn — refuse here, at plan time, instead of
+  // corrupting the one file the whole fleet reads. A kind or tag the
+  // specification never declares no longer reaches it: `additionsUndeclared`
+  // above refuses that by name, before a byte is placed. Skipped when
   // every addition was routed away: the text is the one already parsed above,
   // and the models get their own net from the caller, which is the only side
   // that can stage a model beside the map it extends.
@@ -352,8 +375,9 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
         .join("; ");
       throw new LandscapeSpliceError(
         `the merged landscape would not parse (${check.errors.length} error(s): ${detail}) — nothing was written. ` +
-          `The delta's additions do not fit the living landscape as authored — most often an element kind or tag ` +
-          `its specification block does not declare; fix the landscape's specification or the delta, then re-run`,
+          `The delta's additions do not fit the living landscape as authored — an edge naming an element the delta ` +
+          `declares only as untagged context, which the merge does not carry, is one way to get here. Fix the delta ` +
+          `or the landscape at the line named, then re-run`,
       );
     }
   }

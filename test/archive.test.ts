@@ -1994,13 +1994,30 @@ describe("landscape splice fidelity (the merge copies authored source, it does n
   });
 
   it("safety net: a merge whose result would not parse is refused at plan time and writes nothing (merge-failed)", async () => {
-    // Legal inputs, unparseable merge: the delta's child is a `container`, a
-    // kind the LIVING landscape's specification never declares. The spliced
-    // text is valid in the delta and invalid in the landscape — exactly the
-    // class of corruption the in-memory parse exists to refuse.
+    // Legal inputs, unparseable merge: the tagged edge names `ledgerService`,
+    // which the delta declares as untagged CONTEXT — so the merge does not
+    // carry it — and the living landscape has never drawn. The spliced text is
+    // valid in the delta and invalid in the landscape — exactly the class of
+    // corruption the in-memory parse exists to refuse. This case used to be a
+    // `container` child on a map whose specification declares no `container`;
+    // that one no longer reaches the net, because the feature gate refuses it
+    // first as `delta.specification-not-merged` (the next case, and
+    // test/specification-not-merged.test.ts).
     const p = await makeProject({
       "architecture/landscape.likec4": LANDSCAPE,
-      "features/FEAT-21-engine/delta.likec4": NESTED_CHILD_DELTA,
+      "features/FEAT-21-engine/delta.likec4": `specification {
+  element softwareSystem
+  tag FEAT-21
+}
+
+model {
+  paymentService = softwareSystem 'payment-service'
+  ledgerService = softwareSystem 'ledger-service'
+  paymentService -> ledgerService 'Posts entries' {
+    #FEAT-21
+  }
+}
+`,
     });
     try {
       const before = await treeHashes(p.docsDir);
@@ -2013,6 +2030,30 @@ describe("landscape splice fidelity (the merge copies authored source, it does n
       expect(json.error.message).toContain("would not parse");
       expect(await treeHashes(p.docsDir), "a plan-time refusal must write nothing").toEqual(before);
       expect(p.exists("features/FEAT-21-engine/delta.likec4")).toBe(true);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a kind the living map never declares is refused by the gate, --approve or not, and names the declaration", async () => {
+    // The input the net above used to be proved with: a `container` child on a
+    // map that declares no `container`. Predicted at the gate now — the archive
+    // never copies a specification declaration — and not overridable, because
+    // approving it would only move the refusal to the parse net.
+    const p = await makeProject({
+      "architecture/landscape.likec4": LANDSCAPE,
+      "features/FEAT-21-engine/delta.likec4": NESTED_CHILD_DELTA,
+    });
+    try {
+      const before = await treeHashes(p.docsDir);
+      const res = await runLoam(p.workDir, "archive", "FEAT-21", "--approve", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout) as { error: { code: string }; issues: Array<{ code: string; message: string }> };
+      expect(json.error.code).toBe("not-coherent");
+      const hit = json.issues.filter((i) => i.code === "delta.specification-not-merged");
+      expect(hit, JSON.stringify(json.issues)).toHaveLength(1);
+      expect(hit[0]!.message).toContain("Declare `element container` in architecture/landscape.likec4's specification");
+      expect(await treeHashes(p.docsDir), "a gate refusal must write nothing").toEqual(before);
     } finally {
       await p.destroy();
     }

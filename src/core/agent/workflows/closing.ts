@@ -271,6 +271,12 @@ export const LOAM_SHIP: CommandContent = {
      binding it refuses, anywhere inside a tagged element's block): each names a
      path the merge would write mechanically, they arrive with
      \`overridable: false\`, and the fix is a rename, never the flag.
+     \`delta.specification-not-merged\` arrives the same way: the delta's additions
+     use a kind or tag (\`-[publishes]->\`, an \`element queue\`, a \`#pci\`) the living
+     map's \`specification\` does not declare, and the archive copies the addition,
+     never the declaration. Add the line it names to
+     \`architecture/landscape.likec4\` — it is vocabulary, not a feature change — then
+     re-run.
      \`openapi.remove-marker-path-level\` arrives
      here too: an \`x-loam-remove\` written beside the methods instead of inside the
      operation retires nothing. So do \`openapi.op-revived\` and
@@ -286,11 +292,10 @@ export const LOAM_SHIP: CommandContent = {
      decides what it is.
    - \`merge-failed\` — the merge could not be computed, or failed and was rolled
      back. Either way the living docs are unchanged; fix the reported cause, re-run.
-     "Could not resolve reference to RelationshipKind" means the delta draws a
-     relationship kind (\`-[publishes]->\`) that the living map's \`specification\`
-     does not declare: the archive copies the edge and never the declaration.
-     Declare the kind in \`architecture/landscape.likec4\` — it is vocabulary, not
-     a feature change — then re-run.
+     A message saying "Declare \`relationship publishes\` in
+     architecture/landscape.likec4's specification" is the merge's own copy of
+     \`delta.specification-not-merged\`, which the gate reports first: make the
+     edit it names.
      A file loam cannot decode as UTF-8 refuses here by name rather than being
      rewritten with replacement characters. So does a living document that still
      holds git conflict markers — the \`spec.merge-conflict\` /
