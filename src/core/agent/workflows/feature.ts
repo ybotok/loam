@@ -100,10 +100,10 @@ export const LOAM_FEATURE: CommandContent = {
      \`-[publishes]->\` topic and topic \`-[delivers]->\` consumer, never
      producer \`->\` consumer. A producer outside the fleet is an \`#external\`
      element whose edge carries \`metadata { publishes }\`. Declare every kind
-     you draw in the delta's own \`specification\`, and check that the living
-     map's declares it too. The archive copies the edge and never the
-     declaration, so a kind the map lacks refuses the archive (\`merge-failed\`)
-     even though validate and status call the feature ready.
+     you draw in the delta's own \`specification\`, and the living map's must
+     declare it too: the archive copies the edge and never the declaration.
+     A kind or tag the map lacks is \`delta.specification-not-merged\` at step 6,
+     naming the line to add to \`architecture/landscape.likec4\`.
      \`loam instructions loam-drawing\` has the kinds and their styles
    - \`specs/<svc>/spec.md\` — the example requirement ships INSIDE the template's
      comment: copy it out, unindent, one behaviour per requirement, SHALL, at

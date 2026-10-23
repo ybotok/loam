@@ -162,14 +162,18 @@ or draw the store beside the service.
 
 A feature's \`delta.likec4\` parses on its own, so it declares every kind it
 draws in its own \`specification\` block too. **The living map must declare that
-kind BEFORE the feature archives.** \`loam archive\` copies the edge into
-\`architecture/landscape.likec4\` as written and never copies a declaration.
-When the map lacks the kind, the merged map does not parse and the archive
-refuses with \`merge-failed\` ("Could not resolve reference to
-RelationshipKind"), while \`loam validate --feature\` and \`loam status\` still
-called the feature ready. A kind is vocabulary, not a change, so adding it to the
-map's \`specification\` is an ordinary edit to the living map, made in its own
-change.
+kind as well before the feature archives.** \`loam archive\` copies the edge into
+\`architecture/landscape.likec4\` as written and never copies a declaration, so
+on a map that lacks the kind the merged map would not parse.
+\`loam validate --feature\` and \`loam status <FEAT>\` say so beforehand, as
+\`delta.specification-not-merged\` (an error), naming the line to add — for
+example \`relationship publishes\` in \`architecture/landscape.likec4\`'s
+\`specification\` — and \`loam archive\` refuses until it is there, \`--approve\` or
+not. The same holds for an element kind, a tag and a custom color. A kind is
+vocabulary, not a change, so adding it to the map's \`specification\` is an
+ordinary edit to the living map, made in the feature's change or in one before
+it. When another \`architecture/\` document already declares it, the finding says
+so: move that declaration into the landscape rather than declaring it twice.
 
 Two spellings to avoid:
 

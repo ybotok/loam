@@ -1,5 +1,6 @@
 import type { Elem, Rel } from "../likec4.js";
 import type { ScanKinds, ScannedModel } from "../source-scan.js";
+import { undeclaredMessage, type ProjectDocument, type UndeclaredName } from "./vocabulary/undeclared.js";
 
 /**
  * A landscape merge the splicer could not compute. Every one is mechanical —
@@ -9,6 +10,20 @@ import type { ScanKinds, ScannedModel } from "../source-scan.js";
  * the splicer itself never names a CLI code.
  */
 export class LandscapeSpliceError extends Error {}
+
+/**
+ * The one splice refusal a feature gate has to tell apart from the rest: the
+ * additions use a specification name the document they land in does not
+ * declare, which no amount of splicing can fix (`./vocabulary/undeclared.ts`).
+ * It carries the names as data because the gate files them as its own finding
+ * — `delta.specification-not-merged` — rather than reading them back out of a
+ * message, and every other refusal stays `merge-failed`'s alone.
+ */
+export class UndeclaredNamesError extends LandscapeSpliceError {
+  constructor(readonly missing: readonly UndeclaredName[]) {
+    super(undeclaredMessage(missing));
+  }
+}
 
 /**
  * Refuse a splice the splice map cannot see once it has landed — the document
@@ -83,6 +98,12 @@ export interface LandscapePlan {
    * into that model's merged text.
    */
   models: ModelAdditions[];
+  /**
+   * The names a routed model's share uses and its project does not declare —
+   * present only for a request that asked to be told (`undeclared: "report"`)
+   * and only when there is one; every other merge refuses on them instead.
+   */
+  undeclared?: UndeclaredName[];
 }
 
 /**
@@ -110,4 +131,21 @@ export interface LandscapeMergeRequest {
    * behaviour byte for byte: every addition lands on the map.
    */
   models?: readonly ExtendingModel[];
+  /**
+   * The `architecture/` project's documents other than the landscape, as the
+   * caller reads them — what an extending model is proved beside
+   * (`commands/archive/plan/model/extending.ts`), so a kind or tag one of them
+   * declares serves what is routed into a model. A thunk, asked only when the
+   * landscape and the models alone leave a name undeclared. Omitted, nothing
+   * else is read, and such a name is reported against the landscape alone.
+   */
+  projectDocuments?: () => Promise<readonly ProjectDocument[]>;
+  /**
+   * What a name only a routed MODEL cannot see declared does to the merge:
+   * `"refuse"`, the default and the archive's, or `"report"` — returned as
+   * `undeclared` while the merge goes on, which is what a preview of the map
+   * needs, since the map parses whatever a model lacks. A name the landscape's
+   * own text would lack refuses either way: no preview can stage that map.
+   */
+  undeclared?: "refuse" | "report";
 }

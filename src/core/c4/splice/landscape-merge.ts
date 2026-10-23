@@ -3,23 +3,25 @@ import { parentIdOf } from "../../kernel/ids/fqn/ancestors.js";
 import { errorText, loadSource, type Elem, type Rel } from "../likec4.js";
 import { firstUnlocated, unlocatedReason } from "../locate/unlocated.js";
 import { elementService, serviceOf } from "../resolve/service.js";
-import { kindsDeclared, scanModel, type ScannedElement, type ScannedModel, type ScannedRel } from "../source-scan.js";
+import { kindsDeclared, scanModel, type ScannedElement, type ScannedModel } from "../source-scan.js";
 import { matchLineEndings, spliceSource } from "./authored-source.js";
 import {
   assertSpliceVisible,
   LandscapeSpliceError,
+  UndeclaredNamesError,
   type ExtendingModel,
   type LandscapeMergeRequest,
   type LandscapePlan,
   type ModelAdditions,
 } from "./contract.js";
 import { assertMergeableDelta } from "./delta-blocks.js";
-import { relSortKey, relStatementKey, scannedStatementKey } from "./identity/edges.js";
+import { relSortKey, relStatementKey, statementPool } from "./identity/edges.js";
 import { newAdditions } from "./identity/existing.js";
 import { planInteriors } from "./identity/interior.js";
 import { ownerOf } from "./identity/owner.js";
 import { elementSpot, relSpot, topStatements, type ModelRegion } from "./placement.js";
 import { nestedInsert, type Spot } from "./text/spot.js";
+import { MAP_DOCUMENT, undeclaredInMerge } from "./vocabulary/undeclared.js";
 
 /* ------------------------------------------------------------------ */
 /* Merging                                                             */
@@ -149,11 +151,7 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
   // because routing has to know WHERE an edge was written: one drawn inside a
   // block that rides whole is already on the map. A statement is keyed with the
   // tags its kind gives it, which the parsed addition carries and its text does not.
-  const pool = new Map<string, ScannedRel[]>();
-  for (const s of scan.rels) {
-    const k = scannedStatementKey(s, merge.deltaKindTags ?? {});
-    pool.set(k, [...(pool.get(k) ?? []), s]);
-  }
+  const pool = statementPool(scan, merge.deltaKindTags ?? {});
 
   const interiors = planInteriors({ scan, deltaElements, owner, addedEls });
   const routed = new Map<string, ModelAdditions>();
@@ -194,6 +192,31 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
     else into(model).rels.push(r);
   }
   const touchesMap = mapEls.length > 0 || mapRels.length > 0;
+
+  // Routing is decided, nothing is placed yet: the moment to ask whether every
+  // document this merge writes declares what its additions use. The parse nets
+  // below and in the archive's model staging would refuse the same merge, with
+  // LikeC4's "Could not resolve reference" and a guess at the cause; this names
+  // the declaration to add, and is what the feature gate reads to predict the
+  // refusal (`../project/staged.ts`, `core/coherence/specification/`).
+  const undeclared = await undeclaredInMerge(
+    {
+      landscapeText: text,
+      deltaText,
+      scan,
+      deltaElements,
+      featureId,
+      kindTags: merge.deltaKindTags ?? {},
+      map: { els: mapEls, rels: mapRels, omit: interiors.omit },
+      models: [...routed.values()],
+    },
+    merge.projectDocuments,
+  );
+  // A preview may go on past what only a MODEL lacks — the map it stages parses
+  // either way — and never past what the landscape's own text lacks.
+  if (undeclared.length > 0 && (merge.undeclared !== "report" || undeclared.some((u) => u.document === MAP_DOCUMENT))) {
+    throw new UndeclaredNamesError(undeclared);
+  }
 
   const spliced: Array<{ start: number; end: number }> = [];
   const rides = (start: number, end: number): boolean =>
@@ -334,8 +357,11 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
 
   // The safety net: prove the computed landscape parses before anything is
   // written. Splice bugs — and legal inputs the living document cannot absorb,
-  // like a kind its specification never declares — refuse here, at plan time,
-  // instead of corrupting the one file the whole fleet reads. Skipped when
+  // like an edge naming an element the delta declares only as untagged context
+  // and the map has never drawn — refuse here, at plan time, instead of
+  // corrupting the one file the whole fleet reads. A kind or tag the
+  // specification never declares no longer reaches it: `additionsUndeclared`
+  // above refuses that by name, before a byte is placed. Skipped when
   // every addition was routed away: the text is the one already parsed above,
   // and the models get their own net from the caller, which is the only side
   // that can stage a model beside the map it extends.
@@ -352,11 +378,12 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
         .join("; ");
       throw new LandscapeSpliceError(
         `the merged landscape would not parse (${check.errors.length} error(s): ${detail}) — nothing was written. ` +
-          `The delta's additions do not fit the living landscape as authored — most often an element kind or tag ` +
-          `its specification block does not declare; fix the landscape's specification or the delta, then re-run`,
+          `The delta's additions do not fit the living landscape as authored — an edge naming an element the delta ` +
+          `declares only as untagged context, which the merge does not carry, is one way to get here. Fix the delta ` +
+          `or the landscape at the line named, then re-run`,
       );
     }
   }
 
-  return { content: touchesMap ? content : null, addedEls: mapEls, addedRels: mapRels, models: [...routed.values()] };
+  return { content: touchesMap ? content : null, addedEls: mapEls, addedRels: mapRels, models: [...routed.values()], ...(undeclared.length === 0 ? {} : { undeclared }) };
 }

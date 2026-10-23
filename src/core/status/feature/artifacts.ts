@@ -37,7 +37,7 @@ const CAPABILITY_DOCUMENT_CODES = new Set([
  *
  * Attribution is by code family, because that is the only machine-readable
  * pointer an `Issue` carries: `subject` narrows to a NAME, never to a file.
- * The families are unambiguous — `c4-api.*`/`c4-event.*`/`c4.*` and the two
+ * The families are unambiguous — `c4-api.*`/`c4-event.*`/`c4.*` and the three
  * `delta.*` codes about the LikeC4 document itself grade the architecture
  * axis, `openapi.*` grades the API contract, `asyncapi.*` the event contract,
  * and the remaining `delta.*` codes plus `spec-api.*`/`spec-event.*` are the
@@ -64,7 +64,7 @@ const CAPABILITY_DOCUMENT_CODES = new Set([
  * ever filed against a capability.
  */
 function faultedArtifact(code: string, subject?: string): ArtifactId | null {
-  if (code === "delta.invalid" || code === "delta.nothing-tagged") return "delta";
+  if (code === "delta.invalid" || code === "delta.nothing-tagged" || code === "delta.specification-not-merged") return "delta";
   if (code.startsWith("c4-api.") || code.startsWith("c4-event.") || code.startsWith("c4.")) return "delta";
   if (code.startsWith("openapi.")) return "openapi";
   if (code.startsWith("asyncapi.")) return "asyncapi";

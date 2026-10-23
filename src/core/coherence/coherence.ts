@@ -21,6 +21,7 @@ import { consumedOperationIssues } from "./consumed/operations.js";
 import { eventCoherence } from "./events/events.js";
 import { authoringIssues } from "./authoring/scaffold.js";
 import { droppedHealthCoverage } from "./covers/health.js";
+import { unmergedSpecificationIssues } from "./specification/unmerged.js";
 import { glossaryDeltaIssues } from "../glossary/delta.js";
 import { flowDeltaIssues } from "../usecases/delta/flows.js";
 import { deploymentDeltaIssues, readFeatureDeployments } from "../deployment/delta.js";
@@ -146,6 +147,19 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
           message: `delta.likec4 declares elements/relationships but none are tagged #${featureId}; loam cannot see untagged changes`,
         });
       }
+      // A kind or tag the additions use and the living map does not declare:
+      // the archive never copies a specification declaration, so its merge
+      // would not parse. Asked of the archive's own merge, and only when the
+      // delta declares something the map lacks (./specification/unmerged.ts).
+      issues.push(
+        ...(await unmergedSpecificationIssues({
+          docsDir,
+          featureDir,
+          featureId,
+          ...(context === undefined ? {} : { load: (path: string) => context.loadLikeC4(path) }),
+          models: () => extendingModels(docsDir, context),
+        })),
+      );
     }
   }
   // --- per-service specs (requirement operations) + openapi deltas ---

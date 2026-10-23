@@ -26,6 +26,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { planWrite, readUtf8 } from "../../../core/staging/writes.js";
 import { planLandscapeMerge } from "../../../core/c4/splice/landscape-merge.js";
+import { projectDocumentsBesideMap } from "../../../core/c4/project/architecture.js";
 import { spliceModel } from "../../../core/c4/splice/model/merge.js";
 import { titleOf } from "../../../core/c4/splice/identity/edges.js";
 import { parseServiceId, type PathableService } from "../../../core/kernel/ids/service.js";
@@ -125,6 +126,9 @@ export async function planLandscape(
         // map (verification 2026-09-04, E1) — and so does a service this
         // archive creates, whose model is written below.
         models: [...(await extendingModels(config.docsDir, config.fleet)), ...fresh],
+        // What `modelMergeErrors` below proves each model beside, so a kind or
+        // tag another `architecture/` document declares serves the model too.
+        projectDocuments: () => projectDocumentsBesideMap(config.docsDir),
       });
       // A service can arrive on the ARCHITECTURE axis alone: an element this
       // merge ADDS, carrying a `metadata { service }` binding, with no
@@ -171,11 +175,11 @@ export async function planLandscape(
           throw new CodedFailure(
             "merge-failed",
             `the merged ${additions.model.path} would not parse (${errors.length} error(s): ${errors.slice(0, 3).join("; ")}) — ` +
-              `nothing was written. This model is read beside architecture/landscape.likec4 and nothing else, so an addition ` +
-              `fits only if the map declares its kind and every element it names. Most often it is a kind or tag missing from ` +
-              `the map's specification block, or a reference to ANOTHER service's interior, which lives in that service's own ` +
-              `model and is not in this project — draw that call service to service on the map instead. Fix the map's ` +
-              `specification or the delta, then re-run`,
+              `nothing was written. This model is read inside the architecture/ project — the merged landscape and the ` +
+              `other architecture/ documents — and no other service's model, so an addition fits only if every element ` +
+              `it names is in that project (a kind, tag or color nothing there declares is refused before this, by name). ` +
+              `Most often it is a reference to ANOTHER service's interior, which lives in that service's own model and is ` +
+              `not in this project — draw that call service to service on the map instead. Fix the delta, then re-run`,
           );
         }
         writes.push(planWrite(join(config.docsDir, ...additions.model.path.split("/")), content));

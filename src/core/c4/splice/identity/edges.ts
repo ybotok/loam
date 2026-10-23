@@ -19,7 +19,7 @@
  * relationship's kind — is reconciled on the scanned side (`scannedStatementKey`).
  */
 import type { Elem, Rel } from "../../likec4.js";
-import type { ScannedRel } from "../../source-scan.js";
+import type { ScannedModel, ScannedRel } from "../../source-scan.js";
 import type { KindTags } from "../contract.js";
 
 /**
@@ -59,6 +59,25 @@ export function relStatementKey(r: Rel | ScannedRel): string {
 export function scannedStatementKey(s: ScannedRel, kindTags: KindTags): string {
   const inherited = s.kind === undefined ? [] : (kindTags[s.kind] ?? []);
   return relStatementKey({ ...s, tags: [...s.tags, ...inherited] });
+}
+
+/**
+ * Every statement of one scan, pooled by the key its parsed addition will ask
+ * with (`relStatementKey`), in document order. ONE construction for every
+ * reader that matches an addition back to its bytes — the map's splice, the
+ * model's, and the vocabulary check that reads what they will carry
+ * (`../vocabulary/undeclared.ts`) — because a reader keying differently from
+ * the splice would read one duplicate statement while the splice writes
+ * another. Each reader takes from a pool of its own with `shift()`, in
+ * addition order, as the splice does.
+ */
+export function statementPool(scan: ScannedModel, kindTags: KindTags): Map<string, ScannedRel[]> {
+  const pool = new Map<string, ScannedRel[]>();
+  for (const s of scan.rels) {
+    const k = scannedStatementKey(s, kindTags);
+    pool.set(k, [...(pool.get(k) ?? []), s]);
+  }
+  return pool;
 }
 
 /**

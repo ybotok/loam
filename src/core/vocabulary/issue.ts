@@ -70,7 +70,10 @@ export function issueFinding(i: Issue): Finding {
  * against the map its own merge would leave, so it graded nothing, and
  * `--approve` overrides loam's judgment about coherence and never its ability
  * to read an axis. That is the same line `delta.likec4`'s unparseable case is
- * refused on, one merge over.
+ * refused on, one merge over. `delta.specification-not-merged` is the mechanical
+ * kind again: the merged map would not parse, so approving the feature would
+ * only move the refusal from this gate to the merge, which refuses the same
+ * additions by name.
  *
  * `archive` refuses these under the same `not-coherent` envelope and spells
  * this verdict per issue as the additive `overridable` key, so a `--json`
@@ -84,6 +87,7 @@ const NEVER_OVERRIDABLE: ReadonlySet<IssueCode> = new Set<IssueCode>([
   "deployment.doc-invalid",
   "deployment.doc-reserved",
   "usecase.flow-invalid",
+  "delta.specification-not-merged",
 ]);
 
 export function approveOverrides(i: Issue): boolean {
@@ -124,6 +128,8 @@ export type IssueCode =
   | "delta.invalid"
   /** the delta declares elements or edges but none carry the feature tag — loam cannot see any of it */
   | "delta.nothing-tagged"
+  /** the delta's additions use an element kind, relationship kind, tag or custom color that the specification of the document they would land in cannot see declared — the archive never copies a specification declaration, so its merge would not parse; declaring it in (or moving it into) architecture/landscape.likec4 is the fix, and no re-run succeeds without it */
+  | "delta.specification-not-merged"
   /** E1 — a requirement governs an operation its service's OpenAPI does not define */
   | "spec-api.op-undefined"
   /** E1, softened — the operation is defined by another feature still in flight; archive that one first */
