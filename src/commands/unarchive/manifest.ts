@@ -28,6 +28,8 @@ export interface ValidatedSnapshotEntry {
   path: string;
   existed: boolean;
   after: string;
+  /** Archive DELETED the destination (`SnapshotEntry.removed`): what it left is absence. */
+  removed: boolean;
   /** sha256 the pre-image beside the manifest must still have; null when archive created the destination. */
   before: string | null;
   /** Contained destination under the docs repo. */
@@ -98,6 +100,9 @@ export async function readManifest(request: ManifestRequest): Promise<ValidatedS
         return null;
       }
       const before = raw.existed ? (raw.before as string) : null;
+      // Absent, or `true` on a row that existed — an archive deletes nothing
+      // that was not there, and any other value is not a manifest loam wrote.
+      if (raw.removed !== undefined && (raw.removed !== true || !raw.existed)) return null;
       if (seen.has(raw.path)) return null;
       seen.add(raw.path);
 
@@ -162,7 +167,7 @@ export async function readManifest(request: ManifestRequest): Promise<ValidatedS
         const unexpected = resolvePortableFileInside(featureDir, snapshotRel, `snapshot pre-image '${raw.path}'`);
         if (existsSync(unexpected)) return null;
       }
-      files.push({ path: raw.path, existed: raw.existed, after: raw.after, before, target, snapshot });
+      files.push({ path: raw.path, existed: raw.existed, after: raw.after, removed: raw.removed === true, before, target, snapshot });
     }
 
     return {

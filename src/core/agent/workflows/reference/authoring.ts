@@ -314,8 +314,15 @@ change belongs in \`intent.md\`, which stays with the feature.
   \`#req-<Requirement-ID>\`, naming the promise it keeps. A promise the feature's
   own capability delta adds resolves too. \`usecase.capability-unresolved\` and
   \`usecase.requirement-unresolved\` grade both tags before the archive.
+- A flow INSIDE one service is \`features/<FEAT>/specs/<svc>/usecases/<name>.likec4\`,
+  beside that service's other deltas: a \`dynamic view\` over its containers
+  tagged \`#req-<Requirement-ID>\` with one of its own requirements, which the
+  archive writes into \`services/<…>/<svc>/usecases/\`. Give it a title a person
+  can read and one hop per step a test would observe. Where it redraws a living
+  flow, give it that flow's file name so the archive replaces it, and keep the
+  view id so links and reviews still find it.
 
-Link to all three from the deltas, written relative to the file you write in:
+Link to all four from the deltas, written relative to the file you write in:
 \`loam archive\` re-points every link into the feature for the move.
 
 **Write a \`Covers:\` edge by service name**:

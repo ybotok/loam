@@ -49,7 +49,8 @@ import { readCapabilityVocabulary } from "../capabilities/capabilities.js";
 import { extendingModels } from "../c4/service-model/fleet/extending.js";
 
 import { flowCoverage, type FlowPromises } from "../usecases/delta/claims.js";
-import { changedPromiseFlowIssues, type ServiceDeltaPair } from "../usecases/delta/modified.js";
+import { changedPromiseFlowIssues } from "../usecases/delta/modified.js";
+import type { ServiceDeltaPair } from "../usecases/delta/service/ids.js";
 import { enumeratedServiceIds, locateServicePaths } from "../repo/service-target.js";
 import { featureSpecServices } from "../repo/repo.js";
 import { capabilityDocIssues } from "../capabilities/delta/doc.js";
@@ -311,6 +312,7 @@ export async function deltaShapeIssues(
     issues.push(
       ...(await changedPromiseFlowIssues({
         docsDir,
+        featureDir,
         capabilities: capabilityDeltas,
         services: servicePairs,
         vocabulary: await ctx.capabilities(docsDir),

@@ -91,6 +91,7 @@ docs/
     specs/<svc>/arch.spec.md         architectural requirement delta, same algebra  [authored]
     specs/<svc>/openapi.yaml         only the endpoints it adds/changes/removes  [authored]
     specs/<svc>/asyncapi.yaml        only the event slots it adds/changes/removes  [authored]
+    specs/<svc>/usecases/<name>.likec4  a flow INSIDE that service it brings — or, under the living file's name, replaces; holding only comments, retires  [authored]
     capabilities/<cap>/spec.md       capability delta, same requirement grammar  [authored]
     glossary/<term>.md               a word this feature brings with it; create-only  [authored]
     usecases/<name>.likec4           a FLOW this feature brings; views-only, create-only  [authored]
@@ -136,7 +137,7 @@ declaring the same tag locally, where no per-service project sees the collision.
 model.likec4 stays THE model:
 `c4.valid`, `Covers:` and every other model check read it alone, and a sibling that does not parse
 is one `usecase.flow-invalid` while the model keeps grading. Files loam does not read: a `.likec4`
-in a subsystem directory, in a feature directory outside `delta.likec4`/`usecases/`/`deployment/`,
+in a subsystem directory, in a feature directory outside `delta.likec4`/`usecases/`/`deployment/`/`specs/<svc>/usecases/`,
 the generated `subsystems.likec4` and `services.likec4`, a sibling the service's own `likec4.config.json` `exclude`
 covers (it is in no project the renderer loads either), and every UNTAGGED `dynamic view`
 anywhere — a diagram, never a use case.
@@ -210,7 +211,10 @@ top-level `specification { }` block containing an `element` declaration:
 tags-only `specification { tag req-CANCEL }` beside an `extend` is legal and lands the tag in the
 project's specification — but a tag the map already declares, declared again there, is a duplicate
 blamed on both files. In the standalone shape the model declares everything it uses, which is
-exactly why its copies of the map's elements can drift.
+exactly why its copies of the map's elements can drift. A `#req-` tag for a requirement a FEATURE
+adds to a service is declared by that feature's flow document itself, in the same tags-only form —
+measured legal beside either shape — and travels with it ("A feature carries a service's flows",
+under `#req-` below).
 
 **Seven grades come with the pair**, and one existing grade is narrowed:
 
@@ -2519,7 +2523,70 @@ itself — and still fires on a hop from such a flow into another service's elem
 model declares for a sibling, with no `metadata { op }`), exactly as on the fleet map; and a
 resolved service-local claim is the join being checked and nothing more today: it
 enters no capability `keptBy`, counts toward no `Covers:` or `c4.uncovered`, appears in no pack,
-`loam list capabilities`, `loam diff` or `loam delta`, and no feature carries one yet.
+`loam list capabilities`, `loam diff` or `loam delta`. A feature carries one in a slot of its own:
+
+**A feature carries a service's flows**: `features/<FEAT>/specs/<svc>/usecases/<name>.likec4`, beside
+that service's other deltas. That spelling because the directory is how a feature already names the
+service, and because `usecases/` is the living convention the archive writes into — the document and
+the living file it becomes, `services/<…>/<svc>/usecases/<name>.likec4`, share one relative path
+(unfiled `services/<svc>/` for a service the feature creates). `loam archive` writes it and
+`loam unarchive` takes it back from the snapshot. Through 0.2.0-alpha.13 a `.likec4` there was read
+by nothing — graded by nothing, mentioned by no plan, left behind in `features/archive/` — so the
+redrawn flow of a MODIFIED requirement, and every flow of a service the feature creates, was
+hand-copied at archive time.
+
+- **Graded where the feature is graded** — `validate --feature`, `status`, the archive gate — by the
+  grader `validate --service` runs (`usecase.step-unbacked`, `step-contested`, `step-unlinked`,
+  `usecase.requirement-unresolved`, and `usecase.capability-unresolved`'s placement arm), against
+  what the archive leaves: the project that service will read, staged from the merge preview's
+  MODEL half — for an extending model the `architecture/` project with the merged map, the model
+  with this feature's delta interior routed into it, and its living flows; for a service this
+  feature creates, the model the archive writes for it; for a standalone model, its own directory
+  (the delta never routes into one) — minus the living files this feature replaces or retires,
+  plus the feature's documents at the paths they will have. Its `#req-` tags resolve against the
+  ids that service's spec.md and arch.spec.md declare after the merge, folded by the merge itself:
+  living + ADDED/MODIFIED − REMOVED. Findings name the feature file and keep the service directory
+  as `scope`. Only the feature's own views are graded; a living sibling that breaks the project
+  is reported because it blanks it. A project that does not read is `usecase.flow-invalid`
+  (subject = the service, never `--approve`-overridable).
+- **Who declares a tag the feature adds.** Nothing living does yet, so the flow document declares it
+  itself — a tags-only `specification { tag req-<slug> }` at its top — and the archive copies the
+  document whole: the declaration lands with the one document that uses it. Nothing moves a
+  declaration from one document into another; the C4 delta's own `specification` is never merged
+  either. The duplicate rules stand as for a living flow: a tag a block the project already reads
+  declares — the map's for an extending model, model.likec4's for a standalone one, or a living flow
+  beside the model — declared again is a duplicate, refused by the post-merge parse as
+  `usecase.flow-invalid` naming both files, which is exactly what `validate --service` reports
+  after the archive. Two SERVICES declaring one tag locally is `c4.fleet-project-invalid` (warn, fleet
+  scope) once both are living; the feature gate grades per-service projects and does not predict it.
+- **Redrawing: REPLACE or RETIRE.** A feature that modifies a requirement a living flow claims
+  usually changes the flow, and editing the living file in place cannot work for the case that
+  matters: a redraw naming a container this feature's delta adds fails `validate --all` until the
+  archive. So, unlike a fleet flow, a service flow document may share its path with a living one —
+  it then REPLACES that file at archive — and a document holding no LikeC4 statement but a comment
+  (where the author says why) RETIRES it: the archive deletes the file. A document holding nothing
+  at all — zero bytes, or whitespace — is neither, and is `usecase.flow-invalid`: it is what an
+  editor leaves when it creates the file, and reading it as a retirement would delete the very flow
+  being redrawn. Replacing and retiring are allowed only when the living file claims at least one
+  requirement of that service — a view's `#req-` tag resolving today — and EVERY requirement it
+  claims is one this feature MODIFIES or REMOVES (restating an unchanged one as a MODIFIED is
+  enough). The overwrite then rides on those requirements' `Based-On:` pins: any second feature
+  redrawing the same file has to change one of the same promises, so it is `delta.modified-conflict`
+  while both are in flight and `delta.baseline-stale` the moment the first archives. One changed
+  promise of several would not do: two features each changing a different promise of one flow
+  would replace it in turn, the second burying the first's redraw. Otherwise `usecase.flow-exists`
+  — the message names the claimed requirements this feature leaves unchanged; MODIFY them, rename
+  the document to introduce a new flow, or edit the living file directly — and a retirement naming
+  no living flow is `usecase.flow-unknown`. Neither moves under `--approve`. A living flow the feature
+  redraws earns no `usecase.requirement-modified` and no predicted `usecase.requirement-unresolved`:
+  after the archive the file is the feature's document, graded on its own. The archive's `plan[]`
+  says `delete` for a retirement, and the snapshot row carries `removed: true` (additive; an older
+  loam reads it as a file edited since and asks for `--force`).
+- **What it does not cover.** The slot addresses `usecases/` only: a flow in `views.likec4`, or a view
+  inside model.likec4, is edited in place, or moved into `usecases/` by a direct edit first. The
+  feature's own fleet flows and topology documents are staged into an extending model's project as
+  the archive will write them, so a service flow sharing a view id with one is refused here; a tag
+  two SERVICES declare locally is not predicted (above).
 
 **Both corpora are reported together, and neither is derived from the other.**
 `loam list capabilities --json` carries `keptBy` (the flows keeping a promise) beside `realizedBy`
@@ -2600,7 +2667,9 @@ tag scopes its `#req-` tag to a capability requirement this feature modifies, an
 altitude, where the directory is the scope — a flow beside a service's model whose `#req-` tag names
 one of that service's spec.md / arch.spec.md requirements the feature's `specs/` delta modifies. Read
 the flow against the replacement, and redraw it (or drop the tag) in the same change if it no longer
-keeps the promise.
+keeps the promise. For a service flow under `usecases/` the message names where: the same path under
+the feature's `specs/<svc>/usecases/`, which the archive writes over the living file ("A feature
+carries a service's flows", above) — and a flow the feature already redraws there earns nothing.
 
 **A promise a living flow keeps, removed, is the fleet's error one archive early.** A REMOVED
 requirement leaves the flow's `#req-` tag resolving to nothing, so the very next `validate --all`
@@ -2644,7 +2713,10 @@ modifies and removes nothing pays nothing.
   could not be read against that post-merge map: a parse error, a hop naming an element the merge
   does not land, or a landscape merge that itself refuses. The flows were not graded, so the archive
   would copy them into `architecture/` for somebody else's `validate --all` to fail on. `--approve`
-  overrides loam's judgement about coherence, never its ability to read an axis.
+  overrides loam's judgement about coherence, never its ability to read an axis. The same code, with
+  the service as subject, for a service flow (`specs/<svc>/usecases/`) read against that service's
+  post-merge project — including a tag the flow uses that nothing declares, or that two documents do —
+  and for a service flow document holding nothing at all, which is neither a flow nor a retirement.
 - `usecase.step-unbacked`, `usecase.requirement-unresolved`, `usecase.capability-unresolved`
   (**errors**) and `usecase.step-contested`, `usecase.step-unlinked` (warnings) — the flows that DO
   read, graded by the very grader `validate --all` runs over a living flow, against the post-merge
@@ -2656,7 +2728,12 @@ modifies and removes nothing pays nothing.
   that `architecture/usecases/` already holds. The merge is a whole-file copy, so it would replace
   an authored hop sequence wholesale; the same shape and the same severity as `glossary.term-exists`,
   and the fix is the same — edit the living document directly in this change, where git produces an
-  ordinary conflict.
+  ordinary conflict. Also a service flow document whose living twin claims a requirement of that
+  service this feature does not MODIFY or REMOVE, or claims none — the one route by which a feature
+  may replace or retire a living flow is closed to it, for want of a pin on every promise it keeps.
+- `usecase.flow-unknown` (**error**, never `--approve`-overridable) — a service flow document holding
+  no LikeC4 statement, which retires the living flow at its path, where there is none: the archive
+  would remove nothing and report a retirement. Fix the name, or delete the document.
 - `capability.remove-requirement-realized` (**error**) — the same join in the removal direction.
   Unlike the addition it has no legal reading: after the merge a living service document nobody
   touched would carry a pointer at nothing. Graded against the POST-MERGE fleet, so the escape

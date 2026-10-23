@@ -146,6 +146,17 @@ export const LOAM_FEATURE: CommandContent = {
      \`components.messages\`, and a \`Publishes:\`/\`Consumes:\` line on each
      requirement that names them. \`loam new\` scaffolds none — an event
      contract is genuinely optional
+   - \`specs/<svc>/usecases/<name>.likec4\` — a flow INSIDE one service: a
+     \`dynamic view\` over its containers, tagged \`#req-<Requirement-ID>\` with
+     one of that service's requirements. Draw it over the interior this feature
+     gives the service — a container \`delta.likec4\` routes into its model, or
+     the model the archive creates for a new service; it is graded against
+     exactly that. A tag for an id this feature ADDS is declared by the document
+     itself, \`specification { tag req-<slug> }\` at its top. To REDRAW a living
+     flow whose requirement this feature MODIFIES, give the document the living
+     file's name — the archive replaces it; a document holding only comments
+     (never an empty one) retires it. Every requirement that flow claims must be
+     MODIFIED or REMOVED here, an unchanged one restated. \`usecase.requirement-modified\` names the slot to write
    - for a service (or capability) this feature CREATES, the delta is the
      living document's first draft, and \`loam archive\` carries only what you
      mark as the document's own: the frontmatter \`owner\`, an H1 that neither

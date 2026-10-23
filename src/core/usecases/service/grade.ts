@@ -66,13 +66,22 @@ export interface ServiceUseCaseScope extends ServiceTagScope {
    * documents why the intra-service exemption is a guard and not a scope.
    */
   services: ReadonlySet<string>;
+  /**
+   * The directory each view's `sourcePath` is relative to when it is not the
+   * service directory — a feature's `specs/<svc>/`, whose `usecases/<name>.likec4`
+   * the archive writes to the same path under `treePath`
+   * (`../delta/service/grade.ts`). The sentences go on naming the service by
+   * `treePath`; where a finding says the view IS follows the file the author has
+   * open.
+   */
+  viewsAt?: string;
 }
 
 /** `<svc>: services/<tree>/<file> — dynamic view '<id>'` — the service target's spelling of `viewPlace`. */
 function servicePlace(scope: ServiceUseCaseScope, view: ParsedView): string {
   // An absent `sourcePath` names the directory rather than guessing a file,
   // for `viewFile`'s reason; nothing at the 1.59.2 pin reaches that arm.
-  return `${scope.service}: ${scope.treePath}/${view.sourcePath ?? ""} — dynamic view '${view.id}'`;
+  return `${scope.service}: ${scope.viewsAt ?? scope.treePath}/${view.sourcePath ?? ""} — dynamic view '${view.id}'`;
 }
 
 /** The repo-relative spelling of a project error's document, or the whole project when it carries none. */
@@ -106,7 +115,7 @@ function flowInvalidFinding(scope: ServiceUseCaseScope, errors: readonly LikeC4E
     // `capDetails` keeps ten lines, one broken document can carry more than ten
     // errors, and a diagnosis appended after them is dropped exactly when the
     // reader needs it.
-    details: [...tagHint(errors), ...errors.map((error) => `${fileOf(scope, error)}: ${errorText(error)}`)],
+    details: [...tagHint(errors, livingDeclaration), ...errors.map((error) => `${fileOf(scope, error)}: ${errorText(error)}`)],
     locations: [{ path: first, role: "primary" }],
   };
 }
@@ -123,8 +132,14 @@ const UNDECLARED_TAG = /reference to Tag named '#?([\w.-]+)'/;
  * the thing they had just been told to write, with nothing saying a tag must be
  * declared first (verification 2026-09-04, D10). One line, from the first such
  * error only: the second one has the same repair.
+ *
+ * `declare` words the `#req-` repair, because WHERE the tag goes depends on
+ * whose document it is: a living flow's project reads the blocks below, while a
+ * feature's flow arrives with a requirement nothing declares yet and carries the
+ * declaration itself (`../delta/service/grade.ts`). The `#cap-` repair is the
+ * same for both — the tag is wrong wherever a service's flow sits.
  */
-function tagHint(errors: readonly LikeC4Error[]): string[] {
+export function tagHint(errors: readonly LikeC4Error[], declare: (name: string) => string): string[] {
   for (const error of errors) {
     const match = UNDECLARED_TAG.exec(error.message);
     const name = match?.[1];
@@ -146,13 +161,18 @@ function tagHint(errors: readonly LikeC4Error[]): string[] {
       ];
     }
     if (!name.startsWith(REQ_TAG_PREFIX)) continue;
-    return [
-      `declare \`tag ${name}\` in the \`specification { }\` block this project reads — model.likec4's own ` +
-        "for a model that stands alone, the fleet map's for one that extends it (or a tags-only " +
-        "`specification` in a document beside the model)",
-    ];
+    return [declare(name)];
   }
   return [];
+}
+
+/** Where a LIVING service flow's `#req-` tag is declared: a block the service's own project already reads. */
+function livingDeclaration(name: string): string {
+  return (
+    `declare \`tag ${name}\` in the \`specification { }\` block this project reads — model.likec4's own ` +
+    "for a model that stands alone, the fleet map's for one that extends it (or a tags-only " +
+    "`specification` in a document beside the model)"
+  );
 }
 
 /**
@@ -166,7 +186,8 @@ function tagHint(errors: readonly LikeC4Error[]): string[] {
  * service directory kept beside it as `scope` (`../spine.ts`'s shape).
  */
 function atView(scope: ServiceUseCaseScope, view: ParsedView, findings: Finding[]): Finding[] {
-  const file = view.sourcePath === undefined ? `${scope.treePath}/` : `${scope.treePath}/${view.sourcePath}`;
+  const at = scope.viewsAt ?? scope.treePath;
+  const file = view.sourcePath === undefined ? `${at}/` : `${at}/${view.sourcePath}`;
   return findings.map((finding) =>
     finding.locations === undefined
       ? {

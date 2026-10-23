@@ -19,6 +19,7 @@ import { repoPath } from "../../envelope/json.js";
 import { FleetContext } from "../../fleet-context.js";
 import { compareIds, type FeatureEntry, type ServiceEntry } from "../../repo/entries.js";
 import { featurePaths, featureSpecPaths, landscapePath } from "../../repo/paths.js";
+import { carriesServiceFlows } from "../../usecases/delta/service/slot.js";
 import { featureTitle, listFeatures, listServices } from "../../repo/repo.js";
 import { introducingFeatures } from "../../projection/introduced.js";
 import { contractEvidence, contractOwners, contractsHeldElsewhere, owesContract } from "../contracts.js";
@@ -210,7 +211,8 @@ async function fleetFeature(
     // `loam validate --feature` both called complete. The name stays
     // `<svc>/spec` when NEITHER exists, because the business delta is the one
     // an author writes by default.
-    if (!existsSync(p.spec) && !existsSync(p.archSpec)) missing.push(`${svc}/spec`);
+    // A service flow alone is a delta too (`../feature/artifacts.ts` says why).
+    if (!existsSync(p.spec) && !existsSync(p.archSpec) && !carriesServiceFlows(feature.dir, svc)) missing.push(`${svc}/spec`);
     // The same question featureArtifacts asks, through the same function: the
     // two forms must never disagree about whether a feature owes a contract.
     if (owesContract(living.get(svc), contracted.has(svc), evidence(svc)) && !existsSync(p.openapi)) {

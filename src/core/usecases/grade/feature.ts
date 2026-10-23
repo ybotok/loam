@@ -72,7 +72,16 @@ function featurePlace(docsDir: DocsDir): (view: ParsedView) => string {
   };
 }
 
-function asIssue(finding: Finding): Issue[] {
+/**
+ * One grader finding as the archive gate files it. Exported for the gate's
+ * second use-case reader, a feature's service-local flows
+ * (`../delta/service/grade.ts`), whose grader is the service target's and
+ * writes the same five codes — one table, so neither scope can drop a code the
+ * other files. `locations` travels: the service grader names the file a hop
+ * is in, and an agent reading `--json` should not have to parse the prose for
+ * it.
+ */
+export function asIssue(finding: Finding): Issue[] {
   if (finding.severity === "ok") return [];
   const code = AS_ISSUE[finding.code];
   if (code === undefined) {
@@ -84,6 +93,7 @@ function asIssue(finding: Finding): Issue[] {
       code,
       ...(finding.subject === undefined ? {} : { subject: finding.subject }),
       ...(finding.details === undefined ? {} : { details: finding.details }),
+      ...(finding.locations === undefined ? {} : { locations: finding.locations }),
       message: finding.message,
     },
   ];

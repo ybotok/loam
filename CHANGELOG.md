@@ -10,6 +10,72 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Added — a feature carries its services' own flows: `features/<FEAT>/specs/<svc>/usecases/`
+
+A flow inside one service — a `dynamic view` over its containers, tagged `#req-` with one of its
+requirements — could exist only in the living tree. A `.likec4` at
+`features/<FEAT>/specs/<svc>/usecases/` was read by nothing: `validate --feature` and `status`
+unchanged, the archive plan silent, and the file left behind in `features/archive/`. So the redrawn
+flow of a requirement a feature MODIFIES, and every flow of a service a feature creates, had to be
+copied by hand after the archive, ungraded until then. SCHEMA.md, "A feature carries a service's
+flows", has the rules.
+
+- **The slot.** `features/<FEAT>/specs/<svc>/usecases/<name>.likec4`, beside the service's other
+  deltas. `loam archive` writes it to `services/<…>/<svc>/usecases/<name>.likec4` (unfiled
+  `services/<svc>/` for a service the feature creates), and `loam unarchive` takes it back.
+- **Graded before the archive**, under `validate --feature`, `validate --all` per active feature,
+  `loam status <FEAT>` and the archive gate, by the grader `validate --service` runs:
+  `usecase.step-unbacked`, `usecase.step-contested`, `usecase.step-unlinked`,
+  `usecase.requirement-unresolved`, and `usecase.capability-unresolved` for a `#cap-` tag. It is read
+  against the project the archive leaves: the service's model with the delta's interior routed
+  into it, or the model the archive creates for a new service. For an extending model the map is
+  included, with the feature's own fleet flows and topology documents where the archive writes
+  them, so a view id one of them shares is refused before the archive. The service's living flows
+  are included. Tags resolve against the ids the service's
+  spec.md and arch.spec.md have after the merge: an id the feature ADDS or MODIFIES resolves, one it
+  REMOVES does not. A project that does not read is `usecase.flow-invalid`, with the service as
+  `subject` and the parse errors in `details`. Findings name the feature file, and keep the
+  service directory as the `scope` location.
+- **A tag for an id the feature adds** is declared in the flow document itself, as a tags-only
+  `specification { tag req-<slug> }` at its top. The archive copies the document whole. A tag that a
+  block the project already reads declares must not be declared again: the second declaration is a
+  duplicate, reported as `usecase.flow-invalid`. When the parse names an undeclared `#req-` tag, the
+  first `details` line says where to declare it.
+- **Replace and retire.** A document with the same path as a living flow REPLACES it at archive.
+  A document holding only comments RETIRES it, which the archive does by deleting the file. Both
+  are allowed only when the living file claims at least one requirement of that service, and this
+  feature MODIFIES or REMOVES every requirement it claims (restating an unchanged one is enough).
+  The overwrite is then covered by those requirements' `Based-On:` pins, so a second feature
+  redrawing the same file collides on one of them. Otherwise the gate reports
+  `usecase.flow-exists`, the existing code, now also raised for a service flow; its message names
+  the claimed requirements the feature leaves unchanged. A document holding nothing at all (zero
+  bytes or whitespace) is `usecase.flow-invalid`: it is neither a flow nor a retirement.
+- **New code `usecase.flow-unknown`** (error, never `--approve`-overridable): a retiring document
+  whose path holds no living flow. 361 stable codes, counted with `loam explain --codes --json`.
+- **`usecase.requirement-modified`** names the slot path to redraw a service flow under
+  `usecases/`. A living flow the feature redraws there gets neither this warning nor the predicted
+  `usecase.requirement-unresolved` of a removal.
+- **`archive --json`'s `plan[].action`** has a new value, `delete`, for a retired flow, and the dry
+  run prints `delete`. The plan prints one `use case:` line per document: `created`, `replaced` or
+  `retired`.
+- **The snapshot manifest** marks a deleted file with an additive `removed: true` on its row. The
+  layout version stays 4. `unarchive` restores the file instead of calling it changed since the
+  archive. An older loam reads such a row as drift and asks for `--force`.
+- **`loam status`** no longer calls `spec.md` missing for a service whose feature directory holds
+  only a flow. Both status forms read it that way, as every gate already did.
+- `loam instructions` pages `loam-feature`, `loam-authoring`, `loam-drawing`, `loam-ship` and
+  `loam-codes`, the `loam explain` rows for the five codes above, and the generated AGENTS.md teach
+  the slot.
+
+Exit codes: a feature whose service flow is broken, undeclared, empty, replaces a living flow
+without a pin on every promise it keeps, or retires a flow that does not exist now makes
+`validate --feature`, `validate --all` and `loam archive` exit 1, where they exited 0 and left the
+flow ungraded. One case goes the other way: a feature that removes a requirement a living service
+flow claims, and redraws or retires that flow at the slot, no longer gets
+`usecase.requirement-unresolved` for the living file. `validate --feature` and `loam archive` exit 0
+there, where they exited 1, because the archive now replaces or deletes that file and the
+replacement is graded on its own.
+
 ## [0.2.0-alpha.13] - 2026-10-22
 
 Everything on `main` since `0.2.0-alpha.12`. Still a prerelease on the `alpha` line. When this

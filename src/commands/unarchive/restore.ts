@@ -130,7 +130,11 @@ export async function unarchiveLocked(
     // narrower test used to call every repaired file a later change and demand
     // `--force` to discard this command's own half-finished undo.
     const restored = entry.existed ? now === entry.before : now === null;
-    if (now !== entry.after && !restored) drifted.push(entry.path);
+    // What archive LEFT: the bytes it wrote, or — for a file it deleted — no
+    // file at all. Read as bytes, a delete's empty-digest `after` matched
+    // nothing on disk, and every retired flow was reported as edited since.
+    const asArchived = entry.removed ? now === null : now === entry.after;
+    if (!asArchived && !restored) drifted.push(entry.path);
     let before: Buffer | null = null;
     if (entry.snapshot !== null) {
       before = await readFile(entry.snapshot);

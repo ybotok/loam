@@ -131,11 +131,11 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/capabilities/` | the declared-capability vocabulary and the fleet rollup joined by `Capability:` | c4, document, kernel, repo |
 | `core/deployment/` | the fleet TOPOLOGY axis: which deployment objects carry an obligation and who owns each, the `deployment/` document a FEATURE brings, and the slice of it one service runs in | c4, repo |
 | `core/doctor/` | the repository's own health: conflict markers, interrupted writes, a stale AGENTS.md | agent, c4, conflict-markers, docs, envelope, gherkin, kernel, projection, repo, staging |
-| `core/delta/` | does the diff apply | c4, capabilities, document, fleet-context, repo, usecases |
+| `core/delta/` | does the diff apply; `flows/` beneath wires a feature's service-local flows to the invocation's reads | c4, capabilities, document, fleet-context, repo, usecases |
 | `core/explain/` | `loam explain`'s lookup — a finding code, a refusal code or a concept term in, one discriminated explanation out | agent, brief |
 | `core/links/` | the corpus of authored documents loam reads links out of, and whether each link resolves | envelope, glossary, kernel, repo |
 | `core/projection/` | one feature projected onto one service — the API, event and C4 slices `loam delta` and `loam context` share, and which feature in flight introduces a service not yet living (`status`, `show`, `context`, `steps`, `doctor`) | asyncapi, c4, kernel, openapi, repo |
-| `core/usecases/` | the fleet's declared use cases and the join from a flow's steps onto the model, with `delta/` beneath for the flows one FEATURE brings, `service/` beneath for the flows one SERVICE keeps beside its model, `grade/` beneath for the grades a flow earns (validate's, run over a feature's own flows before the archive too), and `suites/` beneath for the journeys grouped by `#suite-` tag and the participant union a test stand is provisioned from (the one subpackage its parent imports, so it imports nothing of the parent's but types) | c4, capabilities, document, kernel, repo, vocabulary |
+| `core/usecases/` | the fleet's declared use cases and the join from a flow's steps onto the model, with `delta/` beneath for the flows one FEATURE brings (`delta/service/` for the ones it brings, replaces or retires beside a service's model), `service/` beneath for the flows one SERVICE keeps beside its model and their grade, `grade/` beneath for the grades a flow earns (validate's, run over a feature's own flows before the archive too), and `suites/` beneath for the journeys grouped by `#suite-` tag and the participant union a test stand is provisioned from (the one subpackage its parent imports, so it imports nothing of the parent's but types) | c4, capabilities, document, kernel, repo, vocabulary |
 | `core/consumers/` | the one consumer index — who in the living fleet still calls an operation or consumes a message (edges, requirements, use-case hops), over the fleet read in `loam diff`'s `ServiceState` shape | c4, document, envelope, fleet-context, kernel, openapi, repo, usecases |
 | `core/coherence/` | do the three axes agree; `retired/` beneath reads what archived features took out of the living contracts | asyncapi, c4, capabilities, conflict-markers, consumers, delta, deployment, document, envelope, glossary, kernel, openapi, repo, staging, usecases, vocabulary |
 | `core/dependencies/` | who calls whom, and the fan-in over it | c4, fleet-context, kernel, openapi, repo |
@@ -378,7 +378,7 @@ the workspace layout differs, and that part is already isolated.
     It is also the one option here that is not cheaply reversible.
 23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 79 of the 172
     modules in `commands/` — the entry module of every command among them; `core/envelope/config.ts`
-    and `core/repo/repo.ts` by 3 and 34 of them. Slices would duplicate the hubs or produce a
+    and `core/repo/repo.ts` by 3 and 35 of them. Slices would duplicate the hubs or produce a
     `shared/` folder — which is what `src/core/` already is.
 24. **Do not add a dependency to express structure.** No `madge`, no `dependency-cruiser`, no
     boundaries plugin. `oxlint` already ships the one rule that matters.

@@ -10,6 +10,7 @@ import type { CapabilityDoc } from "../../capabilities/tree.js";
 import type { PathableService } from "../../kernel/ids/service.js";
 import type { FeatureEntry } from "../../repo/entries.js";
 import { featurePaths, featureSpecPaths } from "../../repo/paths.js";
+import { carriesServiceFlows } from "../../usecases/delta/service/slot.js";
 import { recordLocation } from "../../verify/location.js";
 import type { Finding } from "../../vocabulary/report.js";
 import { owesContract } from "../contracts.js";
@@ -178,7 +179,12 @@ export function featureArtifacts(
     // status may be redder than the gates on a question they also ask; it may
     // not invent an obligation they do not.
     const archExists = existsSync(p.archSpec);
-    out.push(fileState("spec", { service: svc, path: rel(p.spec), exists: existsSync(p.spec) }, !archExists, specFault));
+    // The same reasoning one document over: a directory holding only a flow
+    // this feature draws for the service (`specs/<svc>/usecases/`, a promise the
+    // service already makes, kept by a new drawing) is a delta every gate grades
+    // and none asks a requirement of.
+    const owesSpec = !archExists && !carriesServiceFlows(feature.dir, svc);
+    out.push(fileState("spec", { service: svc, path: rel(p.spec), exists: existsSync(p.spec) }, owesSpec, specFault));
     out.push(fileState("arch-spec", { service: svc, path: rel(p.archSpec), exists: archExists }, false, specFault));
     out.push(
       fileState(
