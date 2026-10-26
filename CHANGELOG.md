@@ -10,6 +10,33 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+## [0.2.0-alpha.15] - 2026-10-27
+
+Everything on `main` since `0.2.0-alpha.14`. Still a prerelease on the `alpha` line. When this
+version was cut, `alpha` and `latest` both named `0.2.0-alpha.14`, so a repository upgrading from it
+takes this section alone. `npm view @ybotok/loam dist-tags` is the record of what installs.
+
+Most of it changes what loam hands an agent. `loam instructions loam-check` prints without its fix
+tables unless `--fix-tables` asks. Generated skills pre-approve only the verbs their own pages name,
+in the bare and the `npx` spelling, and Claude's skills say when to use them and take `vouch` out
+of the pool. `loam doctor` reports a `CLAUDE.md` that keeps Claude Code from reading `AGENTS.md`,
+and `loam mcp` serves the workflows as prompts. Two changes reach the fleet map: a parent
+subsystem's generated view draws its children as boxes, and a newly scaffolded map declares a
+technology palette.
+
+One exit code moves, once. A repository with a parent subsystem whose child subsystems the map
+draws as boxes gets `subsystem.views-stale`, an error, so `loam validate --all` exits 1 until
+`loam subsystem sync` rewrites `architecture/subsystems.likec4`. After upgrading, `loam doctor`
+also reports `doctor.agent-files-stale` for the generated command and skill files, a warning that
+`loam init` clears for every file still byte-identical to what loam wrote.
+
+One stable code was added and none renamed or retired: `doctor.agents-md-shadowed`, a warning —
+363 in all, against 362 at alpha.14, counted with `loam explain --codes --json`. `ErrorCode` and
+`IssueCode` are byte-identical to alpha.14. One flag was added, `loam instructions --fix-tables`,
+and no `--json` key. Generated Claude skills gain the frontmatter fields `when_to_use` and
+`disallowed-tools`; the MCP server gains `prompts/list`, `prompts/get` and `capabilities.prompts`,
+and `loam_instructions` gains `fixTables`.
+
 ### Changed — `loam instructions loam-check` prints without its fix tables unless asked
 
 - `loam instructions loam-check`, and the `body` of its `--json` form, now print the page that
