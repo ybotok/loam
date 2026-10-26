@@ -135,6 +135,13 @@ export interface ProblemReports {
    */
   next: string;
   entries: ProblemReportEntry[];
+  /**
+   * The `*.md` files in the directory that do not claim to be reports — no
+   * name in the protocol's shape and no `Status:` field in the header — by
+   * name, counted in neither `total` nor `entries`. A hand-written `README.md`
+   * indexing the corpus is the case. Additive beside the keys above.
+   */
+  other: string[];
 }
 
 export interface AgentSurface {

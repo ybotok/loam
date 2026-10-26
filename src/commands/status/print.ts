@@ -156,6 +156,9 @@ export function printFeature(r: FeatureStatusReport, ambiguous: string[]): void 
     }`,
   );
   console.log(`  verification  ${verificationLine(r.verification, r.checklist?.claims ?? null)}`);
+  // Printed whatever the count, zero included: "no open questions" is a fact a
+  // reviewer wants as much as "twenty-five", and it is never a grade.
+  console.log(`  questions     ${f.openQuestions} open in intent.md's \`## Open questions\` — counted, not graded`);
   if (ambiguous.length > 0) {
     console.log(`  note          '${f.id}' also names ${ambiguous.filter((d) => d !== f.dirName).join(", ")}`);
   }

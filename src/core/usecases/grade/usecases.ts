@@ -97,6 +97,14 @@ export interface UseCaseScope {
   requirementsOf: (capability: string) => ReadonlySet<string> | undefined;
   /** Where every finding says its view is — the scope's own spelling (`ViewPlace`). */
   place: ViewPlace;
+  /**
+   * The repo-relative file a view is written in: `locations[0]` of every finding
+   * about it. Without it the report's fallback filed a fleet flow's hop under
+   * the TARGET, `architecture/landscape.likec4`, and an agent reading `--json`
+   * had to parse the prose to learn which `.likec4` to open — the service scope
+   * had already fixed that for its own flows (`../service/grade.ts`, `atView`).
+   */
+  file: (view: ParsedView) => string;
 }
 
 /**
@@ -152,12 +160,17 @@ export function useCaseFindings(scope: UseCaseScope): Finding[] {
     // requirement grade as "this view resolves no capability", which is its
     // `unscoped` ERROR — so every `#req-` tag in a fleet that has not adopted
     // the capability axis would be convicted for the axis not existing.
+    const forView: Finding[] = [];
     if (scope.capabilities !== null) {
       const claims = resolveCapabilityTags(view.tags, scope.capabilities);
-      findings.push(...capabilityTagFindings(view, claims, scope.place));
-      findings.push(...requirementTagFindings(view, claims, scope.requirementsOf, scope.place));
+      forView.push(...capabilityTagFindings(view, claims, scope.place));
+      forView.push(...requirementTagFindings(view, claims, scope.requirementsOf, scope.place));
     }
-    for (const step of view.steps) findings.push(...stepFindings({ view, step }, grading));
+    for (const step of view.steps) forView.push(...stepFindings({ view, step }, grading));
+    const file = scope.file(view);
+    findings.push(
+      ...forView.map((f) => (f.locations === undefined ? { ...f, locations: [{ path: file, role: "primary" as const }] } : f)),
+    );
   }
   return findings;
 }

@@ -10,13 +10,12 @@ import { compareIds, type ServiceEntry } from "../../repo/entries.js";
 import { recoverStep } from "../interrupted.js";
 import { featureLabel, fleetStageWords } from "../feature/words.js";
 import {
-  undocumented,
-  vouched,
   type ArtifactStatus,
   type FleetFeatureState,
   type InterruptedCommit,
   type NextStep,
 } from "../report.js";
+import { undocumented, vouched } from "./rungs.js";
 
 /** How urgent a stage is at fleet level. See {@link fleetNext}. */
 const STAGE_RANK: Record<ArtifactStatus, number> = {

@@ -22,7 +22,7 @@ import { consumedOperationIssues } from "./consumed/operations.js";
 import { eventCoherence } from "./events/events.js";
 import { authoringIssues } from "./authoring/scaffold.js";
 import { droppedHealthCoverage } from "./covers/health.js";
-import { unmergedSpecificationIssues } from "./specification/unmerged.js";
+import { mergeRefusalIssues } from "./specification/unmerged.js";
 import { unreadableTopologyIssues } from "./topology/read.js";
 import { glossaryDeltaIssues } from "../glossary/delta.js";
 import { featureFlows, flowDeltaIssues, USECASE_SUBDIR } from "../usecases/delta/flows.js";
@@ -134,12 +134,13 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
           message: `delta.likec4 declares elements/relationships but none are tagged #${featureId}; loam cannot see untagged changes`,
         });
       }
-      // A kind or tag the additions use and the living map does not declare:
-      // the archive never copies a specification declaration, so its merge
-      // would not parse. Asked of the archive's own merge, and only when the
-      // delta declares something the map lacks (./specification/unmerged.ts).
+      // Whatever the archive's own merge would refuse: a kind or tag the
+      // additions use and the living map does not declare (the archive never
+      // copies a specification declaration, so its merge would not parse), or
+      // any other refusal of the merge, predicted so a feature it cannot
+      // archive is never called ready (./specification/unmerged.ts).
       issues.push(
-        ...(await unmergedSpecificationIssues({
+        ...(await mergeRefusalIssues({
           docsDir,
           featureDir,
           featureId,

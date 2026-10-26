@@ -151,8 +151,9 @@ export interface Scorecard {
    * adopt scaffolds honestly reads "not started"); `arch` — the same for
    * arch.spec.md; `openapi` / `asyncapi` — the contract file exists;
    * `permissions` / `capabilities` — at least one non-REMOVED requirement in
-   * either spec document carries a `Requires:` / `Capability:` entry (the
-   * used-set rule the fleet vocabulary checks apply). An axis at 0 is "not
+   * either spec document carries a `Requires:` / a `Capability:` or
+   * `Realizes:` entry (the used-set rule the fleet vocabulary checks apply,
+   * with the business axis's second join counted too). An axis at 0 is "not
    * started" — distinct from partially adopted — and is what licenses the
    * text report's per-axis warning banner (./adoption.js). An unreadable
    * service counts as participating in nothing, the same zeros doctrine as

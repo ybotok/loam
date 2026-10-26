@@ -241,7 +241,8 @@ export async function deltaShapeIssues(
       })
     : { promises: { kind: "read", kept: [] }, issues: [] };
   const kept = flows.promises;
-  if (kept.kind === "unreadable") {
+  // Not when the MERGE refused: no flow was read, and `delta.merge-refused` says so.
+  if (kept.kind === "unreadable" && kept.unmerged !== true) {
     // ERROR, and the archive gate's own `NEVER_OVERRIDABLE` keeps `--approve`
     // off it. This is the refusal that stops a flow being copied into
     // `architecture/` and the NEXT reader's `loam validate --all` carrying the

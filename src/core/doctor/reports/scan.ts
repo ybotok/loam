@@ -170,7 +170,9 @@ function nextOrdinal(entries: readonly ProblemReportEntry[]): string {
 }
 
 /**
- * What one report's own `Status:` line says, or `unstated`.
+ * What one report's own `Status:` line says, or `unstated` — and whether the
+ * header carries the field at all, which is what tells a report whose word is
+ * not in the vocabulary from a file that never claimed to be a report.
  *
  * Unreadable reads as unstated rather than throwing: a report saved as UTF-16,
  * a file the process cannot open, or a directory somebody named `notes.md` are
@@ -178,16 +180,16 @@ function nextOrdinal(entries: readonly ProblemReportEntry[]): string {
  * able to describe a broken repository without becoming the next thing that
  * breaks in it.
  */
-async function statusOf(path: string): Promise<ProblemReportStatus> {
+async function statusOf(path: string): Promise<{ status: ProblemReportStatus; field: boolean }> {
   let text: string;
   try {
     text = await readFile(path, "utf8");
   } catch {
     // Unreadable is not a state the file claims — it is a state of the read.
-    return "unstated";
+    return { status: "unstated", field: false };
   }
   const word = STATUS_LINE.exec(headerFields(text))?.[1]?.toLowerCase();
-  return STATED.find((known) => known === word) ?? "unstated";
+  return { status: STATED.find((known) => known === word) ?? "unstated", field: word !== undefined };
 }
 
 /**
@@ -197,11 +199,16 @@ async function statusOf(path: string): Promise<ProblemReportStatus> {
  * `loam.json` loam FOUND (`doctor.ts` says why that and not the cwd), and to the
  * run directory only when there is no config file anywhere above it.
  *
- * Every `*.md` in the directory is an entry, including a hand-written index
- * page: which files in there are "really" reports is a second naming
- * convention, and inventing one would make loam disagree with a directory
- * listing about what the directory holds. An unnumbered entry contributes
- * nothing to `next`, so an index costs the corpus nothing either.
+ * A `*.md` here is a report when it says it is one in either of the two ways
+ * the protocol itself writes: a name in the protocol's shape (an ordinal, or the
+ * dated name reports carried before the numbering existed), or a `Status:`
+ * field in its header. Anything else — a hand-written `README.md` indexing the
+ * corpus is the case that was met — is listed under `other` and counted
+ * nowhere. Every `*.md` used to be an entry, on the argument that "really a
+ * report" would be a second naming convention; but the protocol's naming IS
+ * the convention, and counting the index made `total` one more than the
+ * reports and filed the index as an `unstated` report a person had to explain
+ * away on every run.
  */
 export async function scanReports(root: string): Promise<ProblemReports> {
   const dir = join(root, REPORTS_DIR);
@@ -216,7 +223,7 @@ export async function scanReports(root: string): Promise<ProblemReports> {
     // into it, so `present` stays true and the counts stay honestly empty.
     const code = (error as NodeJS.ErrnoException).code;
     const present = code !== "ENOENT" && code !== "ENOTDIR";
-    return { dir, present, total: 0, next: "001", entries: [] };
+    return { dir, present, total: 0, next: "001", entries: [], other: [] };
   }
 
   // Sorted here rather than left in readdir order, which is the filesystem's and
@@ -236,11 +243,12 @@ export async function scanReports(root: string): Promise<ProblemReports> {
   // Read together, like `staleAgentFiles` does: a report corpus is a flat
   // directory of small hand-written files, so there is nothing here worth a
   // concurrency cap, and `Promise.all` preserves the order just established.
-  const entries = await Promise.all(names.map(async (file): Promise<ProblemReportEntry> => ({
-    file,
-    ordinal: ordinalOf(file),
-    status: await statusOf(join(dir, file)),
-  })));
+  const read = await Promise.all(names.map(async (file) => {
+    const { status, field } = await statusOf(join(dir, file));
+    const entry: ProblemReportEntry = { file, ordinal: ordinalOf(file), status };
+    return { entry, report: isReportName(file) || field };
+  }));
+  const entries = read.filter((r) => r.report).map((r) => r.entry);
 
   return {
     dir,
@@ -248,5 +256,17 @@ export async function scanReports(root: string): Promise<ProblemReports> {
     total: entries.length,
     next: nextOrdinal(entries),
     entries,
+    other: read.filter((r) => !r.report).map((r) => r.entry.file),
   };
+}
+
+/**
+ * Whether a name is in the shape the protocol writes reports under — an
+ * ordinal, or the dated name from before the numbering. The other way a file
+ * claims to be a report is a `Status:` field in its header, whatever word it
+ * holds: a report whose word is not in the vocabulary reads as `unstated` and
+ * is still a report.
+ */
+function isReportName(file: string): boolean {
+  return ordinalOf(file) !== null || LEGACY_DATE_NAME.test(file);
 }

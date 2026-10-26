@@ -19,6 +19,8 @@ import { type DroppedRow } from "../../../core/document/apply.js";
 export interface Gated {
   /** The canonical feature id. The raw argument does not survive the gate. */
   id: string;
+  /** intent.md's title, for the plan's header (`featureTitle`); null when it names none. */
+  title: string | null;
   dirName: string;
   featureDir: FeatureDir;
   /** Parsed ONCE for the whole run — loading it spins up a fresh Langium workspace. */

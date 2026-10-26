@@ -130,6 +130,8 @@ export type UseCaseScan =
        * `useCaseScan.error` of every service's `loam context --json`.
        */
       errors: string[];
+      /** The feature overlay's: the merge refused before any flow was read (`StagedProject`). */
+      unmerged?: true;
     };
 
 export interface UseCaseRequest {

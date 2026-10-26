@@ -1306,6 +1306,41 @@ views {
     }
   });
 
+  it("the feature gate predicts that refusal as delta.merge-refused — and a flow is not blamed for it", async () => {
+    // validate --feature and status called this feature ready while the archive
+    // refused it at plan time; and once the feature carried a flow, the refusal
+    // was filed as usecase.flow-invalid, as if the flow were at fault, when the
+    // merge had failed before any flow was read.
+    const p = await makeProject({
+      "architecture/landscape.likec4": BOUND_API_LANDSCAPE,
+      "features/FEAT-40-ledger/delta.likec4": apiTitleDelta("FEAT-40", "ledgerApi", "ledger-service"),
+      "features/FEAT-40-ledger/usecases/journey.likec4":
+        "views {\n  dynamic view uc_ledger {\n    customer -> paymentApi 'uses the ledger'\n  }\n}\n",
+    });
+    try {
+      const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-40", "--json");
+      expect(res.code).toBe(1);
+      const findings = (JSON.parse(res.stdout) as { targets: Array<{ findings: Array<{ code: string; message: string }> }> })
+        .targets.flatMap((t) => t.findings);
+      const refused = findings.filter((f) => f.code === "delta.merge-refused");
+      expect(refused, JSON.stringify(findings)).toHaveLength(1);
+      // the merge's own reason, the sentence the archive refuses with
+      expect(refused[0]!.message).toContain("ledgerApi");
+      expect(refused[0]!.message).toContain("payment-service");
+      expect(findings.map((f) => f.code)).not.toContain("usecase.flow-invalid");
+
+      // The archive keeps its own answer for its own merge: merge-failed, not
+      // not-coherent — the prediction is left out of its gate. `--approve` as
+      // in the test above, so the judgement-call issues of this bare fixture
+      // cannot be what refuses.
+      const archived = await runLoam(p.workDir, "archive", "FEAT-40", "--approve", "--json");
+      expect(archived.code).toBe(1);
+      expect(JSON.parse(archived.stdout).error.code).toBe("merge-failed");
+    } finally {
+      await p.destroy();
+    }
+  });
+
   it("both sides bound to the SAME service: a legitimate title match still merges as before (skip, no duplicate)", async () => {
     const p = await makeProject({
       "architecture/landscape.likec4": BOUND_API_LANDSCAPE,

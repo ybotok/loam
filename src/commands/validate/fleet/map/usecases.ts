@@ -23,6 +23,7 @@ import type { Elem, Rel } from "../../../../core/c4/likec4.js";
 import type { ParsedView } from "../../../../core/c4/parsed/dynamic-views.js";
 import type { Finding } from "../../../../core/vocabulary/report.js";
 import { useCaseFindings } from "../../../../core/usecases/grade/usecases.js";
+import { viewFile } from "../../../../core/usecases/place.js";
 import { viewPlace } from "../usecases/place.js";
 
 export interface FleetUseCases {
@@ -74,5 +75,6 @@ export async function fleetUseCaseFindings(input: FleetUseCases): Promise<Findin
     capabilities: gradableCapabilityIds(vocabulary),
     requirementsOf: (capability) => capabilityReqs.byCapability.get(capability),
     place: viewPlace,
+    file: viewFile,
   });
 }

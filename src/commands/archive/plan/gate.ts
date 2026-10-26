@@ -21,7 +21,7 @@ import { loadFile } from "../../../core/c4/likec4.js";
 import { archiveDir as archiveRoot, featurePaths, featureSpecPaths, SPEC_AXES } from "../../../core/repo/paths.js";
 import { livingCapabilityPaths } from "../../../core/repo/authored/paths.js";
 import { locateServicePaths } from "../../../core/repo/service-target.js";
-import { featureSpecServices, missingFeatureMessage, resolveFeature } from "../../../core/repo/repo.js";
+import { featureSpecServices, featureTitle, missingFeatureMessage, resolveFeature } from "../../../core/repo/repo.js";
 import { featureCoherence } from "../../../core/coherence/coherence.js";
 import {
   invalidSpecServiceFindings,
@@ -149,7 +149,15 @@ export async function gate(
   // overrides the gating issues ONLY, and must say exactly which ones it is
   // walking past. A dry run is gated too: a plan for a merge that would be
   // refused describes nothing that will happen.
-  const issues = await featureCoherence({ docsDir: config.docsDir, featureDir, featureId: id, preloadedDelta: deltaDoc });
+  //
+  // Minus `delta.merge-refused`, the one issue that is a PREDICTION of this
+  // command: the feature gate files it so `validate` and `status` stop calling
+  // a feature ready that this merge would refuse, and here the merge itself is
+  // about to answer — `merge-failed`, with the same reason, the refusal a script
+  // has always branched on. Filing it here as well would turn that refusal into
+  // `not-coherent` for no new information.
+  const issues = (await featureCoherence({ docsDir: config.docsDir, featureDir, featureId: id, preloadedDelta: deltaDoc }))
+    .filter((issue) => issue.code !== "delta.merge-refused");
   // The issues --approve cannot move, carved out before the gate below reads
   // the rest. The register is issue.ts's `approveOverrides` — the same data
   // the `overridable` key in the envelope is resolved from — never a code
@@ -314,6 +322,7 @@ export async function gate(
 
   return {
     id,
+    title: await featureTitle(feature),
     dirName,
     featureDir,
     deltaDoc,

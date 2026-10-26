@@ -378,6 +378,7 @@ describe("public docs name only emitted codes", () => {
     "reports.present": "doctor --json payload field path — whether that directory exists",
     "reports.total": "doctor --json payload field path — how many reports it holds",
     "reports.next": "doctor --json payload field path — the ordinal the next report takes",
+    "reports.other": "doctor --json payload field path — the files in the directory that are not reports",
     // The first RETIRED code to reach this list, and the reason is worded for
     // the next one rather than for this one. A code loam has stopped emitting
     // still occurs in immutable release history: CHANGELOG entries describe the

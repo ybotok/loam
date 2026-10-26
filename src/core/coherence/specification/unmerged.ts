@@ -38,24 +38,33 @@
  * an addition is judged in the document the archive would really put it in. A
  * second reading beside the merge would be a second opinion about it.
  *
- * And only when it can matter, because the preview parses the living map — a
- * LikeC4 workspace spin the clean path must not pay. A delta parses alone, so
- * every name its model uses is one its own specification declares: when the
- * landscape declares all of those too (the feature tag aside — the splice strips
- * it), no addition can be missing anything, and that is settled from the two
- * files' text.
+ * It used to run only when it could matter, because the preview parses the
+ * living map — a LikeC4 workspace spin the clean path was not to pay — and
+ * whether an addition can be missing a declaration is settled from the two
+ * files' text (a delta parses alone, so every name it uses is one its own
+ * specification declares). It now runs for every feature whose delta parses,
+ * and pays that parse, because it also answers the question the text cannot:
+ * whether the merge refuses for ANY other reason — an addition it cannot place,
+ * two elements bound to different services, a block it cannot carry. Without
+ * that, `validate --feature` and `status` called such a feature ready, and a
+ * feature with flows filed the refusal as `usecase.flow-invalid`, as if the
+ * flows were at fault (a decision taken 2026-10-27, cost accepted: one merged
+ * map parse per active feature in `validate --feature`, `--all` and `status`).
+ *
+ * `delta.merge-refused` is a PREDICTION. `loam archive` drops it from its own
+ * gate and lets its plan refuse with `merge-failed` and the same reason, the
+ * refusal it has always given — the archive is the merge, and its answer is
+ * the one a script already branches on.
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import type { LoadedDoc } from "../../c4/likec4.js";
 import { projectDocumentsBesideMap } from "../../c4/project/architecture.js";
-import { mergedLandscape } from "../../c4/project/merge/preview.js";
+import { previewMerge } from "../../c4/project/merge/preview.js";
 import type { ExtendingModel } from "../../c4/splice/contract.js";
 import {
   declarationLine,
-  declaredVocabulary,
   undeclaredMessage,
-  type SpecificationTable,
   type UndeclaredName,
 } from "../../c4/splice/vocabulary/undeclared.js";
 import { repoPath } from "../../envelope/json.js";
@@ -74,35 +83,32 @@ export interface UnmergedRequest {
   models: () => Promise<ExtendingModel[]>;
 }
 
-const TABLES: readonly SpecificationTable[] = ["element", "relationship", "tag", "color"];
-
 /**
- * One error per declaration the map is missing. The caller asks only of a
- * delta that parsed: an unparseable one is `delta.invalid`, and the preview
- * would refuse it for that reason alone.
+ * What the archive's own C4 merge would refuse this delta for: one
+ * `delta.specification-not-merged` per declaration a document it writes is
+ * missing, or one `delta.merge-refused` carrying the reason for any other
+ * refusal. The caller asks only of a delta that parsed: an unparseable one is
+ * `delta.invalid`, and the preview would refuse it for that reason alone.
  */
-export async function unmergedSpecificationIssues(req: UnmergedRequest): Promise<Issue[]> {
+export async function mergeRefusalIssues(req: UnmergedRequest): Promise<Issue[]> {
   const deltaPath = featurePaths(req.featureDir).delta;
   const mapPath = landscapePath(req.docsDir);
   // No map, no merge: the archive says so ("no landscape.likec4 — not merged")
   // and `landscape.missing` owns the state.
   if (!existsSync(deltaPath) || !existsSync(mapPath)) return [];
-  let texts: { delta: string; map: string };
   try {
-    texts = { delta: await read(deltaPath), map: await read(mapPath) };
+    await read(deltaPath);
+    await read(mapPath);
   } catch {
     // A document this cannot decode is one the preview cannot read either, and
     // the refusal for it belongs to the reader that names the encoding.
     return [];
   }
-  const delta = declaredVocabulary(texts.delta);
-  const map = declaredVocabulary(texts.map);
-  const beyond = TABLES.some((table) =>
-    [...delta[table]].some((name) => !map[table].has(name) && !(table === "tag" && name === req.featureId)),
-  );
-  if (!beyond) return [];
 
-  const merged = await mergedLandscape({
+  // Both halves — the map and every model the archive routes an interior into
+  // or creates — because a model splice the archive cannot do is a refusal
+  // too, and the service-local flow grader reads the same preview.
+  const preview = await previewMerge({
     docsDir: req.docsDir,
     featureDir: req.featureDir,
     featureId: req.featureId,
@@ -110,21 +116,34 @@ export async function unmergedSpecificationIssues(req: UnmergedRequest): Promise
     models: await req.models(),
     projectDocuments: () => projectDocumentsBesideMap(req.docsDir),
   });
-  // On any arm: a name only a routed model lacks leaves the map previewable,
-  // and the merge reports it beside the content instead of refusing.
-  if (merged.missing === undefined) return [];
-
-  const byLine = new Map<string, UndeclaredName[]>();
-  for (const u of merged.missing) byLine.set(declarationLine(u), [...(byLine.get(declarationLine(u)) ?? []), u]);
-  return [...byLine.values()].map((uses) => ({
-    severity: "error",
-    code: "delta.specification-not-merged",
-    message: undeclaredMessage(uses),
-    locations: [
-      { path: repoPath(req.docsDir, mapPath), role: "primary" },
-      { path: repoPath(req.docsDir, deltaPath), role: "related" },
-    ],
-  }));
+  if (preview.missing !== undefined) {
+    // On either arm: a name only a routed model lacks leaves the map
+    // previewable, and the merge reports it beside the content instead of
+    // refusing — the same finding, because the fix is the same declaration.
+    const byLine = new Map<string, UndeclaredName[]>();
+    for (const u of preview.missing) byLine.set(declarationLine(u), [...(byLine.get(declarationLine(u)) ?? []), u]);
+    return [...byLine.values()].map((uses) => ({
+      severity: "error",
+      code: "delta.specification-not-merged",
+      message: undeclaredMessage(uses),
+      locations: [
+        { path: repoPath(req.docsDir, mapPath), role: "primary" },
+        { path: repoPath(req.docsDir, deltaPath), role: "related" },
+      ],
+    }));
+  }
+  if (preview.kind === "planned") return [];
+  return [
+    {
+      severity: "error",
+      code: "delta.merge-refused",
+      subject: req.featureId,
+      message:
+        `\`loam archive\` would refuse this feature's C4 merge (merge-failed) and write nothing: ${preview.reason}. ` +
+        "Fix the delta as that says — `--approve` cannot help, because approving does not make the merge possible.",
+      locations: [{ path: repoPath(req.docsDir, deltaPath), role: "primary" }],
+    },
+  ];
 }
 
 /** A document as the preview reads it — refusing the encodings that decode as empty. */

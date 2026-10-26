@@ -187,6 +187,20 @@ describe("the not-started banner: a rendering lever over unchanged findings", ()
     });
   });
 
+  it("counts a Realizes: join as taking part in the capabilities axis, as it counts Capability:", async () => {
+    // The axis has two joins, and a fleet whose services keep their promises
+    // through `Realizes:` alone read as never having started it.
+    const files = coherentFixture();
+    files["services/payment-service/spec.md"] = LIVING_SPEC.replace(
+      "Operations: authorizePayment",
+      "Operations: authorizePayment\nRealizes: checkout#CHECKOUT-PAY",
+    );
+    await withProject(files, async (p) => {
+      const json = JSON.parse((await runLoam(p.workDir, "validate", "--all", "--json")).stdout);
+      expect(json.scorecard.adoption.capabilities).toBe(1);
+    });
+  });
+
   it("groups per-service no-spec warns under the requirements banner, and --strict still counts them", async () => {
     await withProject(modelOnlyFleet(), async (p) => {
       const json = JSON.parse((await runLoam(p.workDir, "validate", "--all", "--json")).stdout);

@@ -4,7 +4,7 @@
  * lives in `diff.ts` beside the envelope; this module owns only the text.
  */
 import { SEVERITY_MARK } from "../../core/vocabulary/report.js";
-import type { FleetDiff, ServiceDiff } from "../../core/diff/semantic.js";
+import { NOT_COMPARED, type FleetDiff, type ServiceDiff } from "../../core/diff/semantic.js";
 
 function printService(s: ServiceDiff): void {
   console.log(`\n${s.id} — ${s.change}`);
@@ -30,6 +30,7 @@ export function printDiff(diff: FleetDiff, base: { ref: string; commit: string }
   const changed = diff.services.filter((s) => s.change !== "unchanged");
   if (changed.length === 0) {
     console.log("  no fleet-meaningful changes");
+    console.log(`  (not compared: ${NOT_COMPARED.join(", ")})`);
     return;
   }
   for (const s of changed) printService(s);
@@ -39,4 +40,5 @@ export function printDiff(diff: FleetDiff, base: { ref: string; commit: string }
       (sum.unreadable > 0 ? ` · ${sum.unreadable} unreadable` : "") +
       (diff.breaking ? " · BREAKING" : ""),
   );
+  console.log(`(not compared: ${NOT_COMPARED.join(", ")})`);
 }

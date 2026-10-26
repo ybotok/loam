@@ -43,6 +43,7 @@ import {
   HEADING_SENTINELS,
   SERVICE_DESCRIPTION_SENTINEL,
 } from "./sentinels.js";
+import { OPEN_QUESTIONS_SECTION } from "../../document/intent/questions.js";
 
 /** What the placeholder gate reads: the feature's own documents, nothing else. */
 export interface AuthoringScope {
@@ -183,14 +184,11 @@ async function intentIssue(scope: AuthoringScope, issues: Issue[]): Promise<void
   });
 }
 
-/**
- * The scaffold's `## Open questions` section, up to the next heading of its
- * level or above. loam-feature's analyze step WRITES there, so prose in it is
- * an agent's questions about the feature, never the reason it exists — and
- * counting it would let a feature whose Why nobody wrote clear the one gate
- * that asks for it, as soon as its author did the step that asks questions.
- */
-const OPEN_QUESTIONS_SECTION = /^##[ \t]+open questions[ \t]*\n[\s\S]*?(?=^#{1,2}[ \t]|(?![\s\S]))/gim;
+// The scaffold's `## Open questions` section (`core/document/intent/questions.ts`, which counts
+// what is in it). loam-feature's analyze step WRITES there, so prose in it is
+// an agent's questions about the feature, never the reason it exists — and
+// counting it here would let a feature whose Why nobody wrote clear the one
+// gate that asks for it, as soon as its author did the step that asks questions.
 
 /** Is there any authored text outside frontmatter, HTML comments, headings and the open questions? */
 function hasProse(text: string): boolean {

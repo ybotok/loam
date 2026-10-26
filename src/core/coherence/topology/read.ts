@@ -43,7 +43,9 @@ export async function unreadableTopologyIssues(request: TopologyReadRequest): Pr
     // thunk, so a feature with no `deployment/` directory pays nothing for it.
     models: () => extendingModels(docsDir, context),
   });
-  if (topology.kind === "unreadable") {
+  // Not when the merge itself refused: no topology document was read, and the
+  // refusal is `delta.merge-refused`'s to say (`../specification/`).
+  if (topology.kind === "unreadable" && topology.unmerged !== true) {
     issues.push({
       severity: "error",
       code: "deployment.doc-invalid",

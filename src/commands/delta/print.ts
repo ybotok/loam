@@ -211,6 +211,21 @@ export function printDropped(rows: ReadonlyArray<DroppedRow & { path: string }>)
   console.log();
 }
 
+/**
+ * The feature's why, whole, then how many of its open questions name this
+ * service — the line that tells a team which of the questions above are theirs
+ * to answer. Nothing is printed for an intent with no open questions.
+ */
+export function printIntent(intent: string | null, questions: { total: number; naming: number }, service: string): void {
+  if (intent) {
+    console.log(indent(intent, "  "));
+    console.log();
+  }
+  if (questions.total > 0) {
+    console.log(`  open questions: ${questions.total}, ${questions.naming} of them naming ${service}\n`);
+  }
+}
+
 export function indent(text: string, pad: string): string {
   return text
     .split("\n")

@@ -554,7 +554,8 @@ subsystems), every `loam subsystem` write verb regenerates it inside the same tr
 `validate --all` grades staleness by **content comparison** (line endings normalized; a CRLF
 checkout changes no fact) — one error,
 `subsystem.views-stale`, per stale generated file, each naming its own path (there are two of them;
-`architecture/services.likec4` is below); nothing in loam ever parses either: a views-only document
+`architecture/services.likec4` is below) as its first location — also when the file does not exist
+yet, with `architecture/` after it as scope, since that path is where the sync writes; nothing in loam ever parses either: a views-only document
 does not parse standalone (its `include` lines reference elements the landscape defines), and both
 hold **static** views, whose contents loam never reads in any document. Only the LikeC4 renderer,
 which merges the whole `architecture/` project, resolves their includes.
@@ -3078,7 +3079,13 @@ than be spliced around blind — most often one sharing its line with another st
 legal LikeC4 the splice map cannot see around, since it reads one statement per line. The refusal
 names the line LikeC4 parsed the declaration on and what the splice map read there instead, and
 says "shares that line" only when the line shows it: give each top-level declaration its own line,
-then re-run.
+then re-run. Every one of these plan-time refusals is predicted at feature scope too: `loam validate
+--feature`, `validate --all` and `loam status <FEAT>` run the same merge preview for every feature
+whose delta parses and report `delta.merge-refused` (error, `--approve` does not override it) with
+the merge's own reason, so a feature the archive cannot merge is never called ready; while it
+stands, the feature's flows and topology documents go ungraded, since the map they are drawn over
+does not exist. `loam archive` leaves that one prediction out of its gate and refuses with its own
+`merge-failed`, the same sentence.
 
 **Which document an addition lands in.** The C4 merge asks it per declaration, not per feature. An
 element whose PARENT resolves to a service whose `model.likec4` extends the map is spliced into that
@@ -4032,7 +4039,10 @@ repairing anything:
   reports already used — `reports.present`, `reports.total`, `reports.next`, and
   `reports.entries[]` with a `file`, an `ordinal` (`null` for a name written before the numbering)
   and a `status`, in ordinal order, numerically, with unnumbered names last (byte order stopped
-  being report order at exactly the width the ordinal widens to: `1000-…` sorts before `998-…`). The status is read from the report's HEADER FIELD BLOCK alone — the lines above
+  being report order at exactly the width the ordinal widens to: `1000-…` sorts before `998-…`).
+  A `*.md` there is a report when its name is in the protocol's shape (an ordinal, or the dated
+  name from before the numbering) or its header carries a `Status:` field; any other file — a
+  hand-written `README.md` indexing the corpus — is named in `reports.other` and counted nowhere. The status is read from the report's HEADER FIELD BLOCK alone — the lines above
   the first `##` heading, quoted code skipped in both markdown spellings (a fence, closed only by a
   run of the same character at least as long as the one that opened it, and an indented block,
   which is how the protocol prints its own template) — so a report quoting this protocol's own

@@ -25,7 +25,8 @@ import { SNAPSHOT_DIR, snapshotDir } from "../../core/staging/snapshot/manifest.
 import { SnapshotClobberError, writeSnapshot, type ServiceKey } from "../../core/staging/snapshot/snapshot.js";
 import { enumeratedServices } from "../../core/repo/service-target.js";
 import { listFleetTree } from "../../core/repo/repo.js";
-import { serviceViewsPath, subsystemViewsPath } from "../../core/repo/paths.js";
+import { featurePaths, serviceViewsPath, subsystemViewsPath } from "../../core/repo/paths.js";
+import { readOpenQuestions } from "../../core/document/intent/questions.js";
 import { serviceViewsState, viewsState } from "../../core/repo/tree/render/stale.js";
 import { loadArchitecture } from "../../core/c4/project/architecture.js";
 import { FleetContext } from "../../core/fleet-context.js";
@@ -64,9 +65,19 @@ export async function archiveLocked(
   const read = { docsDir: config.docsDir, fleet: new FleetContext() };
   const gated = await gate(read, featureId, opts, say);
   if (gated === null) return;
-  const { id, dirName, featureDir, gating, advisory, archiveDir, archiveDest, recovered, issues } = gated;
+  const { id, title, dirName, featureDir, gating, advisory, archiveDir, archiveDest, recovered, issues } = gated;
+  // Counted, never gated (core/document/intent/questions.ts): the archive
+  // is the last moment a reviewer sees the feature whole, and "25 questions
+  // nobody answered" is something they should see before merging it, not a
+  // refusal loam has any business making on their behalf.
+  const openQuestions = (await readOpenQuestions(featurePaths(featureDir).intent)).length;
 
-  say(`archive ${id}${dryRun ? "  (dry run)" : ""}\n`);
+  // The title beside the id: a reviewer approving `FEAT-101` alone could not
+  // tell which change the plan below was about without opening the directory.
+  say(`archive ${id}${title === null ? "" : ` · ${title}`}${dryRun ? "  (dry run)" : ""}\n`);
+  if (openQuestions > 0) {
+    say(`  note: ${openQuestions} open question(s) under intent.md's \`## Open questions\` — counted, not checked; the archive merges regardless\n`);
+  }
 
   // PLAN — compute every merge in memory. Nothing is written until the whole plan
   // succeeds, so a failure on any axis leaves the living docs untouched.
@@ -166,6 +177,9 @@ export async function archiveLocked(
   const payload = (archived: boolean): Record<string, unknown> => ({
     command: "archive",
     feature: id,
+    // Both additive (core/envelope/json.ts).
+    title,
+    openQuestions,
     archived,
     path: repoPath(config.docsDir, archiveDest),
     plan,

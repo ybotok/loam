@@ -66,10 +66,14 @@ const AS_ISSUE: Readonly<Record<string, IssueCode>> = {
  * this spells it docs-relative, the way every other feature finding names a file.
  */
 function featurePlace(docsDir: DocsDir): (view: ParsedView) => string {
-  return (view) => {
-    const file = view.sourcePath === undefined ? "usecases/" : relative(docsDir, view.sourcePath).split(/[\\/]/).join("/");
-    return `${file} — dynamic view '${view.id}'`;
-  };
+  const file = featureFile(docsDir);
+  return (view) => `${file(view)} — dynamic view '${view.id}'`;
+}
+
+/** The feature file a view is written in, docs-relative — `locations[0]` of its findings. */
+function featureFile(docsDir: DocsDir): (view: ParsedView) => string {
+  return (view) =>
+    view.sourcePath === undefined ? "usecases/" : relative(docsDir, view.sourcePath).split(/[\\/]/).join("/");
 }
 
 /**
@@ -77,9 +81,10 @@ function featurePlace(docsDir: DocsDir): (view: ParsedView) => string {
  * second use-case reader, a feature's service-local flows
  * (`../delta/service/grade.ts`), whose grader is the service target's and
  * writes the same five codes — one table, so neither scope can drop a code the
- * other files. `locations` travels: the service grader names the file a hop
- * is in, and an agent reading `--json` should not have to parse the prose for
- * it.
+ * other files. `locations` travels: both graders name the file a hop is in
+ * (`useCaseFindings` through the scope's `file`, the service grader through
+ * `atView`), and an agent reading `--json` should not have to parse the prose
+ * for it.
  */
 export function asIssue(finding: Finding): Issue[] {
   if (finding.severity === "ok") return [];
@@ -111,5 +116,6 @@ export function featureFlowIssues(scope: FeatureFlowScope): Issue[] {
     capabilities: scope.capabilities,
     requirementsOf: scope.requirementsOf,
     place: featurePlace(scope.docsDir),
+    file: featureFile(scope.docsDir),
   }).flatMap(asIssue);
 }

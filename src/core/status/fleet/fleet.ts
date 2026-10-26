@@ -25,13 +25,12 @@ import { introducingFeatures } from "../../projection/introduced.js";
 import { contractEvidence, contractOwners, contractsHeldElsewhere, owesContract } from "../contracts.js";
 import { readInterruptedCommit } from "../interrupted.js";
 import {
-  undocumented,
-  vouched,
   type ArtifactStatus,
   type FleetFeatureState,
   type FleetStatusReport,
   type InterruptedCommit,
 } from "../report.js";
+import { undocumented, vouched } from "./rungs.js";
 import { scanDeltas } from "../scan.js";
 import { fullyVerified, verificationState } from "../verification.js";
 import { fleetNext, groupServiceSteps, perServiceSteps, type Binding } from "./next.js";

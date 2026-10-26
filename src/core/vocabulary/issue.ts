@@ -74,7 +74,11 @@ export function issueFinding(i: Issue): Finding {
  * refused on, one merge over. `delta.specification-not-merged` is the mechanical
  * kind again: the merged map would not parse, so approving the feature would
  * only move the refusal from this gate to the merge, which refuses the same
- * additions by name.
+ * additions by name. `delta.merge-refused` is that again for every other
+ * reason the merge refuses; the archive itself drops it from its gate and lets
+ * its own plan refuse (`merge-failed`, the same sentence), so it is listed here
+ * for the readers that file it — an `--approve` could not make the merge
+ * succeed either way.
  *
  * `archive` refuses these under the same `not-coherent` envelope and spells
  * this verdict per issue as the additive `overridable` key, so a `--json`
@@ -89,6 +93,7 @@ const NEVER_OVERRIDABLE: ReadonlySet<IssueCode> = new Set<IssueCode>([
   "deployment.doc-reserved",
   "usecase.flow-invalid",
   "delta.specification-not-merged",
+  "delta.merge-refused",
   "usecase.flow-unknown",
 ]);
 
@@ -132,6 +137,8 @@ export type IssueCode =
   | "delta.nothing-tagged"
   /** the delta's additions use an element kind, relationship kind, tag or custom color that the specification of the document they would land in cannot see declared — the archive never copies a specification declaration, so its merge would not parse; declaring it in (or moving it into) architecture/landscape.likec4 is the fix, and no re-run succeeds without it */
   | "delta.specification-not-merged"
+  /** the archive's own C4 merge refuses this delta for a reason other than an undeclared specification name — an addition it cannot place, two elements bound to different services, a block it cannot carry — so `loam archive` would refuse it with `merge-failed`, naming the same reason; predicted here so `validate --feature`, `validate --all` and `status` stop calling the feature ready. Fix the delta as the reason says; no re-run succeeds without it */
+  | "delta.merge-refused"
   /** E1 — a requirement governs an operation its service's OpenAPI does not define */
   | "spec-api.op-undefined"
   /** E1, softened — the operation is defined by another feature still in flight; archive that one first */

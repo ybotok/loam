@@ -202,7 +202,10 @@ export interface DeploymentOverlayRequest {
 }
 
 /** Whether this feature's topology could be read at all, against the map its merge would leave. */
-export type DeploymentOverlay = { kind: "read" } | { kind: "unreadable"; errors: string[] };
+export type DeploymentOverlay =
+  | { kind: "read" }
+  /** `unmerged` as on `StagedProject`: the merge refused, and no topology document was read. */
+  | { kind: "unreadable"; errors: string[]; unmerged?: true };
 
 /**
  * Parse this feature's topology documents over the post-merge map.
@@ -232,7 +235,8 @@ export async function readFeatureDeployments(req: DeploymentOverlayRequest): Pro
     ...(req.load === undefined ? {} : { load: req.load }),
     ...(models === undefined ? {} : { models }),
   });
-  return staged.kind === "unreadable" ? { kind: "unreadable", errors: staged.errors } : { kind: "read" };
+  if (staged.kind === "read") return { kind: "read" };
+  return { kind: "unreadable", errors: staged.errors, ...(staged.unmerged === true ? { unmerged: true as const } : {}) };
 }
 
 /** A free name near the colliding one, so the fix is a rename the author can copy. */

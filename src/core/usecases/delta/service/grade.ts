@@ -235,7 +235,11 @@ async function gradeService(
   preview: MergePreview,
   around: { overwritten: ReadonlySet<string>; architecture: readonly StagedDocument[] },
 ): Promise<Issue[]> {
-  if (preview.kind === "failed") return [unreadableIssue(scope, [`the merge preview could not be computed: ${preview.reason}`])];
+  // A merge the archive refuses reads no flow at all, so nothing here is about
+  // the flows: `delta.merge-refused` (or `delta.specification-not-merged`)
+  // says what the merge refused, from the same preview
+  // (`core/coherence/specification/unmerged.ts`).
+  if (preview.kind === "failed") return [];
   const modelRel = spell(req.docsDir, scope.paths.model);
   let shape: "standalone" | "extending";
   if (existsSync(scope.paths.model)) {

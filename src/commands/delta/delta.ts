@@ -18,13 +18,13 @@ import { archSlice, introducedServices, livingServices } from "../../core/projec
 import { useCaseBlastRadius } from "../../core/usecases/touch.js";
 import { featureCapabilityDeltas } from "../../core/capabilities/delta/tree.js";
 import { capabilityDeltaSummaries } from "../../core/capabilities/delta/summary.js";
-import { printApi, printArchSlice, printCapabilities, printDropped, printEvents, printRequirements, printUseCases } from "./print.js";
+import { printApi, printArchSlice, printCapabilities, printDropped, printEvents, printIntent, printRequirements, printUseCases } from "./print.js";
 import { droppedBy, type DroppedRow } from "../../core/document/apply.js";
 import { locateServicePaths } from "../../core/repo/service-target.js";
 import { livingCapabilityPaths } from "../../core/repo/authored/paths.js";
 import type { CapabilityDoc } from "../../core/capabilities/tree.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
-import { indent } from "./print.js";
+import { openQuestions, questionsNaming } from "../../core/document/intent/questions.js";
 
 interface DeltaOptions {
   service?: string;
@@ -119,10 +119,14 @@ export function registerDelta(program: Command): void {
         return;
       }
 
-      // Why — business intent
+      // Why — business intent, and how many of its open questions are this
+      // service's: the whole intent prints, so the count is what tells a team
+      // which of twenty-five questions to read (core/document/intent/questions.ts).
       const intent = existsSync(paths.intent)
         ? stripFrontmatter(await readFile(paths.intent, "utf8")).trim()
         : null;
+      const asked = openQuestions(intent ?? "");
+      const questions = { total: asked.length, naming: questionsNaming(asked, service).length };
 
       // Requirement delta for this service (OpenSpec style), business and arch:
       // the same projection covers both axes, in the same shape, so the payload
@@ -274,6 +278,7 @@ export function registerDelta(program: Command): void {
           services: featureServices,
           path: repoPath(config.docsDir, feature.dir),
           intent,
+          openQuestions: questions,
           requirements: reqs.map((r) => reqJson(r, "business")),
           // Same shape, separate section: an arch requirement's scenarios are
           // integration/ops tests, and a consumer must not have to parse prose
@@ -336,10 +341,7 @@ export function registerDelta(program: Command): void {
       }
 
       console.log(`${id} · ${service}\n`);
-      if (intent) {
-        console.log(indent(intent, "  "));
-        console.log();
-      }
+      printIntent(intent, questions, service);
       if (existsSync(specPaths.spec)) printRequirements(reqs, "Requirements");
       else console.log("Requirements: (none for this service)\n");
       if (existsSync(specPaths.archSpec)) printRequirements(archReqs, "Arch requirements");

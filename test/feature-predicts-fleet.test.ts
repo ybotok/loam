@@ -382,6 +382,7 @@ describe("a feature flow's hop", () => {
     expect(before).toHaveLength(1);
     expect(before[0]).toMatchObject({ severity: "error", subject: "uc_receipt" });
     expect(before[0]!.message).toContain("features/FEAT-204-receipt/usecases/journey.likec4 — dynamic view 'uc_receipt' step 1");
+    expect(before[0]!.locations?.[0]).toEqual({ path: "features/FEAT-204-receipt/usecases/journey.likec4", role: "primary" });
 
     await archiveForced(f.dir, "FEAT-204");
     expect(ofCode(await findingsOf(f.dir, "--all"), "usecase.step-unbacked").map((x) => x.subject)).toEqual(["uc_receipt"]);

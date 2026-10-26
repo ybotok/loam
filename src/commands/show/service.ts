@@ -19,7 +19,7 @@ import { readOpenapi } from "../../core/openapi/doc.js";
 import type { PathableService } from "../../core/kernel/ids/service.js";
 import { landscapePath } from "../../core/repo/paths.js";
 import { locateServicePaths } from "../../core/repo/service-target.js";
-import { listServices } from "../../core/repo/repo.js";
+import { listFeatures, listServices } from "../../core/repo/repo.js";
 import { countMarkdown } from "../../core/repo/tree/fs.js";
 import { parseRequirements } from "../../core/document/parse.js";
 import { type Requirement } from "../../core/document/spec.js";
@@ -116,7 +116,12 @@ export async function showService(
   const governs = (op: string): string[] =>
     reqs.filter((r) => r.operations.includes(op)).map((r) => r.name);
 
-  const { inbound, outbound } = await landscapeEdges(docsDir, id, context);
+  const { inbound, outbound, description } = await landscapeEdges(docsDir, id, context);
+  // The archived features that wrote this service's documents: a living spec
+  // reads as if it had always been there, and these are where its history is.
+  const shapedBy = (await listFeatures(docsDir, { includeArchived: true }, context))
+    .filter((f) => f.archived && f.services.includes(id))
+    .map((f) => f.id);
 
   if (json) {
     emitJson({
@@ -147,7 +152,9 @@ export async function showService(
         ...(api.error === undefined ? {} : { error: api.error }),
       },
       operations: ops.map((op) => ({ id: op, governedBy: governs(op) })),
-      landscape: { inbound, outbound },
+      // `description` and `shapedBy` are additive (core/envelope/json.ts).
+      landscape: { inbound, outbound, description },
+      shapedBy,
     });
     return;
   }
@@ -163,6 +170,8 @@ export async function showService(
       : `${provenance.status} (sampled)`;
   const badge = [shown, provenance.owner].filter((s) => s !== null).join(" · ");
   console.log(`${id}   ${repoPath(docsDir, paths.dir)}${badge ? `   ${badge}` : ""}\n`);
+  if (description !== null) console.log(`  ${description}\n`);
+  if (shapedBy.length > 0) console.log(`  shaped by  ${shapedBy.join(", ")} (archived)\n`);
 
   if (provenance.sources.length > 0 || provenance.last_verified !== null || archScope !== null) {
     console.log("  provenance");
@@ -229,16 +238,20 @@ export async function showService(
   }
 }
 
-/** Inbound/outbound edges for a service, read off the living landscape. */
+/**
+ * Inbound/outbound edges for a service, read off the living landscape — and
+ * the `description` the map gives the service's own box, which is the one
+ * sentence about what the service IS that loam can show without inventing it.
+ */
 export async function landscapeEdges(
   docsDir: DocsDir,
   service: string,
   context: FleetContext,
-): Promise<{ inbound: Edge[]; outbound: Edge[] }> {
+): Promise<{ inbound: Edge[]; outbound: Edge[]; description: string | null }> {
   const path = landscapePath(docsDir);
-  if (!existsSync(path)) return { inbound: [], outbound: [] };
+  if (!existsSync(path)) return { inbound: [], outbound: [], description: null };
   const land = await loadFile(path);
-  if (land.errors.length > 0) return { inbound: [], outbound: [] };
+  if (land.errors.length > 0) return { inbound: [], outbound: [], description: null };
   // Edges are filed under the service an element is BOUND to, not under what the
   // box is titled — otherwise renaming a box empties this list without a word —
   // and an edge into a modelled container belongs to the service that owns it.
@@ -249,14 +262,20 @@ export async function landscapeEdges(
   // same service is its own internal wiring, so `show` printed `← <id>` for a
   // service nobody calls while `context` — which reads the shared derivation —
   // printed nothing. `Edge` is that module's `LandscapeEdge` field for field.
+  const svcOf = serviceResolver(land.elements, known);
   const { inbound, outbound } = landscapeEvidence({
     id: service,
     parses: true,
     relationships: land.relationships,
     elementIds: land.elements.map((e) => e.id),
-    svcOf: serviceResolver(land.elements, known),
+    svcOf,
   });
-  return { inbound, outbound };
+  // The service's own box is the OUTERMOST element resolving to it — its
+  // containers resolve to it too, and sit deeper in the fqn.
+  const own = land.elements
+    .filter((e) => svcOf(e.id) === service)
+    .sort((a, b) => a.id.split(".").length - b.id.split(".").length)[0];
+  return { inbound, outbound, description: own?.description?.trim() || null };
 }
 
 /* ------------------------------------------------------------------ */

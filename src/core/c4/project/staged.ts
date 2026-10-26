@@ -84,7 +84,17 @@ export type StagedProject =
       /** The staged rels that are THIS feature's documents — everything else is living. */
       mine: ReadonlySet<string>;
     }
-  | { kind: "unreadable"; errors: string[] };
+  | {
+      kind: "unreadable";
+      errors: string[];
+      /**
+       * Set when the MERGE refused, before any document was staged: the
+       * documents were never read, so a caller files nothing about them — the
+       * refusal is `delta.merge-refused`'s (`core/coherence/specification/`),
+       * or `delta.invalid`'s when the delta itself does not parse.
+       */
+      unmerged?: true;
+    };
 
 /**
  * Stage the living `architecture/` with the merge preview in place of the
@@ -103,7 +113,7 @@ export async function stageMergedProject(req: StagedProjectRequest): Promise<Sta
     ...req,
     projectDocuments: req.projectDocuments ?? (() => projectDocumentsBesideMap(req.docsDir)),
   });
-  if (merged.kind === "failed") return { kind: "unreadable", errors: [merged.reason] };
+  if (merged.kind === "failed") return { kind: "unreadable", errors: [merged.reason], unmerged: true };
 
   const arch = architectureDir(req.docsDir);
   // BOTH generated documents come out, through the one list every project read

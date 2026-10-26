@@ -324,3 +324,43 @@ describe("doctor counts the problem reports a repository has collected", () => {
       .toEqual(["unstated", "unstated", "open"]);
   });
 });
+
+describe("a file in the directory that is not a report is not counted as one", () => {
+  // A hand-written README.md indexing the corpus was entry number
+  // N+1, `unstated`, so `total` was always one more than the reports and the
+  // status row carried an `unstated` a person had to explain away every run.
+  it("lists an index under other, and counts what claims to be a report by name or by Status field", async () => {
+    const project = await projectWithReports({
+      "001-2026-09-01-a.md": reportFile("a", "open"),
+      "2026-08-01-legacy.md": reportFile("legacy", null),
+      "README.md": "# loam problem reports\n\nOne file per report; state lives in each file.\n",
+      // no name in the protocol's shape, but the header field says it is a report
+      "hand-named.md": reportFile("hand named", "fixed in 0.2.0-alpha.9"),
+      // a word outside the vocabulary is still a Status field: a report, unstated
+      "odd-word.md": reportFile("odd word", "wontfix"),
+    });
+
+    const result = await runLoam(project.workDir, "doctor", "--json");
+    const report = JSON.parse(result.stdout);
+
+    expect(report.reports.total).toBe(4);
+    expect(report.reports.entries.map((e: { file: string }) => e.file).sort()).toEqual(
+      ["001-2026-09-01-a.md", "2026-08-01-legacy.md", "hand-named.md", "odd-word.md"],
+    );
+    expect(report.reports.other).toEqual(["README.md"]);
+    expect(report.reports.next).toBe("002");
+
+    const human = await runLoam(project.workDir, "doctor");
+    expect(human.stdout).toMatch(/loam-reports\/ 4 .*not reports: README\.md/);
+  });
+
+  it("an absent directory has no other files either", async () => {
+    const project = await makeProject(coherentFixture(), { service: "payment-service" });
+    cleanups.push(() => project.destroy());
+
+    const report = JSON.parse((await runLoam(project.workDir, "doctor", "--json")).stdout);
+
+    expect(report.reports.present).toBe(false);
+    expect(report.reports.other).toEqual([]);
+  });
+});

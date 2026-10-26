@@ -61,6 +61,7 @@ interface JsonDiff {
   services?: JsonService[];
   breaking?: boolean;
   summary?: { added: number; removed: number; modified: number; deprecated: number; unreadable: number };
+  notCompared?: string[];
 }
 
 async function diffJson(p: Project, ref: string): Promise<{ code: number; payload: JsonDiff }> {
@@ -797,6 +798,10 @@ describe("loam diff — output modes", () => {
       const human = await runLoam(p.workDir, "diff", "--base", "main");
       expect(human.code).toBe(0);
       expect(human.stdout).toContain("no fleet-meaningful changes");
+      // …and what it did not look at, so a quiet diff over an arch.spec.md
+      // edit is not read as "nothing changed".
+      expect(human.stdout).toContain("(not compared: arch.spec.md requirements)");
+      expect(payload.notCompared).toEqual(["arch.spec.md requirements"]);
     } finally {
       await p.destroy();
     }

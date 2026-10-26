@@ -77,7 +77,6 @@
  * the fleet form never says `draft`, because grading is a per-feature cost it
  * refuses to pay.
  */
-import type { ServiceEntry } from "../repo/entries.js";
 import type { UseCaseBlastRadius } from "../usecases/touch.js";
 import type { AnsweredBy } from "../verify/answers.js";
 import type { VerificationVerdict } from "../verify/record.js";
@@ -258,6 +257,8 @@ export interface FeatureStatusReport {
     id: string;
     /** intent.md's title, for a person (`featureTitle`); null when it names none. Additive. */
     title: string | null;
+    /** The questions under intent.md's `## Open questions` (`openQuestions`) — counted, never graded. Additive. */
+    openQuestions: number;
     dirName: string;
     path: string;
     archived: boolean;
@@ -386,14 +387,4 @@ export interface FleetStatusReport {
    * counted line under the features.
    */
   serviceSteps: Array<{ code: string; services: string[]; command: string }>;
-}
-
-/** Nothing is written down: no living spec at all. Every other absence is partial adoption. */
-export function undocumented(s: ServiceEntry): boolean {
-  return !s.has.spec;
-}
-
-/** A person stamped it — `loam vouch`'s exact postcondition, read back off the frontmatter. */
-export function vouched(s: ServiceEntry): boolean {
-  return s.status === "verified" && s.sources.stamped;
 }

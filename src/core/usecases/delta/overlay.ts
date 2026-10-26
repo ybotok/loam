@@ -103,7 +103,9 @@ export async function readFeatureFlows(req: FlowOverlayRequest): Promise<UseCase
  * feature's gate — the same scoping every other feature-side check keeps.
  */
 function interpret(staged: StagedProject, known: ReadonlySet<string>): UseCaseScan {
-  if (staged.kind === "unreadable") return { kind: "unreadable", errors: staged.errors };
+  if (staged.kind === "unreadable") {
+    return { kind: "unreadable", errors: staged.errors, ...(staged.unmerged === true ? { unmerged: true as const } : {}) };
+  }
   const { doc, real, mine } = staged;
   // Through `isUseCase`, because `UseCaseScan.views` is documented as the
   // reserved-tag views ONLY and this is the type's second producer. The

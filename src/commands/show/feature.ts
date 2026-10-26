@@ -35,6 +35,7 @@ import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import { plural } from "../policy/format.js";
 import { kindCounts, mark } from "./marks.js";
 import { errorText } from "../../core/c4/likec4.js";
+import { readOpenQuestions } from "../../core/document/intent/questions.js";
 
 const REVIEW_INTENT_LIMIT = 1_200;
 
@@ -131,6 +132,8 @@ export async function showFeature(
         intent: {
           path: repoPath(docsDir, paths.intent),
           summary: intent,
+          // Additive, and counted rather than graded (core/document/intent/questions.ts).
+          openQuestions: status.feature.openQuestions,
         },
         architecture: {
           path: repoPath(docsDir, paths.delta),
@@ -166,7 +169,8 @@ export async function showFeature(
   console.log(`${feature.id}${title === null ? "" : ` · ${title}`}   ${repoPath(docsDir, feature.dir)}   ${state}\n`);
 
   console.log("  artifacts");
-  console.log(`    ${mark(feature.has.intent)} intent.md`);
+  const questions = feature.has.intent ? (await readOpenQuestions(paths.intent)).length : 0;
+  console.log(`    ${mark(feature.has.intent)} intent.md${questions === 0 ? "" : `  ${plural(questions, "open question")}`}`.trimEnd());
   const deltaNote =
     delta.errors.length > 0
       ? `${delta.errors.length} error(s)`

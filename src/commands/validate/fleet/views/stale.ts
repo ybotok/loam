@@ -106,14 +106,18 @@ function staleFinding(state: ViewsState, file: StaleFile): Finding[] {
       // on it. Without a location the report's fallback files this under the
       // TARGET, which is the landscape — a reader was sent to
       // architecture/landscape.likec4 to fix a file the sentence beside it
-      // named as architecture/subsystems.likec4. A file that does not exist
-      // yet cannot be `primary`: the actionable place is then the directory
-      // the regenerator will write into.
-      locations: [
-        state.actual === null
-          ? { path: "architecture", role: "scope" as const }
-          : { path: file.file, role: "primary" as const },
-      ],
+      // named as architecture/subsystems.likec4.
+      //
+      // A file that does not exist yet is `primary` too, with the directory
+      // after it as its scope. It used to be the directory alone, on the
+      // argument that a `primary` should point at something; but a reader — an
+      // editor, a CI annotation, an agent reading `locations[0]` — was then
+      // sent to `architecture/` to find out which of its files the finding
+      // meant, when the finding is about one path, and that path is exactly
+      // where `loam subsystem sync` will write.
+      locations: state.actual === null
+        ? [{ path: file.file, role: "primary" as const }, { path: "architecture", role: "scope" as const }]
+        : [{ path: file.file, role: "primary" as const }],
       message:
         `subsystems: ${file.file} ${said} — it is generated, ${file.what}. ` +
         "Run `loam subsystem sync` to regenerate it; never edit it by hand.",

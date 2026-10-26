@@ -156,9 +156,12 @@ export async function mergedLandscape(req: MergePreviewRequest): Promise<MergedL
 
 /** Both halves of the C4 merge as the archive would write them, or the honest refusal to say. */
 export type MergePreview =
-  | { kind: "failed"; reason: string }
+  /** `missing` as on `MergedLandscape`'s `failed`. */
+  | { kind: "failed"; reason: string; missing?: readonly UndeclaredName[] }
   | {
       kind: "planned";
+      /** As on `MergedLandscape`: what a routed model lacks, reported beside the content. */
+      missing?: readonly UndeclaredName[];
       /** The merged landscape, or null when the archive leaves the map as it is. */
       landscape: string | null;
       /**
@@ -210,7 +213,12 @@ export async function previewMerge(req: MergePreviewRequest): Promise<MergePrevi
   } catch (err) {
     return { kind: "failed", reason: err instanceof Error ? err.message : String(err) };
   }
-  return { kind: "planned", landscape: plan.content, models };
+  return {
+    kind: "planned",
+    landscape: plan.content,
+    models,
+    ...(plan.undeclared === undefined ? {} : { missing: plan.undeclared }),
+  };
 }
 
 /** The archive's landscape plan, computed — or why there is none to compute. */

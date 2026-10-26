@@ -26,7 +26,7 @@ import { FleetContext } from "../../core/fleet-context.js";
 import { readBaseFleet } from "../../core/diff/base-state.js";
 import { livingFleet } from "../../core/consumers/current.js";
 import { consumerIndex } from "../../core/consumers/consumers.js";
-import { computeDiff, type FleetDiff } from "../../core/diff/semantic.js";
+import { computeDiff, NOT_COMPARED, type FleetDiff } from "../../core/diff/semantic.js";
 import { printDiff } from "./print.js";
 
 interface DiffOptions {
@@ -107,6 +107,8 @@ export function registerDiff(program: Command): void {
           })),
           breaking: diff.breaking,
           summary: diff.summary,
+          // Additive: what this diff leaves out, so silence about it is not read as "unchanged".
+          notCompared: NOT_COMPARED,
         });
         return;
       }

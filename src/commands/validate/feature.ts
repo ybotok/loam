@@ -76,7 +76,12 @@ export async function validateFeature(
       findings.push({
         severity: "ok",
         code: "delta.valid",
-        message: `delta.likec4 valid (${res.elements.length} elements · ${res.relationships.length} relationships)`,
+        // Split into what the feature ADDS (tagged — what `loam show` and the
+        // archive count) and what it draws as context, so the two commands no
+        // longer print two different numbers for one delta.
+        message:
+          `delta.likec4 valid (${res.elements.length} elements · ${res.relationships.length} relationships, ` +
+          `of which ${taggedEls.length} · ${taggedRels.length} tagged ${featureId} — the rest is context)`,
       });
     }
   }

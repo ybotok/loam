@@ -5,6 +5,7 @@
  * vocabulary it reports in lives in ../report.ts, whose header holds the rules
  * this projection is held to.
  */
+import { readOpenQuestions } from "../../document/intent/questions.js";
 import { featureCoherence } from "../../coherence/coherence.js";
 import {
   invalidSpecServiceFindings,
@@ -17,6 +18,7 @@ import { repoPath } from "../../envelope/json.js";
 import { FleetContext } from "../../fleet-context.js";
 import { featureProvenance } from "../../provenance/findings.js";
 import type { FeatureEntry } from "../../repo/entries.js";
+import { featurePaths } from "../../repo/paths.js";
 import { featureSpecServices, featureTitle } from "../../repo/repo.js";
 import { featureChecklist } from "../../verify/checklist.js";
 import { enumeratedServices } from "../../repo/service-target.js";
@@ -127,6 +129,7 @@ export async function featureStatus(
     feature: {
       id: feature.id,
       title: await featureTitle(feature),
+      openQuestions: (await readOpenQuestions(featurePaths(feature.dir).intent)).length,
       dirName: feature.dirName,
       path: repoPath(docsDir, feature.dir),
       archived: feature.archived,

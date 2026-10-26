@@ -78,7 +78,7 @@ export interface FlowPromise {
 export type FlowPromises =
   | { kind: "read"; kept: readonly FlowPromise[] }
   | { kind: "ungraded"; why: string }
-  | { kind: "unreadable"; errors: string[] };
+  | { kind: "unreadable"; errors: string[]; unmerged?: true };
 
 /** Everything the join needs beside the flows themselves. */
 export interface FlowPromisesRequest {
@@ -106,7 +106,9 @@ export interface FlowPromisesRequest {
  * staged parse for both questions, because it is a Langium workspace spin.
  */
 export function featureFlowPromises(scan: UseCaseScan, req: FlowPromisesRequest): FlowPromises {
-  if (scan.kind === "unreadable") return { kind: "unreadable", errors: scan.errors };
+  if (scan.kind === "unreadable") {
+    return { kind: "unreadable", errors: scan.errors, ...(scan.unmerged === true ? { unmerged: true as const } : {}) };
+  }
   // The ladder, and it is `ungraded` rather than an empty answer. Once the
   // feature's own capability deltas are unioned in, `declared` is null for
   // exactly one reason — `architecture/capabilities.yaml` exists and does not

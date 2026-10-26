@@ -10,6 +10,67 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Added — `delta.merge-refused`: the feature gate predicts every refusal of the C4 merge
+
+- `loam validate --feature`, `validate --all` and `loam status <FEAT>` now run the archive's own
+  C4 merge preview for every feature whose `delta.likec4` parses, and report
+  `delta.merge-refused` (error, `--approve` does not override it) when the merge would refuse for a
+  reason other than an undeclared name: an addition it cannot place, two elements bound to
+  different services, a block it cannot carry. The message carries the merge's own reason. Such a
+  feature was called ready until `loam archive` refused it. `validate --feature` and
+  `validate --all` now exit 1 for it where they exited 0. `delta.specification-not-merged` is
+  unchanged and is still the code for an undeclared name. Each feature with a delta now costs one
+  more parse of the merged map.
+- `loam archive` and `archive --dry-run` keep their own answer: they leave `delta.merge-refused` out
+  of their gate and refuse with `merge-failed` and the same reason, as before.
+- While the merge is refused, the feature's flows, service-local flows and topology documents are
+  not graded. A feature with flows reported the refusal as `usecase.flow-invalid`, as if the flows
+  were at fault, and a feature with topology documents as `deployment.doc-invalid`. Neither does now.
+
+### Changed — `loam doctor` counts reports, not every file in `loam-reports/`
+
+- A `*.md` in `loam-reports/` counts as a report when its name has the protocol's shape (an ordinal,
+  or the dated name from before the numbering) or its header carries a `- Status:` field. Any other
+  file, such as a hand-written `README.md` indexing the corpus, is listed in the new key `other` of
+  the `reports` object in `doctor --json` and counted in neither `total` nor `entries`. `total` was
+  one more than the reports in a directory with an index, and the index showed as an `unstated`
+  report. The human row ends with `not reports: <files>` when there are any.
+
+### Changed — `subsystem.views-stale` names the file even when it does not exist yet
+
+- For a generated views file that is absent, the finding's first location is now that file
+  (`architecture/subsystems.likec4` or `architecture/services.likec4`, role `primary`), followed by
+  `architecture` as `scope`. It was the directory alone, so a reader had to work out which file
+  was meant. The file is where `loam subsystem sync` writes.
+
+### Added — what a feature leaves open, counted where a person reads it
+
+- `loam status <FEAT>`, `loam show <FEAT>`, `loam archive` (plan and dry run) and
+  `loam delta --service` count the questions under intent.md's `## Open questions`: each table row
+  below the header, and each top-level bullet. The count is never graded. New additive keys:
+  `openQuestions` in the `feature` object of `status --json`, in the `intent` object under `review`
+  in `show --json`, and at the top level of `archive --json`; `delta --json` carries
+  `openQuestions` as `{ total, naming }`, where `naming` counts the questions that name the
+  service by its id. The human views print the count; `delta` prints it under the intent.
+- The archive plan names the feature by title as well as id (`archive FEAT-101 · Split payments`),
+  and `archive --json` carries `title`.
+
+### Changed — counts and history a reader can follow
+
+- `validate --feature`'s `delta.valid` line now splits the delta into what is tagged with the
+  feature and what is context (`… of which N · M tagged FEAT-…`), the numbers `loam show` prints.
+- `validate --all`'s scorecard counts a service as taking part in the capabilities axis when a
+  requirement carries a `Realizes:` line as well as a `Capability:` one. The scorecard's
+  `capabilities` adoption count can rise for a fleet that keeps its promises through `Realizes:`.
+- `loam show <service>` prints the fleet map's `description` of the service and the archived
+  features that wrote its documents (`shaped by FEAT-… (archived)`). In `--json` they are
+  `description` in the `landscape` object and a top-level `shapedBy` list, both additive.
+- `loam diff` says what it does not compare: `(not compared: arch.spec.md requirements)` in the
+  human view, `notCompared` in `--json`. A diff over an `arch.spec.md` edit was silent about it.
+- Use-case findings at fleet and feature scope (`usecase.step-unbacked`, `usecase.step-contested`,
+  `usecase.step-unlinked` and the tag findings) carry the flow's file as their first location; they
+  fell back to the target, the fleet map.
+
 ## [0.2.0-alpha.15] - 2026-10-27
 
 Everything on `main` since `0.2.0-alpha.14`. Still a prerelease on the `alpha` line. When this

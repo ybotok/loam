@@ -29,6 +29,7 @@ interface JsonFinding {
   subject?: string;
   message: string;
   details: string[];
+  locations?: Array<{ path: string; role: string }>;
 }
 
 function useCaseFindings(stdout: string): JsonFinding[] {
@@ -227,6 +228,10 @@ describe("usecase.step-unbacked — the hop no other tool reports", () => {
       // contain the view.
       expect(unbacked?.message).toContain("architecture/usecases/checkout.likec4");
       expect(unbacked?.message).not.toContain("architecture/landscape.likec4");
+      // …and the same file as `locations[0]`, so `--json` names it without the
+      // prose: with no location of its own the finding fell back to the target,
+      // the landscape.
+      expect(unbacked?.locations?.[0]).toEqual({ path: "architecture/usecases/checkout.likec4", role: "primary" });
       // The ordinal and title are what locate the arrow on the diagram.
       expect(unbacked?.message).toContain("step 2 'confirms the authorization'");
       // The ORIENTED pair, and both fixes.

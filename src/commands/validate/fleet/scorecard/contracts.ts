@@ -111,7 +111,11 @@ async function readContracts(
     openapi: existsSync(paths.openapi),
     asyncapi: existsSync(paths.asyncapi),
     permissions: [...living, ...archLiving].some((r) => r.requires.length > 0),
-    capabilities: [...living, ...archLiving].some((r) => r.capabilities.length > 0),
+    // Either join of the business axis: `Capability:` names the vocabulary
+    // word, `Realizes:` the promise a capability document makes. Counting the
+    // first alone read a fleet whose services keep promises through `Realizes:`
+    // as not having started the axis it was most of the way through.
+    capabilities: [...living, ...archLiving].some((r) => r.capabilities.length > 0 || r.realizes.length > 0),
   };
 
   return {

@@ -277,7 +277,8 @@ async function sayUnfiled(config: { docsDir: DocsDir; fleet: FleetContext }, cre
  *
  * A create-only whole-file copy, and the smallest merge in the command: the
  * document is views-only, it names nothing the landscape merge has not already
- * placed (`planFlowOverlay` in the gate is what proves that, before this runs),
+ * placed (the gate's `readFeatureFlows`, `core/usecases/delta/overlay.ts`,
+ * grades every hop against the merge preview before this runs),
  * and a flow the living tree already holds was refused at the gate
  * (`usecase.flow-exists`, `core/usecases/delta/flows.ts` has the reasoning). So
  * by the time this runs every path here is a file that does not exist, and

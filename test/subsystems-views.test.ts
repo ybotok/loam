@@ -1012,9 +1012,14 @@ describe("validate --all — subsystem.views-stale", () => {
       for (const finding of findings) {
         expect(finding).toMatchObject({ severity: "error", code: "subsystem.views-stale" });
         expect(finding.message).toContain("loam subsystem sync");
-        // Neither file exists yet, so the location is the directory the
-        // regenerator writes into — never a `primary` pointing at nothing.
-        expect(finding.locations).toEqual([{ path: "architecture", role: "scope" }]);
+        // Neither file exists yet, and the location is still the file: the one
+        // path `loam subsystem sync` will write, with the directory after it as
+        // scope. The directory alone sent a reader to `architecture/` to work
+        // out which file was meant.
+        expect(finding.locations).toEqual([
+          { path: finding.subject, role: "primary" },
+          { path: "architecture", role: "scope" },
+        ]);
       }
     } finally {
       await p.destroy();

@@ -181,6 +181,13 @@ function firstWins<T>(items: T[], key: (item: T) => string): Map<string, T> {
 /** Entry comparator by map key — explicit, because the default sort stringifies whole entries. */
 const byKey = <T>(a: [string, T], b: [string, T]): number => (a[0] < b[0] ? -1 : 1);
 
+/**
+ * What this diff does not compare, said by both views rather than only in a
+ * code comment: an empty or quiet diff over a change to `arch.spec.md` read as
+ * "nothing changed" (requirementsDiff below says why the axis waits).
+ */
+export const NOT_COMPARED: readonly string[] = ["arch.spec.md requirements"];
+
 function requirementsDiff(sink: ServiceDiff, pair: { base: ServiceState; current: ServiceState }): void {
   // v1 diffs spec.md's requirements only; arch.spec.md is read for the
   // Consumes: join but its requirement inventory is deferred (the two axes

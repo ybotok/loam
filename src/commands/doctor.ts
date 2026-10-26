@@ -106,7 +106,10 @@ function reportsLabel(reports: DoctorReport["reports"]): string {
   // The directory's NAME, not `reports.dir`: the payload spells the absolute
   // path so an agent can act on it, while the row is read by a person standing
   // in the repository, for whom the absolute spelling is only longer.
-  return [`${REPORTS_DIR}/ ${reports.total}`, ...split, `next ${reports.next}`].join(" · ");
+  // A file that is not a report is named as such rather than silently
+  // dropped: someone counting the directory by hand gets one more than `total`.
+  const other = reports.other.length === 0 ? [] : [`not reports: ${reports.other.join(", ")}`];
+  return [`${REPORTS_DIR}/ ${reports.total}`, ...split, `next ${reports.next}`, ...other].join(" · ");
 }
 
 function printDoctor(report: DoctorReport): void {

@@ -126,7 +126,7 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   that feature, not to the living spec it has not merged into yet.
 - \`loam validate --feature <id>\` grades a change's three axes against each other and
   against the fleet in flight: \`delta.invalid\`, \`delta.nothing-tagged\`,
-  \`delta.specification-not-merged\`, \`delta.service-unknown\`, \`delta.service-id-invalid\`, \`spec-api.op-undefined\`,
+  \`delta.specification-not-merged\`, \`delta.merge-refused\`, \`delta.service-unknown\`, \`delta.service-id-invalid\`, \`spec-api.op-undefined\`,
   \`spec-api.op-pending\`, \`c4-api.op-undefined\`, \`c4-api.op-pending\`,
   \`c4-api.op-deprecated\`, \`c4.op-ungoverned\`, \`c4.op-link-missing\`,
   \`c4.service-binding-invalid\`, \`api.op-unconsumed\`,
