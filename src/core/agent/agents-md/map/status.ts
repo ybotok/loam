@@ -58,6 +58,10 @@ export const STATUS_COMMAND = `- \`loam status [<FEAT>]\` is the orientation sur
   \`next.adopt-first\` — which the \`/loam-adopt\` body walks.
   On one feature: \`next.author-intent\`, \`next.touch-service\`,
   \`next.author-spec\`, \`next.author-openapi\`, \`next.author-scenarios\`,
+  \`next.redraw-flows\` (living flows of one service claim a requirement the
+  feature rewrites: redraw each in its \`path\`, the feature's
+  \`specs/<svc>/usecases/\`, under the living file's name, or put it there
+  unchanged if it still holds — \`loam delta\`'s \`useCases.redraw\` lists them),
   \`next.rebase\`, \`next.archive-first\`, \`next.fix-coherence\`,
   \`next.generate-tests\`, \`next.verify\`, \`next.verify-unconfirmed\`,
   \`next.attest-service\` (this repo IS one of the services that owes an answer,

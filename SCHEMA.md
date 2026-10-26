@@ -2601,9 +2601,10 @@ none flattening to the slug (close ids offered), or two that do. No `#cap-` tag 
 on a hop whose caller and provider resolve to the same service — a service owes no operationId to
 itself — and still fires on a hop from such a flow into another service's element (a stand-in the
 model declares for a sibling, with no `metadata { op }`), exactly as on the fleet map; and a
-resolved service-local claim is the join being checked and nothing more today: it
-enters no capability `keptBy`, counts toward no `Covers:` or `c4.uncovered`, appears in no pack,
-`loam list capabilities`, `loam diff` or `loam delta`. A feature carries one in a slot of its own:
+resolved service-local claim is the join being checked, and otherwise it is read in one place: it
+enters no capability `keptBy`, counts toward no `Covers:` or `c4.uncovered`, and appears in no pack,
+`loam list capabilities` or `loam diff`. `loam delta` lists it as the inside of a fleet hop (below).
+A feature carries one in a slot of its own:
 
 **A feature carries a service's flows**: `features/<FEAT>/specs/<svc>/usecases/<name>.likec4`, beside
 that service's other deltas. That spelling because the directory is how a feature already names the
@@ -2668,21 +2669,41 @@ hand-copied at archive time.
   the archive will write them, so a service flow sharing a view id with one is refused here; a tag
   two SERVICES declare locally is not predicted (above).
 
-**The two use-case corpora meet at the hop — decided, not yet computed.** A fleet flow's hop into a
-service and that service's own flows describe one call at two altitudes, and the join between them
-needs no grammar of its own. The key is the hop's: the operation `attributeStep` attributes to it,
-or the message its relationship's `publishes` or `consumes` metadata names, taken only where the
-service answers the hop — it is called, it publishes, or it is delivered to. The service's
+**The two use-case corpora meet at the hop.** A fleet flow's hop into a service and that service's
+own flows describe one call at two altitudes, and the join between them needs no grammar of its own.
+The key is the hop's: the operation `attributeStep` attributes to it, or the message its
+relationship's `publishes` or `consumes` metadata names, taken only where the service answers the
+hop — it is called, it publishes, or it is delivered to. Where the service is the CALLER, the key
+belongs to the other service's contract, and the hop has no inside on this side. The service's
 requirements carry the same keys in their `Operations:`, `Publishes:` and `Consumes:` lines, and its
 flows claim those requirements by `#req-`; the flows claiming a requirement that carries the hop's
 key are the hop's inside. Neither corpus is generated from the other and nothing is stored: the join
-is read, at the hop, when a brief asks for it, against the requirements and flows the feature's
-merge would leave. An empty inside is a fact the brief states, never a finding — no check may grade
-the absence of a view (docs/DESIGN.md rule 26). A contested hop names its candidate operations and
-joins nothing, and a hop nothing backs has no key. loam does not compute this yet, so the paragraph
-above stays true today: a service-local claim appears in no `loam delta`. ROADMAP.md's "The hop
-join" owns the change, and when it lands this paragraph becomes the description of what `loam delta`
-and `loam status` show.
+is read, at the hop, each time a brief asks, against the requirements and flows the feature's merge
+would leave. The service's flows are its living ones minus every file the feature's slot replaces or
+retires, plus the slot's flows staged over the post-merge project exactly as the gate stages them.
+
+`loam delta <FEAT> --service <svc> --json` carries it. `useCases.flows` keeps its meaning — the
+LIVING fleet flows through the service — and the feature's own flows are `useCases.featureFlows`,
+with the same `unreadable`/`error`/`flows` shape and a hole of their own. `loam status <FEAT>`
+carries the same `featureFlows`. Each hop the service answers gains `inside`, one of five states:
+- `joined`, with `keys` and `flows`. Each flow carries `id`, `file`, `origin` (`living` or
+  `feature`) and `via`, the requirement it came through. Every claiming flow is listed, unfiltered;
+  the text view groups them by `via`.
+- `unread`, keys only: the service's flows could not be read, and `useCases.inside` says why. There
+  is no `flows` key for a caller to count as "nothing inside".
+- `keyless`: the backing names no operation or message.
+- `contested`, with the sorted `candidates`: no join, as everywhere loam refuses to guess.
+- `unbacked`.
+
+An empty inside — `joined` with no flows — is a fact the brief states and never a finding: no check
+may grade the absence of a view (docs/DESIGN.md rule 26). A requirement merge the archive would
+refuse makes every keyed hop `unread`: there is no requirement set to join through. `useCases.redraw`
+lists the service's living flows the feature makes untrue, one entry per flow with its `claims` — the
+set `usecase.requirement-modified` and the removal's `usecase.requirement-unresolved` name, from the
+same walk — and `loam status` raises each service's slotted, non-breaking set as
+`next.redraw-flows`, an edit whose `path` is the feature's `specs/<svc>/usecases/`. A flow whose tag
+still resolves is confirmed by putting it there unchanged, since a replacement silences the warning; a
+claim whose `breaks` is `unresolved` or `collides` takes the error's own fix instead.
 
 **Both corpora are reported together, and neither is derived from the other.**
 `loam list capabilities --json` carries `keptBy` (the flows keeping a promise) beside `realizedBy`

@@ -260,8 +260,11 @@ model {
 
   loam.commands.delta -> loam.core.c4
   loam.commands.delta -> loam.core.capabilities
+  loam.commands.delta -> loam.core.delta
+  loam.commands.delta -> loam.core.deployment
   loam.commands.delta -> loam.core.document
   loam.commands.delta -> loam.core.envelope
+  loam.commands.delta -> loam.core.fleet_context
   loam.commands.delta -> loam.core.gherkin
   loam.commands.delta -> loam.core.kernel
   loam.commands.delta -> loam.core.projection
@@ -719,6 +722,7 @@ model {
   loam.core.staging -> loam.core.envelope
   loam.core.staging -> loam.core.kernel
 
+  loam.core.status -> loam.core.c4
   loam.core.status -> loam.core.coherence
   loam.core.status -> loam.core.dependencies
   loam.core.status -> loam.core.document

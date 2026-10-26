@@ -88,6 +88,7 @@ export function registerStatus(program: Command): void {
           service: opts.service,
           boundService: config.service,
           context,
+          featureFlows: true,
         });
         if (opts.service !== undefined && !report.feature.services.includes(opts.service)) {
           fail(

@@ -328,6 +328,15 @@ export interface FeatureStatusReport {
    * is exactly the per-feature cost it refuses to pay.
    */
   useCases: UseCaseBlastRadius;
+  /**
+   * The feature's OWN flows through the same services, read against the map
+   * its merge would leave — the flows this change is for. Its own hole, for the
+   * same reason: a `usecases/` that cannot be read is not one that draws
+   * nothing. Empty for an archived feature, whose flows are living now and in
+   * `useCases`. Absent unless the caller asked for it (`featureStatus`'s
+   * `featureFlows`).
+   */
+  featureUseCases?: UseCaseBlastRadius;
   next: NextStep[];
 }
 

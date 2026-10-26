@@ -39,9 +39,9 @@
  * whole-file copy over an authored hop sequence has no pin of its own to
  * collide on.
  */
-import { readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { maskSource } from "../../../c4/source-mask.js";
 import { relativeDocuments } from "../../../c4/project/documents.js";
 import { decodeDocument } from "../../../kernel/document-bytes.js";
@@ -94,6 +94,28 @@ export function featureServiceFlowDir(featureDir: FeatureDir, service: RawServic
  */
 export function livingServiceFlowPath(serviceDir: string, rel: string): string {
   return join(serviceDir, SERVICE_FLOW_DIR, rel);
+}
+
+/**
+ * The living files these documents overwrite — replace or retire — by absolute
+ * path: the twin at each document's living path, when there is one, for every
+ * document but an empty one. The gate refuses an empty document
+ * (`usecase.flow-invalid`) and never counts it as replacing anything, so
+ * neither may a reader asking which living flows the merge leaves.
+ */
+export function overwrittenBy(docs: readonly ServiceFlowDoc[], serviceDir: string): Set<string> {
+  return new Set(
+    docs.filter((d) => d.kind !== "empty").map((d) => resolve(livingServiceFlowPath(serviceDir, d.rel))).filter((path) => existsSync(path)),
+  );
+}
+
+/**
+ * Does the feature document at this path redraw the living flow it is named
+ * like? `overwrittenBy`'s rule, asked from the feature side: a document there
+ * that is not empty.
+ */
+export async function redraws(path: string): Promise<boolean> {
+  return existsSync(path) && (await readDocument(path)) !== "empty";
 }
 
 /**

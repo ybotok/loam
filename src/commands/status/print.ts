@@ -108,13 +108,13 @@ function verificationLine(v: VerificationState, asked: number | null): string {
  * reader and the next step. The unreadable arm is not silent, because that one
  * is a hole rather than an absence.
  */
-function printUseCases(u: FeatureStatusReport["useCases"]): void {
+function printUseCases(u: FeatureStatusReport["useCases"], words: { heading: string; unreadable: string }): void {
   if (u.unreadable) {
-    console.log("\n  use cases     architecture/ does not parse, so the flows through these services could not be read");
+    console.log(`\n  ${words.unreadable}`);
     return;
   }
   if (u.flows.length === 0) return;
-  console.log("\n  use cases");
+  console.log(`\n  ${words.heading}`);
   for (const flow of u.flows) {
     console.log(`    ${flow.title ?? flow.id}  [${flow.id}]  ${flow.file}`);
     for (const step of flow.steps) {
@@ -191,7 +191,18 @@ export function printFeature(r: FeatureStatusReport, ambiguous: string[]): void 
     }
   }
 
-  printUseCases(r.useCases);
+  printUseCases(r.useCases, {
+    heading: "use cases",
+    unreadable: "use cases     architecture/ does not parse, so the flows through these services could not be read",
+  });
+  // The feature's own flows under a heading of their own: they are what the
+  // change is FOR, and a reader must not take them for flows already living.
+  if (r.featureUseCases !== undefined) {
+    printUseCases(r.featureUseCases, {
+      heading: "its use cases (this feature's own flows)",
+      unreadable: "its use cases this feature's usecases/ could not be read against the map its merge leaves",
+    });
+  }
   printNext(r.next);
 }
 

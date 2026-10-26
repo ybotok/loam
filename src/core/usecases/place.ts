@@ -17,7 +17,9 @@
  * fleet map, and borrowing validate's prefix there would claim a target that run
  * does not have.
  */
+import { relative } from "node:path";
 import type { ParsedStep, ParsedView } from "../c4/parsed/dynamic-views.js";
+import type { DocsDir } from "../kernel/ids/dirs.js";
 
 /**
  * Where a use-case FINDING says its view is — the opening of every message the
@@ -46,6 +48,16 @@ export type ViewPlace = (view: ParsedView) => string;
  * the field, falling back to `architecture/landscape.likec4` would put a false
  * cross-reference in a message.
  */
+/**
+ * A FEATURE flow's file, docs-relative. The feature overlay maps every staged
+ * `sourcePath` back to the authored file (`./delta/overlay.ts`), so the file is
+ * spelled from that path rather than under `architecture/` — the spelling the
+ * feature gate's findings and `loam delta`'s `featureFlows` both name it by.
+ */
+export function authoredFile(docsDir: DocsDir): ViewPlace {
+  return (view) => (view.sourcePath === undefined ? "usecases/" : relative(docsDir, view.sourcePath).split(/[\\/]/).join("/"));
+}
+
 export function viewFile(view: ParsedView): string {
   return view.sourcePath === undefined ? "architecture/" : `architecture/${view.sourcePath}`;
 }

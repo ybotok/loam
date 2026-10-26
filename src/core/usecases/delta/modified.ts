@@ -57,8 +57,8 @@
  * are not living and are graded against the new text already — its
  * `usecases/` by `../grade/feature.ts`, its `specs/<svc>/usecases/` by
  * `./service/grade.ts` — and a living service flow one of those REDRAWS (a
- * document at its path) is skipped below for the same reason: after the
- * archive the file is the feature's.
+ * document at its path that is not empty, `redraws`' rule) is skipped below for
+ * the same reason: after the archive the file is the feature's.
  *
  * WHAT IT COSTS. Nothing, for a feature that modifies and removes no
  * requirement — which is nearly every feature, and the caller does not call
@@ -71,7 +71,6 @@
  * and a finding about one requirement must not become a second report of a
  * broken map.
  */
-import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import { resolveCapabilityTags, resolveRequirementTags, type RequirementClaim } from "../../capabilities/usecase-join.js";
 import { gradableCapabilityIds } from "../../capabilities/findings.js";
@@ -91,7 +90,7 @@ import { useCasesIn } from "../fleet.js";
 import { viewFile } from "../place.js";
 import { changedIds, tableOf, withUntouchedAxes, type Table, type ServiceDeltaPair } from "./service/ids.js";
 import { livingServiceFlows, mentions, needlesFor } from "./service/living.js";
-import { featureServiceFlowDir, SERVICE_FLOW_DIR } from "./service/slot.js";
+import { featureServiceFlowDir, redraws, SERVICE_FLOW_DIR } from "./service/slot.js";
 
 export interface ChangedPromiseRequest {
   docsDir: DocsDir;
@@ -101,8 +100,12 @@ export interface ChangedPromiseRequest {
   capabilities: readonly CapabilityDeltaDoc[];
   /** The feature's service deltas, one entry per spec axis — what a service's own flow is asked about. */
   services: readonly ServiceDeltaPair[];
-  /** The capability vocabulary a `#cap-` tag resolves against. */
-  vocabulary: CapabilityVocabulary;
+  /**
+   * The capability vocabulary a `#cap-` tag resolves against — a thunk, read
+   * only when a capability delta changes something, so a caller asking about a
+   * service's own flows alone pays nothing for it.
+   */
+  vocabulary: () => Promise<CapabilityVocabulary>;
   /** The enumerated fleet, for the element→service resolver's reason (`../fleet.ts`). */
   known: ReadonlySet<string>;
   /**
@@ -144,7 +147,66 @@ type Altitude = "capability" | "service";
 
 type Resolved = Extract<RequirementClaim, { kind: "resolved" }>;
 
+/**
+ * One living flow whose claimed promise this feature moves — the walk's answer
+ * before it becomes a finding, for a reader that lists rather than grades.
+ *
+ * `loam delta` reads it to tell an implementer which of the service's own
+ * flows the change makes untrue (`redraw[]`). It is the SAME walk the two codes
+ * below are built from, not a second reading of it: a list and a warning that
+ * could disagree about one file would make one of them a lie.
+ */
+export interface ChangedPromiseFlow {
+  /** The flow's view id. */
+  id: string;
+  /** The docs-relative file a reader opens. */
+  file: string;
+  altitude: Altitude;
+  /** The capability id, or — beside a model — the service id. */
+  owner: string;
+  /** The `Requirement-ID` the flow's tag claims. */
+  requirement: string;
+  change: "MODIFIES" | "REMOVES";
+  /**
+   * How the merge breaks the tag — `usecase.requirement-unresolved`, the error,
+   * rather than the warning — or `null` when it still resolves. `unresolved`:
+   * nothing it names is left. `collides`: an id the feature adds flattens to the
+   * same tag. Each has its own fix, and neither is "restate the flow unchanged".
+   */
+  breaks: "unresolved" | "collides" | null;
+  /** As on `LivingFlow`: the feature document that would replace the flow, when it has one. */
+  slot?: string;
+}
+
+type Unresolved = Exclude<RequirementClaim, { kind: "resolved" }>;
+
+/** One flow's claim the feature moves, with the merge's verdict on it — decided once, in `moved`. */
+type Moved = { flow: LivingFlow; claim: Resolved; change: "MODIFIES" | "REMOVES" } & (
+  | { verdict: "modified" }
+  | { verdict: "broken"; later: Unresolved }
+);
+
 export async function changedPromiseFlowIssues(req: ChangedPromiseRequest): Promise<Issue[]> {
+  return (await moved(req)).map((m) =>
+    m.verdict === "broken" ? brokenIssue(m.flow, m.claim, { change: m.change, later: m.later }) : modifiedIssue(m.flow, m.claim),
+  );
+}
+
+/** Every flow the two codes above name, as data — one entry per issue, in the issues' order. */
+export async function changedPromiseFlows(req: ChangedPromiseRequest): Promise<ChangedPromiseFlow[]> {
+  return (await moved(req)).map((m) => ({
+    id: m.flow.view.id,
+    file: m.flow.file,
+    altitude: m.flow.altitude,
+    owner: m.claim.capability,
+    requirement: m.claim.id,
+    change: m.change,
+    breaks: m.verdict === "modified" ? null : m.later.kind === "many" ? "collides" : "unresolved",
+    ...(m.flow.slot === undefined ? {} : { slot: m.flow.slot }),
+  }));
+}
+
+async function moved(req: ChangedPromiseRequest): Promise<Moved[]> {
   const tables: Record<Altitude, Table> = {
     capability: tableOf(req.capabilities),
     service: tableOf(await withUntouchedAxes(req.services, req.readRequirements)),
@@ -153,7 +215,7 @@ export async function changedPromiseFlowIssues(req: ChangedPromiseRequest): Prom
     ...(await fleetFlows(req, changedIds(tables.capability))),
     ...(await serviceFlows(req, changedIds(tables.service))),
   ];
-  const issues: Issue[] = [];
+  const out: Moved[] = [];
   for (const flow of flows.sort((a, b) => compareIds(a.file, b.file) || compareIds(a.view.id, b.view.id))) {
     const table = tables[flow.altitude];
     const after = new Map(resolveRequirementTags(flow.view.tags, flow.scope, (id) => table.merged.get(id)).map((c) => [c.tag, c]));
@@ -163,13 +225,15 @@ export async function changedPromiseFlowIssues(req: ChangedPromiseRequest): Prom
       if (change === null) continue;
       // The merge's verdict first, for either change: a MODIFIED keeps its id,
       // but an id this feature adds beside it can flatten to the same tag, and
-      // then the warning's "the tag will still resolve" would be false.
+      // then the warning's "the tag will still resolve" would be false. A
+      // removal the delta re-spells under an id flattening to the same tag
+      // leaves the tag resolving, and earns nothing.
       const later = after.get(claim.tag);
-      if (later !== undefined && later.kind !== "resolved") issues.push(brokenIssue(flow, claim, { change, later }));
-      else if (change === "MODIFIES") issues.push(modifiedIssue(flow, claim));
+      if (later !== undefined && later.kind !== "resolved") out.push({ flow, claim, change, verdict: "broken", later });
+      else if (change === "MODIFIES") out.push({ flow, claim, change, verdict: "modified" });
     }
   }
-  return issues;
+  return out;
 }
 
 function changeOf(table: Table, claim: Resolved): "MODIFIES" | "REMOVES" | null {
@@ -221,11 +285,7 @@ function redraw(flow: LivingFlow): string {
  * same tag as the one it claims — the only way a MODIFIED, which keeps its id,
  * can break it at all.
  */
-function brokenIssue(
-  flow: LivingFlow,
-  claim: Resolved,
-  broken: { change: "MODIFIES" | "REMOVES"; later: Exclude<RequirementClaim, { kind: "resolved" }> },
-): Issue {
+function brokenIssue(flow: LivingFlow, claim: Resolved, broken: { change: "MODIFIES" | "REMOVES"; later: Unresolved }): Issue {
   const { change, later } = broken;
   const [why, fix] =
     later.kind === "many"
@@ -254,8 +314,9 @@ function brokenIssue(
 async function fleetFlows(req: ChangedPromiseRequest, changed: ReadonlyMap<string, ReadonlySet<string>>): Promise<LivingFlow[]> {
   // The vocabulary ladder (`core/capabilities/findings.ts`): with nothing
   // declared no `#cap-` tag resolves, so no fleet flow can be said to claim anything.
-  const declared = gradableCapabilityIds(req.vocabulary);
-  if (changed.size === 0 || declared === null) return [];
+  if (changed.size === 0) return [];
+  const declared = gradableCapabilityIds(await req.vocabulary());
+  if (declared === null) return [];
   if (!(await mentions(await architectureProjectDocuments(req.docsDir), needlesFor([...changed.values()].flatMap((ids) => [...ids]))))) return [];
   const read = useCasesIn(await req.architecture(), req.known);
   if (read.kind !== "read") return [];
@@ -285,7 +346,7 @@ async function serviceFlows(req: ChangedPromiseRequest, changed: ReadonlyMap<str
       // it is the feature's document, which `./service/grade.ts` grades against
       // the ids the merge leaves — so a warning to redraw it, or a prediction that
       // its old tag breaks, would be about a file the archive replaces.
-      if (slot !== undefined && existsSync(slot)) continue;
+      if (slot !== undefined && (await redraws(slot))) continue;
       out.push({
         view,
         file,

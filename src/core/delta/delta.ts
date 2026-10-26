@@ -316,7 +316,7 @@ export async function deltaShapeIssues(
         featureDir,
         capabilities: capabilityDeltas,
         services: servicePairs,
-        vocabulary: await ctx.capabilities(docsDir),
+        vocabulary: () => ctx.capabilities(docsDir),
         known: new Set(await enumeratedServiceIds(docsDir, ctx)),
         serviceModel: (paths) => ctx.serviceModel(docsDir, paths),
         architecture: () => ctx.architecture(docsDir),

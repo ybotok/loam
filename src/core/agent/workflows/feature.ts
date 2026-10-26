@@ -159,6 +159,19 @@ export const LOAM_FEATURE: CommandContent = {
      file's name — the archive replaces it; a document holding only comments
      (never an empty one) retires it. Every requirement that flow claims must be
      MODIFIED or REMOVED here, an unchanged one restated. \`usecase.requirement-modified\` names the slot to write
+   - the inside of every hop this feature's flows draw: for each service a hop
+     of \`usecases/<name>.likec4\` enters with an operation or message the feature
+     adds or changes, run \`loam delta $1 --service <svc> --json\` and read
+     \`useCases.featureFlows\`. A hop's \`inside\` that is \`joined\` with \`flows\`
+     names the service flows that unfold it. \`joined\` with no flows is a fact,
+     not a debt — loam never asks for a flow to exist — so draw one in
+     \`specs/<svc>/usecases/<name>.likec4\` only where the change gives that hop
+     an inside a reviewer should see. \`useCases.redraw\` is what IS owed: each
+     entry is a living flow this change makes untrue, with its \`claims\`. For a
+     claim whose \`breaks\` is null, redraw the flow at its \`slot\` (the living
+     file's path under the slot), or put it there unchanged if it still holds;
+     for \`unresolved\` or \`collides\`, follow
+     \`usecase.requirement-unresolved\`'s fix and never restate it unchanged
    - for a service (or capability) this feature CREATES, the delta is the
      living document's first draft, and \`loam archive\` carries only what you
      mark as the document's own: the frontmatter \`owner\`, an H1 that neither

@@ -10,6 +10,58 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Added — the hop join: what a fleet flow's step is inside its service
+
+- `loam delta <FEAT> --service <id> --json`: `useCases` keeps `unreadable`, `error` and `flows`
+  unchanged in meaning (the living fleet flows through the service), and adds four things:
+  - `useCases.featureFlows`, `{ unreadable, error?, flows }`, the feature's own flows
+    (`features/<FEAT>/usecases/`) through the service, read against the map its merge would leave.
+    Before this, the brief showed none of a feature's flows until the archive made them living.
+  - `steps[].inside` on every hop the service answers (it is called, it publishes, or it is
+    delivered to), in both lists. `state` is one of:
+    - `joined`, with `keys` (`{ kind: "op" | "publishes" | "consumes", name }`) and `flows`
+      (`{ id, file, origin: "living" | "feature", via }`). These are the service's flows that claim,
+      by `#req-`, a requirement whose `Operations:`, `Publishes:` or `Consumes:` line holds the key.
+      `via` names the requirement. `flows: []` is a stated empty, not a finding.
+    - `unread`, keys only: the service's flows could not be read.
+    - `keyless`, `contested` (with sorted `candidates`, `null` last), or `unbacked`.
+  - `useCases.inside`, `{ unreadable, error? }`: whether the service's own flows could be read. The
+    service's flows are its living ones minus any file the feature's
+    `specs/<svc>/usecases/` replaces or retires, plus the feature's flows staged over the post-merge
+    project, as the gate stages them.
+  - `useCases.redraw`, `[{ id, file, slot?, claims: [{ requirement, change: "MODIFIED" | "REMOVED",
+    breaks: null | "unresolved" | "collides" }] }]`: the service's living flows this feature makes
+    untrue, one entry per flow. It is the same set `usecase.requirement-modified` and the removal's
+    `usecase.requirement-unresolved` name, from the same walk. Only a claim whose `breaks` is null
+    may be confirmed by putting the flow in the slot unchanged; the text view gives each broken claim
+    the finding's own fix.
+  - A refused requirement merge for the service makes every keyed hop `unread`, with the refusal in
+    `useCases.inside.error`, rather than an inside that looks empty.
+- The text view prints each hop's inside under it, grouped by requirement. It adds a "Use cases this
+  feature brings" section and a "Flows of <svc> this change makes untrue" section.
+- `loam status <FEAT> --json`: `useCases.featureFlows`, the same object, for the services in view.
+  The text view prints the feature's own flows under a heading of their own. `loam show <FEAT>` does
+  not read them, so it pays nothing for them.
+- `loam status <FEAT>`: a new step code, `next.redraw-flows`, one per service whose flows under
+  `services/<svc>/usecases/` claim a requirement the feature MODIFIES (the flows are counted once,
+  however many of their claims it rewrites). A flow in `views.likec4` or
+  `model.likec4` has no slot, is edited in place, and keeps only the warning. The step's `path` is
+  the feature's `specs/<svc>/usecases/`, its `command` is `loam delta <FEAT> --service <svc> --json`,
+  and its execution is an `edit`. `loam explain next.redraw-flows` answers it.
+- The step comes after the authoring steps and before `next.rebase`. So for a feature whose service
+  flows claim a requirement it rewrites, `next[0]` is now `next.redraw-flows` where it was
+  `next.rebase`, `next.fix-coherence` or `next.archive`.
+- `loam show <FEAT> --json`: `review.next` carries `next.redraw-flows` too, since it is
+  `loam status`'s list. `review.useCases` is unchanged and does not carry `featureFlows`.
+- The `loam-feature` instructions add a step: read each hop's `inside` for the services the
+  feature's flows enter, and draw or redraw the service flows in the slot until `useCases.redraw` is
+  empty. `loam-implement` describes `useCases`, and `loam-check`'s `usecase.requirement-modified`
+  row names the new step.
+- `examples/docs` gains `services/order-service/usecases/place-order.likec4`, the inside of the
+  order-notification journey's publishing hop, and declares `tag req-ORD-PLACE` in the landscape.
+- Nothing is stored, and no finding code is added. SCHEMA.md, "The two use-case corpora meet at the
+  hop", has the rule.
+
 ### Added — behavioural evals for the agent surface (repository tooling, not shipped)
 
 - `scripts/evals/` runs five scenarios headless through the Claude Code CLI in a scratch copy of

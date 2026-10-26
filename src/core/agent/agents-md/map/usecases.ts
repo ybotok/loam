@@ -157,4 +157,21 @@ export const USECASE_VIEWS = `- Business use cases are \`dynamic view\`s, and \`
   \`usecase.flow-unknown\`. \`--approve\` moves none of the three. The slot addresses
   \`usecases/\` only: a flow in \`views.likec4\` or inside model.likec4 is edited in
   place, or moved into \`usecases/\` by a direct edit first.
+- \`loam delta <FEAT> --service <svc> --json\` joins the two altitudes at the hop.
+  \`useCases.flows\` are the living fleet flows through the service and
+  \`useCases.featureFlows\` the feature's own (\`unreadable\`/\`error\`/\`flows\`, each
+  its own hole); a hop the service answers — it is called, publishes, or is
+  delivered to — carries \`inside\`: \`joined\` with \`keys\` (the operation or message)
+  and \`flows\` (each of the service's flows claiming, by \`#req-\`, a requirement
+  whose \`Operations:\`/\`Publishes:\`/\`Consumes:\` line holds that key, with \`via\`
+  naming it and \`origin\` \`living\` or \`feature\`), or \`unread\` (keys only: the
+  service's flows could not be read, see \`useCases.inside\`), \`keyless\`,
+  \`contested\` (with \`candidates\`) or \`unbacked\`. A \`joined\` hop with no flows is a
+  fact, never a finding — loam does not ask for a flow to exist. \`useCases.redraw\`
+  lists the service's living flows this feature makes untrue — \`usecase.requirement-modified\`'s
+  set and the removal's — one entry per flow with its \`slot\` and its \`claims\`
+  (\`requirement\`, \`change\`, \`breaks\`: null, \`unresolved\` or \`collides\`; only
+  a null one may be confirmed by restating the flow unchanged), and \`loam status\`
+  raises the slotted, non-breaking ones as \`next.redraw-flows\`. Nothing is
+  stored: the join is read from the documents each time.
 `;

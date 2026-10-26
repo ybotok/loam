@@ -62,7 +62,7 @@ import { serviceUseCaseFindings, tagHint } from "../../service/grade.js";
 import { changedIds, tableOf, untouched, type ServiceDeltaPair } from "./ids.js";
 import { livingServiceFlows } from "./living.js";
 import { featureServiceFlows, livingServiceFlowPath, SERVICE_FLOW_DIR, type ServiceFlowDoc } from "./slot.js";
-import { stageServiceProject } from "./stage.js";
+import { stageAfterMerge } from "./stage.js";
 
 /** Everything the grade needs, injected — this package has no edge to `core/fleet-context.ts` (`../overlay.ts`). */
 export interface ServiceFlowDeltaRequest {
@@ -240,28 +240,19 @@ async function gradeService(
   // says what the merge refused, from the same preview
   // (`core/coherence/specification/unmerged.ts`).
   if (preview.kind === "failed") return [];
-  const modelRel = spell(req.docsDir, scope.paths.model);
-  let shape: "standalone" | "extending";
-  if (existsSync(scope.paths.model)) {
-    const model = await req.serviceModel(scope.paths);
-    if (model.mapUnreadable || model.doc.errors.length > 0) {
-      return [unreadableIssue(scope, [`${modelRel} does not read (\`loam validate --service ${scope.service}\` names the fault), so no flow drawn over it can be`])];
-    }
-    shape = model.shape;
-  } else if (preview.models.has(modelRel)) {
-    shape = "extending";
-  } else {
-    return [unreadableIssue(scope, [`${modelRel} does not exist and this archive writes none, so there is no model for these flows to be drawn over`])];
-  }
-  const scan = await stageServiceProject({
+  const staged = await stageAfterMerge({
     docsDir: req.docsDir,
+    service: scope.service,
     paths: scope.paths,
-    shape,
-    merged: { landscape: preview.landscape, models: preview.models, architecture: around.architecture },
+    preview,
+    serviceModel: req.serviceModel,
     overwritten: around.overwritten,
     documents: scope.docs.filter((d) => d.kind === "flow"),
+    architecture: around.architecture,
     known: new Set([...req.enumerated, ...req.services]),
   });
+  if (staged.kind === "unmodelled") return [unreadableIssue(scope, [staged.detail])];
+  const scan = staged.scan;
   if (scan.kind === "unreadable") {
     return [
       unreadableIssue(

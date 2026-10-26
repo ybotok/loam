@@ -1,0 +1,35 @@
+// A service's OWN use case: the hops inside order-service behind one of its
+// requirements, over the containers its model declares.
+//
+// It lives beside model.likec4, in order-service's own LikeC4 project — never
+// in architecture/usecases/, which is read as the fleet map alone and cannot
+// resolve a container. The tag names the requirement it keeps, `#req-ORD-PLACE`
+// for spec.md's `Requirement-ID: ORD-PLACE`. This model EXTENDS the map, so the
+// tag is declared in architecture/landscape.likec4's one specification block,
+// beside the fleet's own tags — a second declaration here would be a duplicate.
+//
+// ---------------------------------------------------------------------------
+//
+// What it is FOR, beyond its own grade: it is the inside of a fleet hop.
+// architecture/usecases/order-notification.likec4 draws
+// `marketplace.orderService -> kafka.orderEvents 'announces OrderPlaced'`, and
+// the edge behind that hop publishes `order.OrderPlaced`. ORD-PLACE's
+// `Publishes: order.OrderPlaced` line holds the same name, and this flow claims
+// ORD-PLACE — so `loam delta <FEAT> --service order-service --json` lists this
+// view under that hop's `inside`, with `via: ["ORD-PLACE"]`. Nothing links the
+// two documents but the name both already carry; the join is read, not stored.
+// Delete this file and the hop's inside is `joined` with no flows — a fact the
+// brief states, never a finding.
+
+views {
+  dynamic view order_service_uc_place_order {
+    #req-ORD-PLACE
+    title 'Place an order'
+    description 'An accepted order is written with its outbox row, and the relay publishes OrderPlaced once committed'
+
+    marketplace.orderService.api -> marketplace.orderService.domain 'places the order'
+    marketplace.orderService.domain -> marketplace.orderService.db 'writes the order and its outbox row in one transaction'
+    marketplace.orderService.outbox -> marketplace.orderService.db 'polls the committed outbox row'
+    marketplace.orderService.outbox -> kafka.orderEvents 'publishes OrderPlaced'
+  }
+}

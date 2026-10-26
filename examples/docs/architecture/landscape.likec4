@@ -85,6 +85,9 @@ specification {
   // cannot carry flattened to `-`. Declared here for the same reason — one
   // specification block serves the whole `architecture/` project.
   tag req-NOTIFY-ONCE
+  // And one a SERVICE's own flow carries: order-service extends this map, so
+  // its flows read this block too (services/order-service/usecases/).
+  tag req-ORD-PLACE
   // The SUITES a flow runs with — `#suite-<name>` on the view, many-to-many, so
   // the one journey below sits in both. Declared here, like every tag, so a
   // mistyped suite is a parse error rather than a second, empty suite.

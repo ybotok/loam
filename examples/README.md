@@ -71,6 +71,14 @@ suites is the point of the tag: a directory could file it in only one. The suite
 nothing `validate` says here — the view was already graded through its `#cap-` tag — but on a view
 carrying ONLY `#suite-` tags they are the opt-in, and its hops are graded like any other use case's.
 
+**One hop with an inside.** `services/order-service/usecases/place-order.likec4` is a flow INSIDE
+order-service — over its own containers, tagged `#req-ORD-PLACE` — and it is what the journey's
+second hop is inside that service. Nothing links the two files: the hop's edge publishes
+`order.OrderPlaced`, ORD-PLACE's `Publishes:` line holds the same name, and the service flow claims
+ORD-PLACE. So `loam delta FEAT-112 --service order-service --json` lists the service flow under
+that hop's `inside`, with the requirement it came through. The join is read from the documents each
+time; delete the service flow and the hop's inside is a stated empty, not a finding.
+
 **Two glossary terms**, `glossary/order.md` and the nested `glossary/payments/authorization.md`,
 each cited from the capability documents that use the word. This is the axis's whole mechanism in
 two files: the citation is an ordinary markdown link, so `loam validate` resolves it like any other

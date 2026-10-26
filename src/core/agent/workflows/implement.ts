@@ -74,6 +74,12 @@ repository, which needs its own committed ./loam.json — if there is none,
      is what tells an empty \`api\` apart from a contract delta that did not parse
    - \`services\` — every service this feature projects onto, so a run without
      \`--service\` tells you which ones to ask for rather than guessing
+   - \`useCases\` — where this service sits in the business flows: \`flows\` (living)
+     and \`featureFlows\` (this feature's), each hop with its operation or message
+     and, where the service answers it, \`inside\` — the service's own flows that
+     unfold that hop, which is the sequence to implement against. \`redraw\`
+     names this service's flows the change makes untrue; they are the docs
+     repo's to redraw, not yours to build from
    Exit 1 with \`ok: true\` means one of the two authored documents behind this brief
    did not parse: \`architecture.errors\` non-empty (delta.likec4), or
    \`openapi.unreadable\` true (the feature's openapi.yaml for this service). The empty

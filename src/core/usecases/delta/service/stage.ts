@@ -44,6 +44,7 @@
  * is the archive gate, and the one behaviour it may never have is failing the
  * run, or passing one it could not read.
  */
+import { existsSync } from "node:fs";
 import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
@@ -51,7 +52,9 @@ import type { LikeC4Error } from "../../../c4/likec4.js";
 import { architectureDir, architectureProjectDocuments } from "../../../c4/project/architecture.js";
 import { architectureDocuments } from "../../../c4/project/documents.js";
 import { asLoadedDoc, loadProject } from "../../../c4/project/load.js";
+import type { MergePreview } from "../../../c4/project/merge/preview.js";
 import type { StagedDocument } from "../../../c4/project/staged.js";
+import type { ServiceModel } from "../../../c4/service-model/load.js";
 import type { DocsDir } from "../../../kernel/ids/dirs.js";
 import { landscapePath, type ServicePaths } from "../../../repo/paths.js";
 import { isUseCase, mentionsTagPrefix } from "../../fleet.js";
@@ -158,6 +161,58 @@ export async function stageServiceProject(req: ServiceStageRequest): Promise<Ser
   } finally {
     if (root !== undefined) await rm(root, { recursive: true, force: true });
   }
+}
+
+/** A service's post-merge project, staged — or the one sentence saying why there is no model to stage it over. */
+export type StagedAfterMerge = { kind: "staged"; scan: ServiceFlowScan } | { kind: "unmodelled"; detail: string };
+
+/** One service's feature flows and the merge they are staged beside. */
+export interface AfterMergeRequest {
+  docsDir: DocsDir;
+  service: string;
+  paths: ServicePaths;
+  /** The archive's merge preview, already known to plan — a refused merge reads no flow at all. */
+  preview: Extract<MergePreview, { kind: "planned" }>;
+  /** A LIVING service model, read the way its shape demands. */
+  serviceModel: (paths: ServicePaths) => Promise<ServiceModel>;
+  overwritten: ReadonlySet<string>;
+  documents: readonly { rel: string; path: string }[];
+  /** The feature's other documents under `architecture/` (`ServiceStageRequest.merged.architecture`). */
+  architecture: readonly StagedDocument[];
+  known: ReadonlySet<string>;
+}
+
+/**
+ * Which shape the model has once the archive lands, then the project staged
+ * over it. Shared by the gate that grades a feature's service flows
+ * (`./grade.ts`) and the brief that lists them inside a hop
+ * (`core/delta/flows/inside.ts`): two answers to "which model are these drawn
+ * over" would grade one project and list another.
+ */
+export async function stageAfterMerge(req: AfterMergeRequest): Promise<StagedAfterMerge> {
+  const modelRel = relative(req.docsDir, req.paths.model).split(/[\\/]/).join("/");
+  let shape: "standalone" | "extending";
+  if (existsSync(req.paths.model)) {
+    const model = await req.serviceModel(req.paths);
+    if (model.mapUnreadable || model.doc.errors.length > 0) {
+      return { kind: "unmodelled", detail: `${modelRel} does not read (\`loam validate --service ${req.service}\` names the fault), so no flow drawn over it can be` };
+    }
+    shape = model.shape;
+  } else if (req.preview.models.has(modelRel)) {
+    shape = "extending";
+  } else {
+    return { kind: "unmodelled", detail: `${modelRel} does not exist and this archive writes none, so there is no model for these flows to be drawn over` };
+  }
+  const scan = await stageServiceProject({
+    docsDir: req.docsDir,
+    paths: req.paths,
+    shape,
+    merged: { landscape: req.preview.landscape, models: req.preview.models, architecture: req.architecture },
+    overwritten: req.overwritten,
+    documents: req.documents,
+    known: req.known,
+  });
+  return { kind: "staged", scan };
 }
 
 /** The model is on disk unless the archive is the one that creates it. */

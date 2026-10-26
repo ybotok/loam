@@ -22,7 +22,9 @@ import { featurePaths } from "../../repo/paths.js";
 import { featureSpecServices, featureTitle } from "../../repo/repo.js";
 import { featureChecklist } from "../../verify/checklist.js";
 import { enumeratedServices } from "../../repo/service-target.js";
+import { featureBlastRadius } from "../../usecases/delta/overlay.js";
 import { useCaseBlastRadius } from "../../usecases/touch.js";
+import { extendingModels } from "../../c4/service-model/fleet/extending.js";
 import { issueFinding, type Issue } from "../../vocabulary/issue.js";
 import type { Finding } from "../../vocabulary/report.js";
 import { contractEvidence, contractOwners, contractsHeldElsewhere } from "../contracts.js";
@@ -44,7 +46,18 @@ import type { DocsDir } from "../../kernel/ids/dirs.js";
 export async function featureStatus(
   docsDir: DocsDir,
   feature: FeatureEntry,
-  opts: { service?: string; boundService?: string; context: FleetContext },
+  opts: {
+    service?: string;
+    boundService?: string;
+    context: FleetContext;
+    /**
+     * Read the feature's own flows too (`featureUseCases`). Opt-in because it
+     * stages the feature's `usecases/` over the merged map a second time — the
+     * coherence pass above already staged it once — and only `loam status`
+     * prints the answer; `loam show` would pay for a field it never shows.
+     */
+    featureFlows?: boolean;
+  },
 ): Promise<FeatureStatusReport> {
   const { context } = opts;
   const interrupted = await readInterruptedCommit(docsDir);
@@ -118,11 +131,23 @@ export async function featureStatus(
   // introduces resolves to itself rather than to a container's title — and the
   // load underneath gates itself, so a docs repo that declares no use case pays
   // a readdir here rather than a LikeC4 workspace.
-  const useCases = await useCaseBlastRadius({
-    docsDir,
-    known: new Set([...living.keys(), ...services]),
-    services: new Set(inView),
-  });
+  const known = new Set([...living.keys(), ...services]);
+  const useCases = await useCaseBlastRadius({ docsDir, known, services: new Set(inView) });
+  // And the feature's own flows through the same services, over the map its
+  // merge would leave. An archived feature's are living now, in `useCases`.
+  const featureUseCases = opts.featureFlows !== true
+    ? undefined
+    : feature.archived
+    ? { unreadable: false, flows: [] }
+    : await featureBlastRadius({
+        docsDir,
+        featureDir: feature.dir,
+        featureId: feature.id,
+        known,
+        services: new Set(inView),
+        load: (path) => context.loadLikeC4(path),
+        models: () => extendingModels(docsDir, context),
+      });
 
   return {
     interrupted,
@@ -153,6 +178,7 @@ export async function featureStatus(
     verification,
     checklist,
     useCases,
+    ...(featureUseCases === undefined ? {} : { featureUseCases }),
     next: featureNext(
       { feature, services: inView, artifacts, findings, blockedBy, verification, scans, interrupted },
       opts.boundService,

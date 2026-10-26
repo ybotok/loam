@@ -21,6 +21,8 @@ import type { ExtendingModel } from "../../c4/splice/contract.js";
 import { serviceResolver } from "../../c4/resolve/service.js";
 import type { DocsDir, FeatureDir } from "../../kernel/ids/dirs.js";
 import { isUseCase, type UseCaseScan } from "../fleet.js";
+import { authoredFile } from "../place.js";
+import { flowsTouching, scanHealth, type UseCaseBlastRadius } from "../touch.js";
 import { featureFlows, USECASE_SUBDIR } from "./flows.js";
 
 /** Everything the overlay needs, and nothing it would have to read twice. */
@@ -93,6 +95,20 @@ export async function readFeatureFlows(req: FlowOverlayRequest): Promise<UseCase
     ...(models === undefined ? {} : { models }),
   });
   return interpret(staged, req.known);
+}
+
+/**
+ * The feature's own flows through a set of services — the blast radius
+ * `loam status` reports beside the living one (`useCaseBlastRadius`), and for
+ * the same reason `loam delta` does: these are the flows the change is FOR, and
+ * a status that named only the living ones showed none of them until the
+ * archive had made them living.
+ *
+ * The overlay's opt-in holds: a feature with no `usecases/` reads nothing.
+ */
+export async function featureBlastRadius(req: FlowOverlayRequest & { services: ReadonlySet<string> }): Promise<UseCaseBlastRadius> {
+  const scan = await readFeatureFlows(req);
+  return { ...scanHealth(scan), flows: flowsTouching(scan, req.services, authoredFile(req.docsDir)) };
 }
 
 /**

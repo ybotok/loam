@@ -15,7 +15,7 @@ import { stripFrontmatter } from "../../core/document/frontmatter.js";
 import { apiChanges } from "../../core/projection/api.js";
 import { eventChanges } from "../../core/projection/events.js";
 import { archSlice, introducedServices, livingServices } from "../../core/projection/arch-slice.js";
-import { useCaseBlastRadius } from "../../core/usecases/touch.js";
+import { deltaUseCases, useCasesJson } from "./usecases.js";
 import { featureCapabilityDeltas } from "../../core/capabilities/delta/tree.js";
 import { capabilityDeltaSummaries } from "../../core/capabilities/delta/summary.js";
 import { printApi, printArchSlice, printCapabilities, printDropped, printEvents, printIntent, printRequirements, printUseCases } from "./print.js";
@@ -160,23 +160,16 @@ export function registerDelta(program: Command): void {
       const fleet = new Set([...living, ...featureServices]);
       const arch = archSlice(deltaDoc, service, id, fleet);
 
-      // The use-case axis, and the one section here that is a fact about the
-      // FLEET rather than about the feature's own files: which declared business
-      // flows already run through this service, and at which hop. An implementer
-      // handed "add the endpoint" and not told that step 4 of Checkout is the
-      // caller has to go find that out, and on a fleet of a hundred nobody does.
-      //
-      // The fleet set is `living ∪ featureServices`, the same union `archSlice`
-      // resolves with, so a service this feature INTRODUCES resolves to itself
-      // rather than to a container's title. And `useCaseBlastRadius` gates its
-      // own load: a docs repo whose architecture/ never mentions the reserved
-      // tag prefix costs a readdir and a few file reads here, not a LikeC4
-      // workspace — which is what keeps this command usable inside
-      // /loam-implement's inner loop.
-      const useCases = await useCaseBlastRadius({
+      // The use-case axis — the flows through this service, living and this
+      // feature's own, each hop joined to the service's flows (./usecases.ts).
+      const useCases = await deltaUseCases({
         docsDir: config.docsDir,
+        featureDir: feature.dir,
+        featureId: id,
+        service,
         known: fleet,
-        services: new Set([service]),
+        reqs,
+        archReqs,
       });
 
       // The business axis. Like the use-case section above it is a fact about
@@ -322,12 +315,9 @@ export function registerDelta(program: Command): void {
           // `validate` already reports as `landscape.invalid`, and making every
           // `loam delta` in such a repo exit 1 would be a new gate wearing the
           // clothes of a new field. `unreadable` is how this payload says it
-          // could not look.
-          useCases: {
-            unreadable: useCases.unreadable,
-            ...(useCases.error === undefined ? {} : { error: useCases.error }),
-            flows: useCases.flows,
-          },
+          // could not look — and the same holds for the feature's flows and the
+          // service's own, each with a hole of its own.
+          useCases: useCasesJson(useCases),
           // Additive, and an empty array rather than an absent key for the same
           // reason `loam show`'s is: a consumer must not have to tell "this
           // feature changes no capability" from "this loam does not report

@@ -10,7 +10,9 @@ import { type Requirement } from "../../core/document/spec.js";
 import { type ApiSlice } from "../../core/projection/api.js";
 import { type ArchSlice } from "../../core/projection/arch-slice.js";
 import { type EventSlice } from "../../core/projection/events.js";
-import { type UseCaseBlastRadius } from "../../core/usecases/touch.js";
+import { type RedrawClaim, type RedrawFlow, type ServiceUseCases } from "../../core/delta/flows/inside.js";
+import { type HopInside, type JoinedUseCase } from "../../core/usecases/join/inside.js";
+import { compareIds } from "../../core/repo/entries.js";
 import { type CapabilityDeltaSummary } from "../../core/capabilities/delta/summary.js";
 import { droppedSentence, type DroppedRow } from "../../core/document/apply.js";
 import type { Change, DiffLine, Review } from "../../core/projection/review.js";
@@ -173,27 +175,104 @@ export function printArchSlice(arch: ArchSlice, service: string): void {
  * The unreadable arm exists so that emptiness is never ambiguous: an
  * `architecture/` that does not parse produces the same empty list as a fleet
  * that draws nothing, and only this line tells the two apart.
+ *
+ * Under each hop the service answers, what the hop is inside it: the service's
+ * flows claiming a requirement that holds the hop's key, grouped by that
+ * requirement — or the plain fact that none does, which is information and
+ * never a finding (docs/DESIGN.md rule 26). Then the feature's own flows, which
+ * are what this change is for, and the service's flows it makes untrue.
  */
-export function printUseCases(useCases: UseCaseBlastRadius, service: string): void {
-  if (useCases.unreadable) {
+export function printUseCases(useCases: ServiceUseCases, service: string): void {
+  const living = useCases.living;
+  if (living.unreadable) {
     console.log("Use cases: architecture/ does not parse, so the flows through this service could not be read");
-    if (useCases.error !== undefined) console.log(`  ${useCases.error}`);
+    if (living.error !== undefined) console.log(`  ${living.error}`);
     console.log();
-    return;
-  }
-  if (useCases.flows.length === 0) {
+  } else if (living.flows.length === 0) {
     console.log(`Use cases: (no declared flow draws ${service})\n`);
-    return;
+  } else {
+    console.log("Use cases (business flows this service is already a hop of):");
+    printFlows(living.flows, service);
+    console.log();
   }
-  console.log("Use cases (business flows this service is already a hop of):");
-  for (const flow of useCases.flows) {
+  const feature = useCases.feature;
+  if (feature.unreadable) {
+    console.log("Use cases this feature brings: its usecases/ could not be read against the map its merge leaves");
+    if (feature.error !== undefined) console.log(`  ${feature.error}`);
+    console.log();
+  } else if (feature.flows.length > 0) {
+    console.log("Use cases this feature brings (its own flows through this service):");
+    printFlows(feature.flows, service);
+    console.log();
+  }
+  if (useCases.inside.unreadable) {
+    console.log(`Inside ${service}: its own flows could not be read, so no hop above says what it is inside the service`);
+    if (useCases.inside.error !== undefined) console.log(`  ${useCases.inside.error}`);
+    console.log();
+  }
+  if (useCases.redraw.length > 0) {
+    console.log(`Flows of ${service} this change makes untrue:`);
+    for (const flow of useCases.redraw) {
+      console.log(`  ${flow.file}  [${flow.id}]`);
+      for (const claim of flow.claims) console.log(`    claims ${claim.requirement}, which this feature ${claim.change}: ${redrawFix(flow, claim)}`);
+    }
+    console.log();
+  }
+}
+
+/**
+ * The fix for one claim, which depends on what the merge does to its tag.
+ * Only a tag that still resolves can be kept by restating the flow; for a broken
+ * one that would trade one gating error for another, so the fix is the one the
+ * finding gives (`usecase.requirement-unresolved`).
+ */
+function redrawFix(flow: RedrawFlow, claim: RedrawClaim): string {
+  if (claim.breaks === "collides") {
+    return "an id this feature adds flattens to the same tag, which gates the archive — rename one of the colliding ids";
+  }
+  if (claim.breaks === "unresolved") {
+    const at = flow.slot === undefined ? "in place" : `by a redrawn flow at ${flow.slot}, or a document there holding only comments, which retires it`;
+    return `its tag stops resolving, which gates the archive — drop the tag or point it at the promise that replaces it (${at}), or MODIFY the requirement instead`;
+  }
+  return flow.slot === undefined ? "redraw it in place if it no longer holds" : `redraw it at ${flow.slot}, or put it there unchanged if it still holds`;
+}
+
+function printFlows(flows: readonly JoinedUseCase[], service: string): void {
+  for (const flow of flows) {
     console.log(`  ${flow.title ?? flow.id}  [${flow.id}]  ${flow.file}`);
     for (const step of flow.steps) {
       const label = step.title === undefined ? "" : ` '${step.title}'`;
       console.log(`    step ${step.ordinal}${label}: ${step.source} -> ${step.target}`);
+      if (step.inside !== undefined) printInside(step.inside, service);
     }
   }
-  console.log();
+}
+
+function printInside(inside: HopInside, service: string): void {
+  const pad = "      ";
+  if (inside.state === "keyless") {
+    console.log(`${pad}inside ${service}: the edge behind this hop names no operation or message, so nothing joins it`);
+  } else if (inside.state === "contested") {
+    const ops = inside.candidates.map((op) => op ?? "(none)").join(", ");
+    console.log(`${pad}inside ${service}: not joined — the edges behind this hop name ${ops}, and its title picks none`);
+  } else if (inside.state === "unbacked") {
+    console.log(`${pad}inside ${service}: not joined — nothing in the model backs this hop`);
+  } else {
+    const keys = inside.keys.map((k) => `${k.kind} ${k.name}`).join(", ");
+    if (inside.state === "unread") {
+      console.log(`${pad}inside ${service}, by ${keys}: not read — its flows could not be read`);
+    } else if (inside.flows.length === 0) {
+      console.log(`${pad}inside ${service}, by ${keys}: no flow claims a requirement holding it — a fact, not a finding`);
+    } else {
+      console.log(`${pad}inside ${service}, by ${keys}:`);
+      const ids = [...new Set(inside.flows.flatMap((f) => f.via))].sort(compareIds);
+      for (const id of ids) {
+        for (const f of inside.flows.filter((flow) => flow.via.includes(id))) {
+          console.log(`${pad}  ${id}: ${f.id}  ${f.file}${f.origin === "feature" ? "  (this feature's)" : ""}`);
+        }
+      }
+    }
+  }
 }
 
 /**

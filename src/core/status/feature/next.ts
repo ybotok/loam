@@ -134,6 +134,42 @@ export function featureNext(state: FeatureState, boundService: string | undefine
     });
   }
 
+  // A living flow of a service that claims a requirement this feature rewrites
+  // (`usecase.requirement-modified`): the tag still resolves after the archive,
+  // and nothing grades what the flow draws against the new wording. The warning
+  // never gates, so among a feature's other warnings it went unread — this is
+  // the step that puts it in front of the author. One entry per service, never
+  // per flow, for `next.author-scenarios`' reason. Only a flow under the
+  // service's `usecases/` has a slot to be redrawn from; every other one is left
+  // to the warning, which says to edit it in place — a fleet flow under
+  // `architecture/`, and a service flow in views.likec4 or model.likec4, where a
+  // document in the slot would replace nothing and silence nothing.
+  // The finding fires once per claim, so the files are a SET: a flow claiming two
+  // rewritten requirements is one flow to redraw.
+  const untrue = new Map<string, Set<string>>();
+  for (const f of findings) {
+    if (f.code !== "usecase.requirement-modified" || f.subject === undefined || !services.includes(f.subject)) continue;
+    const file = f.locations?.find((l) => l.role === "primary")?.path;
+    if (file === undefined || !file.startsWith("services/") || !file.includes(`/${f.subject}/usecases/`)) continue;
+    untrue.set(f.subject, (untrue.get(f.subject) ?? new Set()).add(file));
+  }
+  for (const [svc, files] of untrue) {
+    const slot = `features/${feature.dirName}/specs/${svc}/usecases/`;
+    const first = [...files].sort()[0]!;
+    // The slot spells the path the flow has under the service's usecases/,
+    // nesting included — the file the archive writes over the living one.
+    const at = `${slot}${first.slice(first.indexOf(`/${svc}/usecases/`) + `/${svc}/usecases/`.length)}`;
+    steps.push({
+      code: "next.redraw-flows",
+      statement:
+        `${files.size} living flow(s) of ${svc} claim requirements ${id} rewrites — read each against the new wording, then ` +
+        `redraw it at the same path under ${slot} (${first} goes to ${at}), or put it there unchanged if it still holds.`,
+      command: `loam delta ${id} --service ${svc} --json`,
+      service: svc,
+      path: slot,
+    });
+  }
+
   if (findings.some((f) => UNPINNED.has(f.code))) {
     steps.push({
       code: "next.rebase",

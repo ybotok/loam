@@ -11,6 +11,7 @@ const EDIT_STEPS = new Set([
   "next.author-spec",
   "next.author-openapi",
   "next.author-scenarios",
+  "next.redraw-flows",
 ]);
 
 const SERVICE_REPO_STEPS = new Set([

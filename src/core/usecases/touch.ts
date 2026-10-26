@@ -29,7 +29,7 @@ import { compareIds } from "../repo/entries.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 import type { ParsedStep, ParsedView } from "../c4/parsed/dynamic-views.js";
 import { readUseCases, type UseCaseScan } from "./fleet.js";
-import { viewFile } from "./place.js";
+import { viewFile, type ViewPlace } from "./place.js";
 
 /** One hop of a flow that mentions a service the caller asked about. */
 export interface TouchedStep {
@@ -102,7 +102,12 @@ function touched(step: ParsedStep, scan: Extract<UseCaseScan, { kind: "read" }>,
 }
 
 /** One view's touching hops, in the author's own step order — the order the diagram reads in. */
-function touchedView(view: ParsedView, scan: Extract<UseCaseScan, { kind: "read" }>, services: ReadonlySet<string>): TouchedUseCase | null {
+function touchedView(
+  view: ParsedView,
+  scan: Extract<UseCaseScan, { kind: "read" }>,
+  services: ReadonlySet<string>,
+  place: ViewPlace,
+): TouchedUseCase | null {
   const steps: TouchedStep[] = [];
   for (const step of view.steps) {
     const hit = touched(step, scan, services);
@@ -119,7 +124,7 @@ function touchedView(view: ParsedView, scan: Extract<UseCaseScan, { kind: "read"
   return {
     id: view.id,
     ...(view.title === undefined ? {} : { title: view.title }),
-    file: viewFile(view),
+    file: place(view),
     tags: [...view.tags].sort(compareIds),
     steps,
   };
@@ -136,12 +141,17 @@ function touchedView(view: ParsedView, scan: Extract<UseCaseScan, { kind: "read"
  * An `unreadable` scan answers with nothing. Every caller pairs this with the
  * scan's own health, because an empty list means "no flow mentions these
  * services" and "nobody could look" only when read together.
+ *
+ * `place` spells each flow's file. A fleet scan's `sourcePath` is relative to
+ * `architecture/`, which `viewFile` prefixes; the feature overlay's is the
+ * authored file itself (`authoredFile` in `./place.ts`), and spelled
+ * through `viewFile` it read `architecture//abs/path`.
  */
-export function flowsTouching(scan: UseCaseScan, services: ReadonlySet<string>): TouchedUseCase[] {
+export function flowsTouching(scan: UseCaseScan, services: ReadonlySet<string>, place: ViewPlace = viewFile): TouchedUseCase[] {
   if (scan.kind !== "read") return [];
   return (
     scan.views
-      .map((view) => touchedView(view, scan, services))
+      .map((view) => touchedView(view, scan, services, place))
       .filter((flow): flow is TouchedUseCase => flow !== null)
       // Sorted by (file, view id) rather than reported in LikeC4's own record
       // order: nothing in loam has measured that the parse preserves declaration
@@ -162,8 +172,16 @@ export function flowsTouching(scan: UseCaseScan, services: ReadonlySet<string>):
  */
 export async function useCaseBlastRadius(req: BlastRadiusRequest): Promise<UseCaseBlastRadius> {
   const scan = await readUseCases({ docsDir: req.docsDir, known: req.known });
-  if (scan.kind !== "read") {
-    return { unreadable: true, ...(scan.errors[0] === undefined ? {} : { error: scan.errors[0] }), flows: [] };
-  }
-  return { unreadable: false, flows: flowsTouching(scan, req.services) };
+  return { ...scanHealth(scan), flows: flowsTouching(scan, req.services) };
+}
+
+/**
+ * A scan's health as every use-case payload spells it: `unreadable`, and
+ * LikeC4's first message when there is one. One spelling for the blast radius,
+ * the feature's own flows and the delta brief alike, so the three holes read
+ * the same.
+ */
+export function scanHealth(scan: UseCaseScan): { unreadable: boolean; error?: string } {
+  if (scan.kind === "read") return { unreadable: false };
+  return { unreadable: true, ...(scan.errors[0] === undefined ? {} : { error: scan.errors[0] }) };
 }

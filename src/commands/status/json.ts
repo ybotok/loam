@@ -8,6 +8,7 @@
 import { findingJson } from "../../core/vocabulary/report.js";
 import { executableNext } from "../../core/status/actions/execution.js";
 import type { FeatureStatusReport, FleetStatusReport } from "../../core/status/report.js";
+import type { UseCaseBlastRadius } from "../../core/usecases/touch.js";
 
 export function featureJson(r: FeatureStatusReport): Record<string, unknown> {
   return {
@@ -27,12 +28,18 @@ export function featureJson(r: FeatureStatusReport): Record<string, unknown> {
     // through whole, so an optional `error` that is absent stays absent instead
     // of arriving as `undefined` — the shape every other payload here keeps.
     useCases: {
-      unreadable: r.useCases.unreadable,
-      ...(r.useCases.error === undefined ? {} : { error: r.useCases.error }),
-      flows: r.useCases.flows,
+      ...radiusJson(r.useCases),
+      // The feature's own flows, as `loam delta` carries them: a key of their
+      // own, so `flows` keeps meaning the living ones.
+      ...(r.featureUseCases === undefined ? {} : { featureFlows: radiusJson(r.featureUseCases) }),
     },
     next: r.next.map(executableNext),
   };
+}
+
+/** One blast radius as JSON: an absent `error` stays absent rather than arriving as `undefined`. */
+function radiusJson(u: UseCaseBlastRadius): Record<string, unknown> {
+  return { unreadable: u.unreadable, ...(u.error === undefined ? {} : { error: u.error }), flows: u.flows };
 }
 
 export function fleetJson(r: FleetStatusReport): Record<string, unknown> {

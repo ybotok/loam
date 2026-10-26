@@ -26,12 +26,12 @@
  * (`core/vocabulary/issue.ts`). The severities travel unchanged — the two
  * errors gate the archive, the two hop warnings and nothing else advise.
  */
-import { relative } from "node:path";
 import type { ParsedView } from "../../c4/parsed/dynamic-views.js";
 import type { DocsDir } from "../../kernel/ids/dirs.js";
 import type { Issue, IssueCode } from "../../vocabulary/issue.js";
 import type { Finding } from "../../vocabulary/report.js";
 import type { UseCaseScan } from "../fleet.js";
+import { authoredFile } from "../place.js";
 import { useCaseFindings } from "./usecases.js";
 
 /** What the feature's flows are graded against — everything as the merge would leave it. */
@@ -66,14 +66,8 @@ const AS_ISSUE: Readonly<Record<string, IssueCode>> = {
  * this spells it docs-relative, the way every other feature finding names a file.
  */
 function featurePlace(docsDir: DocsDir): (view: ParsedView) => string {
-  const file = featureFile(docsDir);
+  const file = authoredFile(docsDir);
   return (view) => `${file(view)} — dynamic view '${view.id}'`;
-}
-
-/** The feature file a view is written in, docs-relative — `locations[0]` of its findings. */
-function featureFile(docsDir: DocsDir): (view: ParsedView) => string {
-  return (view) =>
-    view.sourcePath === undefined ? "usecases/" : relative(docsDir, view.sourcePath).split(/[\\/]/).join("/");
 }
 
 /**
@@ -116,6 +110,6 @@ export function featureFlowIssues(scope: FeatureFlowScope): Issue[] {
     capabilities: scope.capabilities,
     requirementsOf: scope.requirementsOf,
     place: featurePlace(scope.docsDir),
-    file: featureFile(scope.docsDir),
+    file: authoredFile(scope.docsDir),
   }).flatMap(asIssue);
 }
