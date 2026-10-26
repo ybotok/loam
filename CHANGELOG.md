@@ -10,6 +10,24 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Added — `loam delta --diff`, the line-level review of a feature
+
+- `loam delta <FEAT> [--service <id>] --diff` says what each item of the service's slice does to the
+  living documents. Every requirement, operation and message carries `change`: `new`, `quote` (the
+  living text restated unchanged), `edit` or `remove`. An edit or a removal carries `diff`, an array
+  of `{ op, line }` where `op` is `=`, `+` or `-`. The text view tags each item
+  (`[MODIFIED · edit]`, `[quote] POST /…`) and prints an edit or a removal as its diff. Before this,
+  nothing showed a reviewer what a MODIFIED requirement or a restated operation changed, and
+  `loam diff` on a branch whose only change is a delta reported no changes.
+- What counts as unchanged follows the merge. A requirement is compared as the archive writes it,
+  with its `Based-On:` and `Realizes:` pins aside, and paired with its living requirement as the
+  merge pairs them. An operation is compared by its own node, with its `$ref`s as written, so
+  restating an operation that uses a living schema is not an edit of that schema. A message is
+  compared by its node at the same slot. A pair the merge would refuse (malformed or ambiguous
+  `Requirement-ID`s) gets `change: null`.
+- Without `--diff` the brief is byte-identical. MCP: `loam_delta` takes `diff`.
+  `loam instructions loam-ship` suggests the view before the archive.
+
 ### Changed — the generated service overview draws the service, not the groups around it
 
 - Each view in `architecture/services.likec4` now includes `<fqn>, <fqn>.*` where it included `*`.

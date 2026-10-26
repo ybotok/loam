@@ -699,6 +699,7 @@ model {
 
   loam.core.projection -> loam.core.asyncapi
   loam.core.projection -> loam.core.c4
+  loam.core.projection -> loam.core.document
   loam.core.projection -> loam.core.kernel
   loam.core.projection -> loam.core.openapi
   loam.core.projection -> loam.core.repo

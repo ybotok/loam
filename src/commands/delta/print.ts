@@ -13,6 +13,21 @@ import { type EventSlice } from "../../core/projection/events.js";
 import { type UseCaseBlastRadius } from "../../core/usecases/touch.js";
 import { type CapabilityDeltaSummary } from "../../core/capabilities/delta/summary.js";
 import { droppedSentence, type DroppedRow } from "../../core/document/apply.js";
+import type { Change, DiffLine, Review } from "../../core/projection/review.js";
+
+/**
+ * A diff as a reviewer reads it: `-` the living line the merge takes out, `+`
+ * the line it writes, two spaces for a line both carry — the markers `git diff`
+ * taught every reader, so nothing here needs a legend.
+ */
+function printDiff(diff: readonly DiffLine[], pad: string): void {
+  for (const { op, line } of diff) console.log(`${pad}${op === "=" ? " " : op} ${line}`.trimEnd());
+}
+
+/** ` · edit` after a kind, or nothing — the `--diff` tag, absent without the flag. */
+function changeTag(change: Change | null | undefined): string {
+  return change === undefined ? "" : ` · ${change ?? "not compared"}`;
+}
 
 /**
  * The requirement delta, in full.
@@ -24,16 +39,25 @@ import { droppedSentence, type DroppedRow } from "../../core/document/apply.js";
  * in a terminal is being asked to implement it, exactly like the agent reading
  * the payload.
  */
-export function printRequirements(reqs: Requirement[], label: string): void {
+export function printRequirements(reqs: Requirement[], label: string, reviews?: readonly Review[]): void {
   if (reqs.length === 0) {
     console.log(`${label}: (none)\n`);
     return;
   }
   console.log(`${label}:`);
-  for (const r of reqs) {
-    const tag = r.kind === "BASE" ? "" : `[${r.kind}] `;
+  for (const [i, r] of reqs.entries()) {
+    const review = reviews?.[i];
+    const tag = r.kind === "BASE" ? "" : `[${r.kind}${changeTag(review?.change)}] `;
     const n = r.scenarios.length;
     console.log(`  ${tag}${r.name}  (${n} scenario${n === 1 ? "" : "s"})`);
+    // Under `--diff`, an edit or a removal is shown AS the change — the living
+    // text with what goes and what comes marked — instead of the new text alone,
+    // which is the reading the review needs and the brief does not.
+    if (review?.diff !== undefined) {
+      printDiff(review.diff, "    ");
+      console.log();
+      continue;
+    }
     // The body VERBATIM, and that is the whole of the requirement's text —
     // `Operations:`, `Covers:`, `Publishes:`, `Consumes:`, `Requires:`,
     // `Realizes:`, `Requirement-ID:` and `Based-On:` are body lines, kept in
@@ -61,7 +85,7 @@ export function printRequirements(reqs: Requirement[], label: string): void {
   }
 }
 
-export function printApi(api: ApiSlice): void {
+export function printApi(api: ApiSlice, reviews?: ReadonlyMap<string, Review>): void {
   if (api.unreadable) {
     // Worded like `loam show`'s answer for the same failure on a living
     // contract, and deliberately WITHOUT a "run `loam validate`" hint: the
@@ -80,15 +104,19 @@ export function printApi(api: ApiSlice): void {
   }
   console.log("API (this feature's openapi.yaml for the service):");
   for (const op of api.changes) {
-    const marker = op.remove ? "REMOVE " : "";
+    const review = reviews?.get(`${op.method} ${op.path}`);
+    // The review's tag says `remove` already; the marker would say it twice.
+    const marker = op.remove && review === undefined ? "REMOVE " : "";
+    const tag = review === undefined ? "" : `[${review.change ?? "not compared"}] `;
     console.log(
-      `  ${marker}${op.method} ${op.path}  ${op.operationId}${op.summary === null ? "" : ` — ${op.summary}`}`,
+      `  ${tag}${marker}${op.method} ${op.path}  ${op.operationId}${op.summary === null ? "" : ` — ${op.summary}`}`,
     );
+    if (review?.diff !== undefined) printDiff(review.diff, "    ");
   }
   console.log();
 }
 
-export function printEvents(events: EventSlice): void {
+export function printEvents(events: EventSlice, reviews?: ReadonlyMap<string, Change>): void {
   if (events.unreadable) {
     // Same wording stance as printApi above, `asyncapi.invalid` being the
     // validate finding on this file.
@@ -103,9 +131,10 @@ export function printEvents(events: EventSlice): void {
   }
   console.log("Events (this feature's asyncapi.yaml for the service):");
   for (const m of events.changes) {
-    const marker = m.remove ? "REMOVE " : "";
+    const change = reviews?.get(m.slot);
+    const marker = m.remove && change === undefined ? "REMOVE " : "";
     const direction = m.direction === null ? "" : `${m.direction.toUpperCase()} `;
-    console.log(`  ${marker}${direction}${m.message}  (${m.slot})`);
+    console.log(`  ${change === undefined ? "" : `[${change}] `}${marker}${direction}${m.message}  (${m.slot})`);
   }
   console.log();
 }

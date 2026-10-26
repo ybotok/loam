@@ -252,7 +252,9 @@ export const LOAM_SHIP: CommandContent = {
    requirement bodies, scenarios and contract descriptions — for review-time
    wording such as "this delta" or "this feature": in a living document it points
    at a change nobody will remember. Fix both in the delta before the merge
-   (\`loam instructions loam-authoring\`, "Writing for a person").
+   (\`loam instructions loam-authoring\`, "Writing for a person"). To see what each
+   MODIFIED or REMOVED requirement and each restated operation changes line by
+   line, run \`loam delta $1 --service <svc> --diff\` for each service it touches.
 4. \`loam archive $1 --json\`. It merges three axes into the living state — requirements
    into \`services/<svc>/spec.md\`, endpoints into \`services/<svc>/openapi.yaml\`,
    elements and edges into \`architecture/landscape.likec4\` and, for an addition nested

@@ -182,12 +182,17 @@ export const MCP_TOOLS: readonly McpTool[] = [
     name: "loam_delta",
     command: "delta",
     description:
-      "Project a feature onto a service: why + requirement delta + C4 changes. " +
-      "CLI equivalent: loam delta <featureId> [--service <id>] --json",
+      "Project a feature onto a service: why + requirement delta + C4 changes. With diff, each requirement, " +
+      "operation and message also says what it does to the living documents (new, quote, edit, remove) and " +
+      "carries the lines an edit changes — the design review's view. " +
+      "CLI equivalent: loam delta <featureId> [--service <id>] [--diff] --json",
     positionals: [
       { property: "featureId", required: true, variadic: false, description: "feature id, e.g. FEAT-101" },
     ],
-    flags: [{ ...SERVICE_FLAG, description: "service to project onto (defaults to the configured service)" }],
+    flags: [
+      { ...SERVICE_FLAG, description: "service to project onto (defaults to the configured service)" },
+      { property: "diff", flag: "--diff", kind: "boolean", description: "compare each item with the living documents: new, quote, edit or remove, with an edit's changed lines" },
+    ],
   },
   {
     name: "loam_tasks",

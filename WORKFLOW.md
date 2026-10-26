@@ -490,6 +490,13 @@ Every command takes `--json`, and the contract is built so an agent never has to
 - **`loam show <FEAT> --json` is the review hand-off.** Its `review` object joins the intent summary,
   exact C4 objects, API/event slices, dependencies, artifact states, verification, blockers,
   advisories, use cases and executable next actions without making the reviewer reopen each file.
+- **`loam delta <FEAT> --service <svc> --diff` is the line-level review.** Each requirement,
+  operation and message carries `change` — `new`, `quote` (the living text restated unchanged),
+  `edit` or `remove` — and an edit or a removal carries `diff`, the lines as `{ op, line }` with `op`
+  one of `=`, `+`, `-`. A requirement is compared as the merge writes it, its `Based-On:` and
+  `Realizes:` pins aside, and paired with its living requirement the way the merge pairs them; an
+  operation by its node (its `$ref`s as written, not what they reach); a message by its node at the
+  same slot. Without `--diff` the brief is byte-identical to what it was.
 
 The loop is the same every time: `loam status --json`, read `next[0].execution`, run its command only
 when `runnable` is true, otherwise satisfy its named edit/external input, then repeat. When a command

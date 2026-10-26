@@ -19,16 +19,15 @@ import { useCaseBlastRadius } from "../../core/usecases/touch.js";
 import { featureCapabilityDeltas } from "../../core/capabilities/delta/tree.js";
 import { capabilityDeltaSummaries } from "../../core/capabilities/delta/summary.js";
 import { printApi, printArchSlice, printCapabilities, printDropped, printEvents, printIntent, printRequirements, printUseCases } from "./print.js";
-import { droppedBy, type DroppedRow } from "../../core/document/apply.js";
 import { locateServicePaths } from "../../core/repo/service-target.js";
-import { livingCapabilityPaths } from "../../core/repo/authored/paths.js";
-import type { CapabilityDoc } from "../../core/capabilities/tree.js";
-import type { DocsDir } from "../../core/kernel/ids/dirs.js";
+import { droppedRows, reviewSlice, type SliceReview } from "./slice.js";
+import type { Review } from "../../core/projection/review.js";
 import { openQuestions, questionsNaming } from "../../core/document/intent/questions.js";
 
 interface DeltaOptions {
   service?: string;
   json?: boolean;
+  diff?: boolean;
 }
 
 export function registerDelta(program: Command): void {
@@ -38,6 +37,9 @@ export function registerDelta(program: Command): void {
     .description("Project a feature onto a service: why + requirement delta + C4 changes")
     .option("--service <id>", "service to project onto (defaults to the configured service)")
     .option("--json", "emit the machine contract instead of the human view")
+    // A review lens, off by default so the brief an agent implements from is
+    // byte-identical without it (core/projection/review.ts says what it compares).
+    .option("--diff", "say what each requirement, operation and message does to the living documents: new, quote, edit or remove, with the lines an edit changes")
     .action(async (featureId: string, opts: DeltaOptions) => {
       const json = opts.json === true;
       const config = await configOrRefuse(json);
@@ -225,6 +227,12 @@ export function registerDelta(program: Command): void {
         ],
         capabilities: capabilityDocs,
       });
+      const review: SliceReview | null = opts.diff === true
+        ? await reviewSlice({ reqs, archReqs, feature: specPaths, living: livingPaths })
+        : null;
+      // The review's keys, spread onto an item only under `--diff` (additive).
+      const seen = (r: Review | undefined): Record<string, unknown> =>
+        review === null || r === undefined ? {} : { change: r.change, ...(r.diff === undefined ? {} : { diff: r.diff }) };
 
       if (json) {
         // `axis` is a parameter and `service` stays in the closure, because the
@@ -279,13 +287,13 @@ export function registerDelta(program: Command): void {
           path: repoPath(config.docsDir, feature.dir),
           intent,
           openQuestions: questions,
-          requirements: reqs.map((r) => reqJson(r, "business")),
+          requirements: reqs.map((r, i) => ({ ...reqJson(r, "business"), ...seen(review?.business[i]) })),
           // Same shape, separate section: an arch requirement's scenarios are
           // integration/ops tests, and a consumer must not have to parse prose
           // to tell the two apart. The axis is passed rather than inferred
           // because it is a digest SALT, not a label — see `reqJson` above.
-          archRequirements: archReqs.map((r) => reqJson(r, "arch")),
-          api: api.changes,
+          archRequirements: archReqs.map((r, i) => ({ ...reqJson(r, "arch"), ...seen(review?.arch[i]) })),
+          api: api.changes.map((op) => ({ ...op, ...seen(review?.operations.get(`${op.method} ${op.path}`)) })),
           // `api` stays exactly the operations array it has always been — a
           // consumer indexing it must not have to learn a new shape — so the
           // readability of the document rides alongside as its own key,
@@ -299,7 +307,10 @@ export function registerDelta(program: Command): void {
           // split shape, so it is one additive key carrying both halves:
           // the declarations and the document's readability.
           events: {
-            changes: events.changes,
+            changes: events.changes.map((m) => {
+              const change = review?.messages.get(m.slot);
+              return change === undefined ? m : { ...m, change };
+            }),
             unreadable: events.unreadable,
             ...(events.error === undefined ? {} : { error: events.error }),
           },
@@ -342,57 +353,14 @@ export function registerDelta(program: Command): void {
 
       console.log(`${id} · ${service}\n`);
       printIntent(intent, questions, service);
-      if (existsSync(specPaths.spec)) printRequirements(reqs, "Requirements");
+      if (existsSync(specPaths.spec)) printRequirements(reqs, "Requirements", review?.business);
       else console.log("Requirements: (none for this service)\n");
-      if (existsSync(specPaths.archSpec)) printRequirements(archReqs, "Arch requirements");
-      if (existsSync(specPaths.openapi)) printApi(api);
-      if (existsSync(specPaths.asyncapi)) printEvents(events);
+      if (existsSync(specPaths.archSpec)) printRequirements(archReqs, "Arch requirements", review?.arch);
+      if (existsSync(specPaths.openapi)) printApi(api, review?.operations);
+      if (existsSync(specPaths.asyncapi)) printEvents(events, review?.messages);
       if (existsSync(paths.delta)) printArchSlice(arch, service);
       printCapabilities(capabilities);
       printDropped(dropped);
       printUseCases(useCases, service);
     });
-}
-
-/** The documents one projection's dropped rows are read over. */
-interface DroppedRequest {
-  /** The service's two spec axes: the feature's parsed delta and the living document's path. */
-  axes: Array<{ delta: Requirement[]; living: string }>;
-  /** The feature's capability deltas — not narrowed by `--service`, for the capabilities section's reason. */
-  capabilities: readonly CapabilityDoc[];
-}
-
-/**
- * Each living document's dropped rows (core/document/apply.ts), docs-relative.
- *
- * A pair the merge itself would refuse — malformed or repeated
- * `Requirement-ID`s, an id and a heading selecting different requirements —
- * is skipped rather than reported: `validate --feature` grades each under its
- * own code, the archive refuses it, and a brief that died on it would hide
- * every other section from the implementer. The catch is around the pure
- * algebra alone, whose only throws are those refusals; the reads stay outside.
- */
-async function droppedRows(docsDir: DocsDir, req: DroppedRequest): Promise<Array<DroppedRow & { path: string }>> {
-  const pairs = [
-    ...req.axes,
-    ...(await Promise.all(
-      req.capabilities.map(async (doc) => ({
-        delta: parseRequirements(await readFile(doc.spec, "utf8")),
-        living: livingCapabilityPaths(docsDir, doc.id).spec,
-      })),
-    )),
-  ];
-  const out: Array<DroppedRow & { path: string }> = [];
-  for (const { delta, living } of pairs) {
-    if (delta.length === 0 || !existsSync(living)) continue;
-    const livingReqs = parseRequirements(await readFile(living, "utf8"));
-    let rows: DroppedRow[];
-    try {
-      rows = droppedBy(livingReqs, delta);
-    } catch {
-      continue;
-    }
-    for (const row of rows) out.push({ path: repoPath(docsDir, living), ...row });
-  }
-  return out;
 }
