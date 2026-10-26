@@ -10,6 +10,33 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Changed — the generated service overview draws the service, not the groups around it
+
+- Each view in `architecture/services.likec4` now includes `<fqn>, <fqn>.*` where it included `*`.
+  For a service with no children nested in groups, `include *` drew the service's parent group box
+  and a peer's group box as nodes of their own. For a service with children the picture is the
+  same as before.
+- A service whose view would name an id whose first segment is also the name of one of the
+  service's own elements (a top-level `redis` it calls beside a `redis` inside it) now gets a view
+  without `of`, and a comment above the view names the colliding ids. Inside `view … of <fqn>`,
+  LikeC4 resolves a bare id against the service's subtree first, and the language has no reference
+  that starts at the root. Such an overview drew the service's own element and dropped the map's
+  peer and the edge to it, with no error anywhere. A view without `of` is no longer where a click on
+  that service in another view lands.
+- The file's header gains two lines: which `view … of` a click opens is decided by the order of
+  the document paths under `architecture/`, so an authored one in a file whose name sorts before
+  `services.likec4` wins.
+- A repository that commits the file gets `subsystem.views-stale`, an error, once after upgrading;
+  `loam subsystem sync` rewrites it. `validate --all` exits 1 until it does.
+
+### Changed — `archive --dry-run` names the generated views the merge would leave stale
+
+- The dry run now says what the real run says after its commit:
+  `⚠ <path> would no longer match the tree and this map — run loam subsystem sync after the archive`
+  in text, and `staleViews` in `--json` (absent when nothing would be stale). It is asked of the map
+  the merge preview stages and of the tree with the services the archive would create. The dry run
+  had no way to know them before.
+
 ### Added — `delta.merge-refused`: the feature gate predicts every refusal of the C4 merge
 
 - `loam validate --feature`, `validate --all` and `loam status <FEAT>` now run the archive's own

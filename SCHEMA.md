@@ -547,7 +547,9 @@ The **boundary** each view draws is a fact about the landscape, never a setting:
 Because the boundary depends on which *other* services sit under an element, an unrelated adoption
 or archive can flip a view from boxed to flat — a new reason to see `subsystem.views-stale`, and why
 `loam archive` withholds its "complete + current" line and names `loam subsystem sync` when it left
-the file behind.
+the file behind. `archive --dry-run` names the same files before anything is written, asked of the
+map the merge preview stages and of the tree with the services the archive would create; both carry
+them in `--json` as `staleViews`.
 
 `loam subsystem sync` is the one regenerator (it also *removes* the file when the tree has no
 subsystems), every `loam subsystem` write verb regenerates it inside the same transaction, and
@@ -583,7 +585,7 @@ own path. Views only, one per service the fleet map draws, sorted by service dir
 view service_payment_2dservice of marketplace.paymentService {
   title 'Payments / payment-service'
   global style services
-  include *
+  include marketplace.paymentService, marketplace.paymentService.*
   include kafka.orderEvents
   include marketplace.checkoutWeb
   include stripe
@@ -610,6 +612,22 @@ wildcard, which re-introduces the parent group boxes as extra nodes (16 instead 
 <fqn>.* -> <fqn>.*` is the interior wiring, and it is legal on a childless element — it simply
 matches nothing — which is what makes one line work for both model shapes: an extending model's
 containers are in the root project and appear, a standalone model's are not and the line is silent.
+The subject and its interior are NAMED too (`include <fqn>, <fqn>.*`), not `include *`: on a service
+with no children nested in groups, `include *` drew the service's parent group box and the group box
+of a peer's group as nodes of their own (measured at the 1.59.2 pin); for a service with children
+both spellings draw the same nodes and edges. The median below was measured with `include *`, so a
+childless service now draws fewer nodes than it counts.
+
+**A peer that shares its first name with one of the service's own elements is drawn by a view
+without `of`.** Inside `view … of <fqn>`, LikeC4 resolves a bare id against the subject's own
+descendants first, at any depth, and the language has no root-anchored reference (measured at the
+1.59.2 pin): a service whose model declares `redis` inside it, beside the map's top-level `redis` it
+calls, had its overview draw its own `redis` and drop the map's `redis` and the edge to it, with no
+error anywhere. A sibling under the same group does not shadow; only the service's subtree does.
+For such a service — when the first segment of any id its view writes names an element under it —
+the view is written without `of`, where every id resolves from the root, with a comment above it
+naming the colliding ids. The picture is right; the price is the navigation below: a click on that
+service in another view no longer lands on its generated overview.
 
 Measured at 58 services in 11 groups: a median of **10 nodes and 8 edges** per generated view, every
 peer that is a service carrying drill-down into its own generated view, and `npx likec4 export json`
@@ -632,6 +650,10 @@ Both stay reachable: inside a view of the subject, the subject's own node naviga
 view of the same element, so the renderer cycles between siblings and nothing is orphaned.
 `architecture/landscape.likec4` sorts before `architecture/services.likec4`, so a team's authored
 `view of <element>` written in the map keeps precedence over the generated one, and neither is lost.
+The rule is the PATH, not the map: an authored `view of` in any `architecture/` document whose name
+sorts before `services.likec4` — `service-views.likec4`, say — wins the click the same way, and one
+whose name sorts after it loses it to the generated overview. The generated file's own header says
+so, since it is the document a reader finds when a click lands somewhere unexpected.
 loam does not detect this and never will: **docs/DESIGN.md rule 26 forbids loam reading what a view
 SHOWS**, in any document, so it may not look at an authored `view of` to decide whether to emit. It
 emits for every service the map draws, and the alphabet settles the rest.

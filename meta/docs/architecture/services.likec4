@@ -2,11 +2,13 @@
 // Do not edit: `loam subsystem sync` regenerates this file from the directories and the map,
 // and `loam validate --all` reports `subsystem.views-stale` when it drifts.
 // A navigation aid, not the fleet's architecture: author your own diagrams elsewhere.
+// A click on a service opens the first `view … of` it by PATH under architecture/: an authored
+// one in a file whose name sorts before services.likec4 wins over the overview here.
 
 views {
   view service_loam of loam {
     title 'loam'
-    include *
+    include loam, loam.*
     exclude * -> *
     include -> loam
     include loam ->

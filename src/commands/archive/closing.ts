@@ -23,8 +23,10 @@
  *    first, the merge lands a reference the other feature's merge has not made
  *    true yet;
  *  - gating issues the caller merged past with `--approve`;
- *  - a generated views file the new map no longer matches — known only once
- *    the commit has happened, so the dry run cannot name it.
+ *  - a generated views file the new map no longer matches — read off the tree
+ *    after the commit, and predicted for the dry run from the map the merge
+ *    preview stages (`core/c4/project/staged.ts`, `staleViewsAfterMerge`). The
+ *    dry run used to say it could not know.
  */
 import type { Issue, IssueCode } from "../../core/vocabulary/issue.js";
 
@@ -54,7 +56,7 @@ export interface Outstanding {
   planWarns: readonly Issue[];
   /** Gating issues `--approve` walked past. */
   overridden: readonly Issue[];
-  /** Generated views the committed map no longer matches; empty before a commit. */
+  /** Generated views the committed map no longer matches — or, for a dry run, would not. */
   staleViews: readonly string[];
   /** Phrase it as what WOULD remain — the dry run's tense. */
   dryRun: boolean;
@@ -67,7 +69,11 @@ export function outstandingLines(state: Outstanding): string[] {
   // a reader opens, and a comma-joined series would have to choose a verb that
   // reads wrong for one of the two counts.
   for (const path of state.staleViews) {
-    lines.push(`  ⚠ ${path} no longer matches the tree and this map — run \`loam subsystem sync\`.`);
+    lines.push(
+      state.dryRun
+        ? `  ⚠ ${path} would no longer match the tree and this map — run \`loam subsystem sync\` after the archive.`
+        : `  ⚠ ${path} no longer matches the tree and this map — run \`loam subsystem sync\`.`,
+    );
   }
   for (const w of state.planWarns) if (w.severity === "error") lines.push(`  ⚠ ${w.message}`);
   const ordering = state.advisory.filter((i) => ORDERING.has(i.code));

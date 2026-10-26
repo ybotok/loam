@@ -610,6 +610,18 @@ describe("archive --dry-run says what the real run says in place of its closing 
     expect(real.stdout).not.toContain("complete + current");
   });
 
+  it("names the generated views the merge would leave stale — the same files the real run names after its commit", async () => {
+    // The dry run used to be silent on them: they are a fact about the map
+    // after the merge, and the only map it held was the living one. It now asks
+    // the merge preview, with the services the archive would create added to
+    // the tree.
+    const f = await exampleFleet(["FEAT-101-payment-splitting"]);
+    const dry = JSON.parse((await runLoam(f.dir, "archive", "FEAT-101", "--dry-run", "--approve", "--json")).stdout);
+    const real = JSON.parse((await runLoam(f.dir, "archive", "FEAT-101", "--approve", "--json")).stdout);
+    expect(real.staleViews ?? []).not.toEqual([]);
+    expect(dry.staleViews).toEqual(real.staleViews);
+  });
+
   it("files service.no-model at the severity validate gives the same fact, without gating the merge", async () => {
     const f = await withMapOnlyService();
     const dry = await runLoam(f.dir, "archive", "FEAT-101", "--dry-run", "--json");

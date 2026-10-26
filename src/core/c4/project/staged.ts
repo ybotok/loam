@@ -53,9 +53,11 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { errorText, type LoadedDoc } from "../likec4.js";
 import { inOrder } from "../../kernel/concurrency.js";
-import type { DocsDir } from "../../kernel/ids/dirs.js";
-import { landscapePath } from "../../repo/paths.js";
-import { architectureDir, generatedArchitectureDocuments, projectDocumentsBesideMap } from "./architecture.js";
+import { architectureDir, generatedArchitectureDocuments, projectDocumentsBesideMap, staleAgainst } from "./architecture.js";
+import { rawServiceId } from "../../kernel/ids/service.js";
+import { serviceDirOf, type DocsDir } from "../../kernel/ids/dirs.js";
+import { listFleetTree } from "../../repo/repo.js";
+import { landscapePath, servicesDir } from "../../repo/paths.js";
 import { architectureDocuments } from "./documents.js";
 import { asLoadedDoc, loadProject } from "./load.js";
 import { mergedLandscape, type MergePreviewRequest } from "./merge/preview.js";
@@ -228,4 +230,32 @@ async function write(root: string, rel: string, content: string): Promise<void> 
   const dest = join(root, ...rel.split("/"));
   await mkdir(dirname(dest), { recursive: true });
   await writeFile(dest, content, "utf8");
+}
+
+/**
+ * Which generated documents the archive of this feature would leave stale —
+ * `staleGeneratedViews`' answer, asked of the map the merge preview stages and
+ * of the tree with the services the archive creates added, so a DRY RUN can
+ * say what the real run says after its commit.
+ *
+ * The dry run used to be silent on it: the stale views are a fact about the map
+ * after the merge, and the only map it held was the living one. `created` are
+ * the services the feature brings that have no directory yet; the archive files
+ * each unfiled, at `services/<id>/`, and so does this. Tolerant like the
+ * question it predicts: a preview that cannot be staged answers "no claim",
+ * never a refusal, because the archive's own plan is what refuses.
+ */
+export async function staleViewsAfterMerge(req: MergePreviewRequest & { created: readonly string[] }): Promise<string[]> {
+  try {
+    const staged = await stageMergedProject({ ...req, documents: [] });
+    if (staged.kind !== "read" || staged.doc.errors.length > 0) return [];
+    const tree = await listFleetTree(req.docsDir);
+    const known = new Set<string>(tree.services.map((s) => s.id));
+    const added = req.created
+      .filter((id) => !known.has(id))
+      .map((id) => ({ id: rawServiceId(id), dir: serviceDirOf(join(servicesDir(req.docsDir), id)), subsystem: [] }));
+    return await staleAgainst(req.docsDir, staged.doc, { ...tree, services: [...tree.services, ...added] });
+  } catch {
+    return [];
+  }
 }

@@ -2,11 +2,13 @@
 // Do not edit: `loam subsystem sync` regenerates this file from the directories and the map,
 // and `loam validate --all` reports `subsystem.views-stale` when it drifts.
 // A navigation aid, not the fleet's architecture: author your own diagrams elsewhere.
+// A click on a service opens the first `view … of` it by PATH under architecture/: an authored
+// one in a file whose name sorts before services.likec4 wins over the overview here.
 
 views {
   view service_checkout_2dweb of marketplace.checkoutWeb {
     title 'checkout-web'
-    include *
+    include marketplace.checkoutWeb, marketplace.checkoutWeb.*
     include customer
     include marketplace.orderService
     include marketplace.paymentService
@@ -18,7 +20,7 @@ views {
 
   view service_identity_2dservice of marketplace.identityService {
     title 'Platform / identity-service'
-    include *
+    include marketplace.identityService, marketplace.identityService.*
     include marketplace.orderService
     include marketplace.paymentService
     exclude * -> *
@@ -29,7 +31,7 @@ views {
 
   view service_notification_2dservice of marketplace.notificationService {
     title 'Platform / notification-service'
-    include *
+    include marketplace.notificationService, marketplace.notificationService.*
     include kafka.crmEvents
     include kafka.orderEvents
     include kafka.paymentEvents
@@ -42,7 +44,7 @@ views {
 
   view service_order_2dservice of marketplace.orderService {
     title 'order-service'
-    include *
+    include marketplace.orderService, marketplace.orderService.*
     include kafka.orderEvents
     include kafka.paymentEvents
     include marketplace.checkoutWeb
@@ -56,7 +58,7 @@ views {
 
   view service_payment_2dservice of marketplace.paymentService {
     title 'payment-service'
-    include *
+    include marketplace.paymentService, marketplace.paymentService.*
     include kafka.paymentEvents
     include marketplace.checkoutWeb
     include marketplace.identityService

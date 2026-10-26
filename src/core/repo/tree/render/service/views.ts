@@ -19,7 +19,7 @@
  *     view service_<id> of <fqn> {
  *       title '<subsystem path> / <service id>'
  *       global style services          // only when the map declares the group
- *       include *                      // the service and its own interior
+ *       include <fqn>, <fqn>.*         // the service and its own interior
  *       include <peer>                 // one line per peer, id-sorted
  *       exclude * -> *                 // drop the peer-to-peer cross traffic
  *       include -> <fqn>               // its inbound edges
@@ -43,6 +43,31 @@
  *  3. **`exclude * -> *` sits between the includes and the edge lines.** Without
  *     it the named peers bring their own cross traffic with them: on the same
  *     subject, 24 edges instead of 9, on a view about one service.
+ *  4. **The subject is named, not `include *`.** Measured at 1.59.2 on a
+ *     service with no children nested in a group: `include *` drew the service's
+ *     parent GROUP box and the group box of a peer's group as nodes of their own,
+ *     the picture of a service that is mostly boxes it is not part of.
+ *     `include <fqn>, <fqn>.*` draws the service, its interior and the named
+ *     peers, the same nodes and edges as before for a service WITH children.
+ *
+ * ## When the view is not `of` its service
+ *
+ * Inside `view … of <fqn>`, LikeC4 resolves a bare id against the subject's
+ * own descendants FIRST, at any depth (measured at 1.59.2: `include redis`
+ * drew `<fqn>.redis`, and `kafka.orderEvents` resolved `kafka` to a
+ * grandchild and failed to parse). The language has no root-anchored
+ * reference — an `FqnRef` is a parent and a name, and `where` tests kind, tag
+ * and metadata only — so a peer whose first segment names one of the
+ * service's own elements cannot be spelled to reach the map's element. A
+ * sibling under the same group does NOT shadow; only the subject's subtree
+ * does.
+ *
+ * Such a service's view is written WITHOUT `of`, where every id resolves from
+ * the root: the picture is right (the peer and its edge are drawn, the groups
+ * around them as frames), and the price is the navigation below — a click on
+ * the service elsewhere no longer lands here. A comment above the view says
+ * which ids collided, because a view that changed its declaration with no
+ * sentence beside it reads as a bug.
  *
  * `of <fqn>` is the navigation half and costs one keyword: LikeC4 computes
  * `navigateTo` into a view declared `of` an element from every OTHER view that
@@ -92,6 +117,12 @@ export interface ServiceViewsInput {
   subjects: readonly ServiceViewSubject[];
   /** The map's edges, from which each subject's peer set is computed. */
   relationships: readonly Rel[];
+  /**
+   * The id (fqn) of every element the project draws — the map's and the
+   * extending models' — from which each subject's descendants are read, for
+   * the collision the banner's last section describes.
+   */
+  elements: readonly string[];
   /** Emit `global style services` — true only when the map DECLARES that group. */
   styled: boolean;
   /** The one file-level comment the render may write, or null. */
@@ -101,7 +132,11 @@ export interface ServiceViewsInput {
 /**
  * The header every generated file opens with — stable bytes, part of the
  * content-compare contract, naming the regenerator so a reader who found the
- * file before the docs knows what owns it. `loam subsystem sync` regenerates
+ * file before the docs knows what owns it — and the one rule a reader cannot
+ * see from the views themselves: which `view of` a click lands on is decided
+ * by the alphabet of the document paths (measured by renaming files), so a
+ * team's authored overview in `service-views.likec4` silently wins and one in
+ * `team-views.likec4` silently loses. Said where the surprise is met. `loam subsystem sync` regenerates
  * BOTH generated files, which is why one command is named here and why one
  * finding code (`subsystem.views-stale`) honestly covers both.
  *
@@ -115,7 +150,9 @@ const HEADER =
   `${GENERATED_MARK} — one overview view per service under services/, drawn from the fleet map.\n` +
   "// Do not edit: `loam subsystem sync` regenerates this file from the directories and the map,\n" +
   "// and `loam validate --all` reports `subsystem.views-stale` when it drifts.\n" +
-  "// A navigation aid, not the fleet's architecture: author your own diagrams elsewhere.\n";
+  "// A navigation aid, not the fleet's architecture: author your own diagrams elsewhere.\n" +
+  "// A click on a service opens the first `view … of` it by PATH under architecture/: an authored\n" +
+  "// one in a file whose name sorts before services.likec4 wins over the overview here.\n";
 
 /**
  * Render the whole file, or null when no service resolves to a map element —
@@ -134,7 +171,12 @@ export function renderServiceViews(input: ServiceViewsInput): string | null {
   const subjects = [...input.subjects].sort((a, b) => (a.id < b.id ? -1 : 1));
   for (const [i, subject] of subjects.entries()) {
     if (i > 0) lines.push("");
-    lines.push(...viewLines(subject, peersOf(subject.fqn, input.relationships), input.styled));
+    lines.push(
+      ...viewLines(subject, peersOf(subject.fqn, input.relationships), {
+        styled: input.styled,
+        shadowing: ownNames(subject.fqn, input.elements),
+      }),
+    );
   }
   lines.push("}");
   return lines.join("\n") + "\n";
@@ -148,11 +190,28 @@ export function renderServiceViews(input: ServiceViewsInput): string | null {
  * the renderer. `global style` sits after `title` and before anything that
  * includes, where the same pin measured it parsing with zero errors.
  */
-function viewLines(subject: ServiceViewSubject, peers: readonly string[], styled: boolean): string[] {
+function viewLines(
+  subject: ServiceViewSubject,
+  peers: readonly string[],
+  opts: { styled: boolean; shadowing: ReadonlySet<string> },
+): string[] {
   const { fqn } = subject;
-  const out = [`  view ${serviceViewId(subject.id)} of ${fqn} {`, `    title '${subject.title}'`];
-  if (styled) out.push(`    global style ${SERVICE_STYLE_GROUP}`);
-  out.push("    include *");
+  // Every id the view writes, by its first segment — the one LikeC4 looks up
+  // in the subject's subtree first. The subject's own fqn counts too: its
+  // first segment shadowed would make `include <fqn>` a parse error.
+  const collided = [fqn, ...peers].filter((id) => opts.shadowing.has(id.split(".")[0]!));
+  const out: string[] = [];
+  if (collided.length > 0) {
+    out.push(
+      `  // not \`of ${fqn}\`: ${collided.join(", ")} would resolve to this service's own element of that name`,
+      `  view ${serviceViewId(subject.id)} {`,
+    );
+  } else {
+    out.push(`  view ${serviceViewId(subject.id)} of ${fqn} {`);
+  }
+  out.push(`    title '${subject.title}'`);
+  if (opts.styled) out.push(`    global style ${SERVICE_STYLE_GROUP}`);
+  out.push(`    include ${fqn}, ${fqn}.*`);
   for (const peer of peers) out.push(`    include ${peer}`);
   out.push("    exclude * -> *", `    include -> ${fqn}`, `    include ${fqn} ->`);
   // The interior wiring, last. Measured: `include <fqn>.* -> <fqn>.*` on a
@@ -162,4 +221,13 @@ function viewLines(subject: ServiceViewSubject, peers: readonly string[], styled
   // STANDALONE model's are not in this project and the line matches nothing.
   out.push(`    include ${fqn}.* -> ${fqn}.*`, "  }");
   return out;
+}
+
+/**
+ * The names a bare id would be resolved to inside `view … of <fqn>`: the last
+ * segment of every element under the subject, at any depth.
+ */
+function ownNames(fqn: string, elements: readonly string[]): ReadonlySet<string> {
+  const prefix = `${fqn}.`;
+  return new Set(elements.filter((id) => id.startsWith(prefix)).map((id) => id.slice(id.lastIndexOf(".") + 1)));
 }

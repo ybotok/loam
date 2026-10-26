@@ -24,11 +24,11 @@ import { clearCommitIntent, writeCommitIntent } from "../../core/staging/recover
 import { SNAPSHOT_DIR, snapshotDir } from "../../core/staging/snapshot/manifest.js";
 import { SnapshotClobberError, writeSnapshot, type ServiceKey } from "../../core/staging/snapshot/snapshot.js";
 import { enumeratedServices } from "../../core/repo/service-target.js";
-import { listFleetTree } from "../../core/repo/repo.js";
-import { featurePaths, serviceViewsPath, subsystemViewsPath } from "../../core/repo/paths.js";
+import { featurePaths } from "../../core/repo/paths.js";
 import { readOpenQuestions } from "../../core/document/intent/questions.js";
-import { serviceViewsState, viewsState } from "../../core/repo/tree/render/stale.js";
-import { loadArchitecture } from "../../core/c4/project/architecture.js";
+import { staleGeneratedViews } from "../../core/c4/project/architecture.js";
+import { staleViewsAfterMerge } from "../../core/c4/project/staged.js";
+import { extendingModels } from "../../core/c4/service-model/fleet/extending.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { gate } from "./plan/gate.js";
 import { issueJson, printPlan, refuseJson, writeAction, type ArchiveOptions } from "./plan/refusal.js";
@@ -197,10 +197,20 @@ export async function archiveLocked(
   });
 
   if (dryRun) {
-    if (json) emitJson(payload(false));
+    // The generated views this merge would leave stale, predicted from the map
+    // the preview stages and the services the archive would create — what the
+    // real run names after its commit (core/c4/project/staged.ts).
+    const staleViews = await staleViewsAfterMerge({
+      docsDir: config.docsDir,
+      featureDir,
+      featureId: id,
+      models: await extendingModels(config.docsDir, read.fleet),
+      created: [...gated.deltaServices, ...planned.architectureServices],
+    });
+    if (json) emitJson({ ...payload(false), ...(staleViews.length === 0 ? {} : { staleViews }) });
     // What the real run would print in place of its closing line, said BEFORE
     // anything is written — the one moment a reader can still act on it.
-    else printPlan(config.docsDir, writes, dirName, outstandingLines({ advisory, planWarns, overridden, staleViews: [], dryRun: true }));
+    else printPlan(config.docsDir, writes, dirName, outstandingLines({ advisory, planWarns, overridden, staleViews, dryRun: true }));
     return;
   }
 
@@ -352,43 +362,4 @@ export async function archiveLocked(
     return;
   }
   for (const line of owed) console.log(line);
-}
-
-/**
- * Which generated files would the next `validate --all` report
- * `subsystem.views-stale` on? Docs-relative paths, sorted, empty for none.
- *
- * Asked through validate's OWN functions rather than a second compare, so the
- * warning archive prints and the error validate raises can never disagree —
- * including about the gate validate holds: a map that does not parse is
- * `landscape.invalid`'s business, and grading a generated file against a map
- * nobody can read would cascade a second complaint behind the first. An
- * unreadable map therefore answers "no claim", exactly as validate does.
- *
- * BOTH generated files, because this merge just changed the map and the
- * per-service overviews are a function of it in a way the subsystem views are
- * not: a delta adding one edge changes exactly one service's peer set, and a
- * delta binding a new element adds a whole view. Naming only the file loam
- * happened to check first would let a repo be reported current while the very
- * next `validate --all` calls it stale — the one thing this advisory exists to
- * prevent.
- */
-async function staleGeneratedViews(docsDir: DocsDir): Promise<string[]> {
-  try {
-    const doc = await loadArchitecture(docsDir);
-    if (doc.errors.length > 0) return [];
-    const tree = await listFleetTree(docsDir);
-    const stale: string[] = [];
-    if (!(await viewsState(subsystemViewsPath(docsDir), tree, doc)).agrees) stale.push("architecture/subsystems.likec4");
-    if (!(await serviceViewsState(serviceViewsPath(docsDir), tree, doc)).agrees) {
-      stale.push("architecture/services.likec4");
-    }
-    return stale.sort();
-  } catch {
-    // Tolerant for the reason the snapshot resolver above is: a docs repo with
-    // no `services/` at all still archives a landscape-only feature, and this
-    // question is an ADVISORY printed after a commit that already succeeded.
-    // Nothing here may turn a landed archive into a non-zero exit.
-    return [];
-  }
 }

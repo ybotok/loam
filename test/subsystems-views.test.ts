@@ -1347,8 +1347,9 @@ views {
   }
 
   it("names every peer explicitly, then prunes with the UNARY edge predicates — the whole recipe, pinned", async () => {
-    // Pinned whole, and every line of it is load-bearing. `include *` is the
-    // subject and its interior (`of` scopes the wildcard to the subtree).
+    // Pinned whole, and every line of it is load-bearing. `include <fqn>,
+    // <fqn>.*` is the subject and its interior, named — `include *` drew a
+    // childless service's parent group box beside it.
     // The peer lines are what stop LikeC4 collapsing a counterpart to its
     // enclosing group box — measured on a 58-service map, the wildcard form
     // draws `growth`/`catalog`/`support` instead of the services and navigates
@@ -1361,11 +1362,13 @@ views {
         "// Do not edit: `loam subsystem sync` regenerates this file from the directories and the map,\n" +
         "// and `loam validate --all` reports `subsystem.views-stale` when it drifts.\n" +
         "// A navigation aid, not the fleet's architecture: author your own diagrams elsewhere.\n" +
+        "// A click on a service opens the first `view … of` it by PATH under architecture/: an authored\n" +
+        "// one in a file whose name sorts before services.likec4 wins over the overview here.\n" +
         "\n" +
         "views {\n" +
         "  view service_checkout_2dweb of mp.core.checkoutWeb {\n" +
         "    title 'checkout-web'\n" +
-        "    include *\n" +
+        "    include mp.core.checkoutWeb, mp.core.checkoutWeb.*\n" +
         "    include customer\n" +
         "    include mp.core.paymentService.api\n" +
         "    exclude * -> *\n" +
@@ -1376,7 +1379,7 @@ views {
         "\n" +
         "  view service_payment_2dservice of mp.core.paymentService {\n" +
         "    title 'Payments / payment-service'\n" +
-        "    include *\n" +
+        "    include mp.core.paymentService, mp.core.paymentService.*\n" +
         "    include ledger\n" +
         "    include mp.core.checkoutWeb\n" +
         "    exclude * -> *\n" +
@@ -1396,7 +1399,7 @@ views {
     expect(bytes).toContain("  view service_checkout_2dweb of mp.core.checkoutWeb {\n    title");
     expect(bytes).toContain("    include mp.core.paymentService.api\n");
     // payment-service's own `api -> db` is INTERIOR — already drawn by
-    // `include *`, so neither endpoint may reappear as a peer include.
+    // `include <fqn>, <fqn>.*`, so neither endpoint may reappear as a peer include.
     const own = bytes.slice(bytes.indexOf("view service_payment_2dservice"));
     expect(own).not.toContain("    include mp.core.paymentService.api\n");
     expect(own).not.toContain("    include mp.core.paymentService.db\n");
@@ -1441,7 +1444,9 @@ views {
     });
     const styled = (await render(declare("services"))) ?? "";
     expect(styled.match(/^ {4}global style services$/gm)).toHaveLength(2);
-    expect(styled).toContain("    title 'checkout-web'\n    global style services\n    include *\n");
+    expect(styled).toContain(
+      "    title 'checkout-web'\n    global style services\n    include mp.core.checkoutWeb, mp.core.checkoutWeb.*\n",
+    );
     expect(styled).not.toContain("// styles:");
 
     const other = (await render(declare("palette"))) ?? "";
@@ -1455,6 +1460,44 @@ views {
     );
 
     expect((await render(NESTED_FILES)) ?? "").not.toContain("// styles:");
+  }, 60_000);
+
+  it("a peer sharing its id with the service's own element: the view drops `of`, and the REAL renderer draws the peer", async () => {
+    // Inside `view … of <fqn>` LikeC4 resolves a bare id against the
+    // subject's subtree first, and the language has no root-anchored
+    // reference: `include ledger` drew payment-service's own `ledger` and the
+    // map's top-level `ledger` and the edge to it went missing, with no error.
+    const files = {
+      ...NESTED_FILES,
+      "architecture/landscape.likec4": NESTED_MAP.replace(
+        "        db = database 'db'\n",
+        "        db = database 'db'\n        ledger = database 'local ledger cache'\n",
+      ),
+    };
+    const bytes = (await render(files)) ?? "";
+    expect(bytes).toContain(
+      "  // not `of mp.core.paymentService`: ledger would resolve to this service's own element of that name\n" +
+        "  view service_payment_2dservice {\n",
+    );
+    // the other service keeps its `of`: nothing under it is called by a peer's name
+    expect(bytes).toContain("  view service_checkout_2dweb of mp.core.checkoutWeb {\n");
+
+    const p = await makeProject(files);
+    try {
+      await p.write("architecture/services.likec4", bytes);
+      const workspace = await LikeC4.fromWorkspace(join(p.docsDir, "architecture"), { logger: false });
+      try {
+        expect(workspace.getErrors()).toEqual([]);
+        const model = await workspace.computedModel();
+        const view = [...model.views()].find((v) => v.id === "service_payment_2dservice")!;
+        expect([...view.nodes()].map((n) => n.id)).toContain("ledger");
+        expect([...view.edges()].map((e) => `${e.source.id}->${e.target.id}`)).toContain("mp.core.paymentService->ledger");
+      } finally {
+        await workspace.dispose();
+      }
+    } finally {
+      await p.destroy();
+    }
   }, 60_000);
 
   it("the REAL renderer resolves the file, and every peer node drills down into that peer's own view", async () => {
@@ -1486,6 +1529,14 @@ views {
           "mp.core.paymentService->-",
           "mp.core.paymentService.api->-",
           "mp.core.paymentService.db->-",
+        ]);
+        // A service with NO children nested two groups deep: the service and
+        // its peers, and no group box — `include *` drew `mp` and `mp.core`
+        // beside it, the picture of a service that is mostly boxes it is not.
+        expect(views.get("service_checkout_2dweb")?.sort()).toEqual([
+          "customer->-",
+          "mp.core.checkoutWeb->-",
+          "mp.core.paymentService.api->-",
         ]);
         // And the mesh closes: the fleet map the author wrote drills into the
         // generated views without one authored link.

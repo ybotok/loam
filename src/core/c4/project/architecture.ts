@@ -30,6 +30,8 @@ import type { DocsDir } from "../../kernel/ids/dirs.js";
 import { GENERATED_ARCHITECTURE_FILES, landscapePath, serviceViewsPath, subsystemViewsPath } from "../../repo/paths.js";
 import { listFleetTree } from "../../repo/repo.js";
 import { serviceViewsState, viewsState } from "../../repo/tree/render/stale.js";
+import type { MapFacts } from "../../repo/tree/render/views.js";
+import type { FleetTree } from "../../repo/tree/walk.js";
 
 /** `<docsDir>/architecture` — the LikeC4 project root, spelled once. */
 export function architectureDir(docsDir: DocsDir): string {
@@ -152,8 +154,9 @@ export async function loadArchitecture(docsDir: DocsDir): Promise<LoadedDoc> {
  * call it stale. Here, beside the list of generated documents, because it is
  * the second caller that made it shared (docs/DESIGN.md rule 8), and an undo
  * importing it from the merge would be the second command-to-command import
- * rule 5 forbids. `commands/archive/run.ts` still carries its own copy of these
- * lines, and is the one caller left to point here.
+ * rule 5 forbids. `commands/archive/run.ts` carried its own copy of these lines
+ * until the dry run needed the same compare against a predicted map
+ * (`./staged.ts`, `staleViewsAfterMerge`); both now come through `staleAgainst`.
  *
  * Asked through validate's OWN state functions (`repo/tree/render/stale.ts`,
  * the ones `commands/validate/fleet/views/stale.ts` grades with) rather than a
@@ -172,14 +175,23 @@ export async function staleGeneratedViews(docsDir: DocsDir): Promise<string[]> {
   try {
     const doc = await loadArchitecture(docsDir);
     if (doc.errors.length > 0) return [];
-    const tree = await listFleetTree(docsDir);
-    const stale: string[] = [];
-    if (!(await viewsState(subsystemViewsPath(docsDir), tree, doc)).agrees) stale.push("architecture/subsystems.likec4");
-    if (!(await serviceViewsState(serviceViewsPath(docsDir), tree, doc)).agrees) {
-      stale.push("architecture/services.likec4");
-    }
-    return stale.sort();
+    return await staleAgainst(docsDir, doc, await listFleetTree(docsDir));
   } catch {
     return [];
   }
+}
+
+/**
+ * The generated documents on disk that do not match what this tree and this
+ * map would generate — the compare itself, for a map and a tree the caller
+ * already holds: the living ones above, or the ones an archive would leave
+ * (`./staged.ts`). BOTH files, because a map change moves the per-service
+ * overviews in a way it does not move the subsystem views: one edge changes
+ * one service's peer set, and one newly bound element adds a whole view.
+ */
+export async function staleAgainst(docsDir: DocsDir, map: MapFacts, tree: FleetTree): Promise<string[]> {
+  const stale: string[] = [];
+  if (!(await viewsState(subsystemViewsPath(docsDir), tree, map)).agrees) stale.push("architecture/subsystems.likec4");
+  if (!(await serviceViewsState(serviceViewsPath(docsDir), tree, map)).agrees) stale.push("architecture/services.likec4");
+  return stale.sort();
 }

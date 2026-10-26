@@ -229,6 +229,7 @@ export function renderServiceOverviews(tree: FleetTree, map: MapFacts): string |
   return renderServiceViews({
     subjects,
     relationships: map.relationships,
+    elements: map.elements.map((e) => e.id),
     styled: declared.includes(SERVICE_STYLE_GROUP),
     disclosure: stylesDisclosure(declared, SERVICE_STYLE_GROUP),
   });
