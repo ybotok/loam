@@ -120,7 +120,7 @@ describe("a full session over the coherent fixture", () => {
   it("initialize: echoed version, tools capability, serverInfo, instructions", () => {
     const result = resultOf(main.frames, 1);
     expect(result["protocolVersion"]).toBe("2025-06-18");
-    expect(result["capabilities"]).toEqual({ tools: {}, resources: {} });
+    expect(result["capabilities"]).toEqual({ tools: {}, resources: {}, prompts: {} });
     expect(result["serverInfo"]).toEqual({ name: "loam", version: LOAM_VERSION });
     expect(String(result["instructions"])).toContain("--json envelope");
   });

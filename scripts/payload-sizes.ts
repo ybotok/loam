@@ -159,6 +159,72 @@ async function explainSizes(): Promise<{ count: number; sizes: number[]; vocabul
   return { count: codes.length, sizes, vocabulary: Buffer.byteLength(listing.stdout, "utf8") };
 }
 
+/** One `loam instructions` page, in its three printable forms. */
+interface PageSizes {
+  readonly args: readonly string[];
+  /** As its slash command loads it: no narrowing flag either way. */
+  readonly bare: number;
+  readonly narrowed: number;
+  readonly tabled: number;
+}
+
+/** Everything the block and the payload ceiling read — measured once per run. */
+export interface Payloads {
+  readonly agents: number;
+  readonly brief: number;
+  readonly targets: number;
+  readonly explained: { count: number; sizes: number[]; vocabulary: number };
+  readonly pages: readonly PageSizes[];
+}
+
+/** Every measurement the block prints, in process — the expensive half, so a test takes it once. */
+export async function measurePayloads(): Promise<Payloads> {
+  const pages: PageSizes[] = [];
+  for (const page of PAGES) {
+    pages.push({
+      args: page,
+      bare: await bytesOf(["instructions", ...page]),
+      narrowed: await bytesOf(["instructions", ...page, "--no-fix-tables"]),
+      tabled: await bytesOf(["instructions", ...page, "--fix-tables"]),
+    });
+  }
+  return {
+    agents: Buffer.byteLength(AGENTS_MD, "utf8"),
+    brief: await bytesOf(["adopt", "--service", SERVICE, "--json"]),
+    targets: await bytesOf(["adopt", "--service", SERVICE, "--json", "--targets"]),
+    explained: await explainSizes(),
+    pages,
+  };
+}
+
+/**
+ * Every call an agent makes in its DEFAULT form — no flag that narrows or widens
+ * what it is handed — with what it costs. What the payload ceiling grades
+ * (test/docs-facts.test.ts): a host keeps a tool result inline only up to a
+ * size (Claude Code moves an MCP tool result over 50,000 characters into a
+ * file), so a default form over it is read in pieces by every agent that
+ * takes it.
+ *
+ * `explain --codes` is here although `--codes` is a flag, because it is the
+ * one form of that verb an agent asks for the whole vocabulary with; and the
+ * explain row is its LARGEST single answer, since a ceiling is about the worst
+ * call rather than the median one.
+ */
+export function defaultCalls(m: Payloads): Array<{ invocation: string; bytes: number }> {
+  return [
+    { invocation: "AGENTS.md", bytes: m.agents },
+    { invocation: shown(["adopt", "--service", SERVICE, "--json"]), bytes: m.brief },
+    { invocation: "`loam explain <code> --json`, the largest", bytes: Math.max(...m.explained.sizes) },
+    { invocation: shown(["explain", "--codes", "--json"]), bytes: m.explained.vocabulary },
+    ...m.pages.map((page) => ({ invocation: shown(["instructions", ...page.args]), bytes: page.bare })),
+  ];
+}
+
+/** "same bytes" when a flag changed nothing, else the size it gave. */
+function variant(bytes: number, bare: number): string {
+  return bytes === bare ? "same bytes" : `${n(bytes)} (${tokens(bytes)})`;
+}
+
 /**
  * The generated block, exactly as docs/BENCHMARKS.md carries it between
  * {@link BEGIN} and {@link END}. Deterministic for a given tree: no clock, no
@@ -166,11 +232,10 @@ async function explainSizes(): Promise<{ count: number; sizes: number[]; vocabul
  * that reason — the pin compares the tree's numbers, and a regenerated date
  * would make every comparison fail on the calendar instead of on the bytes.
  */
-export async function payloadBlock(): Promise<string> {
-  const agents = Buffer.byteLength(AGENTS_MD, "utf8");
-  const brief = await bytesOf(["adopt", "--service", SERVICE, "--json"]);
-  const targets = await bytesOf(["adopt", "--service", SERVICE, "--json", "--targets"]);
-  const adoptPage = await bytesOf(["instructions", ...PAGES[0]!]);
+export async function payloadBlock(measured?: Payloads): Promise<string> {
+  const m = measured ?? (await measurePayloads());
+  const { agents, brief, targets, explained } = m;
+  const adoptPage = m.pages[0]!.bare;
   const lines = [
     BEGIN,
     "",
@@ -183,7 +248,6 @@ export async function payloadBlock(): Promise<string> {
     `| adopt brief, per-service part | ${shown(["adopt", "--service", SERVICE, "--json", "--targets"])} | ${n(targets)} | ${tokens(targets)} |`,
     `| an adopt session before it reads code | the \`loam-adopt\` page + the full brief | ${n(adoptPage + brief)} | ${tokens(adoptPage + brief)} |`,
   ];
-  const explained = await explainSizes();
   const mid = median(explained.sizes);
   const max = Math.max(...explained.sizes);
   const min = Math.min(...explained.sizes);
@@ -192,14 +256,14 @@ export async function payloadBlock(): Promise<string> {
     `| one code, smallest / largest | \`loam explain <code> --json\` | ${n(min)} / ${n(max)} | ${tokens(min)} / ${tokens(max)} |`,
     `| the whole code vocabulary | ${shown(["explain", "--codes", "--json"])} | ${n(explained.vocabulary)} | ${tokens(explained.vocabulary)} |`,
     "",
-    "| page | invocation | bytes | ~tokens | with `--no-fix-tables` |",
-    "|---|---|---|---|---|",
+    "| page | invocation | bytes | ~tokens | with `--no-fix-tables` | with `--fix-tables` |",
+    "|---|---|---|---|---|---|",
   );
-  for (const page of PAGES) {
-    const whole = await bytesOf(["instructions", ...page]);
-    const compact = await bytesOf(["instructions", ...page, "--no-fix-tables"]);
-    const collapsed = compact === whole ? "same bytes" : `${n(compact)} (${tokens(compact)})`;
-    lines.push(`| \`${page[0]}\` | ${shown(["instructions", ...page])} | ${n(whole)} | ${tokens(whole)} | ${collapsed} |`);
+  for (const page of m.pages) {
+    lines.push(
+      `| \`${page.args[0]}\` | ${shown(["instructions", ...page.args])} | ${n(page.bare)} | ${tokens(page.bare)} `
+        + `| ${variant(page.narrowed, page.bare)} | ${variant(page.tabled, page.bare)} |`,
+    );
   }
   lines.push("", END);
   return lines.join("\n");

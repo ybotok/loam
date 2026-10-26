@@ -10,8 +10,8 @@
  * the future.
  */
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { relative } from "node:path";
+import { readFile, realpath } from "node:fs/promises";
+import { dirname, join, relative } from "node:path";
 import { type LoamConfig } from "../envelope/config.js";
 import { LOAM_VERSION } from "../envelope/version.js";
 import { agentsPath } from "../repo/paths.js";
@@ -233,6 +233,28 @@ export async function inspectAgentSurface(
         + "the record that somebody looked.",
     });
   }
+  // Present and current, and still possibly never read. Asked only when the
+  // file is there: an absent AGENTS.md is the stamp finding's to report.
+  const shadows = agentsFile === null || agentsText === null ? [] : await unimportedShadows(agentsFile);
+  if (shadows.length > 0) {
+    // A warning: every loam command still works, and the protocols still reach
+    // an agent through the generated pointers. What is lost is the orientation
+    // — the identity rule, the joins, "never vouch" — for one host, silently.
+    findings.push({
+      severity: "warning",
+      code: "doctor.agents-md-shadowed",
+      message:
+        `${shadows.join(", ")} ${shadows.length === 1 ? "sits" : "sit"} in the docs repo or above it and `
+        + `${shadows.length === 1 ? "does" : "do"} not import AGENTS.md. Claude Code reads AGENTS.md only `
+        + "when no CLAUDE.md, .claude/CLAUDE.md or CLAUDE.local.md is in the working directory or above "
+        + "it, so a Claude Code session here starts without loam's orientation.",
+      fix:
+        `Add the line \`@AGENTS.md\` to ${shadows[0]} — the import loads it whatever Claude Code's `
+        + "settings say. loam never writes that file: it is yours. Setting Claude Code's Project "
+        + "instructions to `claude-md-and-agents-md` also works, for whoever sets it.",
+    });
+  }
+
   // The mirror, and a different fix: nothing is wrong with the documents, the
   // reader is behind them — so this one never points at AGENTS.md.
   const behind = binaryBehindFinding(agentsText, LOAM_VERSION);
@@ -259,6 +281,50 @@ export async function inspectAgentSurface(
       stale: stale !== null,
     },
   };
+}
+
+/** The three files Claude Code counts as "a CLAUDE.md" when deciding whether to read AGENTS.md. */
+const SHADOWING_FILES = ["CLAUDE.md", join(".claude", "CLAUDE.md"), "CLAUDE.local.md"] as const;
+
+/**
+ * The files that stop Claude Code reading the docs repo's AGENTS.md, when none
+ * of them brings it back in — an empty list when it is read.
+ *
+ * Claude Code reads AGENTS.md "only when you have no CLAUDE.md in your working
+ * directory or above it", and counts `CLAUDE.md`, `.claude/CLAUDE.md` and
+ * `CLAUDE.local.md` for that check (code.claude.com/docs/en/memory, checked
+ * 2026-10-27). So a team's own CLAUDE.md, or one person's uncommitted
+ * CLAUDE.local.md, turned the orientation off for every Claude Code session in
+ * the repo, while doctor reported a current stamp and said nothing. Above the
+ * repo counts too, because it does for the host: a CLAUDE.md at a monorepo or
+ * workspace root shadows every AGENTS.md beneath it.
+ *
+ * A shadow that imports AGENTS.md (`@AGENTS.md`, `@./AGENTS.md`, `@docs/AGENTS.md`)
+ * or IS it through a symlink loads it after all, so any one of them clears the
+ * finding — the host reads all of them. The import is matched by its last path
+ * segment, never resolved: a CLAUDE.md above the repo imports it by a longer
+ * path, and resolving that would be a second copy of the host's import rules.
+ * What the reading cannot see is the host setting that loads both
+ * (`claude-md-and-agents-md`); the fix names it.
+ */
+async function unimportedShadows(agentsFile: string): Promise<string[]> {
+  const target = await realpath(agentsFile).catch(() => agentsFile);
+  const shadows: string[] = [];
+  for (let dir = dirname(agentsFile); ; dir = dirname(dir)) {
+    for (const name of SHADOWING_FILES) {
+      const path = join(dir, name);
+      let text: string;
+      try {
+        text = await readFile(path, "utf8");
+      } catch {
+        continue;
+      }
+      if (/(^|\s)@\S*AGENTS\.md\b/m.test(text)) return [];
+      if ((await realpath(path).catch(() => path)) === target) return [];
+      shadows.push(path);
+    }
+    if (dirname(dir) === dir) return shadows;
+  }
 }
 
 /**

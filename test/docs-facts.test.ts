@@ -23,7 +23,7 @@ import { readVocabulary } from "../src/core/permissions/permissions.js";
 import { CLAIM_KINDS } from "../src/core/verify/claims/identity.js";
 import { listCodes } from "../src/core/explain/lookup.js";
 import { PACKAGED_MARKDOWN } from "../scripts/package-docs.mjs";
-import { committedBlock, payloadBlock } from "../scripts/payload-sizes.js";
+import { committedBlock, defaultCalls, measurePayloads, payloadBlock, type Payloads } from "../scripts/payload-sizes.js";
 import { collectEmittedCodes } from "./helpers/stable-codes.js";
 import { makeProject } from "./helpers/harness.js";
 
@@ -709,6 +709,14 @@ describe("the example fleet's headline numbers", () => {
   });
 });
 
+/**
+ * Both payload tests read one measurement: it is some four hundred in-process
+ * invocations, and taking it twice would double the cost of this file for no
+ * second fact.
+ */
+let payloads: Promise<Payloads> | undefined;
+const measured = (): Promise<Payloads> => (payloads ??= measurePayloads());
+
 describe("docs/BENCHMARKS.md's payload table is this tree's, not a recollection", () => {
   it("the committed block is exactly what scripts/payload-sizes.ts measures now", async () => {
     // What loam hands an agent is the cost an evaluator reproduces in a minute,
@@ -727,6 +735,56 @@ describe("docs/BENCHMARKS.md's payload table is this tree's, not a recollection"
     expect(
       committed,
       "docs/BENCHMARKS.md's payload table is behind this tree — run `npx tsx scripts/payload-sizes.ts --write` and commit the result",
-    ).toBe(await payloadBlock());
+    ).toBe(await payloadBlock(await measured()));
+  });
+});
+
+/**
+ * The calls whose default form is ALLOWED past the ceiling, each with the reason
+ * it may be. Shrinks only: an entry whose call has come back under the line
+ * fails below, so this cannot quietly become the permanent state — the same
+ * discipline as test/code-limits-baseline.json.
+ */
+const OVER_THE_CEILING = new Map<string, string>([
+  [
+    "`loam adopt --service payment-service --json`",
+    "one service's whole brief, read once per adoption; `--targets` is its per-service part at under half the size, "
+      + "and moving the fleet-invariant half (the walk, the checks, the unchecked list) out of the default is a "
+      + "change to what adopt prints, not to a page",
+  ],
+  [
+    "`loam explain --codes --json`",
+    "the whole code vocabulary, which is what `--codes` asks for by name; `loam explain <code>` is the one-code form",
+  ],
+  [
+    "`loam instructions loam-codes`",
+    "the per-invocation inventory of every code, read as a reference rather than at a workflow step; "
+      + "`loam explain <code>` answers any one of them",
+  ],
+]);
+
+describe("no default payload outgrows what a host keeps inline", () => {
+  it("every call in its default form is under 50,000 characters, or a named exception with its reason", async () => {
+    // Claude Code moves an MCP tool result over 50,000 characters into a file, and an
+    // agent reading through a shell sees a preview and reads the rest in pieces.
+    // /loam-check printed 138 KB by default — every agent whose pointer called it
+    // bare paid that — and only AGENTS.md had a ceiling. Bytes stand in for
+    // characters: never fewer, so a call under the line in bytes is under it in
+    // characters too.
+    const CEILING = 50_000;
+    const calls = defaultCalls(await measured());
+    expect(calls.length).toBeGreaterThan(10);
+    for (const { invocation, bytes } of calls) {
+      const reason = OVER_THE_CEILING.get(invocation);
+      if (reason === undefined) {
+        expect(bytes, `${invocation} prints ${bytes} bytes by default — over the ${CEILING} ceiling`).toBeLessThan(CEILING);
+      } else {
+        expect(bytes, `${invocation} is back under the ceiling — remove it from OVER_THE_CEILING`).toBeGreaterThanOrEqual(CEILING);
+        expect(reason.length).toBeGreaterThan(40);
+      }
+    }
+    for (const invocation of OVER_THE_CEILING.keys()) {
+      expect(calls.map((c) => c.invocation), `OVER_THE_CEILING names ${invocation}, which is not measured`).toContain(invocation);
+    }
   });
 });

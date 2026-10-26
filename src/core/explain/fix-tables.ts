@@ -205,3 +205,28 @@ export function withoutFixTables(body: string): string {
   out.push(...lines.slice(at));
   return out.join("\n");
 }
+
+/**
+ * The pages printed WITHOUT their fix tables unless a caller asks for them.
+ *
+ * One page, and the reason is its size: /loam-check is 138 KB whole, about
+ * 35k tokens, against 3.9 KB without its rows — past the 50,000 characters
+ * beyond which Claude Code moves an MCP tool result into a file, and paid in
+ * full by any agent that calls it bare.
+ * Pointers written since 0.2.0-alpha.1 pass `--no-fix-tables`, but the ones
+ * 0.1.0-beta.2 and beta.3 wrote do not, and an upgraded binary is what they
+ * call. Every other page carries at most a few KB of rows and is printed whole
+ * by default, so its bytes did not move when this one's default did.
+ */
+const TABLES_ON_REQUEST: ReadonlySet<string> = new Set(["loam-check"]);
+
+/**
+ * The page `loam instructions <name>` prints for `body`: whole, or without its
+ * fix tables — by the caller's choice when it made one (`--fix-tables`,
+ * `--no-fix-tables`), else by the page's own default. One function, because
+ * the CLI and the MCP prompts serve the same page and must not disagree about
+ * which one that is.
+ */
+export function printedPage(name: string, body: string, fixTables: boolean | undefined): string {
+  return (fixTables ?? !TABLES_ON_REQUEST.has(name)) ? body : withoutFixTables(body);
+}

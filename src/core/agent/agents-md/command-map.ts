@@ -229,6 +229,12 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   unchanged pointer only when its current bytes still match the digest
   recorded in \`loam.json\`; an unrecorded or customized file stays in place
   for a human to review.
+  One more warning is about the docs repo's AGENTS.md rather than these files:
+  \`doctor.agents-md-shadowed\` reports a \`CLAUDE.md\`, \`.claude/CLAUDE.md\` or
+  \`CLAUDE.local.md\` in the docs repo or above it that does not import AGENTS.md.
+  Claude Code reads AGENTS.md only when none of those exists, so its sessions
+  there start without this orientation. The fix is one line, \`@AGENTS.md\`, in
+  that file, and it is yours to add.
 - \`loam rebase <FEAT>\` writes the baseline pins: \`Based-On:\` under every
   MODIFIED/REMOVED requirement in the feature's spec deltas, and
   \`x-loam-based-on\` on every operation in its openapi.yaml, from the living text

@@ -64,6 +64,32 @@ export interface CommandContent {
   spine: string[];
   /** The protocol itself: markdown, ends with a newline. */
   body: string;
+  /**
+   * When a host should load this as a skill: the requests and situations that
+   * call for it, in the words a user types rather than loam's. Claude Code's
+   * `when_to_use` frontmatter field, which its skill listing appends to
+   * `description` — so the trigger can be added without turning the shared
+   * description into a pitch (see `skillsIn`). Absent on the reference pages,
+   * which no init ever writes as a skill; test/agents.test.ts requires it on
+   * every command that is one.
+   */
+  whenToUse?: string;
+}
+
+/**
+ * A command as a delivery receives it: `body` is already the pointer, and
+ * `protocol` is the page that pointer sends the agent to.
+ *
+ * The protocol rides along for the one emitter that needs it — a skill's
+ * allowlist pre-approves the verbs that page instructs, and the pointer alone
+ * names three of them. Carried as data rather than looked up, because the
+ * lookup lives in the agent root (`protocol.ts`), and tools/ reaching for it
+ * would be the package edge back into the root that this module's value-free
+ * shape exists to prevent.
+ */
+export interface DeliveredCommand extends CommandContent {
+  /** The full protocol page, placeholders unsubstituted — `PROTOCOLS[name]`. */
+  readonly protocol: string;
 }
 
 /**
@@ -75,7 +101,7 @@ export interface AgentFileEmitter {
   /** Repo-relative path segments of the file. */
   path(name: string): string[];
   /** The full file: this tool's wrapper around the shared body. */
-  format(cmd: CommandContent): string;
+  format(cmd: DeliveredCommand): string;
 }
 
 /**
@@ -96,7 +122,7 @@ export interface AgentTool {
    */
   path?(name: string): string[];
   /** The full command file: this tool's wrapper around the shared body. */
-  format?(cmd: CommandContent): string;
+  format?(cmd: DeliveredCommand): string;
   /** The skill delivery. Absent for a tool with no skills convention. */
   skill?: AgentFileEmitter;
   /**

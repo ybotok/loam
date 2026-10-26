@@ -400,12 +400,14 @@ describe("the arguments it substitutes have to be the things they stand for", ()
  * answers one of those in 473 bytes, which is the lazy path this flag makes
  * payable.
  *
- * The flag is opt-in and off by default because the lifecycle protocol pages are the
- * text agents are wired against; the first test is what makes "byte-identical
- * by default" a fact rather than an intention.
+ * The flag was opt-in and off by default because the lifecycle protocol pages
+ * are the text agents are wired against. Since 0.2.0-alpha.15 /loam-check alone
+ * is narrow unless `--fix-tables` asks — pointers from 0.1.0-beta.2 and beta.3
+ * call it bare, and paid 138 KB for it — and the first test is what keeps every
+ * OTHER page byte-identical by default, as a fact rather than an intention.
  */
 describe("narrowing the protocol", () => {
-  it("changes nothing by default — all six workflows print the shipped body byte for byte", async () => {
+  it("changes nothing by default but /loam-check — the other workflows print the shipped body byte for byte", async () => {
     const dir = await unwiredDir();
     for (const name of WORKFLOW_NAMES) {
       const res = await runLoam(dir, "instructions", name);
@@ -414,8 +416,29 @@ describe("narrowing the protocol", () => {
       // claim is "the default output did not move", and only the source of the
       // body can carry it. The trailing newlines are the command's own trim
       // (console.log adds one back).
-      expect(res.stdout, name).toBe(PROTOCOLS[name]!.replace(/\n+$/, ""));
+      const shipped = name === "loam-check" ? withoutFixTables(PROTOCOLS[name]!) : PROTOCOLS[name]!;
+      expect(res.stdout, name).toBe(shipped.replace(/\n+$/, ""));
     }
+  });
+
+  it("/loam-check is narrow unless --fix-tables asks, and the old flag still means what it said", async () => {
+    const dir = await unwiredDir();
+    const bare = await runLoam(dir, "instructions", "loam-check", "--json");
+    const narrowed = await runLoam(dir, "instructions", "loam-check", "--json", "--no-fix-tables");
+    const whole = await runLoam(dir, "instructions", "loam-check", "--json", "--fix-tables");
+    for (const res of [bare, narrowed, whole]) expect(res.code, res.out).toBe(0);
+
+    expect(JSON.parse(bare.stdout).body).toBe(withoutFixTables(PROTOCOLS["loam-check"]!));
+    // every pointer since 0.2.0-alpha.1 passes the negative flag; it must keep working
+    expect(JSON.parse(narrowed.stdout).body).toBe(JSON.parse(bare.stdout).body);
+    expect(JSON.parse(whole.stdout).body).toBe(PROTOCOLS["loam-check"]!);
+    // the ceiling is the reason for the default: under the 50,000 characters
+    // past which Claude Code moves an MCP tool result into a file, by a wide margin
+    expect(bare.stdout.length).toBeLessThan(50_000);
+
+    // and --fix-tables is a no-op on a page that is whole by default
+    const verify = await runLoam(dir, "instructions", "loam-verify", "FEAT-1", "--json", "--fix-tables");
+    expect(JSON.parse(verify.stdout).body).toBe(PROTOCOLS["loam-verify"]!.replaceAll("$1", "FEAT-1"));
   });
 
   it("drops every row and keeps every paragraph that says which scope graded it", async () => {

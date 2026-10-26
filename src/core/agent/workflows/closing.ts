@@ -12,6 +12,8 @@ export const LOAM_VERIFY: CommandContent = {
   description:
     "Verify a built loam feature against its own promises, claim by claim, with evidence",
   argumentHint: "<FEAT-id>",
+  whenToUse:
+    "Use when a feature's code is built and someone asks whether it is done, to verify FEAT-…, to check the code against the design, or to record test results as evidence, before it ships.",
   purpose:
     "Check that the code somebody built is the feature that was designed. loam derives the questions; a test runner and you answer them. loam never reads the service, so a verdict is worth exactly what its evidence is worth.",
   invocation: "loam instructions loam-verify $1",
@@ -189,6 +191,8 @@ export const LOAM_SHIP: CommandContent = {
   name: "loam-ship",
   description: "Archive a finished loam feature — merge its deltas into the living docs",
   argumentHint: "<FEAT-id>",
+  whenToUse:
+    "Use when a verified feature is merged and someone asks to ship, archive or close FEAT-…, or to merge a feature's deltas into the living docs.",
   purpose:
     "Merge a shipped feature into the living specs, API and landscape. This is the one command that rewrites the source of truth, so every step before it exists to make the merge reviewable before it runs.",
   invocation: "loam instructions loam-ship $1",

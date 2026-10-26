@@ -80,6 +80,10 @@ rather than guessing.
 \`loam init --docs <dir>\` **joins** an existing docs repo. Add \`--create\` only
 when creating a new one; a typo must not scaffold a second source of truth.
 
+Every \`loam\` command here assumes the binary is on PATH. Where a repository
+installs loam as a devDependency, run each one as \`npx loam …\`; the generated
+skills pre-approve both spellings.
+
 ## Starting from chat
 
 There are two equivalent entry points into the same version-matched protocol.
@@ -188,7 +192,8 @@ Bare \`loam instructions\` lists the six workflows, the separate \`loam-report\`
 support protocol and these references. Generated agent command/skill files are
 small pointers to them, so the runtime page wins if an old pointer disagrees with
 the installed binary. MCP clients can read the same pages as
-\`loam://orientation\` and \`loam://instructions/<name>\` resources.
+\`loam://orientation\` and \`loam://instructions/<name>\` resources, and start
+each workflow as a prompt of the same name.
 
 ## Safety and hand-back
 

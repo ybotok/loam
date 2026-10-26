@@ -10,6 +10,8 @@ export const LOAM_CHECK: CommandContent = {
   name: "loam-check",
   description: "Validate the loam docs repo and fix what it reports",
   argumentHint: "[--all | <FEAT-id> | <service>]",
+  whenToUse:
+    "Use when docs in a loam repository changed or need checking, such as validating the docs or the whole fleet, fixing what loam reports, explaining a finding code, or reviewing a change under services/, features/ or architecture/.",
   purpose:
     "Run loam's checks and fix what they find. Branch on `findings[].code`, never on the prose — and remember that a coherence finding marked `gates` stops `loam archive` even when it is only a warning.",
   // No `$1`, unlike the other five. This body carries no placeholder at all —

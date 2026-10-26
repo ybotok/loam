@@ -332,11 +332,11 @@ export const MCP_TOOLS: readonly McpTool[] = [
     command: "instructions",
     description:
       "Print a workflow, support protocol or reference page, version-matched to this binary; reads no config and no docs repo, so it answers " +
-      "before the repository is wired. Ask for loam-check DELIBERATELY: it is by far the largest protocol " +
-      "(almost all of what it prints is its per-code fix tables), and noFixTables true returns the narrowed page " +
-      "— every paragraph that introduces a table, none of the rows — after which loam_explain answers any one code " +
-      "a run reports, on its own. " +
-      "CLI equivalent: loam instructions [workflow] [args...] [--no-fix-tables] --json",
+      "before the repository is wired. loam-check comes narrowed: every paragraph that introduces a fix table, " +
+      "none of the rows — loam_explain answers any one code a run reports, on its own. fixTables true returns " +
+      "the whole page, by far the largest loam has (almost all of it the per-code tables), so ask for it " +
+      "DELIBERATELY; noFixTables true narrows the other pages the same way. " +
+      "CLI equivalent: loam instructions [workflow] [args...] [--fix-tables] [--no-fix-tables] --json",
     positionals: [
       {
         property: "workflow",
@@ -363,6 +363,12 @@ export const MCP_TOOLS: readonly McpTool[] = [
         flag: "--no-fix-tables",
         kind: "boolean",
         description: "drop the per-code fix tables; loam_explain answers any code a run reports",
+      },
+      {
+        property: "fixTables",
+        flag: "--fix-tables",
+        kind: "boolean",
+        description: "print the per-code fix tables, which loam-check omits unless asked",
       },
     ],
   },

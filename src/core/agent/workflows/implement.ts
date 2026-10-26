@@ -20,6 +20,8 @@ export const LOAM_IMPLEMENT: CommandContent = {
   description:
     "Implement a loam feature's slice for one service — generated gherkin first, tests from it, then code",
   argumentHint: "<FEAT-id> [service]",
+  whenToUse:
+    "Use when a loam feature's documents are agreed and one service's code is next, such as implementing FEAT-…, building a service's part of a feature, or writing the tests and step definitions from its generated scenarios.",
   purpose:
     "Build one service's part of a feature, in that service's own repository. The generated Gherkin is the acceptance criterion — it comes before the step definitions, and those come before the code.",
   invocation: "loam instructions loam-implement $1 $2",

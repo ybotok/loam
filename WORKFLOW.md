@@ -797,7 +797,11 @@ that it cannot reach anything outside the directory the server was launched in �
 of the whole base table only because the writing commands are kept out of it. It also publishes
 `loam://orientation` and every `loam://instructions/<name>` page as Markdown resources, so the host
 can load version-matched guidance progressively; `loam://instructions/loam-check/compact` omits the
-large fix table and pairs with `loam explain <code>`. A typical host entry:
+large fix table and pairs with `loam explain <code>`. The six workflows and `loam-report` are also
+MCP prompts — `prompts/get` returns the page `loam instructions` prints, with `feature`, `service`
+or `title` filling its placeholders — so a host with no shell can start one the way a slash command
+does, and `initialize` returns instructions that say where to start (`loam_status`) and how to ask
+who calls an operation (`loam_explore` with `op`). A typical host entry:
 
 ```json
 {

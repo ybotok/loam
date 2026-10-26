@@ -21,7 +21,8 @@ import { AGENTS_MD } from "../src/core/agent/agents-md.js";
 import { PROTOCOLS as COMMAND_BODIES, REFERENCE_PAGES } from "../src/core/agent/protocol.js";
 import { SLASH_COMMANDS as COMMAND_FILES } from "../src/core/agent/scaffold.js";
 import { AGENT_TOOLS } from "../src/core/agent/tools/registry.js";
-import { UNAPPROVED } from "../src/core/agent/tools/dialects.js";
+import { LOAM_ALLOWED_VERBS, UNAPPROVED } from "../src/core/agent/tools/dialects.js";
+import { parse } from "yaml";
 import { buildProgram } from "../src/cli.js";
 import {
   agentsStaleFinding,
@@ -395,26 +396,43 @@ describe("multi-tool command generation (init --tools)", () => {
   it("every skill file is the Agent Skills header over the byte-identical shared body", async () => {
     // The whole point of the second delivery is that it is the SAME protocol —
     // a skill that drifts from its command is two contracts wearing one name.
+    // Claude's header carries two lines more (`when_to_use`, `disallowed-tools`);
+    // the body under it is the same bytes.
     const dir = await throwawayDir();
     await runLoam(dir, "init", "--docs", "./d", "--create", "--tools", "all");
+    const rules = String.raw`Bash\((?:npx )?loam [a-z-]+(?::\*)?\)(?:, Bash\((?:npx )?loam [a-z-]+(?::\*)?\))*`;
     for (const id of Object.keys(CHECK_FILE)) {
       const skill = await readFile(join(dir, ...CHECK_FILE[id]!.skill), "utf8");
-      expect(skill, `${id} skill frontmatter`).toMatch(
-        /^---\nname: loam-check\ndescription: [^\n]+\nallowed-tools: Bash\(loam [a-z-]+:\*\)(?:, Bash\(loam [a-z-]+:\*\))*\n---\n\n/,
-      );
+      const header = id === "claude"
+        ? new RegExp(
+          String.raw`^---\nname: loam-check\ndescription: [^\n]+\nwhen_to_use: [^\n]+\n`
+            + String.raw`allowed-tools: ${rules}\ndisallowed-tools: ${rules}\n---\n\n`,
+        )
+        : new RegExp(String.raw`^---\nname: loam-check\ndescription: [^\n]+\nallowed-tools: ${rules}\n---\n\n`);
+      expect(skill, `${id} skill frontmatter`).toMatch(header);
       // the body after the frontmatter is claude's body after ITS frontmatter
       const body = (s: string): string => s.slice(s.indexOf("\n---\n\n") + "\n---\n\n".length);
       expect(body(skill), `${id} skill body`).toBe(body(COMMAND_FILES["loam-check"]!));
     }
   });
 
-  /** The `allowed-tools:` value a real `init` writes, read off the file on disk. */
-  const emittedAllowlist = async (): Promise<string> => {
+  /** Every skill `init` writes for one tool, keyed by command name, read off disk. */
+  const emittedSkills = async (tool = "claude"): Promise<Record<string, string>> => {
     const dir = await throwawayDir();
-    await runLoam(dir, "init", "--docs", "./d", "--create");
-    const skill = await readFile(join(dir, ".claude", "skills", "loam-check", "SKILL.md"), "utf8");
-    return /^allowed-tools: (.+)$/m.exec(skill)![1]!;
+    await runLoam(dir, "init", "--docs", "./d", "--create", "--tools", tool);
+    const root = join(dir, ...CHECK_FILE[tool]!.skill.slice(0, -2));
+    const out: Record<string, string> = {};
+    for (const name of await readdir(root)) out[name] = await readFile(join(root, name, "SKILL.md"), "utf8");
+    return out;
   };
+
+  /** A skill's frontmatter, parsed as YAML — what a host reading it sees. */
+  const frontmatter = (skill: string): Record<string, string> =>
+    parse(skill.slice(4, skill.indexOf("\n---\n"))) as Record<string, string>;
+
+  /** The verbs an `allowed-tools` value pre-approves in its bare `loam` spelling. */
+  const approvedVerbs = (allowed: string): string[] =>
+    [...allowed.matchAll(/Bash\(loam ([a-z][a-z-]*):\*\)/g)].map(([, v]) => v!);
 
   it("the pre-approved allowlist is an enumeration, and vouch is not in it", async () => {
     // `Bash(loam:*)` pre-approved the one command whose output is a claim about
@@ -422,13 +440,14 @@ describe("multi-tool command generation (init --tools)", () => {
     // promote its own draft to `verified`. The refusal in commands/vouch.ts is
     // the other half; this is the half that makes the refusal something a person
     // sees rather than something an agent routes around.
-    const allowed = await emittedAllowlist();
-
-    expect(allowed).not.toContain("Bash(loam:*)");
-    expect(allowed).not.toContain("vouch");
+    for (const [name, skill] of Object.entries(await emittedSkills())) {
+      const allowed = frontmatter(skill)["allowed-tools"]!;
+      expect(allowed, name).not.toContain("Bash(loam:*)");
+      expect(allowed, name).not.toContain("vouch");
+    }
   });
 
-  it("every loam verb the protocols instruct is pre-approved, or is named in UNAPPROVED", async () => {
+  it("every loam verb a skill's own pages instruct is pre-approved there, or is named in UNAPPROVED", async () => {
     // The assertion that would have caught `steps`. The old spot check named
     // six verbs by hand and passed while `loam-implement` step 1 told the agent
     // to run `loam context` and step 5 called `loam steps` mandatory — both
@@ -436,43 +455,104 @@ describe("multi-tool command generation (init --tools)", () => {
     // own protocol calls required. Reading the instructions instead of a list
     // means the next protocol edit that reaches for a new verb fails here.
     //
-    // Both corpora, because they instruct differently: PROTOCOLS is what
-    // `loam instructions` prints, and SLASH_COMMANDS is the stub every
-    // generated file carries — which is the only place `loam explain` is
-    // taught, and it is the documented escape from an 84 KB protocol.
-    const allowed = await emittedAllowlist();
+    // Per skill, and both of its texts, because they instruct differently: the
+    // protocol is what `loam instructions` prints, and the pointer is the only
+    // place `loam explain` is taught — the documented escape from the largest
+    // protocol loam has.
     const registered = new Set(buildProgram().commands.map((c) => c.name()));
-    const instructed = new Set<string>();
-    for (const text of [...Object.values(COMMAND_BODIES), ...Object.values(COMMAND_FILES)]) {
-      for (const [, verb] of text.matchAll(/`loam ([a-z][a-z-]*)/g)) {
-        if (registered.has(verb!)) instructed.add(verb!);
+    const skills = await emittedSkills();
+    let instructedTotal = 0;
+    for (const [name, skill] of Object.entries(skills)) {
+      const allowed = frontmatter(skill)["allowed-tools"]!;
+      for (const text of [COMMAND_BODIES[name]!, COMMAND_FILES[name]!]) {
+        for (const [, verb] of text.matchAll(/`loam ([a-z][a-z-]*)/g)) {
+          if (!registered.has(verb!)) continue;
+          instructedTotal += 1;
+          expect(
+            allowed.includes(`Bash(loam ${verb}:*)`) || verb! in UNAPPROVED,
+            `${name} instructs \`loam ${verb}\`, which is neither pre-approved there nor in UNAPPROVED`,
+          ).toBe(true);
+        }
       }
     }
-    // A scan that matched nothing would satisfy every assertion below it.
-    expect(instructed.size).toBeGreaterThan(10);
-    for (const verb of [...instructed].sort()) {
-      expect(
-        allowed.includes(`Bash(loam ${verb}:*)`) || verb in UNAPPROVED,
-        `the protocols instruct \`loam ${verb}\`, which is neither pre-approved nor in UNAPPROVED`,
-      ).toBe(true);
+    // A scan that matched nothing would satisfy every assertion above it.
+    expect(instructedTotal).toBeGreaterThan(30);
+  });
+
+  it("a skill pre-approves only the verbs its own pages name — least privilege, not one list for all", async () => {
+    // One list for every skill handed `loam-verify` the writers `new`, `init`
+    // and `gherkin`, and `loam-adopt` `archive` — none of which either protocol
+    // ever runs. The derivation reads each skill's pointer and its protocol, so
+    // a verb neither names is not approved, and these spot checks pin that it
+    // actually narrows rather than merely re-deriving the whole list.
+    const skills = await emittedSkills();
+    const verbsOf = (name: string): string[] => approvedVerbs(frontmatter(skills[name]!)["allowed-tools"]!);
+    for (const [name, skill] of Object.entries(skills)) {
+      const named = new Set(
+        [COMMAND_BODIES[name]!, COMMAND_FILES[name]!].flatMap((t) =>
+          [...t.matchAll(/\bloam ([a-z][a-z-]*)/g)].map(([, v]) => v!)),
+      );
+      for (const verb of approvedVerbs(frontmatter(skill)["allowed-tools"]!)) {
+        expect(named.has(verb), `${name} pre-approves \`loam ${verb}\`, which none of its pages names`).toBe(true);
+      }
+    }
+    for (const writer of ["new", "init", "gherkin", "rebase"]) expect(verbsOf("loam-verify")).not.toContain(writer);
+    for (const writer of ["archive", "unarchive"]) expect(verbsOf("loam-adopt")).not.toContain(writer);
+    expect(verbsOf("loam-report")).toEqual(["doctor", "instructions", "status"]);
+    expect(frontmatter(skills["loam-report"]!)["allowed-tools"]).toMatch(/^Bash\(loam --version\), Bash\(loam doctor:\*\)/);
+  });
+
+  it("every approved invocation is approved in its npx spelling too", async () => {
+    // README and QUICKSTART teach `npm i -D @ybotok/loam` and `npx loam …`, and
+    // a rule for `loam` alone matched nothing such an agent ran — every call
+    // stopped for a permission prompt, in the repositories that installed loam
+    // the documented way. The pointer says to prefix `npx`; this is the half
+    // that lets the prefixed call through.
+    for (const [name, skill] of Object.entries(await emittedSkills())) {
+      const rules = frontmatter(skill)["allowed-tools"]!.split(", ");
+      const bare = rules.filter((r) => r.startsWith("Bash(loam "));
+      expect(bare.length, name).toBeGreaterThan(0);
+      for (const rule of bare) expect(rules, name).toContain(rule.replace("Bash(loam ", "Bash(npx loam "));
+      expect(rules.length, `${name}: only the two spellings, nothing else`).toBe(bare.length * 2);
     }
   });
 
-  it("the allowlist is exactly the registered verbs minus UNAPPROVED — no silent third category", async () => {
+  it("the approvable set is exactly the registered verbs minus UNAPPROVED — no silent third category", () => {
     // dialects.ts may not compute this itself: deriving the list from the
     // command registry would make `core/` import `commands/`, which AGENTS.md
     // forbids. The TEST layer may do what core may not — it imports both sides
     // — so the equality core cannot express is checked here instead, and an
-    // added command is either approved or explained rather than forgotten.
-    const allowed = await emittedAllowlist();
+    // added command is either approvable or explained rather than forgotten.
     const registered = buildProgram().commands.map((c) => c.name());
-    const emitted = [...allowed.matchAll(/Bash\(loam ([a-z][a-z-]*):\*\)/g)].map(([, v]) => v!);
 
-    expect(emitted.sort()).toEqual(registered.filter((n) => !(n in UNAPPROVED)).sort());
+    expect([...LOAM_ALLOWED_VERBS].sort()).toEqual(registered.filter((n) => !(n in UNAPPROVED)).sort());
     // and an exclusion is a decision about a real command, carrying a reason
     for (const [verb, why] of Object.entries(UNAPPROVED)) {
       expect(registered, `UNAPPROVED names \`${verb}\`, which loam does not register`).toContain(verb);
       expect(why.trim().length, `UNAPPROVED.${verb} has no reason written`).toBeGreaterThan(20);
+    }
+  });
+
+  it("Claude's skills say when to use them and take vouch out of the pool", async () => {
+    // Claude Code appends `when_to_use` to `description` in the listing the
+    // model chooses skills from, and cuts the two at 1,536 characters — so the
+    // trigger has to exist, read as one YAML string, and fit. `disallowed-tools`
+    // is what turns "never vouch" from prose into the host's refusal.
+    for (const [name, skill] of Object.entries(await emittedSkills())) {
+      const fm = frontmatter(skill);
+      expect(fm["when_to_use"], name).toMatch(/^Use when /);
+      expect(`${fm["description"]} ${fm["when_to_use"]}`.length, name).toBeLessThanOrEqual(1536);
+      expect(fm["disallowed-tools"], name).toBe("Bash(loam vouch:*), Bash(npx loam vouch:*)");
+    }
+  });
+
+  it("no other tool's skill carries Claude-only fields", async () => {
+    // The Agent Skills format the other roots follow has neither field, and a
+    // reader stricter than Claude Code may reject a file that carries them.
+    for (const tool of ["agents", "codex", "cursor"]) {
+      for (const [name, skill] of Object.entries(await emittedSkills(tool))) {
+        expect(Object.keys(frontmatter(skill)).sort(), `${tool} ${name}`).toEqual(["allowed-tools", "description", "name"]);
+      }
     }
   });
 

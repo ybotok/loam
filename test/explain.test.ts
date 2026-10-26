@@ -552,13 +552,15 @@ describe("the family registry answers what no fix table reaches, and only that",
     // — or grows one from a fifth prefix nobody decided to cover — fails here
     // rather than by leaving `explain` quietly refusing again. `next.` grew by
     // one deliberately, to 68 in all: `next.revouch` (the fleet form's
-    // re-vouch step).
+    // re-vouch step). `doctor.` grew by one deliberately on 2026-10-27:
+    // `doctor.agents-md-shadowed` (a CLAUDE.md that keeps Claude Code from
+    // reading AGENTS.md), to 69 in all.
     const byFamily = (prefix: string): string[] => registry.filter((code) => code.startsWith(prefix));
-    expect(byFamily("doctor.")).toHaveLength(21);
+    expect(byFamily("doctor.")).toHaveLength(22);
     expect(byFamily("next.")).toHaveLength(27);
     expect(byFamily("diff.")).toHaveLength(16);
     expect(byFamily("gate.")).toHaveLength(4);
-    expect(registry).toHaveLength(68);
+    expect(registry).toHaveLength(69);
     for (const code of registry) {
       const entry = familyFinding(code)!;
       expect(entry.scope.startsWith("loam "), `${code}'s scope must name the invocation that emits it`).toBe(true);

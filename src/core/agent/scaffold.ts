@@ -30,7 +30,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { agentsStampLine } from "./agents-stamp.js";
 import { LOAM_VERSION } from "../envelope/version.js";
-import type { AgentFileEmitter, CommandContent } from "./contract.js";
+import type { AgentFileEmitter, CommandContent, DeliveredCommand } from "./contract.js";
 import { AGENT_COMMANDS } from "./protocol.js";
 import { AGENT_TOOLS, CLAUDE } from "./tools/registry.js";
 
@@ -66,14 +66,16 @@ import { AGENT_TOOLS, CLAUDE } from "./tools/registry.js";
  * it can only try using a year-old flag.
  *
  * The last clause of the pointer is the one sentence here that changes what an
- * agent DOES rather than what it knows. `loam instructions loam-check` prints
- * the largest page loam has — 109 KB measured 2026-10-10 (84 KB when this was
- * first written), about a quarter of a 100k-token window, and hundreds of
- * fix-table rows of which a run needs two or three — and every file written
- * from this stub opens by telling the agent to run it. `--no-fix-tables`
- * (commands/instructions.ts) drops the rows, and `loam explain <code>` answers
- * the one row the run turned out to need on its own. The flag is what makes
- * the lazy path payable; this sentence is what makes an agent take it.
+ * agent DOES rather than what it knows. `loam instructions loam-check` with
+ * its fix tables is the largest page loam has — 138 KB measured 2026-10-27
+ * (84 KB when this was first written), a third of a 100k-token window, and
+ * hundreds of fix-table rows of which a run needs two or three — and every
+ * file written from this stub opens by telling the agent to run it. The rows
+ * are dropped (by default for that page since 0.2.0-alpha.15, and by the
+ * `--no-fix-tables` its invocation still passes), and `loam explain <code>`
+ * answers the one row the run turned out to need on its own. The narrow page
+ * is what makes the lazy path payable; this sentence is what makes an agent
+ * take it rather than reach for `--fix-tables`.
  */
 function stubBody(c: CommandContent): string {
   const steps = c.spine.map((s, i) => `  ${i + 1}. ${s}`).join("\n");
@@ -92,9 +94,9 @@ from the broader lifecycle commands another generated skill may allow.`
     : `Every step above is a \`loam\` invocation, and each command's own \`--json\` output
 carries what to do next: findings have stable codes, and \`loam status --json\` puts
 the ordered \`next[]\` — each entry a code and the literal command — in one place.
-Branch on the codes, never on the prose. The check workflow starts with
-\`--no-fix-tables\`; use \`loam explain <code>\` for each code the run actually
-reports, and remove that flag only when you deliberately need the complete table.`;
+Branch on the codes, never on the prose. The check workflow prints without its fix
+tables; use \`loam explain <code>\` for each code the run actually reports, and pass
+\`--fix-tables\` only when you deliberately need the complete table.`;
   return `${c.purpose}
 
 ${entry}
@@ -104,6 +106,10 @@ to call — so it names this loam's flags, its finding codes and its fix tables,
 not the ones that were current when this repository was scaffolded:
 
     ${c.invocation}
+
+Every \`loam\` command in this file and in that protocol assumes loam is on PATH.
+Where this repository installs it as a devDependency instead, run each one as
+\`npx loam …\`.
 
 The spine it fills in, so you can tell a run that went sideways from one that did not:
 
@@ -133,9 +139,10 @@ changes outrank the template and stay untouched. Where this file and
  * exactly what `doctor.agent-files-stale` is for: nobody has confirmed that
  * those instructions still describe this binary.
  */
-const stubbed = (c: CommandContent): CommandContent => ({
+const stubbed = (c: CommandContent): DeliveredCommand => ({
   ...c,
   body: `${agentsStampLine(LOAM_VERSION)}\n\n${stubBody(c)}`,
+  protocol: c.body,
 });
 
 /**

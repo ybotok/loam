@@ -6,6 +6,8 @@ export const LOAM_ADOPT: CommandContent = {
   description:
     "Adopt a service — write its baseline docs from its code, as draft, then validate",
   argumentHint: "<service-id>",
+  whenToUse:
+    "Use when an existing service has no loam docs yet and someone asks to document it, write its baseline, onboard it to loam or adopt it, or when loam reports the service unknown. Not for changing a service that is already documented; that is loam-feature.",
   purpose:
     "Write one service's baseline documentation into the docs repo from its code, as `draft`. You read the code; loam states the work and checks the result — it never reads the service, so anything you cannot show, do not write.",
   invocation: "loam instructions loam-adopt $1",

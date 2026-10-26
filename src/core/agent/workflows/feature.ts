@@ -6,6 +6,8 @@ export const LOAM_FEATURE: CommandContent = {
   description:
     "Start a new loam feature — scaffold it, then author the C4 delta and requirement deltas",
   argumentHint: `<FEAT-id> "<title>"`,
+  whenToUse:
+    "Use when someone wants to change what services do or how they connect, such as a new feature, endpoint, event, integration or flow, a ticket that names services, or a request to plan or design such a change, before any code is written.",
   purpose:
     "Start a feature in the docs repo: decide which services it touches, scaffold it, then author the C4 delta and one requirement delta per service. The `--touches` list is the hardest call in the cycle and nothing downstream catches one that is short by a service.",
   invocation: 'loam instructions loam-feature $1 "$2"',

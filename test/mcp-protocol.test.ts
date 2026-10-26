@@ -25,6 +25,8 @@ import { MCP_TOOLS, toolByName } from "../src/core/mcp/tools.js";
 import { MCP_AUTHOR_TOOLS } from "../src/core/mcp/author-tools.js";
 import { MCP_COMMAND } from "../src/core/agent/agents-md/map/mcp.js";
 import { LOAM_VERSION } from "../src/core/envelope/version.js";
+import { AGENT_COMMANDS, PROTOCOLS, protocolFor } from "../src/core/agent/protocol.js";
+import { withoutFixTables } from "../src/core/explain/fix-tables.js";
 import { buildProgram } from "../src/cli.js";
 import { moduleEdges } from "../scripts/source-graph.mjs";
 
@@ -86,9 +88,70 @@ describe("initialize", () => {
 
   it("carries capabilities.tools, serverInfo with the real version, and the envelope instructions", () => {
     const result = resultOf(replyOf(request(1, "initialize", { protocolVersion: "2025-06-18" })));
-    expect(result["capabilities"]).toEqual({ tools: {}, resources: {} });
+    expect(result["capabilities"]).toEqual({ tools: {}, resources: {}, prompts: {} });
     expect(result["serverInfo"]).toEqual({ name: "loam", version: LOAM_VERSION });
     expect(String(result["instructions"])).toContain("error.code");
+  });
+
+  it("instructions say where to start and fit the 4,096 characters hosts keep", () => {
+    // With tool search on, a host loads tool names up front and little else, so
+    // this paragraph is what a model reads before choosing a tool. One sentence
+    // about the envelope was all it used to say.
+    const instructions = String(resultOf(replyOf(request(1, "initialize", {})))["instructions"]);
+    expect(instructions.length).toBeLessThanOrEqual(4_096);
+    for (const named of ["loam_status", "loam_explore", "loam_explain", "loam_instructions", "loam-check"]) {
+      expect(instructions, named).toContain(named);
+    }
+    // every tool it names is one this server offers
+    const offered = new Set([...MCP_TOOLS, ...MCP_AUTHOR_TOOLS].map((tool) => tool.name));
+    for (const [named] of instructions.matchAll(/\bloam_[a-z_]+/g)) expect(offered, named).toContain(named);
+  });
+});
+
+describe("prompts", () => {
+  const promptsOf = (): Array<{ name: string; arguments: Array<{ name: string; required: boolean }> }> =>
+    resultOf(replyOf(request(1, "prompts/list")))["prompts"] as never;
+  const textOf = (result: Record<string, unknown>): string =>
+    ((result["messages"] as Array<{ content: { text: string } }>)[0]!.content.text);
+
+  it("lists one prompt per generated workflow, in cycle order, with optional named arguments", () => {
+    // A host with no shell could read every protocol as a resource and start
+    // none of them: a resource is attached, a prompt is what a user invokes.
+    const prompts = promptsOf();
+    expect(prompts.map((p) => p.name)).toEqual(AGENT_COMMANDS.map((c) => c.name));
+    expect(prompts.find((p) => p.name === "loam-implement")!.arguments.map((a) => a.name)).toEqual(["feature", "service"]);
+    expect(prompts.find((p) => p.name === "loam-feature")!.arguments.map((a) => a.name)).toEqual(["feature", "title"]);
+    for (const prompt of prompts) {
+      const names = prompt.arguments.map((a) => a.name);
+      expect(new Set(names).size, `${prompt.name} names an argument twice`).toBe(names.length);
+      expect(prompt.arguments.every((a) => !a.required), prompt.name).toBe(true);
+    }
+  });
+
+  it("gets the page `loam instructions` prints — arguments substituted, loam-check narrow", () => {
+    const implement = resultOf(replyOf(request(2, "prompts/get", {
+      name: "loam-implement",
+      arguments: { feature: "FEAT-101", service: "payment-service" },
+    })));
+    expect(textOf(implement)).toBe(protocolFor("loam-implement", ["FEAT-101", "payment-service"]));
+
+    const check = resultOf(replyOf(request(3, "prompts/get", { name: "loam-check" })));
+    expect(textOf(check)).toBe(withoutFixTables(PROTOCOLS["loam-check"]!));
+
+    // an argument left out stands as its placeholder, the protocols' own rule
+    const bare = resultOf(replyOf(request(4, "prompts/get", { name: "loam-adopt" })));
+    expect(textOf(bare)).toBe(PROTOCOLS["loam-adopt"]);
+  });
+
+  it("refuses with -32602 what the command would refuse, an unknown prompt, and an undeclared argument", () => {
+    const refused = (params: unknown): { code: number; message: string } =>
+      errorOf(replyOf(request(5, "prompts/get", params)));
+    expect(refused({ name: "loam-adopt", arguments: { service: "/Users/someone/svc" } }).code).toBe(INVALID_PARAMS);
+    expect(refused({ name: "loam-nope" }).message).toContain("loam-feature");
+    // a misspelled name would otherwise leave the placeholder standing, silently
+    expect(refused({ name: "loam-adopt", arguments: { servce: "payment-service" } }).message).toContain("service");
+    expect(refused({ name: "loam-adopt", arguments: { service: 7 } }).code).toBe(INVALID_PARAMS);
+    expect(refused({}).code).toBe(INVALID_PARAMS);
   });
 });
 

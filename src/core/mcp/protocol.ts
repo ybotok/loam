@@ -26,6 +26,7 @@ import {
 import { AGENTS_MD } from "../agent/agents-md.js";
 import { PROTOCOLS } from "../agent/protocol.js";
 import { withoutFixTables } from "../explain/fix-tables.js";
+import { SERVER_INSTRUCTIONS, getPrompt, listPrompts } from "./prompts/prompts.js";
 
 /** JSON-RPC 2.0 error codes this server emits. */
 export const PARSE_ERROR = -32700;
@@ -38,8 +39,8 @@ export const INTERNAL_ERROR = -32603;
  * Newest first. `initialize` echoes the client's requested version when it is
  * one of these, else answers the newest — the negotiation rule the 2025-06-18
  * lifecycle spec states for servers. All three revisions are identical in
- * everything this facade implements (stdio framing, tools/list, tools/call
- * with text content) except batching, refused above.
+ * everything this facade implements (stdio framing, tools, resources and
+ * prompts, all with text content) except batching, refused above.
  */
 export const SUPPORTED_PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"] as const;
 export const LATEST_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0];
@@ -190,6 +191,13 @@ function routeRequest(
       }));
     case "resources/read":
       return routeResourceRead(id, params);
+    case "prompts/list":
+      // No pagination, for the reason tools/list gives: seven prompts are one page.
+      return reply(resultResponse(id, { prompts: listPrompts() }));
+    case "prompts/get": {
+      const prompt = getPrompt(params);
+      return reply(prompt.ok ? resultResponse(id, prompt.result) : errorResponse(id, INVALID_PARAMS, prompt.problem));
+    }
     case "tools/call":
       return routeToolCall(id, params, tools);
     default:
@@ -253,11 +261,10 @@ export function initializeResult(params: unknown): Record<string, unknown> {
       // sending it would be a promise, not a capability.
       tools: {},
       resources: {},
+      prompts: {},
     },
     serverInfo: { name: "loam", version: LOAM_VERSION },
-    instructions:
-      "Every tool result is a loam --json envelope (contractVersion 1.0): branch on ok, " +
-      "and on error.code when ok is false — the same machine contract the CLI prints.",
+    instructions: SERVER_INSTRUCTIONS,
   };
 }
 

@@ -9,15 +9,17 @@ import {
 } from "../core/agent/protocol.js";
 import { emitJson, fail } from "../core/envelope/json.js";
 import { LOAM_VERSION } from "../core/envelope/version.js";
-import { withoutFixTables } from "../core/explain/fix-tables.js";
+import { printedPage } from "../core/explain/fix-tables.js";
 
 interface InstructionsOptions {
   json?: boolean;
   /**
-   * Commander's negated-boolean shape: absent means `true`, and only
-   * `--no-fix-tables` on the command line makes it `false`. Read as
-   * `=== false` at the call site so an undefined — a caller constructing the
-   * options object itself, in a test — keeps the default page.
+   * Three states, and the third is the point: `--fix-tables` makes it `true`,
+   * `--no-fix-tables` `false`, and neither leaves it undefined — which is the
+   * page's own default (`printedPage`). Commander gives a `--no-` option a
+   * `true` default only when it is declared alone; declared after its positive
+   * twin, it leaves the default unset, which is what lets a page whose default
+   * is narrow tell "nobody asked" from "asked for the tables".
    */
   fixTables?: boolean;
 }
@@ -53,15 +55,20 @@ export function registerInstructions(program: Command): void {
     .argument("[args...]", "values substituted for the protocol's $1, $2, … placeholders")
     .description("Print a workflow protocol or reference page, version-matched to this binary")
     .option("--json", "emit the machine contract instead of the human view")
-    // Opt-in, and off by default, so the default page of every lifecycle protocol
-    // stays byte-identical: this narrows what an agent CAN ask for, it does not
-    // change what it gets when it asks for nothing. The one protocol this is
-    // about is /loam-check, whose fix tables are 83 KB of the 84 it prints —
-    // about a fifth of a 100k-token window spent before the first check has
-    // run — while `loam explain <code>` answers any one of those rows in under
-    // 500 bytes. The narrowed page keeps every paragraph that INTRODUCES a
-    // table, because that sentence is what says which scope a code was graded
-    // in; only the rows go.
+    // The one protocol these are about is /loam-check, whose fix tables are
+    // 134 KB of the 138 it prints — a third of a 100k-token window spent before
+    // the first check has run — while `loam explain <code>` answers any one of
+    // those rows in under 500 bytes. The narrowed page keeps every paragraph
+    // that INTRODUCES a table, because that sentence is what says which scope a
+    // code was graded in; only the rows go.
+    //
+    // /loam-check is printed narrow unless `--fix-tables` asks for the rows
+    // (since 0.2.0-alpha.15; `printedPage` says why). `--no-fix-tables` came
+    // first, as an opt-in that left every default page byte-identical, and it
+    // stays: every pointer since 0.2.0-alpha.1 passes it, and on the other
+    // pages it still narrows. Declared in this order on purpose — see
+    // `InstructionsOptions.fixTables`.
+    .option("--fix-tables", "print the per-code fix tables; loam-check omits them unless asked")
     .option(
       "--no-fix-tables",
       "drop the per-code fix tables; `loam explain <code>` answers any code a run reports",
@@ -154,10 +161,9 @@ export function registerInstructions(program: Command): void {
 
       // The narrowing composes with `--json` rather than forking the envelope:
       // the shorter page rides in the same `body` field, so no key is added or
-      // renamed and a consumer that never passes the flag cannot tell the
-      // difference. `--json` is the larger of the two views (the whole table is
+      // renamed. `--json` is the larger of the two views (the whole table is
       // one JSON string), which is exactly why it needs this too.
-      const page = opts.fixTables === false ? withoutFixTables(body) : body;
+      const page = printedPage(workflow, body, opts.fixTables);
 
       if (json) {
         // `body` is the substituted text, not the template: a consumer that

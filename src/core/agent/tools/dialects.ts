@@ -4,11 +4,13 @@
  * its entries from these — nothing here adds prose of its own, so the body
  * stays one source of truth however many tools spell it.
  */
-import type { AgentFileEmitter, CommandContent } from "../contract.js";
+import type { AgentFileEmitter, CommandContent, DeliveredCommand } from "../contract.js";
 
 /**
- * The loam verbs a generated file pre-approves, so an agent that honors the
- * field stops asking permission for each call. Everything else a command needs
+ * The loam verbs a generated skill MAY pre-approve, so an agent that honors the
+ * field stops asking permission for each call. Each skill pre-approves only the
+ * ones its own pages instruct — see {@link instructedVerbs} — so this is the
+ * ceiling, not what any one file carries. Everything else a command needs
  * (Read, Write, the service's own test runner) stays under the user's normal
  * permission settings, and a tool that does not know the field ignores it.
  *
@@ -23,8 +25,8 @@ import type { AgentFileEmitter, CommandContent } from "../contract.js";
  * `--yes` (commands/vouch.ts) — this list is the other half, so the refusal is
  * something a person sees rather than something an agent routes around.
  *
- * A verb missing from this list is not forbidden, only unapproved: the agent
- * asks, and the user says yes. That is the correct cost for this one.
+ * A verb missing from a skill's list is not forbidden, only unapproved: the
+ * agent asks, and the user says yes. That is the correct cost for this one.
  *
  * The rule the list obeys is **every verb the CLI registers except the keys of
  * {@link UNAPPROVED}**, and it admits no silent third category: a verb is
@@ -45,7 +47,7 @@ import type { AgentFileEmitter, CommandContent } from "../contract.js";
  * the run actually reported — so the one command that makes an 84 KB page
  * payable was the one the skill could not invoke unasked.
  */
-const LOAM_ALLOWED_VERBS = [
+export const LOAM_ALLOWED_VERBS = [
   "adopt",
   "archive",
   "context",
@@ -78,11 +80,11 @@ const LOAM_ALLOWED_VERBS = [
  *
  * A map rather than a paragraph, because "every verb but the named exclusions"
  * is only a checkable rule if the exclusions are a VALUE. test/agents.test.ts
- * reads this one: the emitted allowlist must equal the CLI's registered
- * commands minus these keys, so an absent verb is either a decision recorded
- * here or a test failure — never something nobody can tell from a forgotten
- * one, which is what the previous list was. Only `vouch` had ever been reasoned
- * in the source, and its reason is the paragraph above, unchanged.
+ * reads this one: the approvable set must equal the CLI's registered commands
+ * minus these keys, so an absent verb is either a decision recorded here or a
+ * test failure — never something nobody can tell from a forgotten one, which
+ * is what the previous list was. Only `vouch` had ever been reasoned in the
+ * source, and its reason is the paragraph above, unchanged.
  *
  * The equality is checked in the test layer and cannot be computed here:
  * deriving the allowlist from the command registry would mean `core/`
@@ -100,24 +102,62 @@ export const UNAPPROVED: Record<string, string> = {
     "a claim about a HUMAN act, so an agent must not be able to SAY a spec matches the code; the refusal has to be something a person sees rather than something an agent routes around",
 };
 
-const LOAM_ALLOWED_TOOLS = LOAM_ALLOWED_VERBS.map((v) => `Bash(loam ${v}:*)`).join(", ");
+/**
+ * The approvable verbs one skill's own texts instruct — its pointer and the
+ * protocol that pointer prints — in {@link LOAM_ALLOWED_VERBS} order, with
+ * `--version` first when a text asks for it.
+ *
+ * Least privilege, derived rather than kept. One list for every skill handed
+ * `loam-verify` the writers `new`, `init`, `gherkin` and `rebase`, and
+ * `loam-adopt` `archive` and `unarchive` — none of which either protocol runs.
+ * Only `loam-report` had been narrowed, by a hand-kept list this derivation
+ * reproduces exactly; a hand-kept list per skill would drift the way the
+ * shared one did (see above), so the list is read off the instructions
+ * themselves, by the same `loam <verb>` reading test/agents.test.ts applies to
+ * prove every instructed verb is approved.
+ *
+ * Only the skill's OWN page. The reference pages a protocol points at name
+ * nearly every verb between them — they cross-reference loam-adopt and the
+ * spine — so following them would hand every skill the whole list back. A verb
+ * met only there costs one permission prompt, which is the cost the paragraph
+ * above already accepts.
+ *
+ * Any mention counts, prose included: a page that says "never run
+ * `loam archive` here" pre-approves `archive`. That over-reach is the price of
+ * a rule a test can state, and it is bounded by the protocol's own text — a
+ * verb no page of this skill names is never approved by it.
+ *
+ * `loam-report` is where the over-reach would hurt, and why its list was kept
+ * narrow by hand before this. It names the writers so an agent recognizes one
+ * and does not retry it to reproduce a failure — and pre-approving them would
+ * authorize exactly those writers while a bad run is being diagnosed. It names
+ * them as bare verbs (`archive`, `vouch`), which this reading does not count;
+ * test/agents.test.ts pins the report skill's list, so an edit that spells one
+ * `loam archive` fails there instead of widening it.
+ */
+export function instructedVerbs(texts: readonly string[]): string[] {
+  const named = new Set(
+    texts.flatMap((t) => [...t.matchAll(/\bloam (--version|[a-z][a-z-]*)/g)].map((m) => m[1]!)),
+  );
+  const verbs: string[] = LOAM_ALLOWED_VERBS.filter((v) => named.has(v));
+  return named.has("--version") ? ["--version", ...verbs] : verbs;
+}
 
 /**
- * Incident collection is intentionally narrower than a lifecycle workflow.
- * The body names writers so an agent can recognize and avoid retrying them;
- * inheriting the lifecycle allowlist would nevertheless pre-authorize those
- * same writers while diagnosing a bad run. Version, doctor and status are the
- * complete command set the reporting protocol asks to execute.
+ * Both spellings of every approved invocation: the global binary, and the
+ * `npx` form typed in a repository that installs loam as a devDependency,
+ * which is the install README and QUICKSTART teach. A rule for `loam` alone
+ * matched nothing such an agent ran, so every call stopped for a prompt. The
+ * bare forms come first, as they always did.
  */
-const REPORT_ALLOWED_TOOLS = [
-  "Bash(loam --version)",
-  "Bash(loam doctor:*)",
-  "Bash(loam instructions:*)",
-  "Bash(loam status:*)",
-].join(", ");
+function bashRules(verbs: readonly string[]): string {
+  const rule = (prefix: string, v: string): string =>
+    v.startsWith("--") ? `Bash(${prefix} ${v})` : `Bash(${prefix} ${v}:*)`;
+  return [...verbs.map((v) => rule("loam", v)), ...verbs.map((v) => rule("npx loam", v))].join(", ");
+}
 
-const skillAllowedTools = (c: CommandContent): string =>
-  c.name === "loam-report" ? REPORT_ALLOWED_TOOLS : LOAM_ALLOWED_TOOLS;
+const skillAllowedTools = (c: DeliveredCommand): string =>
+  bashRules(instructedVerbs([c.body, c.protocol]));
 
 /**
  * The Agent Skills convention loam EMITS: `<root>/skills/<name>/SKILL.md`, YAML
@@ -142,6 +182,31 @@ export const skillsIn = (dir: string): AgentFileEmitter => ({
   format: (c) =>
     `---\nname: ${c.name}\ndescription: ${c.description}\n` +
     `allowed-tools: ${skillAllowedTools(c)}\n---\n\n${c.body}`,
+});
+
+/**
+ * Claude Code's skill dialect: the Agent Skills header plus two fields only
+ * Claude Code documents (code.claude.com/docs/en/skills, checked 2026-10-27).
+ *
+ * `when_to_use` carries the trigger the shared description deliberately does
+ * not: Claude Code appends it to `description` in the skill listing, the one
+ * thing the model reads before choosing a skill, and both together are cut at
+ * 1,536 characters. `disallowed-tools` removes `vouch` from the pool while the
+ * skill is active — the "never vouch" every protocol states in prose becomes a
+ * refusal by the host. Both clear with the user's next message, as
+ * `allowed-tools` does.
+ *
+ * Only here. The other skill roots follow the Agent Skills specification, whose
+ * frontmatter has neither field, and a stricter reader of that format than
+ * Claude Code — which ignores what it does not know — could reject the file.
+ */
+export const claudeSkillsIn = (dir: string): AgentFileEmitter => ({
+  path: (name) => [dir, "skills", name, "SKILL.md"],
+  format: (c) =>
+    `---\nname: ${c.name}\ndescription: ${c.description}\n` +
+    (c.whenToUse === undefined ? "" : `when_to_use: ${c.whenToUse}\n`) +
+    `allowed-tools: ${skillAllowedTools(c)}\n` +
+    `disallowed-tools: ${bashRules(["vouch"])}\n---\n\n${c.body}`,
 });
 
 /**

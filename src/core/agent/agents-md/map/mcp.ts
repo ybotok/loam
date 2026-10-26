@@ -27,7 +27,9 @@ export const MCP_COMMAND = `- \`loam mcp\` serves the sixteen base read commands
   prints, verbatim, so everything above about codes and envelopes applies
   unchanged — branch on \`ok\` and \`error.code\` exactly as you would reading
   the command's stdout. The orientation and instruction pages are MCP resources,
-  and every tool declares the envelope output schema. Every base tool is advertised with
+  the seven generated workflows are MCP prompts as well (\`prompts/get\` returns
+  the page \`loam instructions\` prints, loam-check narrow), \`initialize\` says
+  where to start, and every tool declares the envelope output schema. Every base tool is advertised with
   \`annotations.readOnlyHint: true\` — the machine signal a host needs to
   approve a call without prompting, and the reason the table stays read-only
   by construction. The two that read no config, \`explain\` and

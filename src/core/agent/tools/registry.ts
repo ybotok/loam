@@ -6,6 +6,7 @@
  */
 import type { AgentTool, CommandContent } from "../contract.js";
 import {
+  claudeSkillsIn,
   describedMd,
   hintedMd,
   namedMd,
@@ -54,11 +55,17 @@ function dotTool(dir: string, sub: string, format: (c: CommandContent) => string
  * Named and typed, both mistakes are typecheck failures instead. The registry
  * still lists it first, and the emitted bytes are unchanged.
  */
-export const CLAUDE: CommandEmittingTool = dotTool(
-  ".claude",
-  "commands",
-  (c) => `---\ndescription: ${c.description}\nargument-hint: ${c.argumentHint}\n---\n\n${c.body}`,
-);
+export const CLAUDE: CommandEmittingTool = {
+  ...dotTool(
+    ".claude",
+    "commands",
+    (c) => `---\ndescription: ${c.description}\nargument-hint: ${c.argumentHint}\n---\n\n${c.body}`,
+  ),
+  // The one skill dialect of its own: Claude Code reads `when_to_use` and
+  // `disallowed-tools`, which the Agent Skills format every other root follows
+  // does not have (see `claudeSkillsIn`).
+  skill: claudeSkillsIn(".claude"),
+};
 
 export const AGENT_TOOLS: Record<string, AgentTool> = {
   claude: CLAUDE,

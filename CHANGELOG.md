@@ -10,6 +10,58 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Changed — `loam instructions loam-check` prints without its fix tables unless asked
+
+- `loam instructions loam-check`, and the `body` of its `--json` form, now print the page that
+  `--no-fix-tables` printed: each per-code fix table collapsed to one line, every paragraph that
+  introduces one kept. That is 3.9 KB where it was 138 KB. The new flag `--fix-tables` prints the
+  whole page. `--no-fix-tables` still works, and still narrows `loam-verify`; every other page prints
+  as before. Pointers written by 0.1.0-beta.2 and beta.3 call this page without a flag, and their
+  agents read 138 KB.
+- MCP: `loam_instructions` takes `fixTables` (`--fix-tables`).
+- docs/BENCHMARKS.md's page table gains a `with --fix-tables` column, and the test that regenerates
+  it now also fails when a call in its default form prints 50,000 characters or more. The full adopt
+  brief, `loam explain --codes` and the `loam-codes` page are named exceptions, each with a reason.
+
+### Changed — a generated skill pre-approves only what its own pages instruct, in both spellings
+
+- `allowed-tools:` in every generated `SKILL.md` used to name the same 24 verbs. It now names only
+  the loam verbs that skill's pointer and its protocol mention, so `loam-verify` no longer
+  pre-approves `new`, `init`, `gherkin` or `rebase`, and `loam-adopt` no longer pre-approves
+  `archive` or `unarchive`. Every rule is written twice, `Bash(loam <verb>:*)` and
+  `Bash(npx loam <verb>:*)`, so a repository that installs loam as a devDependency stops prompting
+  on every call. `loam-report`'s list is unchanged apart from the `npx` forms.
+- Skills under `.claude/skills/` gain two lines: `when_to_use:`, the requests that should load the
+  skill, which Claude Code appends to the description it chooses skills by; and
+  `disallowed-tools: Bash(loam vouch:*), Bash(npx loam vouch:*)`. Skills for other tools carry
+  neither field.
+- Every generated pointer, and the generated `AGENTS.md`, now say to run each `loam` command as
+  `npx loam …` where loam is a devDependency. The pointer for `loam-check` says to pass
+  `--fix-tables` for the whole table, where it said to remove `--no-fix-tables`.
+- After upgrading, `doctor.agent-files-stale` reports the generated files once. `loam init`
+  refreshes the ones still byte-identical to what loam wrote; a customized one stays yours.
+
+### Added — `doctor.agents-md-shadowed`
+
+- `loam doctor` warns when a `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` in the docs repo,
+  or in any directory above it, does not import the docs repo's `AGENTS.md`. Claude Code reads
+  `AGENTS.md` only when none of those three exists, so its sessions there started without loam's
+  orientation while doctor said nothing. A shadow containing an `@…AGENTS.md` import, or a symlink
+  to `AGENTS.md`, clears the warning. The fix is the line `@AGENTS.md` in the file the finding
+  names; loam does not write it. `loam explain doctor.agents-md-shadowed` answers it.
+
+### Added — MCP prompts, and instructions that say where to start
+
+- `loam mcp` answers `prompts/list` and `prompts/get`, and `initialize` declares
+  `capabilities.prompts`. There is one prompt per generated workflow, named like it: `loam-adopt`,
+  `loam-feature`, `loam-implement`, `loam-check`, `loam-verify`, `loam-ship` and `loam-report`.
+  Their optional arguments are `feature`, `service` and `title`. `prompts/get` returns the page
+  `loam instructions` prints with those values filled in, and refuses with `-32602` an argument
+  the command would refuse or the prompt does not declare.
+- The `instructions` string `initialize` returns now says what loam checks, to start with
+  `loam_status`, to ask `loam_explore` with `op` who calls an operation, and which workflows exist.
+  It used to be one sentence about the envelope, which it still contains.
+
 ### Changed — a parent subsystem's generated view draws its children as boxes
 
 - In `architecture/subsystems.likec4`, the view of a subsystem whose child subsystems the map

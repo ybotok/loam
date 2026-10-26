@@ -8,7 +8,7 @@
  * digest still matches, while a human edit revokes that authority.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { diagnose } from "../src/core/doctor/doctor.js";
@@ -435,3 +435,82 @@ describe("doctor.agent-files-stale grades the body, not just the stamp", () => {
   });
 });
 
+
+describe("doctor.agents-md-shadowed — a CLAUDE.md that turns the orientation off for Claude Code", () => {
+  // Claude Code reads AGENTS.md only when no CLAUDE.md, .claude/CLAUDE.md or
+  // CLAUDE.local.md is in the working directory or above it. A team's own
+  // CLAUDE.md in the docs repo therefore switched loam's orientation off for
+  // every Claude Code session there, under a current stamp and a silent doctor.
+  const shadowedFinding = async (svc: string): Promise<{ severity: string; message: string; fix: string } | undefined> =>
+    (await diagnose(svc)).findings.find((f) => f.code === "doctor.agents-md-shadowed");
+
+  it("is silent when nothing shadows AGENTS.md", async () => {
+    const { svc } = await initialized();
+    expect(await shadowedFinding(svc)).toBeUndefined();
+  });
+
+  it("warns, naming the file and the one-line fix, for a CLAUDE.md that does not import it", async () => {
+    const { docs, svc } = await initialized();
+    await writeFile(join(docs, "CLAUDE.md"), "# Our docs repo\n\nRead AGENTS.md first.\n", "utf8");
+
+    const report = await diagnose(svc);
+    const finding = report.findings.find((f) => f.code === "doctor.agents-md-shadowed");
+
+    expect(finding?.severity).toBe("warning");
+    expect(finding?.message).toContain(join(docs, "CLAUDE.md"));
+    expect(finding?.fix).toContain("`@AGENTS.md`");
+    // a warning: nothing refuses to run, so the repo stays healthy
+    expect(report.healthy).toBe(true);
+  });
+
+  it("counts .claude/CLAUDE.md and a personal CLAUDE.local.md the same way", async () => {
+    const { docs, svc } = await initialized();
+    await mkdir(join(docs, ".claude"), { recursive: true });
+    await writeFile(join(docs, ".claude", "CLAUDE.md"), "team notes\n", "utf8");
+    await writeFile(join(docs, "CLAUDE.local.md"), "my notes\n", "utf8");
+
+    const finding = await shadowedFinding(svc);
+
+    expect(finding?.message).toContain(join(docs, ".claude", "CLAUDE.md"));
+    expect(finding?.message).toContain(join(docs, "CLAUDE.local.md"));
+  });
+
+  it("counts a CLAUDE.md above the docs repo, as the host does", async () => {
+    const { docs, svc } = await initialized();
+    await writeFile(join(docs, "..", "CLAUDE.md"), "workspace notes\n", "utf8");
+
+    // `join` normalises the `..`: the path named is the workspace root's own file
+    expect((await shadowedFinding(svc))?.message).toContain(join(docs, "..", "CLAUDE.md"));
+  });
+
+  it("is silent when any shadow imports AGENTS.md, in any spelling the host expands", async () => {
+    for (const [file, text] of [
+      ["CLAUDE.md", "# Docs\n\n@AGENTS.md\n"],
+      ["CLAUDE.md", "See @./AGENTS.md for loam.\n"],
+      [join(".claude", "CLAUDE.md"), "@../AGENTS.md\n"],
+    ] as const) {
+      const { docs, svc } = await initialized();
+      await mkdir(join(docs, ".claude"), { recursive: true });
+      await writeFile(join(docs, file), text, "utf8");
+      // a second, unimporting shadow does not matter: the host reads them all
+      await writeFile(join(docs, "CLAUDE.local.md"), "my notes\n", "utf8");
+
+      expect(await shadowedFinding(svc), `${file}: ${text}`).toBeUndefined();
+    }
+  });
+
+  it("is silent for a CLAUDE.md that is a symlink to AGENTS.md", async () => {
+    const { docs, svc } = await initialized();
+    await symlink("AGENTS.md", join(docs, "CLAUDE.md"));
+
+    expect(await shadowedFinding(svc)).toBeUndefined();
+  });
+
+  it("is silent when the docs repo has no AGENTS.md at all — that is the stamp's finding", async () => {
+    const { docs, svc } = await initialized();
+    await rm(join(docs, "AGENTS.md"));
+    await writeFile(join(docs, "CLAUDE.md"), "notes\n", "utf8");
+
+    expect(await shadowedFinding(svc)).toBeUndefined();
+  });
+});

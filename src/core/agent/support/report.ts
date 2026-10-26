@@ -10,6 +10,8 @@ export const LOAM_REPORT: CommandContent = {
   description:
     "Record unexpected loam or agent behavior as a sanitized, reproducible Markdown report",
   argumentHint: "",
+  whenToUse:
+    "Use when loam or the agent integration behaved unexpectedly, such as a crash, a wrong answer, a refusal that looks wrong or a protocol step that could not be followed, or when someone asks to report a loam bug or write up what went wrong.",
   purpose:
     "Collect one unexpected loam or agent-integration incident into a separate, reviewable Markdown file. This is local diagnostics only: redact secrets, never upload automatically, and never repeat a writer merely to reproduce it.",
   invocation: "loam instructions loam-report",
