@@ -350,6 +350,143 @@ describe("loam subsystem sync — the renderer", () => {
     }
   });
 
+  /**
+   * A parent subsystem `platform` with two child subsystems the map draws as
+   * boxes of their own (`mp.orders`, `mp.web`), a sibling subsystem `ops` with
+   * its own box, a store nobody files, and — when `people` is set — a customer.
+   */
+  function collapsibleFleet(opts: { people: boolean }): Record<string, string> {
+    const person = opts.people ? "  element person\n" : "";
+    const customer = opts.people ? "  customer = person 'Customer'\n" : "";
+    const uses = opts.people ? "  customer -> mp.web.checkoutWeb 'Uses'\n" : "";
+    return {
+      "architecture/landscape.likec4":
+        `specification {\n  element softwareSystem\n  element group\n${person}}\n\nmodel {\n${customer}` +
+        "  mp = group 'Marketplace' {\n" +
+        "    orders = group 'Orders' {\n      paymentService = softwareSystem 'payment-service'\n    }\n" +
+        "    web = group 'Web' {\n      checkoutWeb = softwareSystem 'checkout-web'\n    }\n  }\n" +
+        "  ops = group 'Ops' {\n    ledger = softwareSystem 'ledger'\n  }\n" +
+        "  db = softwareSystem 'db'\n" +
+        uses +
+        "  mp.web.checkoutWeb -> mp.orders.paymentService 'Calls'\n" +
+        "  mp.orders.paymentService -> ops.ledger 'Posts'\n" +
+        "  mp.orders.paymentService -> db 'Writes'\n}\n",
+      "services/platform/subsystem.yaml": "title: Platform\n",
+      "services/platform/orders/subsystem.yaml": "title: Orders\n",
+      "services/platform/orders/payment-service/spec.md": SPEC("payment-service"),
+      "services/platform/web/subsystem.yaml": "title: Web\n",
+      "services/platform/web/checkout-web/spec.md": SPEC("checkout-web"),
+      "services/ops/subsystem.yaml": "title: Ops\n",
+      "services/ops/ledger/spec.md": SPEC("ledger"),
+    };
+  }
+
+  it("collapses a parent whose children the model draws as boxes: one box per child, none of their services", async () => {
+    // The transitive body would draw every service of every child with all of
+    // its neighbours, which grows with the whole subtree; this body draws one
+    // box per child. Each child keeps its own view, which a click on its box
+    // opens, so nothing is lost by drawing it as one box here.
+    const p = await makeProject(collapsibleFleet({ people: true }));
+    try {
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
+      const bytes = await p.read(VIEWS);
+      expect(bytes).toContain(
+        "  view subsystem_platform of mp {\n" +
+          "    title 'Platform'\n" +
+          "    include mp\n" +
+          "    include mp.orders\n" +
+          "    include mp.web\n" +
+          "\n" +
+          "    include mp.* -> mp.*\n" +
+          "    include mp.* -> ops, ops -> mp.*\n" +
+          "    include element.kind = person -> mp.*, mp.* -> element.kind = person\n" +
+          "    autoLayout LeftRight\n" +
+          "  }\n",
+      );
+      // A child is a leaf of the tree, and its view is the transitive one it
+      // always was: the detail the parent no longer draws is one click down.
+      expect(bytes).toContain(
+        "  view subsystem_platform__orders of mp.orders {\n    title 'Platform / Orders'\n" +
+          "    include mp.orders\n    include mp.orders.paymentService\n" +
+          "\n    include mp.orders.paymentService -> *, * -> mp.orders.paymentService\n  }\n",
+      );
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("names the person kind only when the map draws a person: an undeclared kind would blank the project", async () => {
+    const p = await makeProject(collapsibleFleet({ people: false }));
+    try {
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
+      const bytes = await p.read(VIEWS);
+      expect(bytes).toContain("    include mp.* -> ops, ops -> mp.*\n    autoLayout LeftRight\n");
+      expect(bytes).not.toContain("element.kind");
+      const loaded = await LikeC4.fromWorkspace(join(p.docsDir, "architecture"), { logger: false });
+      try {
+        expect(loaded.getErrors()).toEqual([]);
+      } finally {
+        await loaded.dispose();
+      }
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("keeps the transitive view when a child has no box of its own directly inside the parent's", async () => {
+    // payment-service sits straight under `mp`, so the `orders` child owns no
+    // element: there is no box to collapse it into, and `mp.*` would draw the
+    // service itself as a part. The view stays the transitive one.
+    const files = collapsibleFleet({ people: false });
+    files["architecture/landscape.likec4"] = files["architecture/landscape.likec4"]!
+      .replace("    orders = group 'Orders' {\n      paymentService = softwareSystem 'payment-service'\n    }\n",
+        "    paymentService = softwareSystem 'payment-service'\n")
+      .replaceAll("mp.orders.paymentService", "mp.paymentService");
+    const p = await makeProject(files);
+    try {
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
+      const bytes = await p.read(VIEWS);
+      expect(bytes).toContain("    include mp.paymentService -> *, * -> mp.paymentService\n");
+      expect(bytes).toContain("    include mp.web.checkoutWeb -> *, * -> mp.web.checkoutWeb\n");
+      expect(bytes).not.toContain("autoLayout");
+      expect(bytes).not.toContain("mp.* -> mp.*");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("the REAL renderer draws the collapsed parent: the parts, the sibling, the customer — no store, no service", async () => {
+    // Only the renderer can say what the predicates draw: that `mp.* -> mp.*`
+    // lifts the service-to-service call onto the two child boxes, that the
+    // sibling line lifts the ledger call onto `ops`, that the unfiled store
+    // stays out, and that every part drills down into its own view.
+    const p = await makeProject(collapsibleFleet({ people: true }));
+    try {
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
+      const workspace = await LikeC4.fromWorkspace(join(p.docsDir, "architecture"), { logger: false });
+      try {
+        expect(workspace.getErrors()).toEqual([]);
+        const model = await workspace.computedModel();
+        const view = [...model.views()].find((v) => (v.id as string) === "subsystem_platform");
+        expect(view).toBeDefined();
+        const nodes = [...view!.nodes()].map((n) => `${n.id}->${n.navigateTo?.id ?? "-"}`).sort();
+        expect(nodes).toEqual([
+          "customer->-",
+          "mp->-",
+          "mp.orders->subsystem_platform__orders",
+          "mp.web->subsystem_platform__web",
+          "ops->subsystem_ops",
+        ]);
+        const edges = [...view!.edges()].map((e) => `${e.source.id}->${e.target.id}`).sort();
+        expect(edges).toEqual(["customer->mp.web", "mp.orders->ops", "mp.web->mp.orders"]);
+      } finally {
+        await workspace.dispose();
+      }
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
   it("titles the view by its PATH, and never lets an authored slash invent a folder level", async () => {
     // The title is a path LikeC4 splits into browser folders, so one `/` in a
     // marker's own words would both hide half the label (measured: a title of

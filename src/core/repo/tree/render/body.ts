@@ -28,6 +28,14 @@ export interface RenderContext {
   elementOf: Map<string, string>;
   elementIds: ReadonlySet<string>;
   isServiceElement: (id: string) => boolean;
+  /**
+   * Whether the map draws anybody as a `person`. A collapsed parent view names
+   * that kind in a predicate, and a kind the specification does not declare is
+   * a parse error that blanks the whole `architecture/` project in the
+   * renderer — so the line is written only when an element of the kind exists,
+   * which is the proof that it is declared.
+   */
+  drawsPeople: boolean;
 }
 
 export function renderContext(tree: FleetTree, elements: Elem[]): RenderContext {
@@ -38,8 +46,12 @@ export function renderContext(tree: FleetTree, elements: Elem[]): RenderContext 
     elementOf: elementByService(tree, elements, resolve),
     elementIds: new Set(elements.map((e) => e.id)),
     isServiceElement: (id: string): boolean => known.has(resolve(id)),
+    drawsPeople: elements.some((e) => e.kind === PERSON_KIND),
   };
 }
+
+/** The element kind loam's scaffolded map declares for the people who use the fleet. */
+const PERSON_KIND = "person";
 
 /** A view's body lines, the one comment the render may write above it, and its subject. */
 export interface ViewBody {
@@ -57,7 +69,7 @@ export interface ViewBody {
 }
 
 /**
- * Three shapes, and which one applies is a fact about the landscape rather
+ * Four shapes, and which one applies is a fact about the landscape rather
  * than a setting:
  *
  *  1. **The model draws this group.** Some ancestor element holds exactly this
@@ -65,6 +77,10 @@ export interface ViewBody {
  *     leaves and the renderer nests them inside the box the AUTHOR drew, with
  *     the author's own title. Measured: including the ancestor alone renders
  *     one empty box and the leaves alone render flat — both lines are needed.
+ *     When the group has child subsystems the model ALSO draws as boxes of
+ *     their own, the view collapses them instead (`collapsedBody` below): every
+ *     service of every child, each with its one-hop neighbours, is a picture
+ *     nobody can read, and each child already has a view of its own.
  *  2. **The model is flat.** No member element is nested at all, so there is
  *     no authored box to agree with, and the view wraps the members in a
  *     `group '<title>'` of its own — a real named box in the renderer, derived
@@ -88,9 +104,11 @@ export function viewBody(ctx: RenderContext, sub: SubsystemEntry): ViewBody {
   if (members.every((id) => !id.includes("."))) {
     return { lines: [...groupedBody(ctx, sub, "    "), ...boundaryLines(members)], disclosure: null, of: null };
   }
+  const owner = owningAncestor(ctx, sub);
+  const collapsed = owner === null ? null : collapsedBody(ctx, sub, owner);
+  if (collapsed !== null) return { lines: collapsed, disclosure: null, of: owner };
   const includes = [...ownedAncestors(ctx, sub), ...members].map((id) => `    include ${id}`);
   const lines = [...includes, ...boundaryLines(members)];
-  const owner = owningAncestor(ctx, sub);
   if (owner !== null) return { lines, disclosure: null, of: owner };
   const shared = sharedAncestor(ctx, members);
   return {
@@ -137,6 +155,70 @@ export function viewBody(ctx: RenderContext, sub: SubsystemEntry): ViewBody {
  */
 function boundaryLines(members: readonly string[]): string[] {
   return ["", ...members.map((id) => `    include ${id} -> *, * -> ${id}`)];
+}
+
+/**
+ * The body of a parent whose children the MODEL draws as boxes: the parent's
+ * own box, each child subsystem as ONE box, the services filed directly in the
+ * parent as leaves, and only the lines that say how those parts touch each
+ * other, the sibling subsystems and the people who use them. Laid out left to
+ * right. Null when the shape does not apply, and the caller then draws the
+ * transitive view it always drew.
+ *
+ * Why collapse: the transitive body draws every service of every child with
+ * all of its one-hop neighbours, each at full detail, so the picture grows with
+ * the whole subtree and the renderer lays the leaves out as one long row. This
+ * body draws one box per child however large the child is. The detail is not
+ * lost: every child box
+ * is the subject of its child's own view (`of <child box>`), so a click on it
+ * opens that view, and every leaf has its per-service overview.
+ *
+ * Only the edges that keep the picture at ONE altitude, and none to the
+ * infrastructure: `<parent>.* -> <parent>.*` between the parts, one line per
+ * sibling subsystem's box, and the people. A part's edges into Redis, Kafka or
+ * a database are what made the transitive view unreadable, and they stay
+ * visible one click down. A sibling with no box of its own draws nothing here
+ * rather than a pile of its services.
+ *
+ * Applies only when every part is a DIRECT child of the parent's box. With an
+ * element between them, `<parent>.*` would draw that element as the part
+ * instead of the child's own box, and the click-through into the child's view
+ * would land nowhere.
+ */
+function collapsedBody(ctx: RenderContext, sub: SubsystemEntry, owner: string): string[] | null {
+  const children = childSubsystems(ctx, sub);
+  if (children.length === 0) return null;
+  const boxes = children.map((child) => owningAncestor(ctx, child));
+  const parts = [...boxes, ...directMemberElements(ctx, sub)];
+  if (!parts.every((id): id is string => id !== null && isDirectChild(owner, id))) return null;
+  const all = `${owner}.*`;
+  const siblings = siblingSubsystems(ctx, sub)
+    .map((s) => owningAncestor(ctx, s))
+    .filter((id): id is string => id !== null);
+  return [
+    `    include ${owner}`,
+    ...parts.sort().map((id) => `    include ${id}`),
+    "",
+    `    include ${all} -> ${all}`,
+    ...siblings.sort().map((id) => `    include ${all} -> ${id}, ${id} -> ${all}`),
+    ...(ctx.drawsPeople
+      ? [`    include element.kind = ${PERSON_KIND} -> ${all}, ${all} -> element.kind = ${PERSON_KIND}`]
+      : []),
+    "    autoLayout LeftRight",
+  ];
+}
+
+/** Is `id` an element declared directly inside `owner`, with nothing between them? */
+function isDirectChild(owner: string, id: string): boolean {
+  return id.startsWith(`${owner}.`) && !id.slice(owner.length + 1).includes(".");
+}
+
+/** The other subsystems under the same parent directory, ordered by name. */
+function siblingSubsystems(ctx: RenderContext, sub: SubsystemEntry): SubsystemEntry[] {
+  const parent = sub.path.slice(0, -1);
+  return ctx.tree.subsystems
+    .filter((s) => s.name !== sub.name && s.path.length === sub.path.length && withinSubsystem(parent, s.path))
+    .sort((a, b) => (a.name < b.name ? -1 : 1));
 }
 
 /**

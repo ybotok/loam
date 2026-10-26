@@ -480,7 +480,8 @@ nesting ("How archive writes, and how unarchive undoes it" has the decision).
 
 The tree is mirrored into **one generated file, never into the authored landscape**:
 `architecture/subsystems.likec4` holds LikeC4 **views only** — no model, no tags, no `specification`
-— one view per subsystem, transitively enumerating the services beneath it as `include` lines naming
+— one view per subsystem, transitively enumerating the services beneath it (a parent whose children
+the map draws as boxes is the exception, item 1 below) as `include` lines naming
 landscape *element* ids (resolved through the same `metadata { service }`-then-title join every
 check uses; a member nothing models is omitted, which `landscape.service-unmodelled` already
 reports). The output is deterministic and line-oriented — subsystems sorted by path, members by id,
@@ -527,6 +528,13 @@ The **boundary** each view draws is a fact about the landscape, never a setting:
 
 1. an element that holds *exactly* the subsystem's members and nothing else is included beside the
    leaves, so the renderer nests them in the box the author drew, under the author's title;
+   when every child subsystem also has such an element of its own, declared directly inside this
+   one, the view is **collapsed**: the parent's box, one box per child, the services filed directly
+   in the parent, and only the lines between those parts (`<box>.* -> <box>.*`), to each sibling
+   subsystem's box, and to `person` elements when the map draws any, laid out left to right. The
+   children's services and everything they touch are in the children's own views, which a click on
+   a child box opens. Every service of every child with all its neighbours grows with the whole
+   subtree and lays out as one long row;
 2. a landscape that nests nothing puts the services in a `group '<title>'` of loam's own, mirroring
    the directory subtree, so a parent subsystem shows its children as boxes rather than one pile;
 3. members that ARE nested with no element owning exactly them get no box and one comment line —

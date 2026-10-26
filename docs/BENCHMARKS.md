@@ -136,7 +136,7 @@ loam `0.2.0-alpha.14` · fleet `examples/docs` · service `payment-service` · b
 | `loam-verify` | `loam instructions loam-verify FEAT-101` | 13,594 | ~3,399 | 9,771 (~2,443) |
 | `loam-ship` | `loam instructions loam-ship FEAT-101` | 10,107 | ~2,527 | same bytes |
 | `loam-report` | `loam instructions loam-report` | 7,870 | ~1,968 | same bytes |
-| `loam-codes` | `loam instructions loam-codes` | 65,661 | ~16,415 | same bytes |
+| `loam-codes` | `loam instructions loam-codes` | 66,104 | ~16,526 | same bytes |
 | `loam-spine` | `loam instructions loam-spine` | 18,647 | ~4,662 | same bytes |
 | `loam-authoring` | `loam instructions loam-authoring` | 18,119 | ~4,530 | same bytes |
 | `loam-done-check` | `loam instructions loam-done-check` | 12,882 | ~3,221 | same bytes |

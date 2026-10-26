@@ -33,9 +33,12 @@
  *
  * Membership is TRANSITIVE: a subsystem's view includes every service beneath
  * it at any depth, so a parent's view is the whole group's map rather than an
- * empty frame around its children. An empty view body is legal LikeC4 (same
- * spike), so an empty subsystem renders as one — `subsystem new` must be
- * usable before anything moves in.
+ * empty frame around its children — EXCEPT when the map draws each child as a
+ * box of its own directly inside the parent's. Then the parent's view draws
+ * each child as that one box and leaves its services to the child's own view
+ * (`./body.ts`'s `collapsedBody` has the measurement that decided it). An
+ * empty view body is legal LikeC4 (same spike), so an empty subsystem renders
+ * as one — `subsystem new` must be usable before anything moves in.
  *
  * Include lines name the landscape ELEMENT id, resolved through the same
  * element→service join `validate` uses (`serviceResolver`: explicit

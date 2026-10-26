@@ -79,7 +79,13 @@ export const SUBSYSTEM_COMMANDS = `- \`loam subsystem <verb>\` manages the group
   comparison against the deterministic re-render, never by reading what a view
   shows. Each per-service view is declared \`of\` its service's element, which is
   what makes every other view — the fleet map, its subsystem view, its peers'
-  views — drill into it with no authored link. Each subsystem view
+  views — drill into it with no authored link. A parent subsystem whose child
+  subsystems the map draws as boxes of their own, directly inside the parent's
+  box, gets a COLLAPSED view: its box, one box per child, the services filed
+  directly in it, and only the lines between those parts, to its sibling
+  subsystems' boxes and to \`person\` elements, laid out left to right. The
+  children's services and their infrastructure are in the children's views,
+  one click on a child box away. Each subsystem view
   carries \`global style subsystems\` — written after its title, the one line
   LikeC4 gives a view for borrowing a palette — exactly when the \`architecture/\`
   project declares a global style with that id (\`global { styleGroup subsystems

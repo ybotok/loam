@@ -10,6 +10,18 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Changed — a parent subsystem's generated view draws its children as boxes
+
+- In `architecture/subsystems.likec4`, the view of a subsystem whose child subsystems the map
+  draws as boxes of their own, directly inside the parent's box, no longer includes every service
+  of every child with its one-hop neighbours. It includes the parent's box, one box per child, the
+  services filed directly in the parent, and only the lines between those parts, to each sibling
+  subsystem's box and to `person` elements (when the map draws one), with `autoLayout LeftRight`.
+  A click on a child box opens that child's view, which is unchanged. Every other view keeps the
+  shape it had, and so does a parent whose child has no box of its own.
+- A repository with such a parent gets `subsystem.views-stale` once after upgrading;
+  `loam subsystem sync` rewrites the file.
+
 ### Changed — a new fleet map declares the technology palette
 
 - The `architecture/landscape.likec4` that `loam init --create` scaffolds, and the map
