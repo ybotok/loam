@@ -6,8 +6,12 @@
  * seam the two halves already had: ./landscape.ts holds the stub loam writes
  * NOW and the predicate that reads it, this module holds what loam wrote
  * before. The first changes whenever the advice to a new fleet improves; this
- * one only ever grows by one entry, when that happens.
+ * one only ever grows by one entry, when that happens — today in
+ * ./legacy-kinded.ts, which holds the generations that declare relationship
+ * kinds and which this list ends with.
  */
+
+import { KINDED_LANDSCAPE_STUBS } from "./legacy-kinded.js";
 
 /**
  * Stubs earlier versions of loam wrote, FROZEN — never re-derived from
@@ -37,6 +41,9 @@
  * paragraph and the shared-broker advice, with no relationship kinds — every
  * edge a plain `->`, which is how a fleet drawn from deployment configuration
  * ended with every arrow pointing into its broker and its stores.
+ * Generation 5 onward declare the seven relationship kinds and live in
+ * ./legacy-kinded.ts, appended at the end of this list: one more whole stub
+ * here would have taken this file past its line limit.
  */
 export const LEGACY_LANDSCAPE_STUBS: readonly string[] = [
   `// The fleet map: every service in services/ appears here, and every call
@@ -268,4 +275,5 @@ views {
   }
 }
 `,
+  ...KINDED_LANDSCAPE_STUBS,
 ];

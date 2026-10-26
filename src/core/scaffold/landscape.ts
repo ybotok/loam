@@ -55,6 +55,16 @@ import { LEGACY_LANDSCAPE_STUBS } from "./legacy.js";
  * invented example would be a box every fleet check grades. The comment says
  * when to write one. The kinds block has the same deliberate second copy in
  * `core/c4/seed/template.ts`, pinned the same way by test/seed.test.ts.
+ *
+ * The technology palette — four custom colours and a tag per technology — is
+ * declared for the kinds' second reason: a delta that colours a Redis box must
+ * find `redisRed` declared here or the archive refuses it, and a palette every
+ * fleet declares by the same names and values is the one a reader can learn
+ * once. Declared and never applied: a colour reaches a box only through a
+ * style group a view references, and no style group is scaffolded, because
+ * declaring one named `subsystems` or `services` is the opt-in that restyles
+ * the generated views (`loam instructions loam-drawing` shows the group). Same
+ * second copy, same byte-for-byte tripwire.
  */
 export const LANDSCAPE_STUB = `// The fleet map: every service in services/ appears here, and every call
 // between two of them is an edge. This file is written by hand — loam never
@@ -176,6 +186,20 @@ specification {
     // out unconstrained, and enough of them flatten a view into one band.
     tail odot
   }
+
+  // The technology palette: one colour per technology, the same on every loam
+  // map. Red is reserved: a red box is Redis or Oracle and never anything
+  // else, LikeC4's own \`red\` included. Tag the element (#redis) and colour
+  // it by tag in a style group, after the #external rule, because the later
+  // rule wins: \`loam instructions loam-drawing\` has the spelling.
+  tag redis
+  tag oracle
+  tag kafka
+  tag elastic
+  color redisRed #DC382D
+  color oracleRed #8E1B3A
+  color kafkaAmber #A35829
+  color elasticTeal #00BFB3
 }
 
 model {

@@ -41,6 +41,7 @@ export const LOAM_DRAWING: CommandContent = {
   spine: [
     "Which way an arrow points — the relationship kinds",
     "The legend",
+    "The technology palette",
     "Overview views that read",
     "A feature's message flows",
     "A service's own flow in a feature",
@@ -216,6 +217,75 @@ both of its endpoints:
 A view can name only elements the model declares, so the legend is written once
 the map has real edges of each kind, and it gains a line when the map gains a
 kind. \`loam init\` cannot scaffold one, because an empty map has nothing to draw.
+
+## The technology palette
+
+A box's colour says which technology it is, and four technologies have a colour
+of their own, the same on every loam map:
+
+- Redis — \`redisRed\`, \`#DC382D\`, a bright red.
+- Oracle — \`oracleRed\`, \`#8E1B3A\`, a wine red.
+- Kafka — \`kafkaAmber\`, \`#A35829\`: LikeC4's own \`amber\`, pinned by value so
+  that an upgrade of the renderer cannot move it.
+- Elasticsearch — \`elasticTeal\`, \`#00BFB3\`, Elastic's teal. LikeC4 draws its
+  label black, so the light fill stays readable.
+
+**Red is reserved.** A red box is Redis or Oracle and never anything else: no
+other element is drawn red, LikeC4's built-in \`red\` included, and neither is a
+role colour a feature's own preview invents. A colour that means two things
+tells the reader nothing. Any other technology may take a colour of its own, as
+long as it is not a red.
+
+The map \`loam init\` scaffolds, and the one \`loam seed\` templates, already
+declare the four colours and a tag per technology in their own \`specification\`,
+beside the relationship kinds. A map written before declares them there itself:
+
+    specification {
+      tag redis
+      tag oracle
+      tag kafka
+      tag elastic
+      color redisRed #DC382D
+      color oracleRed #8E1B3A
+      color kafkaAmber #A35829
+      color elasticTeal #00BFB3
+    }
+
+Tag the element (\`ordersCache = database 'Redis' { #redis #external }\`) and
+colour it by tag in a style group. A view borrows the group with a
+\`global style subsystems\` line, and the views \`loam subsystem sync\`
+generates write that line themselves once a group of that name is declared (a
+group named \`services\` styles \`architecture/services.likec4\` the same way;
+LikeC4 cannot alias a group, so a second group repeats the rules):
+
+    global {
+      styleGroup subsystems {
+        style element.tag = #external {
+          color gray
+        }
+        style element.tag = #redis {
+          color redisRed
+        }
+        style element.tag = #oracle {
+          color oracleRed
+        }
+        style element.tag = #kafka {
+          color kafkaAmber
+        }
+        style element.tag = #elastic {
+          color elasticTeal
+        }
+      }
+    }
+
+**The technology rules come after \`#external\`.** The later rule wins, and a
+store is nearly always \`#external\`: with the gray rule last, every Redis,
+Oracle, Kafka and Elasticsearch box comes out gray.
+
+A feature's \`delta.likec4\` that colours an element declares the colour in its
+own \`specification\` too, with the same name and value. Archive copies no
+declaration, so a colour the living map lacks is
+\`delta.specification-not-merged\`, which names the line to add.
 
 ## Overview views that read
 

@@ -865,6 +865,19 @@ is stripped on the way over. The gate asks the archive's own merge, and only whe
 vocabulary pays nothing for it; the merge refuses the same additions by name (`merge-failed`) as
 the backstop.
 
+**A box's colour is drawing too, and four technologies have a fixed one.** The map
+`loam init --create` scaffolds and the one `loam seed` templates both declare the technology
+palette beside the kinds: the tags `redis`, `oracle`, `kafka` and `elastic`, and the custom
+colours `redisRed #DC382D`, `oracleRed #8E1B3A`, `kafkaAmber #A35829` (LikeC4's `amber`, pinned by
+value) and `elasticTeal #00BFB3`. Red is reserved for Redis and Oracle: no other element is drawn
+red, LikeC4's built-in `red` included. Both maps declare the palette and apply none of it. A colour
+reaches a box only through a style group a view references, and declaring a group named
+`subsystems` or `services` is the opt-in that restyles the generated views. So the scaffold
+declares no group, and `loam instructions loam-drawing` shows the one to write, with the
+technology rules after `#external` because the later rule wins. No check reads a colour. A
+custom colour a delta uses is still vocabulary the living map must declare
+(`delta.specification-not-merged`), which is the other reason every map declares the same names.
+
 ## `loam.json` — the wiring, one file per repository
 
 The docs repo is one repository; each governed implementation boundary is represented by a code

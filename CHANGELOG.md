@@ -10,6 +10,22 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Changed — a new fleet map declares the technology palette
+
+- The `architecture/landscape.likec4` that `loam init --create` scaffolds, and the map
+  `loam seed` writes, now declare the tags `redis`, `oracle`, `kafka` and `elastic` and the custom
+  colours `redisRed #DC382D`, `oracleRed #8E1B3A`, `kafkaAmber #A35829` and `elasticTeal #00BFB3`
+  in their `specification` block. Red is reserved: a red box is Redis or Oracle and nothing else.
+  Neither map applies the colours. No style group is scaffolded, so the generated views look as
+  they did until a repository declares one.
+- `loam instructions loam-drawing` has a new section, "The technology palette", with the
+  colours, the reserved red, and the style group that applies them (technology rules after the
+  `#external` rule, because the later rule wins).
+- A map an earlier loam scaffolded and nobody touched still reads as the untouched stub,
+  including one from 0.2.0-alpha.13 or .14 that declares the relationship kinds and no palette.
+  To use the palette on such a map, add its declarations from the drawing page first. A delta
+  that colours an element with a colour the map lacks gets `delta.specification-not-merged`.
+
 ## [0.2.0-alpha.14] - 2026-10-23
 
 Everything on `main` since `0.2.0-alpha.13`. Still a prerelease on the `alpha` line. When this

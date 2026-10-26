@@ -580,6 +580,43 @@ describe("element-id sanitizing and the views tripwire", () => {
       expect(kindsBlock(body)).toContain(`  relationship ${kind} {`);
     }
   });
+
+  it("the seeded technology palette is byte-identical to the scaffold stub's — the same tripwire", () => {
+    // The third block both writers carry. A palette is only worth pinning if
+    // every map spells it alike: a seeded map whose Redis red sat one hex digit
+    // off the scaffolded one's would draw two reds for one technology, and a
+    // delta coloured against either would owe the other a declaration. The
+    // block runs to the specification's closing brace, so a colour appended
+    // to one copy alone fails here too.
+    const id = parseServiceId("checkout", "test fixture");
+    if (!id.ok) throw new Error(id.problem);
+    const body = renderLandscape({
+      services: [{ id: id.id, subsystem: null }],
+      subsystems: [],
+      externals: [],
+      calls: [],
+    });
+    const paletteBlock = (text: string): string => {
+      const start = text.indexOf("  // The technology palette");
+      const end = text.indexOf("\n}\n", start);
+      expect(start, "no palette to compare — the tripwire must not pass vacuously").toBeGreaterThanOrEqual(0);
+      expect(end).toBeGreaterThan(start);
+      return text.slice(start, end + 1);
+    };
+    expect(paletteBlock(body)).toBe(paletteBlock(scaffoldLandscape()));
+    for (const line of [
+      "  tag redis",
+      "  tag oracle",
+      "  tag kafka",
+      "  tag elastic",
+      "  color redisRed #DC382D",
+      "  color oracleRed #8E1B3A",
+      "  color kafkaAmber #A35829",
+      "  color elasticTeal #00BFB3",
+    ]) {
+      expect(paletteBlock(body)).toContain(`${line}\n`);
+    }
+  });
 });
 
 describe("a Windows checkout: line endings are not hand edits", () => {

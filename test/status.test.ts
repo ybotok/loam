@@ -1259,9 +1259,21 @@ describe("isLandscapeStub — the writer and the checker read one string", () =>
       (s) => s.includes("views {") && !s.includes("  relationship publishes {"),
     );
     expect(unkinded.length).toBe(2);
-    expect(unkinded.at(-1)).toBe(LEGACY_LANDSCAPE_STUBS.at(-1));
     for (const kind of ["publishes", "delivers", "reads", "writes", "readsWrites", "calls", "connects"]) {
       expect(stub).toContain(`  relationship ${kind} {`);
+    }
+    // Generation 5 (v0.2.0-alpha.13 through .14) declared the seven kinds and
+    // no technology palette; the current stub adds the palette. It is the
+    // newest frozen entry, right after the unkinded ones — appended through
+    // the second module the list now spans, which is the wiring this pins.
+    const kindedUnpainted = LEGACY_LANDSCAPE_STUBS.filter(
+      (s) => s.includes("  relationship publishes {") && !s.includes("color redisRed"),
+    );
+    expect(kindedUnpainted.length).toBe(1);
+    expect(kindedUnpainted[0]).toBe(LEGACY_LANDSCAPE_STUBS.at(-1));
+    expect(LEGACY_LANDSCAPE_STUBS.at(-2)).toBe(unkinded.at(-1));
+    for (const line of ["color redisRed #DC382D", "color oracleRed #8E1B3A", "color kafkaAmber #A35829", "color elasticTeal #00BFB3"]) {
+      expect(stub).toContain(`  ${line}\n`);
     }
   });
 });
