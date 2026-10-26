@@ -10,10 +10,11 @@
  * One slash command, format-free. `body` is the whole protocol — the per-tool
  * emitters in AGENT_TOOLS add only a path and a wrapper (frontmatter fields, a
  * TOML shell), never their own prose: one source of truth, thin spellings.
- * Bodies keep Claude's positional `$1`/`$2` placeholder convention across
- * every tool — dialects differ (Gemini's {{args}}, Copilot's ${input}) and rewriting the
- * text per tool would be a second copy of the protocol in all but name; an
- * agent reading the file still sees which argument goes where.
+ * Bodies write their arguments positionally, `$1`/`$2`, and that is the one
+ * thing a wrapper may re-spell: into what its host fills in (Claude Code's
+ * named `$feature`, Copilot's `${input:…}`) or into words where the host fills
+ * in nothing. Only the placeholder moves; tools/arguments.ts says why one
+ * spelling for every host was wrong.
  */
 /**
  * What a protocol's positional placeholder denotes. `free` is the one that
@@ -104,6 +105,14 @@ export interface AgentFileEmitter {
   format(cmd: DeliveredCommand): string;
 }
 
+/** One always-read instructions file: where it goes, and its bytes around the version stamp. */
+export interface InstructionsEmitter {
+  /** Repo-relative path segments of the file. */
+  readonly path: readonly string[];
+  /** The whole file, given the stamp line and the commands the repository holds skills for. */
+  format(stamp: string, commands: readonly CommandContent[]): string;
+}
+
 /**
  * A tool the commands can be emitted for — the registry key is the `--tools`
  * id (OpenSpec's ids where the tool has one there). A path and a wrapper are
@@ -125,6 +134,19 @@ export interface AgentTool {
   format?(cmd: DeliveredCommand): string;
   /** The skill delivery. Absent for a tool with no skills convention. */
   skill?: AgentFileEmitter;
+  /**
+   * A file the tool reads on every request in the repository — one per repo,
+   * not one per command — that tells an agent loam is here before any skill
+   * is chosen. Written beside the skills, outside the docs repo, whose
+   * AGENTS.md already says it.
+   */
+  instructions?: InstructionsEmitter;
+  /**
+   * Repo-relative directory prefixes (ending in `/`) this tool's files were
+   * written under before they moved. A re-run removes the files there that
+   * loam wrote and nobody edited, so the tool does not read two copies.
+   */
+  retired?: readonly string[];
   /**
    * Repo-relative paths whose presence means this tool is in use here — what
    * `loam init` scans when no `--tools` says otherwise. Usually just the tool's

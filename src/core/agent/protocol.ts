@@ -8,6 +8,7 @@
 import { featureIdProblem } from "../kernel/ids/feature.js";
 import { serviceIdProblem } from "../kernel/ids/service.js";
 import type { CommandContent, PlaceholderKind } from "./contract.js";
+import { ARGUMENT_SPELLINGS } from "./tools/arguments.js";
 import { LOAM_ADOPT } from "./workflows/adopt.js";
 import { LOAM_CHECK } from "./workflows/check.js";
 import { LOAM_VERIFY, LOAM_SHIP } from "./workflows/closing.js";
@@ -95,28 +96,31 @@ export const PLACEHOLDERS: Record<string, readonly PlaceholderKind[]> = Object.f
  * the same answer.
  *
  * The first is empty; {@link protocolFor} says which dialects send that. The
- * second is the placeholder ITSELF, arriving as data. One body serves twenty
- * tool dialects (tools/registry.ts) and keeps Claude's positional `$1`/`$2`
- * convention in all of them (see {@link CommandContent}), so every generated
- * stub carries the spelling verbatim: `.gemini/commands/loam/adopt.toml`
- * contains the literal line `loam instructions loam-adopt $1`. Gemini's own
- * convention is `{{args}}` and Copilot's is `${input:…}`, and Cline, Kilo Code
- * and Roo Code substitute nothing whatever — so on those three the `$1` reaches
- * this command exactly as written, and loam refused the literal first
- * instruction of its own workflow with `invalid-option`. (Unquoted in a POSIX
- * shell the same line degrades the other way: `$1` expands to empty, and the
- * agent receives a protocol addressed to nobody.) The same class already cost
- * `loam-check` its placeholder — see the comment in workflows/check.ts; this is
- * the general fix, made once in the RECEIVING command rather than per dialect.
+ * second is the placeholder ITSELF, arriving as data. One stub serves twenty
+ * tool dialects (tools/registry.ts), and most of them keep the stub's
+ * positional `$1`: `.gemini/commands/loam/adopt.toml` contains the literal line
+ * `loam instructions loam-adopt $1`. Gemini's own convention is `{{args}}`, and
+ * Cline, Kilo Code and Roo Code substitute nothing whatever — so on those
+ * three the `$1` reaches this command exactly as written, and loam refused the
+ * literal first instruction of its own workflow with `invalid-option`. (Unquoted
+ * in a POSIX shell the same line degrades the other way: `$1` expands to empty,
+ * and the agent receives a protocol addressed to nobody.) The same class
+ * already cost `loam-check` its placeholder — see the comment in
+ * workflows/check.ts; this is the general fix, made once in the RECEIVING
+ * command rather than per dialect.
  *
- * Scoped to `^\$[1-9]$` and no wider. `{{args}}` and `${input:…}` are
- * deliberately NOT matched: the tools that spell placeholders that way
+ * The dialects that re-spell the stub (tools/arguments.ts) add two more
+ * shapes, and both are here for the same reason: Claude Code's `$service`,
+ * which a host that does not read `arguments:` — Copilot reading
+ * `.claude/skills/` — leaves standing, and an Agent Skills file's
+ * `<service-id>`, which an agent can paste quoted. `{{args}}` and `${input:…}`
+ * are deliberately NOT matched: the tools that spell placeholders that way
  * substitute them before an agent ever reads the file, so they cannot arrive
- * here, and loam emits neither. A value that merely CONTAINS a placeholder
- * (`FEAT-$1`) is a real argument and is still checked as one.
+ * here. A value that merely CONTAINS a placeholder (`FEAT-$1`) is a real
+ * argument and is still checked as one.
  */
 const unsupplied = (arg: string | undefined): boolean =>
-  arg === undefined || arg === "" || /^\$[1-9]$/.test(arg);
+  arg === undefined || arg === "" || /^\$[1-9]$/.test(arg) || ARGUMENT_SPELLINGS.has(arg);
 
 /**
  * Why the arguments given to `name` cannot be substituted into its protocol, or
@@ -193,7 +197,8 @@ export const REFERENCE_PAGES: readonly MenuRow[] = REFERENCES.map(row);
  * whose intent.md opens with a bare `#`.
  *
  * The LITERAL PLACEHOLDER is the second: the dialects that substitute nothing
- * hand this command the `$1` their generated stub was written with, so
+ * hand this command the `$1` their generated stub was written with — or its
+ * re-spelling, `$service` or `<service-id>` — so
  * `loam instructions loam-adopt $1` renders the same page as
  * `loam instructions loam-adopt` — the placeholder standing, the protocol
  * printed. Here the shape mostly falls out anyway (planting `$1` where `$1`

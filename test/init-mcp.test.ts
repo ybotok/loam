@@ -87,7 +87,7 @@ describe("init --mcp: the file", () => {
     const dir = await throwawayDir();
     await runLoam(dir, "init", "--docs", "./d", "--create", "--mcp");
     expect(JSON.parse(await readFile(join(dir, ".mcp.json"), "utf8"))).toEqual({
-      mcpServers: { loam: { command: "loam", args: ["mcp"] } },
+      mcpServers: { loam: { type: "stdio", command: "loam", args: ["mcp"] } },
     });
   });
 
@@ -101,7 +101,7 @@ describe("init --mcp: the file", () => {
     await installLocalBin(dir);
     await runLoam(dir, "init", "--docs", "./d", "--create", "--mcp");
     expect(JSON.parse(await readFile(join(dir, ".mcp.json"), "utf8"))).toEqual({
-      mcpServers: { loam: { command: "npx", args: ["--no", "loam", "mcp"] } },
+      mcpServers: { loam: { type: "stdio", command: "npx", args: ["--no", "loam", "mcp"] } },
     });
   });
 
@@ -111,7 +111,7 @@ describe("init --mcp: the file", () => {
     const res = await runLoam(dir, "init", "--docs", "./d", "--create", "--mcp-author", "--json");
     expect(res.code).toBe(0);
     expect(JSON.parse(await readFile(join(dir, ".mcp.json"), "utf8"))).toEqual({
-      mcpServers: { loam: { command: "npx", args: ["--no", "loam", "mcp", "--author"] } },
+      mcpServers: { loam: { type: "stdio", command: "npx", args: ["--no", "loam", "mcp", "--author"] } },
     });
     expect(JSON.parse(res.stdout).created).toContain(join(dir, ".mcp.json"));
   });
@@ -243,4 +243,74 @@ describe("init --mcp: the config actually launches a server", () => {
       expect((status["structuredContent"] as Record<string, unknown>)["ok"]).toBe(true);
     },
   );
+});
+
+describe("init --mcp: the hosts that read no .mcp.json", () => {
+  it("writes Codex's and OpenCode's config when those tools are selected, and only then", async () => {
+    const dir = await throwawayDir();
+    const res = await runLoam(dir, "init", "--docs", "./d", "--create", "--tools", "codex,opencode", "--mcp", "--json");
+    expect(res.code, res.out).toBe(0);
+    const created = JSON.parse(res.stdout).created as string[];
+    expect(created).toEqual(expect.arrayContaining([
+      join(dir, ".mcp.json"), join(dir, ".codex", "config.toml"), join(dir, "opencode.json"),
+    ]));
+    expect(await readFile(join(dir, ".codex", "config.toml"), "utf8"))
+      .toContain('[mcp_servers.loam]\ncommand = "loam"\nargs = ["mcp"]\n');
+    expect(JSON.parse(await readFile(join(dir, "opencode.json"), "utf8"))).toEqual({
+      $schema: "https://opencode.ai/config.json",
+      mcp: { loam: { type: "local", command: ["loam", "mcp"], enabled: true } },
+    });
+
+    const claudeOnly = await throwawayDir();
+    await runLoam(claudeOnly, "init", "--docs", "./d", "--create", "--tools", "claude", "--mcp");
+    expect(existsSync(join(claudeOnly, ".codex"))).toBe(false);
+    expect(existsSync(join(claudeOnly, "opencode.json"))).toBe(false);
+  });
+
+  it("leaves a host's own config alone — OpenCode's in either spelling — and prints the entry", async () => {
+    const dir = await throwawayDir();
+    const mine = "{ // ours\n}\n";
+    await writeFile(join(dir, "opencode.jsonc"), mine, "utf8");
+    const res = await runLoam(dir, "init", "--docs", "./d", "--create", "--tools", "opencode", "--mcp", "--json");
+    expect(res.code, res.out).toBe(0);
+    expect(JSON.parse(res.stdout).skipped).toContain(join(dir, "opencode.jsonc"));
+    expect(existsSync(join(dir, "opencode.json"))).toBe(false);
+    expect(await readFile(join(dir, "opencode.jsonc"), "utf8")).toBe(mine);
+
+    const human = await runLoam(dir, "init", "--tools", "opencode", "--mcp");
+    expect(human.out).toContain("opencode.jsonc is already here");
+    expect(human.out).toContain(`paste this into its "mcp" object`);
+  });
+
+  it("prints the Copilot cloud agent's settings JSON, which reads no file", async () => {
+    const dir = await throwawayDir();
+    const res = await runLoam(dir, "init", "--docs", "./d", "--create", "--tools", "github-copilot", "--mcp");
+    expect(res.code, res.out).toBe(0);
+    expect(res.out).toContain("Settings → Copilot → Cloud agent → MCP configuration");
+    expect(res.out).toContain(`"tools": [`);
+    expect(res.out).toContain("loam init --copilot-setup");
+  });
+});
+
+describe("init --copilot-setup", () => {
+  it("writes the cloud agent's setup workflow once, with the docs repo cloned where loam.json points", async () => {
+    const dir = await throwawayDir();
+    const svc = join(dir, "svc");
+    await mkdir(svc);
+    const res = await runLoam(svc, "init", "--docs", "../docs", "--create", "--copilot-setup", "--json");
+    expect(res.code, res.out).toBe(0);
+    const path = join(svc, ".github", "workflows", "copilot-setup-steps.yml");
+    expect(JSON.parse(res.stdout).created).toContain(path);
+    const workflow = await readFile(path, "utf8");
+    expect(workflow).toContain("  copilot-setup-steps:\n");
+    expect(workflow).toContain("npm install --global @ybotok/loam@");
+    // the docs repo has no origin here, so the file says what to fill in
+    expect(workflow).toContain('github.com/OWNER/DOCS-REPO.git" "../docs"');
+    expect(workflow).toContain("run: loam doctor");
+
+    await writeFile(path, "ours\n", "utf8");
+    const again = await runLoam(svc, "init", "--copilot-setup", "--json");
+    expect(JSON.parse(again.stdout).skipped).toContain(path);
+    expect(await readFile(path, "utf8")).toBe("ours\n");
+  });
 });

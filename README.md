@@ -432,8 +432,9 @@ npx -y "$LOAM" gate --service "$SERVICE" --since "$DOCS_SHA_OF_LAST_DEPLOY"
 of the service answers every docs-reading command with `docs-missing`. GitHub's Copilot coding
 agent and Codex cloud each start from the one repository the task names and run a setup step you
 own, so clone the docs repo there, into the committed `docsDir`. Copilot reads the job
-`copilot-setup-steps` from `.github/workflows/copilot-setup-steps.yml` on the default branch, and
-an
+`copilot-setup-steps` from `.github/workflows/copilot-setup-steps.yml` on the default branch —
+`loam init --copilot-setup` writes it once, filled in from `loam.json` and the docs repo's `origin` —
+and an
 [Agents secret](https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/customize-cloud-agent/configure-secrets-and-variables)
 reaches those steps as an environment variable:
 
@@ -554,7 +555,7 @@ cannot hold.
 
 | Command | Flags | What it does |
 |---|---|---|
-| `loam init` | `--docs <dir>` `--service <id>` `--create` `--force` `--tools <ids>` `--agent-profile <full\|service\|docs>` `--example <dir>` `--no-commands` `--no-skills` `--mcp` `--mcp-author` | Bind this repository to the single shared docs repo: a committed local `loam.json`, plus command and Agent Skill pointers for detected AI tools. Profiles narrow the six lifecycle workflows to a repo's role; the support-only `loam-report` stays in every profile. Re-running init refreshes only unchanged loam-owned pointers; edited files are preserved. `--mcp` writes the read-only host entry, while `--mcp-author` opts into the bounded authoring tools. `--create` scaffolds the docs repo; `--example` copies the packaged example and stops |
+| `loam init` | `--docs <dir>` `--service <id>` `--create` `--force` `--tools <ids>` `--agent-profile <full\|service\|docs>` `--example <dir>` `--no-commands` `--no-skills` `--mcp` `--mcp-author` `--copilot-setup` | Bind this repository to the single shared docs repo: a committed local `loam.json`, plus command and Agent Skill pointers for detected AI tools. Profiles narrow the six lifecycle workflows to a repo's role; the support-only `loam-report` stays in every profile. Re-running init refreshes only unchanged loam-owned pointers; edited files are preserved. `--mcp` writes the read-only host entry (and Codex's or OpenCode's config when those are selected), while `--mcp-author` opts into the bounded authoring tools. `--copilot-setup` writes the workflow that installs loam for Copilot's cloud agent. `--create` scaffolds the docs repo; `--example` copies the packaged example and stops |
 | `loam seed` | `--from <file>` | Template the fleet map and one `services/<id>/` directory per service from a tiny human-authored `fleet.yaml`. Mechanical, never a guess: a human stated every fact. Refuses once the landscape has been hand-edited |
 | `loam list [services\|features\|capabilities\|glossary\|suites]` | `--archived` `--needs-work` `--review-order` `--subsystem <name>` `--owners <path>` | What is in the docs repo, and what is missing from it. `capabilities` rolls up who realizes each promise; `glossary` rolls up each term with the documents that cite it; `suites` groups the use cases by `#suite-` tag and names the services each suite needs up (`loam list suites <name>` shows one) |
 | `loam status [<FEAT>]` | `--service <id>` | Where the work stands and what to do next, as a projection over the two gates. Each `next[]` row has an `execution` object that says whether it is runnable, where, and what input or edit is still needed. Derived every run; writes nothing |
@@ -606,12 +607,13 @@ twenty-one targets**: as a command file you type — `/loam-check` for most, `/l
 tool namespaces by directory, `@loam-check` in Amazon Q's prompt library — and as an Agent Skill
 at `<tool-dir>/skills/loam-<x>/SKILL.md`, which the model loads by itself when the task matches. Two
 targets are skills only: Codex loads no custom command files, and its target writes
-`.codex/skills/` — a root Codex still reads but no longer documents (its skills page names only
-`.agents/skills`; select `agents` too if you want the documented one) — and
-`agents` is not a tool at all but the vendor-neutral `.agents/skills/` root that Cursor, GitHub
-Copilot, Codex, Gemini CLI, Zed and Roo Code each document reading — one copy those six share
-instead of six copies of the same bytes. `--no-commands` and `--no-skills` each suppress one
-delivery.
+`.agents/skills/`, the root Codex documents — a re-run removes the unedited copies it used to write
+under `.codex/skills/`, which Codex lists a second time — and `agents` is not a tool at all but that
+same vendor-neutral `.agents/skills/` root, which Cursor, GitHub Copilot, Codex, OpenCode, Gemini
+CLI, Zed and Roo Code each document reading. For a team on several of those, `--tools agents` is
+one copy they all share instead of one per tool; a tool's own target adds only what that tool reads
+— Copilot's `argument-hint` and its instructions file, OpenCode's commands.
+`--no-commands` and `--no-skills` each suppress one delivery.
 
 **The explicit command is the recommended, predictable entry point; natural language remains a
 shortcut.** A normal chat lifecycle is `/loam-feature FEAT-101 "Split payments"` to propose,
@@ -686,9 +688,12 @@ For hosts that reach tools through MCP rather than a shell, see [the MCP server]
 Read tools declare `readOnlyHint`; every tool declares the shared envelope output schema; the compact
 orientation and all workflow/support/reference pages are MCP resources, including a compact loam-check
 resource without the 223-row fix table. `loam init --mcp` writes the
-read-only host entry. `--mcp-author` is a separate explicit choice that adds bounded writers while
-still excluding vouch, evidence recording and a committing archive. An existing `.mcp.json` is
-always preserved byte for byte, with the entry printed for manual merge.
+read-only host entry — `.mcp.json`, plus Codex's `.codex/config.toml` and OpenCode's
+`opencode.json` when those tools are selected. `--mcp-author` is a separate explicit choice that adds
+bounded writers while still excluding vouch, evidence recording and a committing archive. An
+existing config is always preserved byte for byte, with the entry printed for manual merge.
+[WORKFLOW.md](WORKFLOW.md#host-by-host) has the rest host by host: how each spells a command's
+arguments, how to let it run `loam` without asking, and where its MCP config lives.
 
 ## Docs
 

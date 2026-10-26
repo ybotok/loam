@@ -18,14 +18,19 @@ import { InvalidIdError, assertServiceId } from "../../core/kernel/ids/service.j
 import {
   detectAgentTools,
   plannedCommandFiles,
+  retireMovedAgentFiles,
   syncAgentCommands,
   updatedAgentFileManifest,
   type Delivery,
+  type RetiredAgentFiles,
 } from "../../core/agent/scaffold.js";
 import { AGENT_TOOLS } from "../../core/agent/tools/registry.js";
 import { initExample } from "./example.js";
 import { firstHourLines } from "./first-hour.js";
-import { MCP_CONFIG_FILENAME, mcpConfigPath, mcpServerSnippet, writeMcpConfig } from "./mcp.js";
+import { copilotSetupFile } from "./hosts/copilot.js";
+import { MCP_CONFIG_FILENAME, mcpHostFiles, mcpLaunch } from "./hosts/mcp.js";
+import { ownedAlready, writeHostFiles } from "./hosts/write.js";
+import { writtenLines } from "./written.js";
 import { isDocsRepo, resolveAgentProfile, resolveTools, storedDocsDir } from "./options.js";
 
 interface InitOptions {
@@ -40,13 +45,16 @@ interface InitOptions {
   /** commander's --no-skills: true unless the flag is passed. */
   skills: boolean;
   /**
-   * --mcp: also write the repo-root `.mcp.json`. Opt-in and default off — a
-   * third delivery, independent of the two `--no-*` flags rather than a
-   * variation on them, so it neither contradicts them nor is suppressed by
-   * either. See ./mcp.ts for why the file is opt-in at all.
+   * --mcp: also write the repo-root `.mcp.json`, and Codex's and OpenCode's MCP
+   * config when those tools are selected. Opt-in and default off — a third
+   * delivery, independent of the two `--no-*` flags rather than a variation on
+   * them, so it neither contradicts them nor is suppressed by either. See
+   * ./hosts/mcp.ts for why the files are opt-in at all.
    */
   mcp?: boolean;
   mcpAuthor?: boolean;
+  /** --copilot-setup: also write Copilot's cloud-agent setup workflow (./hosts/copilot.ts). */
+  copilotSetup?: boolean;
   /** --tools: comma-separated AGENT_TOOLS ids, or "all". Absent = autodetect. */
   tools?: string;
   /** Workflow subset to scaffold. */
@@ -78,9 +86,11 @@ export function registerInit(program: Command): void {
     .option("--no-skills", "skip the agent skills for this repo entirely")
     .option(
       "--mcp",
-      `also write ${MCP_CONFIG_FILENAME} here, so an MCP host launches \`loam mcp\` for this repo`,
+      `also write ${MCP_CONFIG_FILENAME} here (and Codex's or OpenCode's config when selected), ` +
+        "so an MCP host launches `loam mcp` for this repo",
     )
-    .option("--mcp-author", `write ${MCP_CONFIG_FILENAME} with the opt-in authoring profile`)
+    .option("--mcp-author", "write the MCP config with the opt-in authoring profile")
+    .option("--copilot-setup", "also write the workflow that installs loam for Copilot's cloud agent")
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (opts: InitOptions, command: Command) => {
       const json = opts.json === true;
@@ -107,6 +117,7 @@ export function registerInit(program: Command): void {
             ...(opts.tools !== undefined ? ["--tools"] : []),
             ...(opts.agentProfile !== undefined ? ["--agent-profile"] : []),
             ...(opts.mcpAuthor === true ? ["--mcp-author"] : []),
+            ...(opts.copilotSetup === true ? ["--copilot-setup"] : []),
           ],
           json,
         });
@@ -235,14 +246,22 @@ export function registerInit(program: Command): void {
       // Probe the pre-existing paths in planned order. Managed files refreshed
       // below are removed from `skipped`; custom and already-current files stay.
       const plannedAgentFiles = delivery.length > 0 ? plannedCommandFiles(cwd, tools, delivery, profile) : [];
-      // `.mcp.json` joins the same list rather than being reported on the side:
-      // it is a scaffolded path like any other, so it must appear in `created`
-      // or in `skipped` by the one rule that governs both. Last, because it is
-      // written last.
+      // The host configs join the same list rather than being reported on the
+      // side: each is a scaffolded path like any other, so it must appear in
+      // `created` or in `skipped` by the one rule that governs both — under the
+      // path that is already there, when that is a sibling (`opencode.jsonc`).
+      // Last, because they are written last.
+      const author = opts.mcpAuthor === true;
+      const wantsMcp = opts.mcp === true || author;
+      const stored = storedDocsDir(docsOption);
+      const hostFiles = [
+        ...(wantsMcp ? mcpHostFiles(cwd, tools, author) : []),
+        ...(opts.copilotSetup === true ? [copilotSetupFile(cwd, docsDir, stored)] : []),
+      ];
       const candidates = [
         ...plannedDocsFiles(docsDir),
         ...plannedAgentFiles.map((f) => f.path),
-        ...(opts.mcp === true || opts.mcpAuthor === true ? [mcpConfigPath(cwd)] : []),
+        ...hostFiles.map((f) => ownedAlready(f) ?? f.path),
       ];
       let skipped = candidates.filter((p) => existsSync(p));
 
@@ -252,6 +271,7 @@ export function registerInit(program: Command): void {
       const generatedFor = delivery.length > 0 ? tools : [];
       let refreshed: string[] = [];
       let managedFiles: Record<string, string> = {};
+      let retired: RetiredAgentFiles = { removed: [], superseded: [], forget: [] };
       if (delivery.length > 0) {
         const synced = await syncAgentCommands({
           cwd,
@@ -264,6 +284,9 @@ export function registerInit(program: Command): void {
         refreshed = synced.refreshed;
         managedFiles = synced.managed;
         skipped = skipped.filter((path) => !refreshed.includes(path));
+        // Only once the new copies are down: a tool whose files moved (codex,
+        // from `.codex/skills/`) would otherwise read each skill twice.
+        if (delivery.includes("skills")) retired = await retireMovedAgentFiles(cwd, tools, existing?.agentFiles);
       }
 
       // The third delivery, and the only machine-readable one. It refuses out
@@ -271,23 +294,19 @@ export function registerInit(program: Command): void {
       // is a host that starts a broken server, and the caller asked for it by
       // name. Before saveConfig, so a run that cannot write this file has not
       // yet moved the committed pointer either.
-      let mcpWritten = false;
-      if (opts.mcp === true || opts.mcpAuthor === true) {
-        const write = await writeMcpConfig(cwd, opts.mcpAuthor === true);
-        if (write.kind === "failed") {
-          fail(json, write.code, write.message);
-          return;
-        }
-        mcpWritten = write.kind === "created";
-        if (mcpWritten) created.push(mcpConfigPath(cwd));
+      const hosts = await writeHostFiles(cwd, hostFiles);
+      if (hosts.failed !== null) {
+        fail(json, hosts.failed.code, hosts.failed.message);
+        return;
       }
+      created.push(...hosts.created);
 
-      const stored = storedDocsDir(docsOption);
       // Union, not replacement: this run's files join the ones earlier runs left
       // on disk, and `agentTools` is a record of what the repo HOLDS. A run that
       // generated nothing adds nothing and erases nothing.
       const recordedTools = [...new Set([...(existing?.agentTools ?? []), ...generatedFor])];
       const agentFileManifest = updatedAgentFileManifest(cwd, plannedAgentFiles, existing?.agentFiles, managedFiles);
+      for (const key of retired.forget) delete agentFileManifest[key];
       const config: StoredConfig = {
         ...existing,
         docsDir: stored,
@@ -322,6 +341,10 @@ export function registerInit(program: Command): void {
           created,
           refreshed,
           skipped,
+          // A tool's files that moved: the old copies loam removed, and the
+          // edited ones it left where they were.
+          removed: retired.removed,
+          superseded: retired.superseded,
           tools: generatedFor,
           agentProfile: profile,
           detected,
@@ -349,27 +372,8 @@ export function registerInit(program: Command): void {
       if (opts.commands) console.log(`  commands:  ${tools.join(", ")}`);
       if (opts.skills) console.log(`  skills:    ${tools.join(", ")}`);
       console.log(`  profile:   ${profile}`);
-      if (created.length > 0) {
-        console.log("  scaffolded:");
-        for (const c of created) console.log(`    + ${c}`);
-      }
-      if (refreshed.length > 0) {
-        console.log("  refreshed (unchanged since loam last wrote them):");
-        for (const path of refreshed) console.log(`    ↻ ${path}`);
-      }
-
-      // The one skipped path that earns more than its line in `skipped`: loam
-      // will not merge into a `.mcp.json` a human owns, and the caller asked
-      // for this delivery by name — so they are handed the exact key to paste
-      // into their own `mcpServers` object. Nothing was read out of their file
-      // to produce it; the snippet is the same bytes a fresh write would have
-      // used, which is also why it names the launch form this install shape
-      // actually needs.
-      if ((opts.mcp === true || opts.mcpAuthor === true) && !mcpWritten) {
-        console.log(`  mcp:       ${MCP_CONFIG_FILENAME} is already here — left exactly as it is.`);
-        console.log(`             paste this into its "mcpServers" object:`);
-        for (const line of mcpServerSnippet(cwd, opts.mcpAuthor === true)) console.log(`               ${line}`);
-      }
+      const cloud = wantsMcp && tools.includes("github-copilot") ? mcpLaunch(cwd, author) : null;
+      for (const line of writtenLines({ created, refreshed, retired, hosts, cloud })) console.log(line);
 
       // Printed ONLY when this run created the docs repo. With a service bound
       // (the binding may predate the run — the config spread above carries an

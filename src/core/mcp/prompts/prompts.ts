@@ -16,8 +16,8 @@
  * `PROTOCOLS` the resources are built from, so the three deliveries cannot
  * disagree about what a workflow says.
  */
-import type { PlaceholderKind } from "../../agent/contract.js";
 import { AGENT_COMMANDS, placeholderProblems, protocolFor } from "../../agent/protocol.js";
+import { ARGUMENTS } from "../../agent/tools/arguments.js";
 import { printedPage } from "../../explain/fix-tables.js";
 import { isRecord } from "../../kernel/records.js";
 
@@ -46,13 +46,6 @@ export const SERVER_INSTRUCTIONS =
   "ok is false — the same machine contract the CLI prints. The tools only read, unless the server was " +
   "started with --author; loam vouch is a person's act and is never offered here.";
 
-/** What a prompt argument is called, by what its placeholder denotes. */
-const ARGUMENT: Record<PlaceholderKind, { name: string; description: string }> = {
-  feature: { name: "feature", description: "feature id, e.g. FEAT-101" },
-  service: { name: "service", description: "service id, e.g. payment-service" },
-  free: { name: "title", description: "the feature's title, in words" },
-};
-
 /**
  * The `prompts/list` entries: one per generated workflow, in cycle order, with
  * the support protocol last — the set `loam init` writes command files for.
@@ -65,7 +58,11 @@ export function listPrompts(): Array<Record<string, unknown>> {
   return AGENT_COMMANDS.map((c) => ({
     name: c.name,
     description: c.description,
-    arguments: c.placeholders.map((kind) => ({ ...ARGUMENT[kind], required: false })),
+    // The names Claude Code's `$feature` and Copilot's `${input:feature}` use too.
+    arguments: c.placeholders.map((kind) => {
+      const { name, description } = ARGUMENTS[kind];
+      return { name, description, required: false };
+    }),
   }));
 }
 
@@ -95,7 +92,7 @@ export function getPrompt(params: unknown): PromptOutcome {
   }
   const given = params["arguments"] ?? {};
   if (!isRecord(given)) return { ok: false, problem: "prompts/get params.arguments must be an object when present" };
-  const names = command.placeholders.map((kind) => ARGUMENT[kind].name);
+  const names = command.placeholders.map((kind) => ARGUMENTS[kind].name);
   for (const [key, value] of Object.entries(given)) {
     if (!names.includes(key)) {
       return { ok: false, problem: `Prompt '${name}' takes ${names.length === 0 ? "no arguments" : names.join(", ")}, not '${key}'` };

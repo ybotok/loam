@@ -23,6 +23,61 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
 - The lint and the scripts' typecheck now skip `scripts/evals/fixtures/`, the service code an agent
   reads in the adopt scenario.
 
+### Changed — each agent host gets a command's arguments in the spelling it fills in
+
+- Claude Code command files and skills spell their placeholders `$feature`, `$service` and `$title`,
+  declared in a new `arguments:` frontmatter line. Claude Code counts `$N` from zero, so `$1` had
+  been taking a command's SECOND argument: `/loam-implement FEAT-101 payment-service` wrote
+  `loam instructions loam-implement payment-service $2`. This is the first change to the Claude
+  command wrapper's frontmatter; a file loam wrote and nobody edited refreshes on the next
+  `loam init`, and an edited one is left alone, as before.
+- Copilot prompt files spell them `${input:feature:…}`. Agent Skills everywhere but Claude Code spell
+  them in words — `<FEAT-id>`, `<service-id>`, `<title>` — because no host fills a placeholder in a
+  skill. Commands for the other hosts keep `$1`.
+- Every generated pointer whose command takes arguments says where they come from, in one new
+  paragraph under its `loam instructions` line: from the arguments typed, or from the request.
+- `loam instructions` reads `$feature`, `$service`, `$title`, `<FEAT-id>`, `<service-id>` and `<title>`
+  given as an argument as "not given", as it already read `$1`: the page prints with the placeholder
+  standing instead of refusing.
+- Claude Code skills gain `argument-hint` and `arguments`. Copilot's `.github/skills/` gain
+  `argument-hint`. Every other skill root keeps the Agent Skills fields only.
+
+### Changed — the `codex` target writes `.agents/skills/`
+
+- Codex documents only `.agents/skills/`; the `codex` target wrote `.codex/skills/`, which Codex
+  still loads, and a skill in both lists twice. It now writes `.agents/skills/`, the same files the
+  `agents` target writes — with both selected, each is written once.
+- A re-run of `loam init` for codex removes the `.codex/skills/` files loam recorded in `agentFiles`
+  whose bytes still match, and drops them from `agentFiles`. An edited one is left in place.
+  `loam init --json` gains `removed` (the files it deleted) and `superseded` (the edited ones it
+  left), absolute paths, both always present.
+
+### Added — Copilot's instructions file, and `loam init --copilot-setup`
+
+- The `github-copilot` target writes `.github/instructions/loam.instructions.md` beside its skills
+  (`applyTo: "**"`): what loam is for in this repository, the skills it holds, and the two rules
+  that hold on every path. Copilot's cloud agent reads it on every task. It is not written under
+  `--agent-profile docs`, whose repository has AGENTS.md. It is a managed pointer like the skills:
+  stamped, refreshed while unedited, and counted by `doctor.agent-files-missing` and
+  `doctor.agent-files-stale`.
+- `loam init --copilot-setup` writes `.github/workflows/copilot-setup-steps.yml` when there is none:
+  Node.js 22, loam at this version (`npm ci` where loam is a devDependency), a clone of the docs repo
+  into the `docsDir` that `loam.json` holds — the repository read from the docs repo's `origin` — and
+  `loam doctor`. It is never rewritten, and an existing one is reported in `skipped`.
+- Detection: `.github/mcp.json` replaces `.github/.mcp.json` as a Copilot marker (the Copilot CLI's
+  file has no dot). OpenCode is detected by `opencode.json` or its `.jsonc` form, as well as by
+  `.opencode/`.
+
+### Changed — `loam init --mcp` writes each selected host's MCP config
+
+- The `.mcp.json` entry gains `"type": "stdio"`.
+- With `codex` selected it also writes `.codex/config.toml` with a `[mcp_servers.loam]` table, and
+  with `opencode` selected, `opencode.json` with `loam` under `mcp`. Each is created only where the
+  host has no config; an existing one is left byte for byte, reported in `skipped`, and its entry is
+  printed to paste.
+- With `github-copilot` selected it prints the JSON the Copilot cloud agent takes in the
+  repository's settings, which reads no MCP file.
+
 ### Added — `loam delta --diff`, the line-level review of a feature
 
 - `loam delta <FEAT> [--service <id>] --diff` says what each item of the service's slice does to the

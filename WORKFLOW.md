@@ -14,7 +14,8 @@ that order.
   [The artifact graph](#the-artifact-graph) · [Derived, never stored](#derived-never-stored)
 - [Actions, not phases](#actions-not-phases) · [What actually gates](#what-actually-gates)
 - [The six workflows](#the-six-workflows) · [Support reports](#support-reports) ·
-  [The honestly-small change](#the-honestly-small-change) · [Driving it from an agent](#driving-it-from-an-agent)
+  [The honestly-small change](#the-honestly-small-change) · [Driving it from an agent](#driving-it-from-an-agent) ·
+  [Host by host](#host-by-host)
 - [Presence is not trust](#presence-is-not-trust) ·
   [Why there is no task list](#why-there-is-no-task-list)
 - [Picking the work back up](#picking-the-work-back-up)
@@ -503,6 +504,50 @@ when `runnable` is true, otherwise satisfy its named edit/external input, then r
 refuses, it refuses with a code and a sentence naming the fix —
 `loam doctor`'s findings carry the exact command in a `fix` field.
 
+## Host by host
+
+The pointer files are one body in each host's spelling. What differs between hosts, as each host's
+own docs described it on 2026-10-27:
+
+| | arguments in the generated file | run `loam` without asking | MCP config `init --mcp` writes |
+|---|---|---|---|
+| Claude Code | `$feature`, `$service`, `$title`, named in `arguments:` | each skill's `allowed-tools`, written for you | `.mcp.json` |
+| GitHub Copilot | prompt files: `${input:feature:…}`; skills: `<FEAT-id>`, from the request | CLI: `copilot --allow-tool 'shell(loam:*)' --deny-tool 'shell(loam vouch)'`; VS Code: `"chat.tools.terminal.autoApprove": { "/^(npx )?loam (?!vouch\\b)/": true }` | `.mcp.json` (CLI and VS Code); the cloud agent's JSON is printed for the repository settings |
+| Codex | skills: `<FEAT-id>`, from the request | nothing to set: an installed `loam` runs inside Codex's sandbox | `.codex/config.toml`, read once the project is trusted |
+| OpenCode | commands: `$1`, which OpenCode fills; skills: `<FEAT-id>` | `"permission": { "bash": { "loam *": "allow", "loam vouch*": "ask" } }` in `opencode.json` — the last matching rule wins | `opencode.json`, under `mcp` |
+
+Claude Code counts `$N` from zero, so a numbered `$1` took a command's second argument; named
+arguments have no index to get wrong. Hosts that fill in nothing — Cline, Kilo Code, Roo Code, and
+every host reading a skill outside Claude Code — leave the placeholder standing, and
+`loam instructions` reads a standing placeholder, in any of these spellings, as "not given": the
+protocol prints with the placeholder in place rather than refusing. `loam vouch` stays out of every
+allowlist above, and it refuses without a terminal or `--yes` besides.
+
+`init --mcp` creates a host's config only where there is none. Where one exists it is left byte for
+byte, and the `loam` entry is printed for you to paste. OpenCode's config counts in either
+spelling, `opencode.json` or its `.jsonc` form.
+
+**Copilot.** Every Copilot surface reads skills — `.github/skills/`, `.claude/skills/` or
+`.agents/skills/` — and only VS Code's local harness reads prompt files, so the skills are the
+delivery that matters there and carry `argument-hint`. The `github-copilot` target also writes
+`.github/instructions/loam.instructions.md` — loam's own file, applied to every path — which tells
+the cloud agent loam is here before it chooses a skill: a service repository has no AGENTS.md of
+loam's to do that. It is skipped under `--agent-profile docs`, whose repository has AGENTS.md. `loam init --copilot-setup` writes
+`.github/workflows/copilot-setup-steps.yml` once — Node.js, loam at this version (or `npm ci` where
+loam is a devDependency), a clone of the docs repo where `loam.json` points, and `loam doctor` — and
+never rewrites it. Its own comments say what a first task should confirm.
+
+**Codex** reads skills from `.agents/skills/`, the root it documents, and that is where the `codex`
+target writes them. It used to write `.codex/skills/`, which Codex still loads, so each skill showed
+twice. A re-run of `loam init` for codex removes the copies there that loam wrote and nobody
+edited; an edited one is left in place, listed under `superseded` and named in the human output.
+
+**One copy for a mixed team.** `--tools agents` writes `.agents/skills/` alone, and Copilot,
+Codex and OpenCode all read it, as do Cursor, Gemini CLI, Zed and Roo Code. A host's own target adds
+what only that host reads — Copilot's `argument-hint` and its instructions file, OpenCode's
+commands — and costs a second copy of each skill in the hosts that read both roots. Copilot and
+OpenCode also read `.claude/skills/`, so a team that adds `claude` sees the same.
+
 ## Presence is not trust
 
 Documentation existing and documentation being *believed* are different facts, and loam refuses to
@@ -813,16 +858,18 @@ who calls an operation (`loam_explore` with `op`). A typical host entry:
 ```json
 {
   "mcpServers": {
-    "loam": { "command": "loam", "args": ["mcp"] }
+    "loam": { "type": "stdio", "command": "loam", "args": ["mcp"] }
   }
 }
 ```
 
 `loam init --mcp` writes that file at the repository root for you, choosing `npx --no loam mcp` over
 the bare binary shown above when `node_modules/.bin/loam` is there — the per-repo devDependency
-install, whose binary is on no PATH a host inherits. It is opt-in, and it never merges: an
-`.mcp.json` that already exists is reported skipped, byte for byte, with the `loam` key printed for
-you to paste. `loam init --mcp-author` writes the same entry with `mcp --author`: that explicit mode
+install, whose binary is on no PATH a host inherits. With `codex` or `opencode` selected it writes
+their config too, and with `github-copilot` it prints the JSON Copilot's cloud agent takes in the
+repository settings ([Host by host](#host-by-host)). It is opt-in, and it never merges: a config
+that already exists is reported skipped, byte for byte, with the `loam` key printed for you to
+paste. `loam init --mcp-author` writes the same entry with `mcp --author`: that explicit mode
 adds `new`, `rebase`, `gherkin`, and archive planning with `--dry-run` enforced by the server.
 
 There is one machine contract, not two: every tool declares the common envelope `outputSchema` and

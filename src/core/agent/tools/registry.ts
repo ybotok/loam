@@ -4,9 +4,12 @@
  * tool is in use. Paths and wrappers follow each tool's own documented
  * convention and are pinned byte-for-byte in test/agents.test.ts.
  */
-import type { AgentTool, CommandContent } from "../contract.js";
+import type { AgentTool, DeliveredCommand } from "../contract.js";
+import { argumentsLine, inputArguments, namedArguments } from "./arguments.js";
+import { COPILOT_INSTRUCTIONS } from "./copilot.js";
 import {
   claudeSkillsIn,
+  copilotSkillsIn,
   describedMd,
   hintedMd,
   namedMd,
@@ -33,18 +36,22 @@ type CommandEmittingTool = AgentTool & Required<Pick<AgentTool, "path" | "format
  * extension, a namespace directory, a second marker, no commands at all — is
  * written out in full below, so the departure is what its entry shows.
  */
-function dotTool(dir: string, sub: string, format: (c: CommandContent) => string): CommandEmittingTool {
+function dotTool(dir: string, sub: string, format: (c: DeliveredCommand) => string): CommandEmittingTool {
   return { path: (name) => [dir, sub, `${name}.md`], format, skill: skillsIn(dir), detect: [dir] };
 }
 
 /**
- * The original target and the default. This WRAPPER must stay byte-identical
- * to what loam has always written — SLASH_COMMANDS (scaffold.ts) derives
- * through it —
- * and an already-initialized repo must still read as fully scaffolded
- * (`skipped` is existsSync, never content). What the wrapper wraps now carries
- * a version stamp, which is the one thing about a generated file loam will
- * report on; see `stubbed`.
+ * The original target and the default. SLASH_COMMANDS (scaffold.ts) derives
+ * through this wrapper, and an already-initialized repo still reads as fully
+ * scaffolded whatever it holds (`skipped` is existsSync, never content). What
+ * the wrapper wraps carries a version stamp, which is the one thing about a
+ * generated file loam will report on; see `stubbed`.
+ *
+ * The wrapper was byte-identical to what loam had always written until it
+ * gained `arguments:` and spelled the placeholders `$feature`: Claude Code
+ * counts `$N` from zero, so `$1` had been taking the SECOND argument (see
+ * ./arguments.ts). A file loam wrote and nobody edited is
+ * refreshed by the next `loam init`; an edited one is reported, never touched.
  *
  * It stands outside the registry object because SLASH_COMMANDS reaches for it
  * by name. That lookup was `AGENT_TOOLS["claude"]!.format!` — two assertions on
@@ -59,7 +66,9 @@ export const CLAUDE: CommandEmittingTool = {
   ...dotTool(
     ".claude",
     "commands",
-    (c) => `---\ndescription: ${c.description}\nargument-hint: ${c.argumentHint}\n---\n\n${c.body}`,
+    (c) =>
+      `---\ndescription: ${c.description}\nargument-hint: ${c.argumentHint}\n${argumentsLine(c)}---\n\n` +
+      namedArguments(c).body,
   ),
   // The one skill dialect of its own: Claude Code reads `when_to_use` and
   // `disallowed-tools`, which the Agent Skills format every other root follows
@@ -72,13 +81,18 @@ export const AGENT_TOOLS: Record<string, AgentTool> = {
   // Cursor invokes by flat file name (`/loam-check`); its frontmatter `name`
   // field spells that invocation form.
   cursor: dotTool(".cursor", "commands", (c) => `---\nname: /${c.name}\n---\n\n${c.body}`),
-  // Copilot prompt files: `.prompt.md` extension, description-only frontmatter.
+  // Copilot prompt files: `.prompt.md` extension, description-only frontmatter,
+  // arguments as `${input:…}` — the one spelling Copilot fills in. Only VS
+  // Code's local harness reads prompt files; the CLI, the cloud agent and VS
+  // Code's Copilot harness read skills, so the skills carry `argument-hint`.
   // Detection cannot use `.github/` — almost every repo has one and almost none
-  // of them means Copilot — so it looks for the files Copilot itself reads.
+  // of them means Copilot — so it looks for the files Copilot itself reads:
+  // `.github/mcp.json`, no dot, is the CLI's repository MCP config.
   "github-copilot": {
     path: (name) => [".github", "prompts", `${name}.prompt.md`],
-    format: describedMd,
-    skill: skillsIn(".github"),
+    format: (c) => describedMd(inputArguments(c)),
+    skill: copilotSkillsIn(".github"),
+    instructions: COPILOT_INSTRUCTIONS,
     detect: [
       ".github/copilot-instructions.md",
       ".github/instructions",
@@ -86,7 +100,7 @@ export const AGENT_TOOLS: Record<string, AgentTool> = {
       ".github/agents",
       ".github/skills",
       ".github/workflows/copilot-setup-steps.yml",
-      ".github/.mcp.json",
+      ".github/mcp.json",
     ],
   },
   // Gemini: TOML, and a namespace DIRECTORY — `.gemini/commands/loam/check.toml`
@@ -99,7 +113,10 @@ export const AGENT_TOOLS: Record<string, AgentTool> = {
     skill: skillsIn(".gemini"),
     detect: [".gemini"],
   },
-  opencode: dotTool(".opencode", "commands", describedMd),
+  // OpenCode substitutes `$1` in its commands, so they keep it. Its project
+  // config, `opencode.json` (or `.jsonc`), is as sure a sighting as
+  // `.opencode/`, which a repository that only configures OpenCode lacks.
+  opencode: { ...dotTool(".opencode", "commands", describedMd), detect: [".opencode", "opencode.json", "opencode.jsonc"] },
   // Cline reads workflows from `.clinerules/` — plain markdown, no frontmatter —
   // but its skills from `.cline/`. The two directories are unrelated, so both
   // count as a sighting.
@@ -117,27 +134,26 @@ export const AGENT_TOOLS: Record<string, AgentTool> = {
   antigravity: dotTool(".agent", "workflows", describedMd),
   // Auggie is the Augment CLI: id `auggie`, directory `.augment/`.
   auggie: dotTool(".augment", "commands", hintedMd),
-  // Skills-only, deliberately: Codex does not load custom command files, so it
-  // declares no command emitter at all rather than laying down files nothing
-  // will ever open.
+  // Skills-only, deliberately: Codex does not load custom command files (its
+  // custom prompts were removed in 0.117), so it declares no command emitter at
+  // all rather than laying down files nothing will ever open.
   //
-  // The skill path is `.codex/skills/`, and that is NOT what Codex documents.
-  // Its own skills page (Build skills — developers.openai.com/codex/skills,
-  // which now redirects to learn.chatgpt.com/docs/build-skills; checked
-  // 2026-10-09) lists only `.agents/skills` — in the working directory, its
-  // parents up to the repository root — and never mentions `.codex/skills`;
-  // the `agents` entry below quotes it. `.codex/skills/` is undocumented but
-  // still loaded (Codex PR #10317 and third-party guides describe it as the
-  // older location, slated for deprecation), so the files this entry writes
-  // are read today and the break is latent: the day Codex drops it, a repo
-  // scaffolded for `codex` alone loses every skill silently. The path stays
-  // put on purpose — moving it re-points files in every repo already
-  // scaffolded, which is a migration with its own entry, not a comment fix —
-  // and choosing `agents` alongside `codex` already gives Codex the
-  // documented root.
+  // The skills go to `.agents/skills/`, the one root Codex documents — "Codex
+  // scans `.agents/skills` in every directory from your current working
+  // directory up to the repository root" (Build skills,
+  // developers.openai.com/codex/skills; checked 2026-10-27) — and the same bytes
+  // the `agents` entry writes, so choosing both writes each file once.
+  //
+  // It used to be `.codex/skills/`, which Codex never documented and still
+  // loads (Codex PR #10317 calls it the older location, slated for removal) —
+  // and Codex lists a skill found in both roots twice. So `retired` names the
+  // old root: the next `loam init` for codex removes the copies there that loam
+  // wrote and nobody edited since, and reports the rest (`retireMovedAgentFiles`,
+  // scaffold.ts). `detect` stays `.codex`, the directory Codex itself makes.
   codex: {
-    skill: skillsIn(".codex"),
+    skill: skillsIn(".agents"),
     detect: [".codex"],
+    retired: [".codex/skills/"],
   },
   // Continue's prompt files take a bare `.prompt` extension, and `invokable`
   // is what promotes one from a template to something you can call.
@@ -185,7 +201,7 @@ export const AGENT_TOOLS: Record<string, AgentTool> = {
   roocode: dotTool(".roo", "commands", titledMd),
   trae: dotTool(".trae", "commands", namedMd),
   // The vendor-neutral skills root, and the only id here that names no vendor.
-  // `.agents/skills/<name>/SKILL.md` is read by six of the tools that already
+  // `.agents/skills/<name>/SKILL.md` is read by seven of the tools that already
   // have entries above, each documenting it in its own words:
   //
   //   Cursor — "Skills are automatically loaded from `.agents/skills/`,
@@ -207,15 +223,18 @@ export const AGENT_TOOLS: Record<string, AgentTool> = {
   //   Roo Code — `.agents/skills/` is its cross-agent project location, ranked
   //     below `.roo/skills/` at the same level (Skills,
   //     docs.roocode.com/features/skills).
+  //   OpenCode — "Project agent-compatible: `.agents/skills/<name>/SKILL.md`",
+  //     beside `.opencode/skills/` and `.claude/skills/` (Agent Skills,
+  //     opencode.ai/docs/skills, checked 2026-10-27).
   //
-  // Skills only, for the reason spelled out on `codex`: not one of those six
+  // Skills only, for the reason spelled out on `codex`: not one of those seven
   // documents a COMMAND file under this root, so a `.agents/commands/` would be
   // files nothing will ever open — the thing this entry exists to stop.
   //
   // Purely ADDITIVE, and that is the design rather than an implementation
   // detail. No tool above loses or re-points its own skill path: a repo already
   // carrying `.claude/skills/` keeps getting them there. This entry is for the
-  // team that would rather have ONE copy those six read than six copies of the
+  // team that would rather have ONE copy those seven read than seven copies of the
   // same bytes, and choosing that is the user's call — which is why selecting
   // `agents` adds a target and never removes one.
   //

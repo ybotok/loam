@@ -5,6 +5,7 @@
  * stays one source of truth however many tools spell it.
  */
 import type { AgentFileEmitter, CommandContent, DeliveredCommand } from "../contract.js";
+import { argumentsLine, namedArguments, wordedArguments } from "./arguments.js";
 
 /**
  * The loam verbs a generated skill MAY pre-approve, so an agent that honors the
@@ -160,9 +161,18 @@ const skillAllowedTools = (c: DeliveredCommand): string =>
   bashRules(instructedVerbs([c.body, c.protocol]));
 
 /**
+ * The `argument-hint` line, quoted: a hint opens with `[` or `<` and holds a
+ * `"` or a `|`, which a YAML reader parses as a sequence, a tag or a broken
+ * scalar. Absent where a command takes no argument at all.
+ */
+const hintLine = (c: CommandContent): string =>
+  c.argumentHint === "" ? "" : `argument-hint: ${JSON.stringify(c.argumentHint)}\n`;
+
+/**
  * The Agent Skills convention loam EMITS: `<root>/skills/<name>/SKILL.md`, YAML
- * frontmatter, then the shared body verbatim — where `<root>` is whatever the
- * calling registry entry passes.
+ * frontmatter, then the shared body — its arguments in words, since no host
+ * outside Claude Code substitutes into a skill (see ./arguments.ts) — where
+ * `<root>` is whatever the calling registry entry passes.
  *
  * It used to say that every tool in the registry which reads skills spells the
  * path this way. That was an unevidenced universal, and the `agents` entry
@@ -181,32 +191,55 @@ export const skillsIn = (dir: string): AgentFileEmitter => ({
   path: (name) => [dir, "skills", name, "SKILL.md"],
   format: (c) =>
     `---\nname: ${c.name}\ndescription: ${c.description}\n` +
-    `allowed-tools: ${skillAllowedTools(c)}\n---\n\n${c.body}`,
+    `allowed-tools: ${skillAllowedTools(c)}\n---\n\n${wordedArguments(c).body}`,
 });
 
 /**
- * Claude Code's skill dialect: the Agent Skills header plus two fields only
+ * Copilot's skill dialect: the Agent Skills header plus `argument-hint`, which
+ * Copilot documents for skills and shows when one is invoked by name — and
+ * skills, not prompt files, are what every Copilot surface reads (the CLI and
+ * the cloud agent have no prompt files at all).
+ *
+ * Its own emitter rather than a line in {@link skillsIn}, for the reason
+ * {@link claudeSkillsIn} gives: the Agent Skills specification does not list
+ * the field, and Anthropic's own strict readers refuse a key outside it. So it
+ * goes where the host that reads it is documented, `.github/skills/`, and not
+ * into the shared roots several hosts read.
+ */
+export const copilotSkillsIn = (dir: string): AgentFileEmitter => ({
+  path: (name) => [dir, "skills", name, "SKILL.md"],
+  format: (c) =>
+    `---\nname: ${c.name}\ndescription: ${c.description}\n` + hintLine(c) +
+    `allowed-tools: ${skillAllowedTools(c)}\n---\n\n${wordedArguments(c).body}`,
+});
+
+/**
+ * Claude Code's skill dialect: the Agent Skills header plus the fields only
  * Claude Code documents (code.claude.com/docs/en/skills, checked 2026-10-27).
  *
  * `when_to_use` carries the trigger the shared description deliberately does
  * not: Claude Code appends it to `description` in the skill listing, the one
  * thing the model reads before choosing a skill, and both together are cut at
- * 1,536 characters. `disallowed-tools` removes `vouch` from the pool while the
+ * 1,536 characters. `argument-hint` is what autocomplete shows, and
+ * `arguments` names the placeholders the body spells `$feature` — Claude Code
+ * counts `$N` from zero, so a numbered placeholder took the wrong argument (see
+ * ./arguments.ts). `disallowed-tools` removes `vouch` from the pool while the
  * skill is active — the "never vouch" every protocol states in prose becomes a
- * refusal by the host. Both clear with the user's next message, as
- * `allowed-tools` does.
+ * refusal by the host. Both tool lists clear with the user's next message.
  *
  * Only here. The other skill roots follow the Agent Skills specification, whose
- * frontmatter has neither field, and a stricter reader of that format than
- * Claude Code — which ignores what it does not know — could reject the file.
+ * frontmatter has none of these fields, and a stricter reader of that format
+ * than Claude Code — which ignores what it does not know — could reject the
+ * file.
  */
 export const claudeSkillsIn = (dir: string): AgentFileEmitter => ({
   path: (name) => [dir, "skills", name, "SKILL.md"],
   format: (c) =>
     `---\nname: ${c.name}\ndescription: ${c.description}\n` +
     (c.whenToUse === undefined ? "" : `when_to_use: ${c.whenToUse}\n`) +
+    hintLine(c) + argumentsLine(c) +
     `allowed-tools: ${skillAllowedTools(c)}\n` +
-    `disallowed-tools: ${bashRules(["vouch"])}\n---\n\n${c.body}`,
+    `disallowed-tools: ${bashRules(["vouch"])}\n---\n\n${namedArguments(c).body}`,
 });
 
 /**

@@ -26,13 +26,29 @@
  */
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, rmdir, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { agentsStampLine } from "./agents-stamp.js";
 import { LOAM_VERSION } from "../envelope/version.js";
 import type { AgentFileEmitter, CommandContent, DeliveredCommand } from "./contract.js";
 import { AGENT_COMMANDS } from "./protocol.js";
 import { AGENT_TOOLS, CLAUDE } from "./tools/registry.js";
+
+/**
+ * Where the arguments come from, for a command that takes any. A host fills
+ * the invocation's placeholders in — or leaves one standing, or empty — in as
+ * many ways as there are hosts (tools/arguments.ts), and a skill a request
+ * loaded was typed no arguments at all. One sentence covers every case, so no
+ * dialect needs prose of its own.
+ */
+const takes = (c: CommandContent): string =>
+  c.placeholders.length === 0
+    ? ""
+    : `It takes \`${c.argumentHint}\`. Where that line is missing a value or still shows a
+placeholder, take it from the request: the arguments typed with the command, or the ids
+the request names.
+
+`;
 
 /**
  * What a generated file actually contains: the purpose, the spine, and the
@@ -107,7 +123,7 @@ not the ones that were current when this repository was scaffolded:
 
     ${c.invocation}
 
-Every \`loam\` command in this file and in that protocol assumes loam is on PATH.
+${takes(c)}Every \`loam\` command in this file and in that protocol assumes loam is on PATH.
 Where this repository installs it as a devDependency instead, run each one as
 \`npx loam …\`.
 
@@ -189,6 +205,11 @@ const PROFILE_COMMANDS: Record<AgentProfile, ReadonlySet<string>> = {
  * and a half-answer would report a fully-scaffolded repo as fully scaffolded
  * while ignoring every skill file. The name predates the second delivery and is
  * kept because it is imported elsewhere; `delivery` narrows it.
+ *
+ * A tool's always-read instructions file rides with its skills, which it
+ * names, and is planned everywhere but under the `docs` profile: the docs repo
+ * already has AGENTS.md saying the same. Each path is planned once, because two
+ * tools can read one root — `codex` and `agents` both write `.agents/skills/`.
  */
 export function plannedCommandFiles(
   cwd: string,
@@ -196,25 +217,27 @@ export function plannedCommandFiles(
   delivery: readonly Delivery[] = DELIVERIES,
   profile: AgentProfile = "full",
 ): Array<{ path: string; content: string }> {
-  return toolIds.flatMap((id) => {
+  const commands = AGENT_COMMANDS.filter((command) => PROFILE_COMMANDS[profile].has(command.name));
+  const files = toolIds.flatMap((id) => {
     const tool = AGENT_TOOLS[id];
     if (tool === undefined) throw new Error(`unknown agent tool: ${id}`);
     const emitters: AgentFileEmitter[] = [];
     // A tool declares only the deliveries it actually reads, so an absent
     // emitter is a fact about the tool, never a reason to fall back to some
     // other tool's convention.
-    const { path, format, skill } = tool;
+    const { path, format, skill, instructions } = tool;
     if (delivery.includes("commands") && path !== undefined && format !== undefined) {
       emitters.push({ path, format });
     }
     if (delivery.includes("skills") && skill !== undefined) emitters.push(skill);
-    return emitters.flatMap((e) =>
-      AGENT_COMMANDS.filter((command) => PROFILE_COMMANDS[profile].has(command.name)).map((c) => ({
-        path: join(cwd, ...e.path(c.name)),
-        content: e.format(stubbed(c)),
-      })),
+    const own = emitters.flatMap((e) =>
+      commands.map((c) => ({ path: join(cwd, ...e.path(c.name)), content: e.format(stubbed(c)) })),
     );
+    if (!delivery.includes("skills") || instructions === undefined || profile === "docs") return own;
+    const stamp = agentsStampLine(LOAM_VERSION);
+    return [...own, { path: join(cwd, ...instructions.path), content: instructions.format(stamp, commands) }];
   });
+  return files.filter((f, i) => files.findIndex((g) => g.path === f.path) === i);
 }
 
 function contentDigest(content: string | Buffer): string {
@@ -277,6 +300,57 @@ export async function syncAgentCommands(req: {
     await writeFile(path, content, "utf8");
     out.refreshed.push(path);
     out.managed[key] = desired;
+  }
+  return out;
+}
+
+/** What a re-run did with the files a tool's retired location holds. */
+export interface RetiredAgentFiles {
+  /** Unchanged since loam wrote them, so removed: the tool reads the copy at its new path. */
+  removed: string[];
+  /** Edited since loam wrote them, so left exactly as they are — the tool now reads two copies. */
+  superseded: string[];
+  /** Manifest keys that no longer name a file loam answers for. */
+  forget: string[];
+}
+
+/**
+ * Remove what loam wrote under a selected tool's `retired` roots, by the same
+ * authority `syncAgentCommands` refreshes with: the bytes must still match the
+ * digest recorded when loam wrote them. Only paths in that manifest are
+ * looked at, so a file loam never wrote there is never a candidate. An emptied
+ * skill directory goes too, and the root with it when nothing else is left;
+ * the tool's own directory stays, since it is how `init` detects the tool.
+ *
+ * Run after the new copies are written, so a failure part-way leaves the old
+ * ones where they were.
+ */
+export async function retireMovedAgentFiles(
+  cwd: string,
+  toolIds: readonly string[],
+  known: Readonly<Record<string, string>> = {},
+): Promise<RetiredAgentFiles> {
+  const out: RetiredAgentFiles = { removed: [], superseded: [], forget: [] };
+  const roots = toolIds.flatMap((id) => AGENT_TOOLS[id]?.retired ?? []);
+  const emptied = new Set<string>();
+  for (const [key, digest] of Object.entries(known)) {
+    if (!roots.some((root) => key.startsWith(root))) continue;
+    const path = join(cwd, key);
+    if (!existsSync(path)) {
+      out.forget.push(key);
+    } else if (contentDigest(await readFile(path)) !== digest) {
+      out.superseded.push(path);
+    } else {
+      await rm(path);
+      out.removed.push(path);
+      out.forget.push(key);
+      emptied.add(dirname(path));
+    }
+  }
+  for (const dir of emptied) {
+    for (const d of [dir, dirname(dir)]) {
+      if (existsSync(d) && (await readdir(d)).length === 0) await rmdir(d);
+    }
   }
   return out;
 }

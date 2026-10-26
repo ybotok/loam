@@ -204,10 +204,10 @@ describe("placeholder substitution", () => {
   });
 
   it("treats the LITERAL placeholder as unsupplied, because three dialects substitute nothing", async () => {
-    // One body serves twenty tool dialects and keeps Claude's `$1` convention
-    // in all of them, so the generated stub says `loam instructions loam-adopt
-    // $1` verbatim — and Cline, Kilo Code and Roo Code hand that `$1` straight
-    // to this command. It used to refuse with `invalid-option` ('$1' is not a
+    // One body serves twenty tool dialects and most keep its positional `$1`,
+    // so the generated stub says `loam instructions loam-adopt $1` verbatim —
+    // and Cline, Kilo Code and Roo Code hand that `$1` straight to this
+    // command. It used to refuse with `invalid-option` ('$1' is not a
     // service id), which failed the literal first instruction of the workflow.
     const dir = await unwiredDir();
     const res = await runLoam(dir, "instructions", "loam-adopt", "$1");
@@ -228,6 +228,20 @@ describe("placeholder substitution", () => {
     expect(res.code, res.out).toBe(0);
     expect(res.out).toContain("$1");
     expect(res.out).toContain("$2");
+  });
+
+  it("reads every re-spelling a generated file uses as unsupplied too", async () => {
+    // Claude Code's named `$service`, which a host that does not read
+    // `arguments:` leaves standing, and an Agent Skill's `<service-id>`, which
+    // an agent can paste quoted (tools/arguments.ts). Each prints the page with
+    // the placeholder standing, as `$1` does, instead of refusing.
+    const dir = await unwiredDir();
+    for (const args of [["$service"], ["<service-id>"], ["$feature", "$service"], ["<FEAT-id>", "<service-id>"]]) {
+      const name = args.length === 1 ? "loam-adopt" : "loam-implement";
+      const res = await runLoam(dir, "instructions", name, ...args);
+      expect(res.code, `${name} ${args.join(" ")}: ${res.out}`).toBe(0);
+      expect(res.out).toContain("$1");
+    }
   });
 
   it("still refuses a real argument that merely CONTAINS a placeholder", async () => {
@@ -292,8 +306,10 @@ describe("the pointer the generated files carry", () => {
     for (const [name, file] of Object.entries(SLASH_COMMANDS)) {
       const line = file.split("\n").find((l) => l.trim().startsWith("loam instructions "));
       expect(line, `${name} carries no instructions line`).toBeDefined();
-      // `$1`/`$2` stand for what a tool substitutes; a plausible value each.
-      const argv = line!.trim().replace(/\$1/g, "FEAT-101").replace(/\$2/g, "payment-service");
+      // `$feature`, `$service`, `$title` stand for what Claude Code substitutes
+      // (tools/arguments.ts); a plausible value each.
+      const argv = line!.trim()
+        .replace(/\$feature/g, "FEAT-101").replace(/\$service/g, "payment-service").replace(/\$title/g, "Split");
       const res = await runLoam(dir, ...argv.split(/\s+/).slice(1));
       expect(res.code, `${name}: \`${argv}\` exited ${res.code}\n${res.out}`).toBe(0);
       expect(res.out.length).toBeGreaterThan(0);

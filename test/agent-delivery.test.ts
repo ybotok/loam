@@ -58,13 +58,15 @@ const readConfig = async (dir: string): Promise<Record<string, any>> =>
   JSON.parse(await readFile(join(dir, "loam.json"), "utf8"));
 
 describe("detectAgentTools — what the repo says it uses", () => {
-  it("every registry entry declares at least one marker, and every marker is a dot-path", () => {
+  it("every registry entry declares at least one marker, and every marker is a dot-path or names its tool", () => {
     // The scan is only as good as the markers; a tool added without one would
     // be silently undetectable and nobody would notice until a user's repo.
+    // A marker outside a dot-directory must carry the tool's own name
+    // (`opencode.json`), so no generic file can claim a tool.
     for (const [id, tool] of Object.entries(AGENT_TOOLS)) {
       expect(tool.detect.length, `${id} declares no detection marker`).toBeGreaterThan(0);
       for (const marker of tool.detect) {
-        expect(marker.startsWith("."), `${id} marker ${marker} is not a dot-path`).toBe(true);
+        expect(marker.startsWith(".") || marker.startsWith(`${id}.`), `${id} marker ${marker}`).toBe(true);
       }
     }
   });
@@ -108,6 +110,14 @@ describe("detectAgentTools — what the repo says it uses", () => {
       "github-copilot",
     ]);
     expect(detectAgentTools(await repoWith(".github/prompts"))).toEqual(["github-copilot"]);
+    // the Copilot CLI's repository MCP config has no dot after `.github/`
+    expect(detectAgentTools(await repoWith(".github/mcp.json"))).toEqual(["github-copilot"]);
+    expect(detectAgentTools(await repoWith(".github/.mcp.json"))).toEqual([]);
+  });
+
+  it("opencode answers to its project config as well as its directory", async () => {
+    expect(detectAgentTools(await repoWith("opencode.json"))).toEqual(["opencode"]);
+    expect(detectAgentTools(await repoWith("opencode.jsonc"))).toEqual(["opencode"]);
   });
 });
 
@@ -127,7 +137,9 @@ describe("init without --tools writes for what it found", () => {
     const json = await initJson(dir);
     expect(json.tools).toEqual(["cursor", "gemini", "codex"]);
     expect(existsSync(join(dir, ".gemini", "commands", "loam", "check.toml"))).toBe(true);
-    expect(existsSync(join(dir, ".codex", "skills", "loam-check", "SKILL.md"))).toBe(true);
+    // codex's skills go to the root Codex documents
+    expect(existsSync(join(dir, ".agents", "skills", "loam-check", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(dir, ".codex", "skills"))).toBe(false);
   });
 
   it("a bare repo still falls back to claude — the behavior that existed before the scan", async () => {
@@ -245,11 +257,65 @@ describe("plannedCommandFiles — the two-argument contract other commands read"
     expect([...commands, ...skills].sort()).toEqual([...all].sort());
     expect(commands.filter((p) => skills.includes(p))).toEqual([]);
     // codex contributes to one half only
-    expect(commands.some((p) => p.includes(".codex"))).toBe(false);
-    expect(skills.some((p) => p.includes(join(".codex", "skills")))).toBe(true);
+    expect(commands.some((p) => p.includes(".agents"))).toBe(false);
+    expect(skills.some((p) => p.includes(join(".agents", "skills")))).toBe(true);
+    // and shares that half's root with `agents`: each path is planned once
+    expect(new Set(all).size).toBe(all.length);
+    expect(plannedCommandFiles("/repo", ["codex", "agents"])).toEqual(plannedCommandFiles("/repo", ["agents"]));
   });
 
   it("an unknown id throws rather than planning a half-empty scaffold", () => {
     expect(() => plannedCommandFiles("/repo", ["roomba"])).toThrow(/unknown agent tool: roomba/);
+  });
+});
+
+describe("codex: the move from .codex/skills/ to .agents/skills/", () => {
+  /** A repo initialized for codex the way loam used to: its skills, and their digests, under `.codex/skills/`. */
+  async function scaffoldedTheOldWay(): Promise<string> {
+    const dir = await throwawayDir();
+    await initJson(dir, "--tools", "codex", "--agent-profile", "service");
+    const config = await readConfig(dir);
+    const moved: Record<string, string> = {};
+    for (const [key, digest] of Object.entries(config.agentFiles as Record<string, string>)) {
+      const old = key.replace(/^\.agents\/skills\//, ".codex/skills/");
+      await mkdir(join(dir, old, ".."), { recursive: true });
+      await writeFile(join(dir, old), await readFile(join(dir, key), "utf8"), "utf8");
+      moved[old] = digest;
+    }
+    await rm(join(dir, ".agents"), { recursive: true, force: true });
+    await writeFile(join(dir, "loam.json"), `${JSON.stringify({ ...config, agentFiles: moved }, null, 2)}\n`, "utf8");
+    return dir;
+  }
+
+  it("removes the copies loam wrote and nobody edited, and leaves an edited one where it is", async () => {
+    const dir = await scaffoldedTheOldWay();
+    const edited = join(dir, ".codex", "skills", "loam-check", "SKILL.md");
+    await writeFile(edited, `${await readFile(edited, "utf8")}\nOur own note.\n`, "utf8");
+
+    const res = await runLoam(dir, "init", "--json");
+    expect(res.code, res.out).toBe(0);
+    const json = JSON.parse(res.stdout);
+    expect(json.superseded).toEqual([edited]);
+    expect(json.removed).toContain(join(dir, ".codex", "skills", "loam-adopt", "SKILL.md"));
+    expect(json.removed).not.toContain(edited);
+    expect(existsSync(join(dir, ".codex", "skills", "loam-adopt"))).toBe(false);
+    expect(existsSync(edited)).toBe(true);
+    expect(existsSync(join(dir, ".agents", "skills", "loam-check", "SKILL.md"))).toBe(true);
+    // `.codex/` stays: it is how the next init finds Codex
+    expect(existsSync(join(dir, ".codex"))).toBe(true);
+
+    // the manifest forgets what was removed and keeps the edited file's record
+    const agentFiles = Object.keys((await readConfig(dir)).agentFiles);
+    expect(agentFiles).toContain(".codex/skills/loam-check/SKILL.md");
+    expect(agentFiles).not.toContain(".codex/skills/loam-adopt/SKILL.md");
+    expect(agentFiles).toContain(".agents/skills/loam-adopt/SKILL.md");
+  });
+
+  it("touches nothing under .codex/ when codex is not selected", async () => {
+    const dir = await scaffoldedTheOldWay();
+    const res = await runLoam(dir, "init", "--tools", "claude", "--json");
+    expect(res.code, res.out).toBe(0);
+    expect(JSON.parse(res.stdout).removed).toEqual([]);
+    expect(existsSync(join(dir, ".codex", "skills", "loam-adopt", "SKILL.md"))).toBe(true);
   });
 });

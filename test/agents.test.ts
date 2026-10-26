@@ -19,7 +19,7 @@ import { createHash } from "node:crypto";
 import { coherentFixture, makeProject, makeTmpDir, runLoam } from "./helpers/harness.js";
 import { AGENTS_MD } from "../src/core/agent/agents-md.js";
 import { PROTOCOLS as COMMAND_BODIES, REFERENCE_PAGES } from "../src/core/agent/protocol.js";
-import { SLASH_COMMANDS as COMMAND_FILES } from "../src/core/agent/scaffold.js";
+import { SLASH_COMMANDS as COMMAND_FILES, plannedCommandFiles } from "../src/core/agent/scaffold.js";
 import { AGENT_TOOLS } from "../src/core/agent/tools/registry.js";
 import { LOAM_ALLOWED_VERBS, UNAPPROVED } from "../src/core/agent/tools/dialects.js";
 import { parse } from "yaml";
@@ -211,8 +211,9 @@ describe("multi-tool command generation (init --tools)", () => {
   //
   // `command: null` is a skills-only target — Codex, which reads skills and
   // registers no command files at all, and `agents`, the vendor-neutral
-  // `.agents/skills/` root several tools read in addition to their own; every
-  // other tool declares both deliveries. The skill column is the Agent Skills
+  // `.agents/skills/` root several tools read in addition to their own (Codex
+  // among them, so the two share a path); every other tool declares both
+  // deliveries. The skill column is the Agent Skills
   // convention — `<tool-dir>/skills/<name>/SKILL.md` — and its directory is the
   // tool's OWN, which for cline is not the directory its commands go in.
   interface Pin {
@@ -256,7 +257,7 @@ describe("multi-tool command generation (init --tools)", () => {
       command: [".augment", "commands", "loam-check.md"],
       skill: [".augment", "skills", "loam-check", "SKILL.md"],
     },
-    codex: { command: null, skill: [".codex", "skills", "loam-check", "SKILL.md"] },
+    codex: { command: null, skill: [".agents", "skills", "loam-check", "SKILL.md"] },
     continue: {
       command: [".continue", "prompts", "loam-check.prompt"],
       skill: [".continue", "skills", "loam-check", "SKILL.md"],
@@ -315,18 +316,24 @@ describe("multi-tool command generation (init --tools)", () => {
     }
   });
 
-  it("the claude wrapper is the historical byte format — description + argument-hint frontmatter", () => {
-    // SLASH_COMMANDS derives through the claude adapter, so a reworded wrapper
-    // would silently re-spell every already-initialized repo as unscaffolded.
-    // The literal prefix pins the on-disk contract, not the derivation.
+  it("the claude wrapper is the historical format plus the arguments it names", () => {
+    // SLASH_COMMANDS derives through the claude adapter. The literal prefix
+    // pins the on-disk contract, not the derivation: description and
+    // argument-hint as they always were, then `arguments:` — added because
+    // Claude Code counts `$N` from zero, so `$1` took the SECOND argument
+    // (CHANGELOG: "each agent host gets a command's arguments in the spelling
+    // it fills in").
     expect(
       COMMAND_FILES["loam-adopt"]!.startsWith(
         "---\n" +
           "description: Adopt a service — write its baseline docs from its code, as draft, then validate\n" +
           "argument-hint: <service-id>\n" +
+          "arguments: service\n" +
           "---\n\n",
       ),
     ).toBe(true);
+    // a command that takes nothing gets no `arguments:` line
+    expect(COMMAND_FILES["loam-check"]!).not.toMatch(/^arguments:/m);
   });
 
   it("--tools all lays down every tool's files, each in its own dialect, all driving real loam commands", async () => {
@@ -376,7 +383,7 @@ describe("multi-tool command generation (init --tools)", () => {
     // codex is skills-only: nothing under a command directory of its own
     expect(existsSync(join(dir, ".codex", "commands"))).toBe(false);
     expect(existsSync(join(dir, ".codex", "prompts"))).toBe(false);
-    // and so is the vendor-neutral root, for the same reason: the six tools
+    // and so is the vendor-neutral root, for the same reason: the seven tools
     // that read `.agents/skills/` document no command file under `.agents/`, so
     // one written there would be bytes nothing ever opens.
     expect(existsSync(join(dir, ".agents", "skills", "loam-check", "SKILL.md"))).toBe(true);
@@ -396,8 +403,9 @@ describe("multi-tool command generation (init --tools)", () => {
   it("every skill file is the Agent Skills header over the byte-identical shared body", async () => {
     // The whole point of the second delivery is that it is the SAME protocol —
     // a skill that drifts from its command is two contracts wearing one name.
-    // Claude's header carries two lines more (`when_to_use`, `disallowed-tools`);
-    // the body under it is the same bytes.
+    // Claude's header carries three lines more (`when_to_use`, `argument-hint`,
+    // `disallowed-tools`) and Copilot's one (`argument-hint`); the body under
+    // each is the same bytes, because loam-check takes no argument to re-spell.
     const dir = await throwawayDir();
     await runLoam(dir, "init", "--docs", "./d", "--create", "--tools", "all");
     const rules = String.raw`Bash\((?:npx )?loam [a-z-]+(?::\*)?\)(?:, Bash\((?:npx )?loam [a-z-]+(?::\*)?\))*`;
@@ -405,10 +413,12 @@ describe("multi-tool command generation (init --tools)", () => {
       const skill = await readFile(join(dir, ...CHECK_FILE[id]!.skill), "utf8");
       const header = id === "claude"
         ? new RegExp(
-          String.raw`^---\nname: loam-check\ndescription: [^\n]+\nwhen_to_use: [^\n]+\n`
+          String.raw`^---\nname: loam-check\ndescription: [^\n]+\nwhen_to_use: [^\n]+\nargument-hint: [^\n]+\n`
             + String.raw`allowed-tools: ${rules}\ndisallowed-tools: ${rules}\n---\n\n`,
         )
-        : new RegExp(String.raw`^---\nname: loam-check\ndescription: [^\n]+\nallowed-tools: ${rules}\n---\n\n`);
+        : id === "github-copilot"
+          ? new RegExp(String.raw`^---\nname: loam-check\ndescription: [^\n]+\nargument-hint: [^\n]+\nallowed-tools: ${rules}\n---\n\n`)
+          : new RegExp(String.raw`^---\nname: loam-check\ndescription: [^\n]+\nallowed-tools: ${rules}\n---\n\n`);
       expect(skill, `${id} skill frontmatter`).toMatch(header);
       // the body after the frontmatter is claude's body after ITS frontmatter
       const body = (s: string): string => s.slice(s.indexOf("\n---\n\n") + "\n---\n\n".length);
@@ -547,13 +557,73 @@ describe("multi-tool command generation (init --tools)", () => {
   });
 
   it("no other tool's skill carries Claude-only fields", async () => {
-    // The Agent Skills format the other roots follow has neither field, and a
-    // reader stricter than Claude Code may reject a file that carries them.
+    // The Agent Skills format the other roots follow has none of those fields,
+    // and a reader stricter than Claude Code may reject a file that carries
+    // them. Copilot's own root is the one exception, for `argument-hint` alone.
     for (const tool of ["agents", "codex", "cursor"]) {
       for (const [name, skill] of Object.entries(await emittedSkills(tool))) {
         expect(Object.keys(frontmatter(skill)).sort(), `${tool} ${name}`).toEqual(["allowed-tools", "description", "name"]);
       }
     }
+  });
+
+  describe("arguments, in the spelling each host fills in", () => {
+    /** One command's file for one tool and delivery, as init would write it. */
+    const file = (tool: string, name: string, delivery: "commands" | "skills"): string => {
+      const t = AGENT_TOOLS[tool]!;
+      const path = join("/repo", ...(delivery === "commands" ? t.path!(name) : t.skill!.path(name)));
+      return plannedCommandFiles("/repo", [tool], [delivery]).find((f) => f.path === path)!.content;
+    };
+
+    it("Claude Code: named and declared, because its `$1` is the SECOND argument", () => {
+      for (const delivery of ["commands", "skills"] as const) {
+        const implement = file("claude", "loam-implement", delivery);
+        expect(implement, delivery).toContain("\narguments: feature service\n");
+        expect(implement, delivery).toContain("loam instructions loam-implement $feature $service");
+        expect(implement, delivery).not.toMatch(/\$[1-9]/);
+      }
+      expect(file("claude", "loam-feature", "skills")).toContain('loam instructions loam-feature $feature "$title"');
+    });
+
+    it("Copilot prompt files: `${input:…}`, the description on the first occurrence only", () => {
+      const ship = file("github-copilot", "loam-ship", "commands");
+      expect(ship).toContain("loam instructions loam-ship ${input:feature:feature id, e.g. FEAT-101}");
+      expect(ship).toContain("`loam archive ${input:feature} --dry-run`");
+      expect(ship.match(/\$\{input:feature:/g)).toHaveLength(1);
+      expect(ship).not.toMatch(/\$[1-9]/);
+    });
+
+    it("skills no host fills in: words, and where the value comes from", () => {
+      for (const tool of ["github-copilot", "agents", "opencode"]) {
+        const implement = file(tool, "loam-implement", "skills");
+        expect(implement, tool).toContain("loam instructions loam-implement <FEAT-id> <service-id>");
+        expect(implement, tool).toContain("take it from the request");
+        expect(implement, tool).not.toMatch(/\$[1-9a-z]/);
+      }
+    });
+
+    it("a host that fills in `$1` keeps it", () => {
+      expect(file("opencode", "loam-implement", "commands")).toContain("loam instructions loam-implement $1 $2");
+    });
+
+    it("argument-hint is a YAML string in Claude's and Copilot's skills, and absent where nothing is taken", () => {
+      for (const tool of ["claude", "github-copilot"]) {
+        expect(frontmatter(file(tool, "loam-check", "skills"))["argument-hint"], tool).toBe("[--all | <FEAT-id> | <service>]");
+        expect(frontmatter(file(tool, "loam-feature", "skills"))["argument-hint"], tool).toBe('<FEAT-id> "<title>"');
+        expect(frontmatter(file(tool, "loam-report", "skills")), tool).not.toHaveProperty("argument-hint");
+      }
+    });
+  });
+
+  it("Copilot's instructions file rides with its skills, names the profile's skills, and stays out of a docs repo", () => {
+    const path = join("/repo", ".github", "instructions", "loam.instructions.md");
+    const full = plannedCommandFiles("/repo", ["github-copilot"]).find((f) => f.path === path)!;
+    expect(full.content.startsWith(`---\napplyTo: "**"\n---\n\n${agentsStampLine(LOAM_VERSION)}\n`)).toBe(true);
+    for (const name of ["loam-adopt", "loam-feature", "loam-report"]) expect(full.content).toContain(`\`${name}\``);
+    const service = plannedCommandFiles("/repo", ["github-copilot"], ["skills"], "service").find((f) => f.path === path)!;
+    expect(service.content).not.toContain("`loam-ship`");
+    expect(plannedCommandFiles("/repo", ["github-copilot"], ["skills"], "docs").some((f) => f.path === path)).toBe(false);
+    expect(plannedCommandFiles("/repo", ["github-copilot"], ["commands"]).some((f) => f.path === path)).toBe(false);
   });
 
   it("--tools cursor,gemini replaces the default — no .claude/ appears", async () => {
