@@ -13,5 +13,9 @@
     "rootDir": ".",
     "outDir": null
   },
-  "include": ["scripts/**/*.ts"]
+  "include": ["scripts/**/*.ts"],
+  // The evals' fixture services are code an AGENT reads, copied into a scratch
+  // workspace and never built here — their imports (express, pg, kafkajs) are
+  // not this repository's dependencies, and must not become them.
+  "exclude": ["scripts/evals/fixtures/**"]
 }

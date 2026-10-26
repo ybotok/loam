@@ -169,3 +169,22 @@ Reading it:
 What this table is not: a benefit. It prices what loam hands an agent and says nothing about what
 that buys. No comparison of a session with loam against plan mode and an `AGENTS.md` alone has
 been run or published yet, so none is claimed here.
+
+## What the agent surface buys — behavioural evals
+
+Payload sizes say what an agent is handed. They do not say whether it helps. The behavioural evals
+measure that: the same request a person would type, run headless in a scratch copy of
+`examples/docs`, once with the agent surface `loam init` lays down for Claude Code and once with
+`AGENTS.md` alone. Each run is graded on its tool calls and the files it left, never on what it said.
+The scenarios and their traps are in
+[scripts/evals/README.md](https://github.com/ybotok/loam/blob/main/scripts/evals/README.md):
+- adopt a service from its code without vouching;
+- write open questions for a feature that contradicts a living rule;
+- leave generated Gherkin alone;
+- do not archive an unbuilt feature;
+- find and fix a broken spine.
+
+**No numbers are published yet.** A run costs money and is nondeterministic, so it runs at a
+release (three runs per scenario and arm), and its table will appear here with the loam version,
+the model and the date. Until then, the harness itself is tested (`test/evals.test.ts`), and
+`npx tsx scripts/evals/run.ts --prepare-only` builds every workspace without calling a model.

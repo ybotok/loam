@@ -1,0 +1,12 @@
+{
+  "name": "refund-service",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Refunds a captured payment, in part or in full. An eval fixture for loam, never run.",
+  "main": "src/server.ts",
+  "dependencies": {
+    "express": "^4.19.2",
+    "kafkajs": "^2.2.4",
+    "pg": "^8.11.5"
+  }
+}

@@ -10,6 +10,19 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Added — behavioural evals for the agent surface (repository tooling, not shipped)
+
+- `scripts/evals/` runs five scenarios headless through the Claude Code CLI in a scratch copy of
+  `examples/docs`. Each scenario has one trap: adopt from code without vouching, open questions for
+  a contradicting feature, generated Gherkin left alone, no archive of an unbuilt feature, and a
+  broken spine found and fixed. Every scenario runs in two arms: the agent surface `loam init`
+  writes, and `AGENTS.md` alone. Runs are graded on tool calls and files, never on what the agent
+  said, and each run gets an empty `CLAUDE_CONFIG_DIR`.
+- `--prepare-only` builds the workspaces without calling a model. The scripts are not in the npm
+  package, and no eval numbers are published yet; docs/BENCHMARKS.md says why.
+- The lint and the scripts' typecheck now skip `scripts/evals/fixtures/`, the service code an agent
+  reads in the adopt scenario.
+
 ### Added — `loam delta --diff`, the line-level review of a feature
 
 - `loam delta <FEAT> [--service <id>] --diff` says what each item of the service's slice does to the
