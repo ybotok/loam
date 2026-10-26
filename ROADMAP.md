@@ -101,10 +101,71 @@ The strongest foundations to preserve are:
 
 ## Now
 
-Nothing is queued behind code. Every integrity, enforcement and lifecycle item that preceded this
-has landed (see [Recently landed](#recently-landed)) — the authored business axis, the use-case
-axis, and as of 2026-09-02 the deployment axis, which is the first item this file ever wrote
+One item is queued behind code: [the hop join](#the-hop-join--what-a-fleet-flows-step-is-inside-its-service),
+promoted on 2026-10-27 from pilot evidence. Every integrity, enforcement and lifecycle item that
+preceded it has landed (see [Recently landed](#recently-landed)) — the authored business axis, the
+use-case axis, and as of 2026-09-02 the deployment axis, which is the first item this file ever wrote
 directly into this section rather than promoting from [Later](#later--promote-only-from-evidence).
+
+### The hop join — what a fleet flow's step is inside its service
+
+Decided by the fleet owner on 2026-10-27, and none of it is written yet. It is recorded here before
+any of it is, the way the closed `flows-dynamic-views` branch recorded its commitments.
+
+**The evidence.** On the pilot fleet a feature carried cross-service flows and rewrote requirements
+of a service whose own flows `adopt` had drawn — and redrew none of them. Each one was named by
+`usecase.requirement-modified`, a warning that never gates, among the feature's other warnings, and
+nobody read them. `loam delta`, the implementer's brief, showed neither the feature's own flows (it
+reads `architecture/` alone, so a feature's flows are invisible to it until the archive) nor any
+flow inside the service. The two use-case corpora were apart in the one place an implementer looks.
+
+**The decision.** The corpora stay independent documents: a fleet flow is not split per service, and
+a service flow is not generated from one. What changes is that loam JOINS them, when a brief asks, at
+the hop:
+
+- a hop the addressed service answers — it is called, it publishes, or it is delivered to — has a
+  key: the operation `attributeStep` attributes to it, or the message its relationship's `publishes`
+  or `consumes` metadata names;
+- the service's requirements carry the same keys in their `Operations:`, `Publishes:` and
+  `Consumes:` lines, read as the feature's merge would leave them;
+- the service's flows claim requirements by `#req-`, and the flows claiming a requirement that
+  carries the hop's key are the hop's inside.
+
+Nothing is stored and no grammar is added. An empty inside is a fact the brief states, never a
+finding — rule 26's "presence is never owed" holds. A contested hop names its candidates and joins
+nothing, an unbacked hop has no key, and a service project that does not parse is a hole, said as
+one. The drawing stays the agent's: `loam-feature` tells it to read the join for each service a
+feature flow enters, and to draw or redraw the inside in `features/<FEAT>/specs/<svc>/usecases/`,
+where a document named like a living flow already replaces it.
+
+**What ships.**
+
+- `loam delta`: `useCases.featureFlows[]`, the feature's own flows read against the merge preview,
+  as a key of its own — putting them in `useCases.flows[]` would change what an existing key holds,
+  which the contract forbids. Each step gains the key it exercises and its inside (`inner[]`, each
+  flow with the requirement it came through; the text groups the inside by that requirement, and no
+  filter narrows it). `redraw[]` lists the service's living flows the feature makes untrue — the set
+  `usecase.requirement-modified` already names, reused rather than recomputed — and the inside has an
+  unreadable flag of its own.
+- `loam status <FEAT>`: the same `featureFlows`, and one step per service built from
+  `usecase.requirement-modified`, spelled next.redraw-flows: redraw each flow in the slot, or put it
+  there unchanged when it still holds, because a replacement already silences the warning. No step
+  asks for an inside that is missing; that would be presence owed.
+- The `loam-feature`, `loam-implement` and `loam-check` instructions, and SCHEMA's
+  "The two use-case corpora meet at the hop".
+
+**Rejected.** Generating skeleton service flows from fleet hops — generated TODO files rot, and they
+are presence owed in all but name. A tag on a service flow naming the fleet hop it unfolds — new
+grammar, and step numbers move whenever a flow is edited. Leaving the join at `Realizes:` — that
+joins at the promise, not the hop, and legacy teams will not write it. Narrowing the inside to the
+flows whose entry step carries the hop's operation — on the pilot fleet the entry edges into a
+service's API almost never carry `op`, and one entry edge stands for several operations, so the
+filter would empty nearly every hop.
+
+**Acceptance.** On the pilot fleet, `loam delta <FEAT> --service <svc>` for a service whose
+requirements the feature rewrote shows the feature's flows with each hop's operation, the inside of
+each hop, and a `redraw[]` equal to the set `usecase.requirement-modified` names; `loam status <FEAT>`
+carries the step; and both empty once the flows are redrawn or restated in the slot.
 
 ### Release evidence — one job left
 
@@ -787,6 +848,19 @@ item gets promoted — it went from here to `## Now` and from there to
     warning). Main declined it on purpose — the feature route is create-only and an existing flow is
     edited in the pull request — and it waits for concurrent journey edits conflicting more often
     than review absorbs.
+- **The hop join in `loam context`.** [The hop join](#the-hop-join--what-a-fleet-flows-step-is-inside-its-service)
+  answers in `loam delta` and `loam status`, and deliberately not in the pack. A feature's flows are
+  what changes, which is the delta's question; the pack is the living slice. Joining every feature in
+  flight would cost one merge-preview LikeC4 load per feature, the fan-out the pack's feature walk
+  exists to bound, and the living inside of each hop already reaches the implementer through the
+  delta. Promote when an implementer or reviewer works from `loam context` without `loam delta` and
+  misses the inside of a hop.
+- **Narrowing a hop's inside by the entry step's operation.** The hop join lists every flow claiming
+  a requirement that carries the hop's key, grouped by that requirement. Keeping only the flows whose
+  entry step carries the operation would be sharper, and today it would answer nothing: entry edges
+  into a service's API rarely carry `op`, and one entry edge often stands for several operations.
+  Promote when a pilot reports the unfiltered inside as noise AND the fleet's service models carry
+  `op` on their entry edges.
 - **Landscape scaling:** retain one landscape while conflicts are exceptional, and half of what
   this row once asked for arrived on 2026-09-04. Per-service internals now live in
   `services/<svc>/model.likec4` by default: `loam archive` routes a delta's fqn-spelled interior

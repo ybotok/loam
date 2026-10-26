@@ -2668,6 +2668,22 @@ hand-copied at archive time.
   the archive will write them, so a service flow sharing a view id with one is refused here; a tag
   two SERVICES declare locally is not predicted (above).
 
+**The two use-case corpora meet at the hop — decided, not yet computed.** A fleet flow's hop into a
+service and that service's own flows describe one call at two altitudes, and the join between them
+needs no grammar of its own. The key is the hop's: the operation `attributeStep` attributes to it,
+or the message its relationship's `publishes` or `consumes` metadata names, taken only where the
+service answers the hop — it is called, it publishes, or it is delivered to. The service's
+requirements carry the same keys in their `Operations:`, `Publishes:` and `Consumes:` lines, and its
+flows claim those requirements by `#req-`; the flows claiming a requirement that carries the hop's
+key are the hop's inside. Neither corpus is generated from the other and nothing is stored: the join
+is read, at the hop, when a brief asks for it, against the requirements and flows the feature's
+merge would leave. An empty inside is a fact the brief states, never a finding — no check may grade
+the absence of a view (docs/DESIGN.md rule 26). A contested hop names its candidate operations and
+joins nothing, and a hop nothing backs has no key. loam does not compute this yet, so the paragraph
+above stays true today: a service-local claim appears in no `loam delta`. ROADMAP.md's "The hop
+join" owns the change, and when it lands this paragraph becomes the description of what `loam delta`
+and `loam status` show.
+
 **Both corpora are reported together, and neither is derived from the other.**
 `loam list capabilities --json` carries `keptBy` (the flows keeping a promise) beside `realizedBy`
 (the service requirements realizing it) on every `requirements[]` row, with the same three-state
