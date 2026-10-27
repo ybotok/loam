@@ -307,6 +307,7 @@ describe("--json contract", () => {
       expect(json.review.intent).toEqual({
         path: "features/FEAT-1-split/intent.md",
         summary: "Let a payment be split across payees.",
+        openQuestions: 0,
       });
       expect(json.review.architecture.elements).toEqual([
         { id: "paymentSplitService", kind: "softwareSystem", title: "payment-split-service" },

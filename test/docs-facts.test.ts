@@ -342,6 +342,7 @@ describe("public docs name only emitted codes", () => {
     "checks.coherent": "status --json payload field path",
     "checks.gating": "status --json payload field path — the findings carrying `gates`",
     "feature.title": "status --json payload field path — intent.md's title beside the id",
+    "review.next": "show --json payload field path — the feature's next steps, `loam status`'s list",
     "size.calls": "tasks --json payload field path — the call edges a lens carries",
     "has.asyncapi": "list --json payload field path",
     "claims.answered": "validate --all --json scorecard payload field path — the confirmed claims' provenance split",
@@ -363,6 +364,7 @@ describe("public docs name only emitted codes", () => {
     "user.name": "git config key, as above",
     "components.messages": "AsyncAPI document section path (the slot grammar), not a finding",
     "components.schemas": "AsyncAPI document section path, as above",
+    "capabilities.prompts": "MCP initialize result field path — the prompts capability `loam mcp` declares",
     "loam.json.service": "config key path — the service binding inside loam.json",
     "config.yaml.context": "OpenSpec config key path inventoried by the audit",
     "contracts.openapi": "config key path — where loam.json names the build's OpenAPI output",
@@ -378,7 +380,6 @@ describe("public docs name only emitted codes", () => {
     "reports.present": "doctor --json payload field path — whether that directory exists",
     "reports.total": "doctor --json payload field path — how many reports it holds",
     "reports.next": "doctor --json payload field path — the ordinal the next report takes",
-    "reports.other": "doctor --json payload field path — the files in the directory that are not reports",
     // The first RETIRED code to reach this list, and the reason is worded for
     // the next one rather than for this one. A code loam has stopped emitting
     // still occurs in immutable release history: CHANGELOG entries describe the
