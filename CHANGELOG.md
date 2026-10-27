@@ -10,6 +10,46 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+## [0.2.0-alpha.16] - 2026-10-27
+
+Everything on `main` since `0.2.0-alpha.15`. Still a prerelease on the `alpha` line. When this
+version was cut, `alpha` and `latest` both named `0.2.0-alpha.14` and `0.2.0-alpha.15` had been
+tagged that day, so a repository upgrading from alpha.14 takes this section and alpha.15's.
+`npm view @ybotok/loam dist-tags` is the record of what installs.
+
+Most of it says what a feature will do to a service before the archive does it.
+`loam delta <FEAT> --service <id>` joins each hop of a fleet flow to the service's own flows that
+answer it and lists the living flows the feature makes untrue, and `loam status <FEAT>` turns them
+into a step of its own. `loam delta --diff` shows what each requirement, operation and message does
+to the living documents, line by line. The feature gate predicts every refusal of the archive's C4
+merge, and `status`, `show`, `delta` and the archive plan count the questions intent.md leaves
+open. Agent hosts get a command's arguments in the spelling each one fills in — Claude Code's `$1`
+had been taking a command's second argument — Copilot gets an instructions file and
+`loam init --copilot-setup`, and `loam init --mcp` writes each selected host's MCP config.
+
+Two exit codes move. `loam validate --feature` and `validate --all` exit 1 for a feature whose C4
+merge the archive would refuse (`delta.merge-refused`), where they exited 0 and `loam archive`
+refused later. A repository that commits `architecture/services.likec4` gets
+`subsystem.views-stale`, an error, once after upgrading, so `validate --all` exits 1 until
+`loam subsystem sync` rewrites it. For a feature whose service flows claim a requirement it
+rewrites, `loam status <FEAT>`'s `next[0]` is now `next.redraw-flows`. After upgrading,
+`loam doctor` reports `doctor.agent-files-stale` for the generated command and skill files — the
+Claude ones gain an `arguments:` line — a warning that `loam init` clears for every file still
+byte-identical to what loam wrote; for the `codex` target that run also moves the skills from
+`.codex/skills/` to `.agents/skills/`.
+
+Two stable codes were added and none renamed or retired: `delta.merge-refused`, an error, and the
+step code `next.redraw-flows` — 365 in all, against 363 at alpha.15, counted with
+`loam explain --codes --json`. `ErrorCode` is byte-identical to alpha.15; `IssueCode` gains
+`delta.merge-refused`. Two flags were added, `loam delta --diff` and `loam init --copilot-setup`,
+and the MCP tool `loam_delta` takes `diff`. Every `--json` change is an added key, named in its
+entry below: `delta`'s `useCases.featureFlows`, `useCases.inside`, `useCases.redraw`,
+`steps[].inside`, `openQuestions` and, under `--diff`, `change` and `diff`; `status`'s
+`useCases.featureFlows` and `feature.openQuestions`; `show`'s `review.intent.openQuestions`,
+`shapedBy` and `description` in `landscape`; `archive`'s `title`, `openQuestions` and
+`staleViews`; `doctor`'s `other` in `reports`; `init`'s `removed` and `superseded`; and `diff`'s
+`notCompared`.
+
 ### Added — the hop join: what a fleet flow's step is inside its service
 
 - `loam delta <FEAT> --service <id> --json`: `useCases` keeps `unreadable`, `error` and `flows`
