@@ -1023,8 +1023,10 @@ describe("the slash command that drives it", () => {
     const file = await readFile(join(dir, ".claude", "commands", "loam-adopt.md"), "utf8");
     // The file is a pointer, so what it owes is the pointer and the spine — not
     // this release's flags, which are the part that goes stale in a repository
-    // scaffolded once and never regenerated.
-    expect(file).toContain("loam instructions loam-adopt $1");
+    // scaffolded once and never regenerated. Claude Code fills `$service` only
+    // because the frontmatter declares it, so the two are pinned together.
+    expect(file).toContain("loam instructions loam-adopt $service");
+    expect(file).toContain("arguments: service");
     expect(file).toContain("status: draft");
     expect(file).toContain("sources");
   });

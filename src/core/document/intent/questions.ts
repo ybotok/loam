@@ -24,7 +24,11 @@ export const OPEN_QUESTIONS_SECTION = /^##[ \t]+open questions[ \t]*\n[\s\S]*?(?
 /** A table's separator row — `|---|:--:|` — which is no question. */
 const TABLE_SEPARATOR = /^\|[\s:|-]+\|?$/;
 
-/** A top-level list item: a bullet or a number, indented less than a code block. */
+/**
+ * A list item: a bullet or a number, indented less than a code block. Whether
+ * it is top-level is the open item's call, not the indent's — `- Q3` puts its
+ * text at column 2, so `  - detail` is inside it.
+ */
 const LIST_ITEM = /^ {0,3}(?:[-*+]|\d+[.)])[ \t]+\S/;
 
 /**
@@ -48,8 +52,12 @@ function questionsIn(section: string): string[] {
   // Every table opens with a header row; a line that is not a table row closes
   // the table, so a second table further down gets its own header skipped.
   let header = true;
+  // The column the open question's text starts at. A line indented that far is
+  // inside it; any other non-blank line closes it.
+  let inside = Infinity;
   for (const line of section.split("\n").slice(1)) {
     const row = line.trim();
+    if (row !== "" && line.length - line.trimStart().length < inside) inside = Infinity;
     if (row.startsWith("|")) {
       if (TABLE_SEPARATOR.test(row)) continue;
       if (header) header = false;
@@ -57,7 +65,10 @@ function questionsIn(section: string): string[] {
       continue;
     }
     header = true;
-    if (LIST_ITEM.test(line)) out.push(row);
+    const item = inside === Infinity ? LIST_ITEM.exec(line) : null;
+    if (item === null) continue;
+    out.push(row);
+    inside = item[0].length - 1;
   }
   return out;
 }

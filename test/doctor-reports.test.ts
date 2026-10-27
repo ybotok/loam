@@ -134,6 +134,7 @@ describe("doctor counts the problem reports a repository has collected", () => {
       total: 0,
       next: "001",
       entries: [],
+      other: [],
     });
     expect(report.healthy).toBe(true);
 

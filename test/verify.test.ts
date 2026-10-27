@@ -1249,7 +1249,8 @@ describe("the slash command that drives it", () => {
     // asserted, because a pointer at a protocol nobody can reach is worse than
     // the stale copy it replaced.
     const file = await readFile(join(dir, ".claude", "commands", "loam-verify.md"), "utf8");
-    expect(file).toContain("loam instructions loam-verify $1");
+    expect(file).toContain("loam instructions loam-verify $feature");
+    expect(file).toContain("arguments: feature");
 
     const body = (await runLoam(dir, "instructions", "loam-verify")).out;
     expect(body).toContain("loam verify $1 --json");

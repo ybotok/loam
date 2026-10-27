@@ -58,6 +58,15 @@ describe("openQuestions — what counts as one", () => {
     expect(openQuestions(text)).toEqual(["| A? | a |", "| B? | b |"]);
   });
 
+  it("a bullet is nested by the open question's text column, not by a fixed indent", () => {
+    // Detail ends where the next question starts, at whatever indent the list uses.
+    expect(openQuestions("## Open questions\n\n- one?\n  - detail\n- two?\n")).toEqual(["- one?", "- two?"]);
+    expect(openQuestions("## Open questions\n\n - one?\n   - detail\n - two?\n")).toEqual(["- one?", "- two?"]);
+    expect(openQuestions("## Open questions\n\n1. one?\n   - detail\n2. two?\n")).toEqual(["1. one?", "2. two?"]);
+    // A paragraph closes the question, so an indented bullet after it is a new one.
+    expect(openQuestions("## Open questions\n\n- one?\n\nnote\n  - two?\n")).toEqual(["- one?", "- two?"]);
+  });
+
   it("an intent with no section, an empty one, or CRLF endings", () => {
     expect(openQuestions("# FEAT-1\n\n## Why\n\n- not a question\n")).toEqual([]);
     expect(openQuestions("## Open questions\n\n<!-- write them here -->\n")).toEqual([]);

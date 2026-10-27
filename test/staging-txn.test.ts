@@ -461,7 +461,9 @@ describe("`loam rebase` over a journal its predecessor left", () => {
 /* ------------------------------------------------------------------ */
 
 /**
- * Every `rerun:` template in src/, as the journal would store it.
+ * Every `rerun:` template in src/, as the journal would store it — and every
+ * `rerun =`, because a writer that picks between two spellings computes the
+ * value once and passes it on (`init --mcp` and `--mcp-author`).
  *
  * These strings reach a human through journal DATA — `doctor` prints
  * `intent.rerun`, `status` puts it on the recover step — so
@@ -477,7 +479,7 @@ async function rerunTemplates(): Promise<string[]> {
   for (const name of names) {
     const text = await readFile(new URL(name, src), "utf8");
     for (const line of text.split("\n")) {
-      const after = /\brerun:(.*)$/.exec(line)?.[1];
+      const after = /\brerun(?::|\s*=)(.*)$/.exec(line)?.[1];
       if (after === undefined) continue;
       for (const m of [...after.matchAll(/`([^`]*)`/g), ...after.matchAll(/"([^"]*)"/g)]) {
         if (/^loam\s/.test(m[1]!)) out.add(m[1]!);
@@ -508,6 +510,9 @@ describe("every writer's stored rerun is a command loam has", () => {
     expect(templates).toEqual([
       "loam gherkin",
       "loam gherkin ${scope.featureId}",
+      // `init --copilot-setup` writes one workflow file at a fixed path, so,
+      // like `--mcp` below, the bare flag is the whole command.
+      "loam init --copilot-setup",
       // `init --example` copies the packaged example tree through the same
       // journaled writer as everything else, so an interrupted copy is rolled
       // forward by the next writer rather than leaving half a fleet on disk.
