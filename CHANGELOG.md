@@ -10,6 +10,20 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Fixed — Copilot's instructions file stays out of the docs repo itself
+
+No code, flag or payload key was added.
+
+- **`loam init` no longer writes `.github/instructions/loam.instructions.md` in the docs repo**,
+  whatever the profile: where `loam.json`'s `docsDir` names the repository `init` runs in, as a
+  fleet's `"."` does. 0.2.0-alpha.16 and 0.2.0-alpha.17 skipped it only under
+  `--agent-profile docs`, so a docs repo whose agents also adopt, on the default `full` profile,
+  got a file that describes a service repo ("`loam.json` here names it", "the docs about this
+  service") applied to every path, beside the AGENTS.md it already holds. `loam doctor` plans the
+  same way, so `doctor.agent-files-missing` does not ask such a repo for the file.
+- A file either release already wrote there is left in place and keeps its `agentFiles` entry:
+  delete both by hand. A re-run neither recreates nor reports it.
+
 ## [0.2.0-alpha.17] - 2026-10-29
 
 Everything on `main` since `0.2.0-alpha.16`. Still a prerelease on the `alpha` line. When this

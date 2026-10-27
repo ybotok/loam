@@ -116,7 +116,7 @@ describe("the loam-report support protocol", () => {
   it("ships as both command and Agent Skill in every profile", () => {
     const profiles: AgentProfile[] = ["full", "service", "docs"];
     for (const profile of profiles) {
-      const paths = plannedCommandFiles("repo", ["claude"], undefined, profile).map((f) => f.path);
+      const paths = plannedCommandFiles("repo", ["claude"], undefined, { profile }).map((f) => f.path);
       expect(paths).toContain(join("repo", ".claude", "commands", "loam-report.md"));
       expect(paths).toContain(join("repo", ".claude", "skills", "loam-report", "SKILL.md"));
     }

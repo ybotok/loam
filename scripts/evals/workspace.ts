@@ -88,7 +88,7 @@ export function makeWorkspace(
   scenario.setup({ root, docs, loam });
   const cwd = scenario.cwd(root);
   if (arm === "loam") {
-    for (const file of plannedCommandFiles(cwd, ["claude"], DELIVERIES, scenario.profile)) {
+    for (const file of plannedCommandFiles(cwd, ["claude"], DELIVERIES, { profile: scenario.profile, docsRepo: cwd === docs })) {
       mkdirSync(join(file.path, ".."), { recursive: true });
       writeFileSync(file.path, file.content, "utf8");
     }

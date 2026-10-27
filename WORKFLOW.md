@@ -551,7 +551,9 @@ spelling, `opencode.json` or its `.jsonc` form.
 delivery that matters there and carry `argument-hint`. The `github-copilot` target also writes
 `.github/instructions/loam.instructions.md` — loam's own file, applied to every path — which tells
 the cloud agent loam is here before it chooses a skill: a service repository has no AGENTS.md of
-loam's to do that. It is skipped under `--agent-profile docs`, whose repository has AGENTS.md. `loam init --copilot-setup` writes
+loam's to do that. It is skipped in the docs repo itself (`docsDir` naming the repository `init`
+runs in, whatever the profile) and under `--agent-profile docs`: that repository has AGENTS.md.
+`loam init --copilot-setup` writes
 `.github/workflows/copilot-setup-steps.yml` once — Node.js, loam at this version (or `npm ci` where
 loam is a devDependency), a clone of the docs repo where `loam.json` points, and `loam doctor` — and
 never rewrites it. Its own comments say what a first task should confirm.

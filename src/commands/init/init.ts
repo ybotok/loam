@@ -17,6 +17,7 @@ import { listServices } from "../../core/repo/repo.js";
 import { InvalidIdError, assertServiceId } from "../../core/kernel/ids/service.js";
 import {
   detectAgentTools,
+  isDocsRepoHere,
   plannedCommandFiles,
   retireMovedAgentFiles,
   syncAgentCommands,
@@ -245,7 +246,9 @@ export function registerInit(program: Command): void {
 
       // Probe the pre-existing paths in planned order. Managed files refreshed
       // below are removed from `skipped`; custom and already-current files stay.
-      const plannedAgentFiles = delivery.length > 0 ? plannedCommandFiles(cwd, tools, delivery, profile) : [];
+      // From docsDir, not from the disk: under `--create --docs .` the repo becomes a docs repo between plan and sync.
+      const scope = { profile, docsRepo: isDocsRepoHere(cwd, docsDir) };
+      const plannedAgentFiles = delivery.length > 0 ? plannedCommandFiles(cwd, tools, delivery, scope) : [];
       // The host configs join the same list rather than being reported on the
       // side: each is a scaffolded path like any other, so it must appear in
       // `created` or in `skipped` by the one rule that governs both — under the
@@ -277,7 +280,7 @@ export function registerInit(program: Command): void {
           cwd,
           toolIds: tools,
           delivery,
-          profile,
+          ...scope,
           known: existing?.agentFiles,
         });
         created.push(...synced.created);

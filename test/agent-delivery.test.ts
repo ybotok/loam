@@ -269,6 +269,29 @@ describe("plannedCommandFiles — the two-argument contract other commands read"
   });
 });
 
+describe("Copilot's instructions file stays out of the docs repo itself", () => {
+  const instructions = [".github", "instructions", "loam.instructions.md"] as const;
+
+  it("a service repo gets it; a docs repo running the full profile does not, created or joined", async () => {
+    const svc = await throwawayDir();
+    await initJson(svc, "--tools", "github-copilot");
+    expect(existsSync(join(svc, ...instructions))).toBe(true);
+
+    // The fleet's shape: loam.json says `"docsDir": "."` and the profile is
+    // `full`, because the fleet's agents adopt there too. The file's text
+    // describes a service repo, so here it would be false on every path.
+    const docs = await throwawayDir();
+    for (const args of [["--create"], []]) {
+      const res = await runLoam(docs, "init", "--docs", ".", ...args, "--tools", "github-copilot", "--json");
+      expect(res.code, res.out).toBe(0);
+      expect(JSON.parse(res.stdout).agentProfile).toBe("full");
+      expect(existsSync(join(docs, ...instructions)), args.join(" ")).toBe(false);
+    }
+    expect(existsSync(join(docs, ".github", "skills", "loam-adopt", "SKILL.md"))).toBe(true);
+    expect(Object.keys((await readConfig(docs)).agentFiles)).not.toContain(instructions.join("/"));
+  });
+});
+
 describe("codex: the move from .codex/skills/ to .agents/skills/", () => {
   /** A repo initialized for codex the way loam used to: its skills, and their digests, under `.codex/skills/`. */
   async function scaffoldedTheOldWay(): Promise<string> {

@@ -17,8 +17,9 @@ import { LOAM_VERSION } from "../envelope/version.js";
 import { agentsPath } from "../repo/paths.js";
 import {
   DELIVERIES,
+  isDocsRepoHere,
   plannedCommandFiles,
-  type AgentProfile,
+  type AgentScope,
   type Delivery,
 } from "../agent/scaffold.js";
 import { AGENT_TOOLS } from "../agent/tools/registry.js";
@@ -74,10 +75,10 @@ export function detectedTools(repoRoot: string): string[] {
 export function heldDeliveries(
   repoRoot: string,
   tool: string,
-  profile: AgentProfile = "full",
+  scope: AgentScope = {},
 ): readonly Delivery[] {
   const held = DELIVERIES.filter((d) =>
-    plannedCommandFiles(repoRoot, [tool], [d], profile).some((f) => existsSync(f.path)));
+    plannedCommandFiles(repoRoot, [tool], [d], scope).some((f) => existsSync(f.path)));
   return held.length > 0 ? held : DELIVERIES;
 }
 
@@ -154,9 +155,12 @@ export async function inspectAgentSurface(
 ): Promise<AgentSurface> {
   const recorded = recordedTools(config);
   const tools = recorded ?? detectedTools(repoRoot);
+  // The same scope `init` planned with, so a fleet's own repo is not told it is
+  // missing the file init deliberately left out of it.
   const profile = config?.agentProfile ?? "full";
+  const scope: AgentScope = { profile, docsRepo: docsDir !== null && isDocsRepoHere(repoRoot, docsDir) };
   const planned = tools.flatMap((id) =>
-    plannedCommandFiles(repoRoot, [id], heldDeliveries(repoRoot, id, profile), profile));
+    plannedCommandFiles(repoRoot, [id], heldDeliveries(repoRoot, id, scope), scope));
   const present = planned.filter((f) => existsSync(f.path));
   const missingFiles = planned
     .filter((f) => !existsSync(f.path))

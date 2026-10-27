@@ -19,7 +19,7 @@ import { createHash } from "node:crypto";
 import { coherentFixture, makeProject, makeTmpDir, runLoam } from "./helpers/harness.js";
 import { AGENTS_MD } from "../src/core/agent/agents-md.js";
 import { PROTOCOLS as COMMAND_BODIES, REFERENCE_PAGES } from "../src/core/agent/protocol.js";
-import { SLASH_COMMANDS as COMMAND_FILES, plannedCommandFiles } from "../src/core/agent/scaffold.js";
+import { SLASH_COMMANDS as COMMAND_FILES, plannedCommandFiles, type AgentScope } from "../src/core/agent/scaffold.js";
 import { AGENT_TOOLS } from "../src/core/agent/tools/registry.js";
 import { LOAM_ALLOWED_VERBS, UNAPPROVED } from "../src/core/agent/tools/dialects.js";
 import { parse } from "yaml";
@@ -617,12 +617,18 @@ describe("multi-tool command generation (init --tools)", () => {
 
   it("Copilot's instructions file rides with its skills, names the profile's skills, and stays out of a docs repo", () => {
     const path = join("/repo", ".github", "instructions", "loam.instructions.md");
+    const planned = (scope: AgentScope): boolean =>
+      plannedCommandFiles("/repo", ["github-copilot"], ["skills"], scope).some((f) => f.path === path);
     const full = plannedCommandFiles("/repo", ["github-copilot"]).find((f) => f.path === path)!;
     expect(full.content.startsWith(`---\napplyTo: "**"\n---\n\n${agentsStampLine(LOAM_VERSION)}\n`)).toBe(true);
     for (const name of ["loam-adopt", "loam-feature", "loam-report"]) expect(full.content).toContain(`\`${name}\``);
-    const service = plannedCommandFiles("/repo", ["github-copilot"], ["skills"], "service").find((f) => f.path === path)!;
+    const service = plannedCommandFiles("/repo", ["github-copilot"], ["skills"], { profile: "service" }).find((f) => f.path === path)!;
     expect(service.content).not.toContain("`loam-ship`");
-    expect(plannedCommandFiles("/repo", ["github-copilot"], ["skills"], "docs").some((f) => f.path === path)).toBe(false);
+    expect(planned({ profile: "docs" })).toBe(false);
+    // A fleet whose agents also adopt runs `full` in the docs repo itself; the
+    // profile then says nothing about the AGENTS.md that repo already holds.
+    expect(planned({ profile: "full", docsRepo: true })).toBe(false);
+    expect(planned({ profile: "full", docsRepo: false })).toBe(true);
     expect(plannedCommandFiles("/repo", ["github-copilot"], ["commands"]).some((f) => f.path === path)).toBe(false);
   });
 

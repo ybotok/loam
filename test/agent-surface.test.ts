@@ -60,6 +60,22 @@ describe("doctor reports the agent surface", () => {
     expect(report.agents.plannedFiles).toBeGreaterThan(0);
   });
 
+  it("a docs repo is not missing the Copilot instructions file init leaves out of it", async () => {
+    // init plans the docs repo itself without that file whatever its profile;
+    // doctor planning it anyway would send the repo round a fix that cannot
+    // land — re-running init writes nothing, and the warning stays.
+    const root = await makeTmpDir("loam-agent-surface-");
+    cleanups.push(() => rm(root, { recursive: true, force: true }));
+    const res = await runLoam(root, "init", "--docs", ".", "--create", "--tools", "github-copilot");
+    expect(res.code, res.out).toBe(0);
+
+    const report = await diagnose(root);
+
+    expect(codes(report.findings)).not.toContain("doctor.agent-files-missing");
+    expect(report.agents.missingFiles).toEqual([]);
+    expect(report.agents.plannedFiles).toBeGreaterThan(0);
+  });
+
   it("a repo that never asked for skills is not missing them", async () => {
     // §3.7's false positive: `--no-skills` left doctor reporting every skill
     // files as missing on a repo that was correct the moment it was created.

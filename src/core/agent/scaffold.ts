@@ -27,7 +27,7 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, rmdir, writeFile } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { agentsStampLine } from "./agents-stamp.js";
 import { LOAM_VERSION } from "../envelope/version.js";
 import type { AgentFileEmitter, CommandContent, DeliveredCommand } from "./contract.js";
@@ -195,6 +195,24 @@ const PROFILE_COMMANDS: Record<AgentProfile, ReadonlySet<string>> = {
 };
 
 /**
+ * What the plan knows about the repository beyond its tools and deliveries.
+ *
+ * `docsRepo` is a separate fact from the profile, and the profile cannot stand
+ * in for it: a docs repo whose agents also adopt runs `full`, and the profile
+ * then said nothing about the AGENTS.md it already holds.
+ */
+export interface AgentScope {
+  profile?: AgentProfile;
+  /** The repo the files land in IS the docs repo — `loam.json` points at itself. */
+  docsRepo?: boolean;
+}
+
+/** Whether `docsDir` names the repository at `root` itself, the way a fleet's own loam.json says `"."`. */
+export function isDocsRepoHere(root: string, docsDir: string): boolean {
+  return resolve(root) === resolve(docsDir);
+}
+
+/**
  * Every file the selected tools would lay down, in creation order — the same
  * list `init` probes for `skipped` BEFORE the scaffold runs, so created +
  * skipped is the same list on every repo.
@@ -207,16 +225,21 @@ const PROFILE_COMMANDS: Record<AgentProfile, ReadonlySet<string>> = {
  * kept because it is imported elsewhere; `delivery` narrows it.
  *
  * A tool's always-read instructions file rides with its skills, which it
- * names, and is planned everywhere but under the `docs` profile: the docs repo
- * already has AGENTS.md saying the same. Each path is planned once, because two
- * tools can read one root — `codex` and `agents` both write `.agents/skills/`.
+ * names, and is planned everywhere but in the docs repo — the repo `scope` says
+ * is one, or any repo under the `docs` profile: the docs repo already has
+ * AGENTS.md saying the same, and the file's own words ("loam.json here names
+ * it", "the docs about this service") describe a service repo, so in a fleet
+ * they told Copilot something false on every path. Each path is planned once,
+ * because two tools can read one root — `codex` and `agents` both write
+ * `.agents/skills/`.
  */
 export function plannedCommandFiles(
   cwd: string,
   toolIds: string[],
   delivery: readonly Delivery[] = DELIVERIES,
-  profile: AgentProfile = "full",
+  scope: AgentScope = {},
 ): Array<{ path: string; content: string }> {
+  const { profile = "full", docsRepo = false } = scope;
   const commands = AGENT_COMMANDS.filter((command) => PROFILE_COMMANDS[profile].has(command.name));
   const files = toolIds.flatMap((id) => {
     const tool = AGENT_TOOLS[id];
@@ -233,7 +256,7 @@ export function plannedCommandFiles(
     const own = emitters.flatMap((e) =>
       commands.map((c) => ({ path: join(cwd, ...e.path(c.name)), content: e.format(stubbed(c)) })),
     );
-    if (!delivery.includes("skills") || instructions === undefined || profile === "docs") return own;
+    if (!delivery.includes("skills") || instructions === undefined || profile === "docs" || docsRepo) return own;
     const stamp = agentsStampLine(LOAM_VERSION);
     return [...own, { path: join(cwd, ...instructions.path), content: instructions.format(stamp, commands) }];
   });
@@ -277,11 +300,12 @@ export async function syncAgentCommands(req: {
   toolIds?: string[];
   delivery?: readonly Delivery[];
   profile?: AgentProfile;
+  docsRepo?: boolean;
   known?: Readonly<Record<string, string>>;
 }): Promise<AgentFileSync> {
-  const { cwd, toolIds = ["claude"], delivery = DELIVERIES, profile = "full", known = {} } = req;
+  const { cwd, toolIds = ["claude"], delivery = DELIVERIES, profile = "full", docsRepo, known = {} } = req;
   const out: AgentFileSync = { created: [], refreshed: [], managed: {} };
-  for (const { path, content } of plannedCommandFiles(cwd, toolIds, delivery, profile)) {
+  for (const { path, content } of plannedCommandFiles(cwd, toolIds, delivery, { profile, docsRepo })) {
     const key = manifestPath(cwd, path);
     const desired = contentDigest(content);
     if (!existsSync(path)) {
