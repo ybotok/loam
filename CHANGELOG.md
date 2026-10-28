@@ -59,6 +59,13 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   `tag external`, as `loam seed`'s always did: an element tagged `#external`, which the stub's own
   comments describe, no longer makes the map fail to parse. A map scaffolded by an earlier version
   and never edited is still recognised as untouched, so `loam seed` still replaces it.
+- After `loam init --create`, the first hand edit that adds a service to the fleet map makes
+  `architecture/services.likec4` owed, and `loam validate --all` reports `subsystem.views-stale`
+  until `loam subsystem sync` writes it; nothing on the init path said so. `init --create` still
+  writes no `services.likec4`: the map it scaffolds draws no service, and a map that draws none owes
+  no file. The step is now named where a reader draws by hand: the scaffolded map's comment right
+  after "add the service here", and the closing list `init --create` prints with no service bound
+  gains `loam subsystem sync`. Text only; `--json` is unchanged.
 
 ## [0.2.0-alpha.16] - 2026-10-27
 

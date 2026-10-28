@@ -108,6 +108,14 @@ no fleet manifest, deliberately — the wiring is one file per repo, and it is r
    the moment `services/` holds a directory (an empty one counts, before a single document lands in
    it), because with no fleet map every cross-service check is blind rather than passing.
 
+   A hand edit that adds a service or an edge is followed by **`loam subsystem sync`**.
+   `architecture/services.likec4` — one overview view per service the map draws — is generated
+   from the map, and `loam validate --all` reports it stale (`subsystem.views-stale`) until it
+   agrees. `seed`, the subsystem verbs and `loam archive` regenerate it in their own commits;
+   an editor cannot, and `loam init --create` has nothing to write yet: the map it scaffolds draws
+   no service, and a map that draws none owes no file. The scaffolded map's comment and init's
+   closing list both name the step.
+
    What seed deliberately does not write is the operation on each edge. That token —
    `metadata { op 'createOrder' }` — is what turns a drawn arrow into a checked join, and adding it
    is what makes the [spine-first first hour](README.md#start-from-the-fleet-spine) pay off before

@@ -47,10 +47,19 @@ export function firstHour(service: string): Array<[command: string, why: string]
  * `loam-feature` and `loam-ship` into every service repo — the outcome
  * README's "Pass the profile explicitly" warns against. Agents type the
  * command loam prints, not the README.
+ *
+ * The sync line is for the "draw it by hand" half of the first row. The map
+ * this run scaffolds draws no service, so it owes no generated views file and
+ * none is written — and the first hand edit that adds a service makes
+ * `architecture/services.likec4` owed, which `validate --all` reports as
+ * `subsystem.views-stale` until `loam subsystem sync` writes it. `seed` and
+ * `archive` write it in their own commits; an editor cannot, so the step is
+ * named here, where the reader who will draw by hand is standing.
  */
 export function docsRepoFirstHour(): Array<[command: string, why: string]> {
   return [
     ["loam seed --from fleet.yaml", "the fleet map from a fleet.yaml you write, or draw it by hand"],
+    ["loam subsystem sync", "after drawing by hand: regenerates the per-service views the map owes"],
     ["loam init --docs <docs-repo> --service <id> --agent-profile service",
       "in each service's own repo: bind it, commit loam.json"],
     ["loam adopt --service <id> --json", "there: the brief, an agent writes the baseline as draft"],

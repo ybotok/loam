@@ -91,6 +91,11 @@ export const LANDSCAPE_STUB = `// The fleet map: every service in services/ appe
 //     metadata { op 'authorizePayment' }
 //   }
 //
+// Then run \`loam subsystem sync\`: architecture/services.likec4 — one overview
+// view per service this map draws — is generated from this file, and
+// \`loam validate --all\` reports it stale until it agrees. \`loam seed\` and
+// \`loam archive\` regenerate it themselves; a hand edit cannot.
+//
 // Every edge says what it carries with one of the relationship kinds declared
 // below, and points the way the evidence says — never a guess:
 //
