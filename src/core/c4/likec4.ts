@@ -8,6 +8,7 @@ import { readSpecification, type DocSpecification } from "./parsed/specification
 import { readDeployment, type DeploymentModel } from "./parsed/deployment.js";
 import { compareRels, descText, metaKey } from "./parsed/values.js";
 import { boundedMessage } from "./diagnostics/bounded.js";
+import { splitLinks } from "./navigation/unplaced.js";
 
 /** A parse/validation issue reported by LikeC4. */
 export interface LikeC4Error {
@@ -153,6 +154,17 @@ export interface LoadedDoc {
    */
   specification?: DocSpecification;
   /**
+   * The unresolved `navigateTo` links a DOCUMENT load set aside instead of
+   * reporting (`./navigation/unplaced.ts`): one document alone cannot tell a
+   * link into a view another document of its project declares from a link that
+   * lands nowhere. Absent when there were none, and never set by a project
+   * load, which is handed the evidence instead. A reader that knows which
+   * project the document renders in puts the dangling ones back as errors
+   * (`./project/architecture.ts`'s `gradeLinks`); a reader that only shows the
+   * document may ignore them, because nothing it reads depends on them.
+   */
+  unplaced?: LikeC4Error[];
+  /**
    * The `dynamic view`s the document DECLARES — the ordered steps of a use
    * case, never a rendering (docs/DESIGN.md rule 26). Optional for exactly the
    * reason `specification` is: a document that did not parse has none, and the
@@ -284,22 +296,25 @@ export async function loadFile(path: string): Promise<LoadedDoc> {
  * to prove a computed landscape parses BEFORE anything is written.
  */
 export async function loadSource(src: string): Promise<LoadedDoc> {
-  // LikeC4 owns a Langium workspace and registers a process-exit listener for
-  // it. Validation creates many short-lived instances, so every acquired
-  // instance must be disposed even on an invalid document or a failed model
-  // computation. Its logger is disabled because diagnostics are returned in
-  // LoadedDoc instead of being written out-of-band to stderr.
+  // LikeC4 owns a Langium workspace and registers a process-exit listener for it. Validation
+  // creates many short-lived instances, so every acquired instance must be disposed even on an
+  // invalid document or a failed model computation. Its logger is disabled because diagnostics
+  // are returned in LoadedDoc instead of being written out-of-band to stderr.
   const likec4 = await LikeC4.fromSource(src, { logger: false });
   try {
-    // Assigned, not cast: LikeC4 declares `getErrors()` as a non-nullable array
-    // whose element type is structurally wider than ours, so the compiler can
-    // check the shape here. The cast was the only thing standing between a
-    // dependency renaming `message` and a build that still succeeded — and the
-    // `?? []` it carried could never fire. Through `distinctErrors`, as every
-    // loader's diagnostics are, so this one agrees with the batch loader.
-    const errors: LikeC4Error[] = distinctErrors(likec4.getErrors());
+    // Assigned, not cast: LikeC4 declares `getErrors()` as a non-nullable array whose element
+    // type is structurally wider than ours, so the compiler can check the shape here. The cast was
+    // the only thing standing between a dependency renaming `message` and a build that still
+    // succeeded — and the `?? []` it carried could never fire. Through `distinctErrors`, as every
+    // loader's diagnostics are, so this one agrees with the batch loader — and split by
+    // `splitLinks`: whether a `navigateTo` lands is a question about the project this document
+    // renders in, which one document cannot answer, so the links travel as `unplaced` for the
+    // reader that can (`./navigation/unplaced.ts`).
+    const all: LikeC4Error[] = distinctErrors(likec4.getErrors());
+    const { errors, unplaced } = splitLinks(all);
+    const links = unplaced.length === 0 ? {} : { unplaced };
     if (errors.length > 0) {
-      return { errors, elements: [], relationships: [] };
+      return { errors, elements: [], relationships: [], ...links };
     }
 
     // `parsedModel`, not `computedModel`: the computed stage RESOLVES every
@@ -312,7 +327,7 @@ export async function loadSource(src: string): Promise<LoadedDoc> {
     // a second into minutes. The elements and relationships below are identical
     // either way. The `await` is load-bearing for anything reading `$data`: it is
     // undefined on the unresolved promise.
-    return cleanDoc((await likec4.parsedModel()) as ReadableModel);
+    return { ...cleanDoc((await likec4.parsedModel()) as ReadableModel), ...links };
   } finally {
     await likec4.dispose();
   }

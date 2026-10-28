@@ -4,6 +4,7 @@ import { elementService, serviceResolver } from "../c4/resolve/service.js";
 import { infrastructureKind } from "../c4/direction/direction.js";
 import { livingMapOf, readDeltaSystem } from "../c4/resolve/systems.js";
 import { extendingModels } from "../c4/service-model/fleet/extending.js";
+import { featureViews, gradeLinks } from "../c4/project/architecture.js";
 import { serviceIdProblem } from "../kernel/ids/service.js";
 import { deltaShapeIssues } from "../delta/delta.js";
 import { featureServiceFlowIssues } from "../delta/flows/service.js";
@@ -107,7 +108,12 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
   let taggedRels: Rel[] = [];
   const deltaPath = featurePaths(featureDir).delta;
   if (existsSync(deltaPath)) {
-    const res = preloadedDelta ?? (context === undefined ? await loadFile(deltaPath) : await context.loadLikeC4(deltaPath));
+    // Its links graded against what they will land on once the feature
+    // archives (`featureViews`): the archive gate reads this same answer, so a
+    // link into a view declared nowhere is `delta.invalid` here rather than a
+    // `landscape.invalid` the archive would write into the living map.
+    const loaded = preloadedDelta ?? (context === undefined ? await loadFile(deltaPath) : await context.loadLikeC4(deltaPath));
+    const res = await gradeLinks(loaded, () => featureViews(docsDir, featureDir));
     if (res.errors.length > 0) {
       // An unreadable architecture axis can prove nothing — it must never count as coherent.
       issues.push({

@@ -62,7 +62,7 @@ import { existsSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import { errorText, type LikeC4Error, type LoadedDoc } from "../../../../core/c4/likec4.js";
 import { asLoadedDoc, loadProject } from "../../../../core/c4/project/load.js";
-import { rootProjectDocuments } from "../../../../core/c4/project/architecture.js";
+import { renderedViews, rootProjectDocuments } from "../../../../core/c4/project/architecture.js";
 import type { ViewIdClaim } from "../../../../core/c4/parsed/view-ids.js";
 import type { ModelShape } from "../../../../core/c4/service-model/shape.js";
 import { FleetContext } from "../../../../core/fleet-context.js";
@@ -143,7 +143,13 @@ export async function fleetProjectFindings(check: FleetProjectCheck): Promise<Fl
     check.docsDir,
     check.entries.filter((entry) => shapeOf(entry) === "standalone").map((entry) => entry.dir),
   );
-  const project = await loadProject(check.docsDir, documents);
+  // Its links graded as every grading load grades them
+  // (`core/c4/navigation/unplaced.ts`). The generated views are left out of
+  // the load for the reason above, and `renderedViews` reads them back, so a
+  // link landing on one is not reported as if the renderer could not place it.
+  // A link into nothing in an extending model is that model's `c4.invalid`
+  // already, so `alreadyReported` keeps it from being filed twice.
+  const project = await loadProject(check.docsDir, documents, () => renderedViews(check.docsDir));
 
   if (project.clean) {
     // The census `subsystem.view-id-collision` needs and could not have until

@@ -119,8 +119,8 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
       message: `${landscapeFile} is missing — nothing cross-service can be checked without it.`,
       fix: "Create architecture/landscape.likec4 with one element per service and an edge per call (`loam init --create` writes the empty map).",
     });
-  } else if (exists && landscapeFile !== null && readable) {
-    await inspectLandscape(landscapeFile, findings);
+  } else if (exists && docsDir !== null && landscapeFile !== null && readable) {
+    await inspectLandscape(docsDir, landscapeFile, findings);
   }
 
   // The renderer's view of the repo, which is not loam's. loam parses every

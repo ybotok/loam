@@ -21,6 +21,7 @@ import type { ParsedView } from "../parsed/dynamic-views.js";
 import type { DocSpecification } from "../parsed/specification.js";
 import type { ViewIdClaim } from "../parsed/view-ids.js";
 import { NO_DEPLOYMENT, type DeploymentModel } from "../parsed/deployment.js";
+import { placedLinksDropped, withoutLinks, type RenderedViews } from "../navigation/unplaced.js";
 
 /**
  * A diagnostic exactly as a WORKSPACE hands it back, where `sourceFsPath` is
@@ -135,8 +136,25 @@ export async function stageProject(
  * removed element would otherwise be a parse error that blanks the whole fleet
  * map. `./architecture.ts` holds the join from that table to a docsDir, so no
  * caller has to remember the list.
+ *
+ * A `navigateTo` this project cannot place is graded against `rendered` — the
+ * views the renderer's whole project declares — because a project loam builds
+ * is usually narrower than the renderer's, and a link's view may be in a
+ * document left out of it (`../navigation/unplaced.ts`). A link naming one of
+ * those views is dropped; a link naming none stays an error, exactly as LikeC4
+ * would have it. Every reader that GRADES a project passes it: the map's
+ * (`./architecture.ts`), each extending model's (`../service-model/load.ts`,
+ * `../prefetch/fleet.ts`), the renderer-eye one (`c4.fleet-project-invalid`),
+ * the staged feature project (`./staged.ts`) and a service's flow projects
+ * (`core/usecases/`). Without it the links are dropped — the answer for the
+ * nets that prove a write parses before it lands (the seed's, the archive's
+ * model net), whose documents a grading load reads again once written.
  */
-export async function loadProject(base: string, paths: string[]): Promise<ProjectDoc> {
+export async function loadProject(
+  base: string,
+  paths: string[],
+  rendered?: () => Promise<RenderedViews>,
+): Promise<ProjectDoc> {
   const targets = [...new Set(paths.map((path) => resolve(path)))];
   if (targets.length === 0) return emptyProject(new Map(), true);
   const root = await mkdtemp(join(tmpdir(), "loam-c4-"));
@@ -145,7 +163,9 @@ export async function loadProject(base: string, paths: string[]): Promise<Projec
     if (byRel.size === 0) return emptyProject(new Map(), true);
     const likec4 = await LikeC4.fromWorkspace(root, { logger: false });
     try {
-      const errors = groupErrorsByRel(likec4.getErrors(), byRel);
+      const raw = likec4.getErrors();
+      const graded = rendered === undefined ? withoutLinks(raw) : await placedLinksDropped(raw, rendered);
+      const errors = groupErrorsByRel(graded, byRel);
       if (errors.size > 0) return emptyProject(errors, false);
       return cleanProjectDoc((await likec4.parsedModel()) as ReadableModel);
     } finally {

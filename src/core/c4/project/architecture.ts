@@ -1,6 +1,11 @@
 /**
  * `architecture/` as ONE LikeC4 project — the docsDir-aware wrapper over the two
- * modules beside it.
+ * modules beside it — and the renderer's ROOT project's documents and views,
+ * which are the evidence a link in that project is graded against
+ * (`rootProjectDocuments`, `renderedViews`, `gradeLinks` below). Those live here
+ * rather than beside the root `exclude` reader because they need the generated
+ * documents' list this module owns, and `../root-project/` importing it back
+ * would close a package cycle.
  *
  * It lived in `commands/validate/fleet/load.ts` until the use-case axis grew a
  * second reader. That was the right home while `validate --all` was the only
@@ -20,7 +25,9 @@
  */
 import { readFile } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
-import type { LoadedDoc } from "../likec4.js";
+import { distinctErrors, type LoadedDoc } from "../likec4.js";
+import { placedLinksDropped, type RenderedViews } from "../navigation/unplaced.js";
+import { declaredViewsIn } from "../view-scan/declared.js";
 import type { ProjectDocument } from "../splice/vocabulary/undeclared.js";
 import { inOrder } from "../../kernel/concurrency.js";
 import { excludingPath, readRootExclude } from "../root-project/exclude.js";
@@ -139,9 +146,18 @@ export async function projectDocumentsBesideMap(docsDir: DocsDir): Promise<Proje
  *
  * A fleet with no use cases loads exactly the landscape and behaves as it
  * always did, which is what keeps this a widening rather than a change.
+ *
+ * Its LINKS are graded against `renderedViews`. The project is narrower than
+ * the renderer's — no extending model, no generated view — so a `navigateTo`
+ * naming a view one of those declares cannot resolve here, and it used to fail
+ * the whole map (report 042: `landscape.invalid` and one
+ * `spine.landscape-invalid` per service, while `likec4 validate` said Valid).
+ * Graded, such a link is no fault and a link to a view declared nowhere the
+ * renderer reads is still `landscape.invalid` (`../navigation/unplaced.ts`).
  */
 export async function loadArchitecture(docsDir: DocsDir): Promise<LoadedDoc> {
-  return asLoadedDoc(await loadProject(architectureDir(docsDir), await architectureProjectDocuments(docsDir)));
+  const documents = await architectureProjectDocuments(docsDir);
+  return asLoadedDoc(await loadProject(architectureDir(docsDir), documents, () => renderedViews(docsDir)));
 }
 
 /**
@@ -149,18 +165,19 @@ export async function loadArchitecture(docsDir: DocsDir): Promise<LoadedDoc> {
  * renderer enumerates them: everything under the docs root that the root
  * `likec4.config.json` does not exclude.
  *
- * It exists because `commands/validate/fleet/views/fleet-project.ts` used to build the set BY SHAPE — the
- * `architecture/` project, each extending `model.likec4`, and every `.likec4`
- * inside a service directory — and that is three roots, not a tree. A `.likec4`
- * one directory ABOVE a service (`services/platform/notes.likec4`, the parent of
- * service directories) was in none of them: `loam validate --all` came back
- * byte-identical to baseline and never named the file, while `npx likec4
- * validate --project fleet .` reported Invalid over nine files and thirteen
- * errors (verification 2026-09-04, R2). The same file one directory lower was a
- * loud error. SCHEMA, `loam-codes` and `explain` all said loam loads "every
- * `.likec4` the root project reads"; this is that sentence, executed. It moved
- * here from beside that check so a core reader can take the same walk —
- * `core/` may not import from `commands/`.
+ * It exists because `commands/validate/fleet/views/fleet-project.ts` used to
+ * build the set BY SHAPE — the `architecture/` project, each extending
+ * `model.likec4`, and every `.likec4` inside a service directory — and that is
+ * three roots, not a tree. A `.likec4` one directory ABOVE a service
+ * (`services/platform/notes.likec4`, the parent of service directories) was in
+ * none of them: `loam validate --all` came back byte-identical to baseline and
+ * never named the file, while `npx likec4 validate --project fleet .` reported
+ * Invalid over nine files and thirteen errors (verification 2026-09-04, R2). The
+ * same file one directory lower was a loud error. SCHEMA, `loam-codes` and
+ * `explain` all said loam loads "every `.likec4` the root project reads"; this
+ * is that sentence, executed. It moved here from beside that check when the
+ * map's own grade needed the same walk (`renderedViews` below) — `core/` may
+ * not import from `commands/`.
  *
  * FOUR THINGS COME OUT, and each is a rule rather than a filter of convenience:
  *
@@ -169,7 +186,9 @@ export async function loadArchitecture(docsDir: DocsDir): Promise<LoadedDoc> {
  *    (`generatedArchitectureDocuments` above) — for `./documents.ts`'s reason:
  *    docs/DESIGN.md rule 26 makes their staleness a byte compare, and a stale
  *    one naming a removed element would blank this load and report a cascade
- *    whose repair is `loam subsystem sync`.
+ *    whose repair is `loam subsystem sync`. The renderer DOES load them, which
+ *    is why `renderedViews` reads them back in: a view id they declare is one
+ *    a link can land on.
  *  - Anything the root `exclude` covers, read through `../root-project/exclude.ts`
  *    — the renderer does not load it, so grading it would be loam reporting a
  *    failure nobody can see. A root config loam cannot read an `exclude` list out
@@ -193,24 +212,26 @@ export async function loadArchitecture(docsDir: DocsDir): Promise<LoadedDoc> {
  * twice. Version 4 suffixes every pre-image so the RENDERER cannot take one for
  * a document either (`core/staging/snapshot/manifest.ts`), but the older
  * snapshots are read forever and never migrated, so this walk keeps the rule.
+ *
+ * Absolute and sorted. `standalone` is each standalone service's directory, absolute.
  */
+export async function rootProjectDocuments(docsDir: DocsDir, standalone: readonly string[]): Promise<string[]> {
+  const generated = new Set(generatedArchitectureDocuments(docsDir).map((path) => resolve(path)));
+  return (await rendererDocuments(docsDir, standalone)).filter((path) => !generated.has(resolve(path)));
+}
+
 /** The directory name loam never walks, beside every dot-directory. */
 const PACKAGES = "node_modules";
 
-/** The one subtree loam drops whatever the root config says — see the banner. */
+/** The one subtree loam drops whatever the root config says — see `rootProjectDocuments`. */
 const FEATURES = "features";
 
-/**
- * Every `.likec4` the renderer's root project reads and loam can grade, absolute
- * and sorted. `standalone` is each standalone service's directory, absolute.
- */
-export async function rootProjectDocuments(docsDir: DocsDir, standalone: readonly string[]): Promise<string[]> {
+/** `rootProjectDocuments` with the generated documents still in — the renderer's own set. */
+async function rendererDocuments(docsDir: DocsDir, standalone: readonly string[]): Promise<string[]> {
   const exclude = await readRootExclude(docsDir);
-  const generated = new Set(generatedArchitectureDocuments(docsDir).map((path) => resolve(path)));
   const excluded = standalone.map((dir) => `${resolve(dir)}${sep}`);
   const root = resolve(docsDir);
   const keeps = (path: string): boolean => {
-    if (generated.has(resolve(path))) return false;
     if (excluded.some((dir) => resolve(path).startsWith(dir))) return false;
     const rel = relative(root, path).split(/[\\/]/);
     if (rel[0] === FEATURES) return false;
@@ -222,6 +243,58 @@ export async function rootProjectDocuments(docsDir: DocsDir, standalone: readonl
     enters: (name) => !name.startsWith(".") && name !== PACKAGES,
     keeps,
   });
+}
+
+/**
+ * Every view the renderer's root project declares — the evidence a map's or an
+ * extending model's `navigateTo` is graded against (`../navigation/unplaced.ts`),
+ * read from the documents' text by `../view-scan/declared.ts`, which says why
+ * text. The generated documents are IN, because the renderer loads them.
+ *
+ * Standalone service directories are not passed out: the renderer reads one the
+ * root `exclude` does not cover, and `service.model-unexcluded` is that finding.
+ */
+export async function renderedViews(docsDir: DocsDir): Promise<RenderedViews> {
+  return declaredViewsIn(await rendererDocuments(docsDir, []));
+}
+
+/**
+ * Every view a project rooted at `dir` declares — a STANDALONE service's own
+ * project, which is its directory: the root project excludes it, and its model
+ * links into its own documents and nowhere else.
+ */
+export async function projectViews(dir: string): Promise<RenderedViews> {
+  return declaredViewsIn(await likec4DocumentsUnder(dir, {}));
+}
+
+/**
+ * What a FEATURE's links will land on once it archives: the renderer's views,
+ * and the views the feature's own documents bring with them (its use cases,
+ * its service flows). A link from the delta into a view the archive does not
+ * land stays an error at the feature gate — the archive would write it into
+ * the living map, and the next `validate --all` would be red.
+ */
+export async function featureViews(docsDir: DocsDir, featureDir: string): Promise<RenderedViews> {
+  const [rendered, own] = await Promise.all([renderedViews(docsDir), projectViews(featureDir)]);
+  return new Map([...own, ...rendered]);
+}
+
+/**
+ * A document load's set-aside links, graded: the ones naming a view `rendered`
+ * declares stay dropped, and any other goes back among the errors — where it
+ * was before links were set aside, and with `loadSource`'s rule that errors
+ * mean no model. A document with nothing set aside comes back unchanged, and
+ * `rendered` is never asked.
+ *
+ * For the readers that hold a document LOAD rather than a project — the
+ * feature gate's delta, `doctor`'s map, a standalone model — and know which
+ * project it renders in (`LoadedDoc.unplaced` says why the load cannot).
+ */
+export async function gradeLinks(doc: LoadedDoc, rendered: () => Promise<RenderedViews>): Promise<LoadedDoc> {
+  if (doc.unplaced === undefined) return doc;
+  const dangling = await placedLinksDropped(doc.unplaced, rendered);
+  if (dangling.length === 0) return doc;
+  return { errors: distinctErrors([...doc.errors, ...dangling]), elements: [], relationships: [] };
 }
 
 /**

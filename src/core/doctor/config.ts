@@ -16,6 +16,8 @@ import { access, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { configPath, parseConfig, type LoamConfig } from "../envelope/config.js";
 import { errorText, loadFile } from "../c4/likec4.js";
+import { gradeLinks, renderedViews } from "../c4/project/architecture.js";
+import type { DocsDir } from "../kernel/ids/dirs.js";
 import { conflictMarkerLines } from "../conflict-markers.js";
 import { type DoctorFinding, type DoctorReport } from "./report.js";
 
@@ -76,7 +78,7 @@ export async function canAccess(path: string, mode: number): Promise<boolean> {
  * for a file full of conflict markers — the check answered "is there a file",
  * which is not the question anyone runs doctor to ask.
  */
-export async function inspectLandscape(path: string, findings: DoctorFinding[]): Promise<void> {
+export async function inspectLandscape(docsDir: DocsDir, path: string, findings: DoctorFinding[]): Promise<void> {
   let source: string;
   try {
     source = await readFile(path, "utf8");
@@ -115,7 +117,12 @@ export async function inspectLandscape(path: string, findings: DoctorFinding[]):
     return;
   }
 
-  const doc = await loadFile(path);
+  // Its links graded as the map's own grade grades them (`loadArchitecture`):
+  // a `navigateTo` into a view another document of the renderer's project
+  // declares is no fault, and one into a view declared nowhere is the same
+  // `landscape.invalid` `validate --all` reports — so the two commands cannot
+  // disagree about whether the map parses (`core/c4/navigation/unplaced.ts`).
+  const doc = await gradeLinks(await loadFile(path), () => renderedViews(docsDir));
   if (doc.errors.length > 0) {
     const first = doc.errors[0]!;
     findings.push({

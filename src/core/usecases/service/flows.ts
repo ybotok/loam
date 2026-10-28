@@ -80,6 +80,7 @@ import type { LikeC4Error, LoadedDoc } from "../../c4/likec4.js";
 import type { ParsedView } from "../../c4/parsed/dynamic-views.js";
 import { architectureDocuments } from "../../c4/project/documents.js";
 import { asLoadedDoc, loadProject } from "../../c4/project/load.js";
+import { projectViews, renderedViews } from "../../c4/project/architecture.js";
 import { serviceFlowDocuments } from "../../c4/service-model/documents.js";
 import type { StepScope } from "../../c4/resolve/steps.js";
 import type { DocsDir } from "../../kernel/ids/dirs.js";
@@ -195,7 +196,13 @@ export async function readServiceFlows(req: ServiceFlowRequest): Promise<Service
     req.extending === undefined
       ? [req.paths.model, ...siblings]
       : await serviceFlowDocuments(req.extending.docsDir, req.paths);
-  const project = await loadProject(base, documents);
+  // A flow's links graded against the project it renders in — the root
+  // project for an extending service, the service's own directory for a
+  // standalone one — so a link into a view another document declares is no
+  // fault and a link into nothing still is (`core/c4/navigation/unplaced.ts`).
+  const extending = req.extending;
+  const views = () => (extending === undefined ? projectViews(req.paths.dir) : renderedViews(extending.docsDir));
+  const project = await loadProject(base, documents, views);
   if (!project.clean) {
     // Each error already carries the real path of its document (`loadProject`
     // rewrites the staged path back), and the flattening is `asLoadedDoc`'s —

@@ -38,7 +38,9 @@ import type { DocsDir } from "../../kernel/ids/dirs.js";
 import type { ServicePaths } from "../../repo/paths.js";
 import type { Elem, LoadedDoc } from "../likec4.js";
 import { asLoadedDoc } from "../project/load.js";
+import { gradeLinks, projectViews, renderedViews } from "../project/architecture.js";
 import { loadProjectBatch } from "../project/batch.js";
+import type { RenderedViews } from "../navigation/unplaced.js";
 import { modelProjectSets } from "./documents.js";
 import type { ModelShape } from "./shape.js";
 import { sliceForService } from "./slice.js";
@@ -144,7 +146,12 @@ export function serviceModelAt(sources: ServiceModelSources): Promise<ServiceMod
     modelPath: relative(sources.docsDir, sources.paths.model).split(/[\\/]/).join("/"),
     known: sources.known,
     architecture: sources.architecture,
-    standalone: sources.standalone,
+    // A standalone model is a project of its own — its directory — so its
+    // links are graded against the views declared there and nowhere else: a
+    // link into a sibling flow file resolves for the renderer, and a link to a
+    // view nobody declares stays the `c4.invalid` it always was
+    // (`../navigation/unplaced.ts`).
+    standalone: async () => gradeLinks(await sources.standalone(), () => projectViews(sources.paths.dir)),
     project: sources.project,
   });
 }
@@ -240,7 +247,13 @@ export async function batchServiceProjects(
     paths: set.paths,
   }));
   try {
-    for (const [key, doc] of await loadProjectBatch(requests)) out.set(key, asLoadedDoc(doc));
+    // Every project is graded against the renderer's views, asked at most once
+    // for the whole batch: each is a slice of the same root project, and a map
+    // whose one link names a model's view leaves that link unresolved in every
+    // project but one.
+    let views: Promise<RenderedViews> | undefined;
+    const rendered = (): Promise<RenderedViews> => (views ??= renderedViews(docsDir));
+    for (const [key, doc] of await loadProjectBatch(requests, rendered)) out.set(key, asLoadedDoc(doc));
   } catch {
     // Unreadable is not invalid: the caller seeds nothing and every reader
     // falls back to its own per-project load.

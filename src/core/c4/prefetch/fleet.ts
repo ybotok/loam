@@ -28,7 +28,8 @@ import { memo } from "../../kernel/concurrency.js";
 import type { DocsDir } from "../../kernel/ids/dirs.js";
 import type { ServicePaths } from "../../repo/paths.js";
 import type { LoadedDoc } from "../likec4.js";
-import { loadArchitecture } from "../project/architecture.js";
+import { loadArchitecture, renderedViews } from "../project/architecture.js";
+import type { RenderedViews } from "../navigation/unplaced.js";
 import { asLoadedDoc, loadProject } from "../project/load.js";
 import { modelProjectDocuments } from "../service-model/documents.js";
 import {
@@ -57,6 +58,7 @@ export class ServiceModels {
   private readonly architectures = new Map<string, Promise<LoadedDoc>>();
   private readonly shapeOf = new Map<string, Promise<ModelShape>>();
   private readonly projects = new Map<string, Promise<LoadedDoc>>();
+  private readonly rendered = new Map<string, Promise<RenderedViews>>();
   private readonly models = new Map<string, Promise<ServiceModel>>();
 
   constructor(private readonly deps: ModelDeps) {}
@@ -155,7 +157,17 @@ export class ServiceModels {
   private project(docsDir: DocsDir, modelPath: string): Promise<LoadedDoc> {
     return memo(this.projects, resolve(modelPath), async () => {
       this.deps.onProjectLoad();
-      return asLoadedDoc(await loadProject(docsDir, await modelProjectDocuments(docsDir, modelPath)));
+      const documents = await modelProjectDocuments(docsDir, modelPath);
+      return asLoadedDoc(await loadProject(docsDir, documents, () => this.views(docsDir)));
     });
+  }
+
+  /**
+   * The renderer's views, the evidence every per-service project grades its
+   * links against (`../navigation/unplaced.ts`) — scanned at most once per
+   * invocation, and only when some project failed to place a link.
+   */
+  private views(docsDir: DocsDir): Promise<RenderedViews> {
+    return memo(this.rendered, resolve(docsDir), () => renderedViews(docsDir));
   }
 }

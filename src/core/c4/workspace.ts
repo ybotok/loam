@@ -42,6 +42,7 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { LikeC4 } from "likec4";
 import { cleanDoc, distinctErrors, type LikeC4Error, type LoadedDoc, type ReadableModel } from "./likec4.js";
+import { splitLinks } from "./navigation/unplaced.js";
 
 /** A staged document: the real path it came from, and its workspace project. */
 interface StagedDoc {
@@ -90,7 +91,9 @@ async function stage(root: string, targets: string[]): Promise<StagedDoc[]> {
  * to nobody in exactly one of those two worlds. The segment survives both.
  *
  * Read through `distinctErrors` exactly as `loadSource` reads them, so a
- * document's list is the same one in both modes.
+ * document's list is the same one in both modes. The unresolved `navigateTo`
+ * links are grouped with the rest — their paths need the same rewrite — and
+ * split off per document by the caller, as `loadSource` splits them.
  */
 function groupErrors(likec4: LikeC4, staged: StagedDoc[]): Map<string, LikeC4Error[]> {
   const pathOf = new Map(staged.map((doc) => [doc.project, doc.path]));
@@ -143,16 +146,20 @@ export async function loadBatch(paths: string[]): Promise<Map<string, LoadedDoc>
     try {
       const grouped = groupErrors(likec4, staged);
       for (const { path, project } of staged) {
-        const errors = grouped.get(project) ?? [];
+        // The links set aside exactly as `loadSource` sets them aside: each
+        // document is a project of one, so it cannot say whether a link lands
+        // (`./navigation/unplaced.ts`).
+        const { errors, unplaced } = splitLinks(grouped.get(project) ?? []);
+        const links = unplaced.length === 0 ? {} : { unplaced };
         if (errors.length > 0) {
-          out.set(path, { errors, elements: [], relationships: [] });
+          out.set(path, { errors, elements: [], relationships: [], ...links });
         } else {
           // Through `cleanDoc`, the one assembly `loadSource` uses too. The
           // specification travels with the batch loader and must: this is the
           // loader `validate --all` reads the landscape through, so a kind-tag
           // check wired only into `loadSource` would be a check the fleet gate
           // — the one run it exists for — never actually ran.
-          out.set(path, cleanDoc((await likec4.parsedModel(project)) as ReadableModel));
+          out.set(path, { ...cleanDoc((await likec4.parsedModel(project)) as ReadableModel), ...links });
         }
       }
     } finally {

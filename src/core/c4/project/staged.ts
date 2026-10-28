@@ -53,7 +53,13 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { errorText, type LoadedDoc } from "../likec4.js";
 import { inOrder } from "../../kernel/concurrency.js";
-import { architectureDir, generatedArchitectureDocuments, projectDocumentsBesideMap, staleAgainst } from "./architecture.js";
+import {
+  architectureDir,
+  featureViews,
+  generatedArchitectureDocuments,
+  projectDocumentsBesideMap,
+  staleAgainst,
+} from "./architecture.js";
 import { rawServiceId } from "../../kernel/ids/service.js";
 import { serviceDirOf, type DocsDir } from "../../kernel/ids/dirs.js";
 import { listFleetTree } from "../../repo/repo.js";
@@ -153,7 +159,11 @@ export async function stageMergedProject(req: StagedProjectRequest): Promise<Sta
       await stage(root, document.rel, document.path, authored);
       mine.add(document.rel);
     }
-    const doc = asLoadedDoc(await loadProject(root, await architectureDocuments(root)));
+    // Links graded against what they will land on once the feature archives
+    // (`./architecture.ts`'s `featureViews`): this is the map the archive
+    // would leave, so a link it would land into nothing is refused here.
+    const views = () => featureViews(req.docsDir, req.featureDir);
+    const doc = asLoadedDoc(await loadProject(root, await architectureDocuments(root), views));
     // TWO SPELLINGS REACH HERE and both must map, which is the one thing this
     // helper cannot be allowed to get half right. A parse error's
     // `sourceFsPath` is an ABSOLUTE path into the temp tree; a view's

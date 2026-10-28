@@ -10,6 +10,35 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Fixed — a `navigateTo` LikeC4 resolves is no longer a loam error
+
+- A `navigateTo` that names a view LikeC4 resolves in the project the document renders in is no
+  longer an error. That covers both places the grammar takes one: an edge's, a dynamic step's or a
+  relation predicate's body, and `include … with { navigateTo }`. Measured on `examples/docs` with
+  `likec4 validate` Valid at the docs root:
+  - A map edge linking to a dynamic view in another `architecture/` document was
+    `delta.merge-refused` on every active feature, and `loam archive` refused it.
+  - A link to a view in an extending `services/<svc>/model.likec4`, or from a hand-written view into
+    a generated `architecture/services.likec4` view, was `landscape.invalid` plus one
+    `spine.landscape-invalid` per service, and `doctor.landscape-invalid` in `loam doctor`.
+  - A link in a feature's `delta.likec4` to any view outside the delta was `delta.invalid`, because
+    the delta is parsed alone.
+  - A standalone model's link into a flow in its own service directory was `c4.invalid`.
+
+  Those runs now exit 0.
+- A link to a view declared nowhere is still the error it was, in every place it was one:
+  `landscape.invalid` on the map or another `architecture/` document, `c4.invalid` on a service
+  model, `delta.invalid` on a feature (so `loam archive` still refuses to write it into the map), and
+  `doctor.landscape-invalid`. So is an edge's link to a static view, which `likec4 validate` refuses
+  too. A view counts as declared when the renderer reads it. For the map, an extending model or a
+  feature, that means any `.likec4` the root project loads, generated views included, plus a
+  feature's own documents. For a standalone model, it means its own service directory. Commands
+  that only display one document (`list`, `show`, `vouch`, `delta`) no longer report an unresolved
+  link.
+- `view <id> extends <parent>` with the parent in another document is unchanged: LikeC4 drops a view
+  whose parent it cannot resolve, so loam keeps that error.
+- No code, flag or payload key was added.
+
 ## [0.2.0-alpha.16] - 2026-10-27
 
 Everything on `main` since `0.2.0-alpha.15`. Still a prerelease on the `alpha` line. When this
