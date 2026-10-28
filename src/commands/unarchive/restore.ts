@@ -233,13 +233,15 @@ export async function unarchiveLocked(
   const landed = (path: string): string => repoPath(docsDir, acrossRename(path, feature.dir, dest));
   const restored = writes.filter((w) => w.content !== null).map((w) => landed(w.path));
   const removed = writes.filter((w) => w.content === null).map((w) => landed(w.path));
-  // The undo puts back what the archive WROTE, and the two generated views
-  // files were never among it: `loam subsystem sync` owns them, and a sync run
-  // between the archive and this undo rewrote them against the merged map. So
-  // the map just went back and they did not — the services overview naming
-  // a service the map no longer draws — and "the living docs are back" would
-  // be said over a repo whose next `validate --all` is red. Graded after the
-  // commit through validate's own function, as archive grades its own result.
+  // The undo puts back what the archive WROTE. An archive made by 0.2.0-alpha.16
+  // or earlier never wrote the two generated views files — a sync run between
+  // that archive and this undo rewrote them against the merged map — and a
+  // views file a later writer regenerated is stepped over above, never
+  // restored. Either way the map can just have gone back while a views file did
+  // not — the services overview naming a service the map no longer draws — and
+  // "the living docs are back" would be said over a repo whose next
+  // `validate --all` is red. Graded after the commit through validate's own
+  // function, as archive grades its own result.
   const staleViews = await staleGeneratedViews(docsDir);
 
   if (json) {

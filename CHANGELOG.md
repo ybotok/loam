@@ -38,8 +38,12 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   commit — plus a `views: <path> — regenerated …` (or `removed …`) line; `staleViews` and
   `subsystemViewsStale` are absent after such an archive because nothing is left stale; the views
   files are in the snapshot, so `loam unarchive` restores them. A views file that does not start
-  with loam's mark is still never written; the archive names it in `staleViews`, as before. In a
-  docs repo with no `services/` the archive writes no views file, as before. For such an archive,
+  with loam's mark is still never written; the archive names it in `staleViews`, as before, and
+  its text line is now the refusal sentence every writer of that path prints (`<path> left as it is
+  — its first line is not …`) rather than "run `loam subsystem sync`", which refuses the same
+  file. In a docs repo with no `services/` the archive writes no views file, as before; nor when
+  anything the views depend on cannot be read — the archive itself never fails over them. For such
+  an archive,
   `loam unarchive` does not refuse with `snapshot-stale` over a views file some later writer
   regenerated: it prints `left: <path> — regenerated since the archive; …`, lists it under neither
   `restored` nor `discarded` (also with `--force`), and names it in `staleViews` when it no longer

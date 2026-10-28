@@ -26,9 +26,13 @@
  *  - a generated views file the new map no longer matches — read off the tree
  *    after the commit, and predicted for the dry run from the map the merge
  *    preview stages (`core/c4/project/staged.ts`, `staleViewsAfterMerge`). The
- *    dry run used to say it could not know.
+ *    dry run used to say it could not know. The archive regenerates both files
+ *    in its own commit now (`./views.ts`), so what reaches this line is a file
+ *    it could not write: one loam did not author, named with the refusal every
+ *    writer of the path prints, or one whose merged map would not parse.
  */
 import type { Issue, IssueCode } from "../../core/vocabulary/issue.js";
+import { authoredRefusal } from "../../core/repo/tree/render/service/header.js";
 
 /**
  * The advisories that mean "archive the other feature first" AND name an error
@@ -58,6 +62,12 @@ export interface Outstanding {
   overridden: readonly Issue[];
   /** Generated views the committed map no longer matches — or, for a dry run, would not. */
   staleViews: readonly string[];
+  /**
+   * Of those, the ones holding a file loam did not write, which the archive
+   * left alone (`./views.ts`). `loam subsystem sync` refuses them too, so the
+   * line names the refusal rather than sending the reader to it.
+   */
+  authored: readonly string[];
   /** Phrase it as what WOULD remain — the dry run's tense. */
   dryRun: boolean;
 }
@@ -69,6 +79,10 @@ export function outstandingLines(state: Outstanding): string[] {
   // a reader opens, and a comma-joined series would have to choose a verb that
   // reads wrong for one of the two counts.
   for (const path of state.staleViews) {
+    if (state.authored.includes(path)) {
+      lines.push(`  ⚠ ${authoredRefusal(path)}`);
+      continue;
+    }
     lines.push(
       state.dryRun
         ? `  ⚠ ${path} would no longer match the tree and this map — run \`loam subsystem sync\` after the archive.`

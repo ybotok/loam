@@ -126,10 +126,12 @@ export async function archiveLocked(
   // the tree every merge above just planned: rendered from those planned bytes,
   // they land in the same commit, as every subsystem verb's do — ./views.ts says
   // why that is not a second writer that can disagree with `loam subsystem sync`.
-  for (const write of await planGeneratedViews(read, planned.writes)) {
+  const views = await planGeneratedViews(read, planned.writes);
+  for (const write of views.writes) {
     planned.writes.push(write);
     say(viewsLine(config.docsDir, write));
   }
+  const authored = views.authored.map((path) => repoPath(config.docsDir, path));
   const { writes, planWarns, planGates, openapiRemovals, asyncapiRemovals } = planned;
   const revouchOwed = planned.revouchOwed.map((r) => ({ ...r, path: repoPath(config.docsDir, r.path) }));
 
@@ -225,7 +227,7 @@ export async function archiveLocked(
     if (json) emitJson({ ...payload(false), ...(staleViews.length === 0 ? {} : { staleViews }) });
     // What the real run would print in place of its closing line, said BEFORE
     // anything is written — the one moment a reader can still act on it.
-    else printPlan(config.docsDir, writes, dirName, outstandingLines({ advisory, planWarns, overridden, staleViews, dryRun: true }));
+    else printPlan(config.docsDir, writes, dirName, outstandingLines({ advisory, planWarns, overridden, staleViews, authored, dryRun: true }));
     return;
   }
 
@@ -371,7 +373,7 @@ export async function archiveLocked(
   // next `validate --all` will fail on; ./closing.ts lists every reason it
   // cannot be, and those lines are printed instead. Printing it over any of
   // them is how a red fleet gets reported as a finished one.
-  const owed = outstandingLines({ advisory, planWarns, overridden, staleViews, dryRun: false });
+  const owed = outstandingLines({ advisory, planWarns, overridden, staleViews, authored, dryRun: false });
   if (owed.length === 0) {
     console.log("  living spec + landscape are now complete + current.");
     return;

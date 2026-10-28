@@ -102,6 +102,11 @@ describe("archive regenerates the generated views in its own commit", () => {
     const authored = "// our own overview diagram, drawn by hand\nviews {\n}\n";
     const p = await makeProject({ ...coherentFixture(), [SERVICE_VIEWS]: authored });
     try {
+      // The dry run names it with the refusal every writer of the path prints,
+      // never "run `loam subsystem sync`" — which refuses the same file.
+      const dry = await runLoam(p.workDir, "archive", "FEAT-1", "--dry-run");
+      expect(dry.stdout).toContain(`⚠ ${SERVICE_VIEWS} left as it is — its first line is not`);
+      expect(dry.stdout).not.toContain(`${SERVICE_VIEWS} would no longer match`);
       const res = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
       expect(res.code, res.stdout).toBe(0);
       expect(await p.read(SERVICE_VIEWS)).toBe(authored);

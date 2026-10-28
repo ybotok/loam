@@ -51,7 +51,8 @@ import { openCommitWindow } from "../../../core/staging/recovery/recover.js";
 import { commitStaged } from "../../../core/staging/txn/transaction.js";
 import { type PlannedWrite } from "../../../core/staging/writes.js";
 import { authoredGeneratedPaths, authoredRefusal } from "../../../core/repo/tree/render/service/header.js";
-import { type ExpectedFile, expectedViews, LANDSCAPE_UNREADABLE_NOTE, planGenerated, type ViewsAction } from "./views.js";
+import { expectedViews, LANDSCAPE_UNREADABLE_NOTE } from "./views.js";
+import { type ExpectedFile, planGenerated, type ViewsAction } from "../../../core/repo/tree/render/views.js";
 
 /**
  * What one commit did to EACH generated file, kept apart.
@@ -234,8 +235,8 @@ export async function commitWindow(
 /**
  * Compare ONE generated file against what it must say, append the write when
  * they differ, and name what happened. The compare is `planGenerated`'s, the
- * one `../sync.ts` makes too — `./views.ts` says why it is over CONTENT, not
- * bytes, and why there is one spelling of it.
+ * one `../sync.ts` and the archive make too — `core/repo/tree/render/views.ts`
+ * says why it is over CONTENT, not bytes, and why there is one spelling of it.
  *
  * `protect` is the caller's statement that a NULL render is not evidence: the
  * file is left exactly as it is rather than deleted. It is never a licence to

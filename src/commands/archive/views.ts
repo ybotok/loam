@@ -52,7 +52,7 @@
 import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
-import { architectureDir, architectureProjectDocuments } from "../../core/c4/project/architecture.js";
+import { architectureDir, architectureProjectDocuments, generatedArchitectureDocuments } from "../../core/c4/project/architecture.js";
 import { architectureDocuments } from "../../core/c4/project/documents.js";
 import { asLoadedDoc, loadProject } from "../../core/c4/project/load.js";
 import type { LoadedDoc } from "../../core/c4/likec4.js";
@@ -61,65 +61,92 @@ import { rawServiceId } from "../../core/kernel/ids/service.js";
 import { isPathInside } from "../../core/kernel/path-safety.js";
 import { repoPath } from "../../core/envelope/json.js";
 import type { FleetContext } from "../../core/fleet-context.js";
-import { GENERATED_ARCHITECTURE_FILES, serviceViewsPath, servicesDir, subsystemViewsPath } from "../../core/repo/paths.js";
+import { serviceViewsPath, servicesDir, subsystemViewsPath } from "../../core/repo/paths.js";
 import { listFleetTree } from "../../core/repo/repo.js";
 import { docsRepoState } from "../../core/repo/state.js";
 import { readGeneratedFile } from "../../core/repo/tree/render/service/header.js";
-import { renderServiceOverviews, renderSubsystemViews } from "../../core/repo/tree/render/views.js";
+import { planGenerated, renderServiceOverviews, renderSubsystemViews } from "../../core/repo/tree/render/views.js";
 import type { FleetTree } from "../../core/repo/tree/walk.js";
 import { planWrite, type PlannedWrite } from "../../core/staging/writes.js";
-import { planGenerated } from "../subsystem/txn/views.js";
+
+/** What the planner owes the plan, and the reserved files it found somebody else's. */
+export interface ViewsPlan {
+  /** The views writes to append to the plan. */
+  writes: PlannedWrite[];
+  /**
+   * Generated paths holding a file loam did NOT write (no mark on its first
+   * line), left alone. The closing line names each with the refusal sentence
+   * every writer of these paths prints (`authoredRefusal`) instead of "run
+   * `loam subsystem sync`", which refuses the same file — the back-and-forth
+   * `core/repo/tree/render/service/header.ts` exists to end.
+   */
+  authored: string[];
+}
 
 /**
- * The views writes this archive owes, to append to its plan — empty when the
- * plan feeds neither input, when the merged map does not parse (the post-commit
- * grade then names the file, as before), or when both files already agree.
+ * The views writes this archive owes — none when the plan feeds neither input,
+ * when the merged map does not parse, when both files already agree, or when
+ * anything on the way could not be read. Empty is never a refusal: it means the
+ * post-commit grade (`staleGeneratedViews`, `./run.ts`) answers about the files,
+ * exactly as it did before the archive wrote them, so no failure in here can
+ * fail an archive that would have succeeded without it.
  */
 export async function planGeneratedViews(
   config: { docsDir: DocsDir; fleet: FleetContext },
   writes: readonly PlannedWrite[],
-): Promise<PlannedWrite[]> {
+): Promise<ViewsPlan> {
+  const none: ViewsPlan = { writes: [], authored: [] };
   const { docsDir } = config;
-  const arch = architectureDir(docsDir);
-  const generated = new Set(Object.keys(GENERATED_ARCHITECTURE_FILES).map((name) => resolve(arch, name)));
-  const mapWrites = writes.filter(
-    (w) => w.path.endsWith(".likec4") && isPathInside(arch, w.path) && !generated.has(resolve(w.path)),
-  );
   // A docs repo with no services/ still archives a landscape-only feature
   // exactly as before (`./run.ts` tolerates it on purpose), and has no tree to
   // render from — `loam subsystem sync` refuses the same repository. The tree
   // read would throw `DocsRepoUnavailableError` and turn a clean archive into
   // `internal`, so the planner steps aside and the post-commit grade answers.
-  if (docsRepoState(docsDir).kind !== "ok") return [];
-  const tree = await listFleetTree(docsDir, config.fleet);
-  const created = createdServices(docsDir, tree, writes);
-  if (mapWrites.length === 0 && created.length === 0) return [];
+  if (docsRepoState(docsDir).kind !== "ok") return none;
+  try {
+    const arch = architectureDir(docsDir);
+    const generated = new Set(generatedArchitectureDocuments(docsDir).map((path) => resolve(path)));
+    const mapWrites = writes.filter(
+      (w) => w.path.endsWith(".likec4") && isPathInside(arch, w.path) && !generated.has(resolve(w.path)),
+    );
+    const tree = await listFleetTree(docsDir, config.fleet);
+    const created = createdServices(docsDir, tree, writes);
+    if (mapWrites.length === 0 && created.length === 0) return none;
 
-  const map = await mergedMap(docsDir, mapWrites);
-  if (map === null) return [];
-  const after: FleetTree = {
-    ...tree,
-    services: [
-      ...tree.services,
-      ...created.map((id) => ({ id: rawServiceId(id), dir: serviceDirOf(join(servicesDir(docsDir), id)), subsystem: [] })),
-    ],
-  };
-  const owed: PlannedWrite[] = [];
-  for (const file of [
-    { path: subsystemViewsPath(docsDir), content: renderSubsystemViews(after, map) },
-    { path: serviceViewsPath(docsDir), content: renderServiceOverviews(after, map) },
-  ]) {
-    const { text, authored } = await readGeneratedFile(file.path);
-    // Somebody's own document at a path loam reserves: never written over.
-    // The post-commit grade still names it, with sync's refusal beside it.
-    if (authored) continue;
-    const { write } = planGenerated(file, text);
-    // `planWrite`, so a create is the same no-clobber create every other new
-    // file in this commit is: a views file another writer lands between this
-    // read and the swap is that writer's, and stays.
-    if (write !== null) owed.push(planWrite(write.path, write.content));
+    const map = await mergedMap(docsDir, mapWrites);
+    if (map === null) return none;
+    const after: FleetTree = {
+      ...tree,
+      services: [
+        ...tree.services,
+        ...created.map((id) => ({ id: rawServiceId(id), dir: serviceDirOf(join(servicesDir(docsDir), id)), subsystem: [] })),
+      ],
+    };
+    const owed: ViewsPlan = { writes: [], authored: [] };
+    for (const file of [
+      { path: subsystemViewsPath(docsDir), content: renderSubsystemViews(after, map) },
+      { path: serviceViewsPath(docsDir), content: renderServiceOverviews(after, map) },
+    ]) {
+      const { text, authored } = await readGeneratedFile(file.path);
+      // Somebody's own document at a path loam reserves: never written over,
+      // and named in the closing line with the refusal every writer prints.
+      if (authored) {
+        owed.authored.push(file.path);
+        continue;
+      }
+      const { write } = planGenerated(file, text);
+      // `planWrite`, so a create is the same no-clobber create every other new
+      // file in this commit is: a views file another writer lands between this
+      // read and the swap is that writer's, and stays.
+      if (write !== null) owed.writes.push(planWrite(write.path, write.content));
+    }
+    return owed;
+  } catch {
+    // An unreadable views file (a directory in its place, a permission), a
+    // tree walk that hits one, a temp tree that cannot be staged: each costs
+    // this planner its answer and nothing else — see the doc above.
+    return none;
   }
-  return owed;
 }
 
 /** The line the plan prints for one views write — the same in the dry run and the real one. */
@@ -178,6 +205,10 @@ async function mergedMap(docsDir: DocsDir, mapWrites: readonly PlannedWrite[]): 
     const doc = asLoadedDoc(await loadProject(root, await architectureDocuments(root)));
     return doc.errors.length === 0 ? doc : null;
   } catch {
+    // A temp tree that cannot be staged (ENOSPC, a denied temp directory) or a
+    // parse error `loadProject` cannot attribute to a document: either way there
+    // is no map to render from, which is the same licence-nothing answer as a
+    // map that does not parse.
     return null;
   } finally {
     await rm(root, { recursive: true, force: true });

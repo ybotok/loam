@@ -120,7 +120,8 @@ import { planWrite, type PlannedWrite } from "../../core/staging/writes.js";
 import { readGeneratedFile } from "../../core/repo/tree/render/service/header.js";
 import { NO_EXCLUDE, planExclude } from "./txn/exclude.js";
 import { type ProjectsReport, reportSync, type SyncAction } from "./txn/report.js";
-import { type ExpectedFile, expectedViews, planGenerated } from "./txn/views.js";
+import { expectedViews } from "./txn/views.js";
+import { type ExpectedFile, planGenerated } from "../../core/repo/tree/render/views.js";
 
 /**
  * The per-service project half of one sync, before the write: what the
@@ -264,8 +265,9 @@ export async function runSync(docsDir: DocsDir, json: boolean): Promise<void> {
  * ONE function for both generated files, because the rule is one rule and a
  * second spelling of it would be a second chance for `subsystems.likec4` and
  * `services.likec4` to answer differently about the same map. Past the two
- * vetoes below, the compare is `planGenerated` (`./txn/views.ts`), the one the
- * tree-changing verbs make too, which says why it is over CONTENT, not bytes.
+ * vetoes below, the compare is `planGenerated` (`core/repo/tree/render/views.ts`),
+ * the one the tree-changing verbs and the archive make too, which says why it
+ * is over CONTENT, not bytes.
  *
  * `blocked` is the map's veto and it is the whole reason `known` is threaded
  * this far. The render cannot be trusted against a file that already exists when

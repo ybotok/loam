@@ -232,7 +232,6 @@ model {
   loam.commands.adopt -> loam.core.repo
   loam.commands.adopt -> loam.core.vocabulary
 
-  loam.commands.archive -> loam.commands.subsystem
   loam.commands.archive -> loam.core.asyncapi
   loam.commands.archive -> loam.core.c4
   loam.commands.archive -> loam.core.coherence
