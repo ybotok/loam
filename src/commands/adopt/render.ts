@@ -95,6 +95,12 @@ export function render(b: Brief, warnings: string[], full?: string): void {
 
   console.log("\n  when you are done\n");
   console.log(`    loam validate --service ${b.service} --json    # fix every error`);
+  // Before the fleet run, because drawing the service on the map is a hand edit:
+  // `architecture/services.likec4` is generated from the map, so the run below
+  // would report `subsystem.views-stale` against a file no edit of the agent's
+  // can repair. The archive and seed regenerate it themselves; a hand edit
+  // cannot, and the QUICKSTART walk found this list silent on it (2026-10-28).
+  console.log(`    loam subsystem sync                               # in the docs repo, after drawing it on the map`);
   // The fleet run is not a nicety: --service never reports the landscape
   // cross-check, so a baseline can pass the line above with the fleet map
   // never edited at all.

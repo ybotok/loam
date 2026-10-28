@@ -520,7 +520,7 @@ describe("element-id sanitizing and the views tripwire", () => {
       const landscape = await p.read("architecture/landscape.likec4");
       expect(landscape).toContain("svc_notes = softwareSystem 'notes'");
       expect(landscape).toContain("ext_link = softwareSystem 'link'");
-      expect(landscape).toContain("svc_notes -> ext_link");
+      expect(landscape).toContain("svc_notes -[calls]-> ext_link");
 
       // Through the real validator, because "it parsed" is the whole claim.
       const validate = await runLoam(p.workDir, "validate", "--all", "--json");
@@ -559,7 +559,8 @@ describe("element-id sanitizing and the views tripwire", () => {
     // The kinds are the second block both writers carry. A seeded map that
     // declared one kind fewer, or styled `connects` without its tail marker,
     // would draw a different picture from a scaffolded one with nothing to say
-    // so. The edges stay plain in both: a kind is declared, never chosen.
+    // so. A seeded call is drawn `-[calls]->` (the next case): fleet.yaml's
+    // `calls:` list states that kind, so drawing it chooses nothing.
     const id = parseServiceId("checkout", "test fixture");
     if (!id.ok) throw new Error(id.problem);
     const body = renderLandscape({
@@ -578,6 +579,32 @@ describe("element-id sanitizing and the views tripwire", () => {
     expect(kindsBlock(body)).toBe(kindsBlock(scaffoldLandscape()));
     for (const kind of ["publishes", "delivers", "reads", "writes", "readsWrites", "calls", "connects"]) {
       expect(kindsBlock(body)).toContain(`  relationship ${kind} {`);
+    }
+  });
+
+  // Catches: seed drawing a fleet.yaml call as a bare `->` — the one spelling the
+  // loam-feature protocol tells an agent never to use — on the map a new user
+  // copies from first (QUICKSTART walk, 2026-10-28). The `calls:` list states
+  // the kind, so drawing it with that kind is not a guess.
+  it("draws every fleet.yaml call with its kind, -[calls]->, and the map still parses", async () => {
+    const p = await makeProject({ ...EMPTY_REPO });
+    try {
+      await writeFleet(
+        p,
+        "services:\n  - checkout\n  - payment-service\nexternals:\n  - stripe\ncalls:\n  - checkout -> payment-service\n  - payment-service -> stripe\n",
+      );
+      const run = await runLoam(p.workDir, "seed", "--json");
+      expect(run.code, run.stdout).toBe(0);
+      const landscape = (await p.read("architecture/landscape.likec4")).replace(/\r\n/g, "\n");
+      expect(landscape).toContain("\n  svc_checkout -[calls]-> svc_payment_service\n");
+      expect(landscape).toContain("\n  svc_payment_service -[calls]-> ext_stripe\n");
+      expect(landscape).not.toMatch(/^\s+\w+ -> \w+/m);
+      const validate = await runLoam(p.workDir, "validate", "--all", "--json");
+      const report = JSON.parse(validate.stdout) as { targets: Target[] };
+      const landscapeTarget = report.targets.find((t) => t.kind === "landscape")!;
+      expect(landscapeTarget.findings.map((f) => f.code)).toEqual(["landscape.matched"]);
+    } finally {
+      await p.destroy();
     }
   });
 

@@ -1,7 +1,9 @@
 /**
  * What the generated views files MUST say — the shared answer every subsystem
- * writer and `subsystem sync` render from, and the one compare both make against
- * it (`planGenerated`). A module beneath the verbs (in the txn/ subpackage)
+ * writer and `subsystem sync` render from. The one compare every writer makes
+ * against it (`planGenerated`) lives below the commands, in
+ * `core/repo/tree/render/views.ts`, since the archive became its third caller.
+ * A module beneath the verbs (in the txn/ subpackage)
  * because the commit window and sync both consume it, and a second spelling of
  * "what should the views say" would be a second chance to disagree with
  * `validate`'s staleness check.
@@ -23,13 +25,12 @@ import { architectureProjectDocuments, loadArchitecture } from "../../../core/c4
 import { serviceDirOf, type DocsDir } from "../../../core/kernel/ids/dirs.js";
 import { landscapePath, serviceViewsPath, subsystemViewsPath } from "../../../core/repo/paths.js";
 import {
+  type ExpectedFile,
   type MapFacts,
   renderServiceOverviews,
   renderSubsystemViews,
-  viewsAgree,
 } from "../../../core/repo/tree/render/views.js";
 import type { FleetTree } from "../../../core/repo/tree/walk.js";
-import type { PlannedWrite } from "../../../core/staging/writes.js";
 
 /** What one read of the map yielded, and whether it came from the whole project. */
 export interface LandscapeRead {
@@ -170,45 +171,6 @@ async function declaredStyles(docsDir: DocsDir, landscape: MapFacts): Promise<st
     }
   }
   return [...ids].sort();
-}
-
-/**
- * ONE generated file: where it lives, and the bytes it must hold — `null` for
- * "this file must not exist", which is a state of its own and not a blank file
- * (`render/stale.ts` keeps the same three apart on the reading side).
- */
-export interface ExpectedFile {
-  path: string;
-  content: string | null;
-}
-
-/** What a commit does to one generated file once every writer's own veto has passed. */
-export type ViewsAction = "created" | "updated" | "removed" | "current";
-
-/**
- * Compare ONE generated file against what it must say: the write when they
- * differ, and what that write is. Both writers of these files — `../sync.ts`'s
- * `planFile` and the verbs' `stageGenerated` (`./txn.ts`) — put their own veto
- * in front of this and nothing else, because the rule is one rule, and a second
- * spelling of it would be a second chance for the two writers to answer
- * differently about the same file.
- *
- * The compare is over CONTENT, not bytes: `viewsAgree` records why, beside the
- * generator. A Windows clone hands a generated file back CRLF with not one fact
- * changed, and a byte compare made `sync` answer `updated` and rewrite it LF —
- * after which git shows the file permanently modified and the next checkout puts
- * the CRLF back — and folded the same rewrite into every subsystem move's
- * transaction and journal. `validate` stopped demanding that rewrite; the
- * writers must stop offering it, or they disagree about the same file. What gets
- * WRITTEN is still the LF render as a Buffer, so the decode is a comparison only.
- */
-export function planGenerated(file: ExpectedFile, current: string | null): { action: ViewsAction; write: PlannedWrite | null } {
-  if (viewsAgree(current, file.content)) return { action: "current", write: null };
-  const bytes = file.content === null ? null : Buffer.from(file.content, "utf8");
-  return {
-    action: current === null ? "created" : bytes === null ? "removed" : "updated",
-    write: { path: file.path, content: bytes },
-  };
 }
 
 /**

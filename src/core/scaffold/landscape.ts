@@ -65,6 +65,12 @@ import { LEGACY_LANDSCAPE_STUBS } from "./legacy.js";
  * declaring one named `subsystems` or `services` is the opt-in that restyles
  * the generated views (`loam instructions loam-drawing` shows the group). Same
  * second copy, same byte-for-byte tripwire.
+ *
+ * `tag external` is declared beside `tag platform` for the kinds' first reason.
+ * The stub's own comments teach `#external` for a broker or a partner, `loam
+ * seed`'s map has always declared it, and this one did not — so the first
+ * external element a reader drew by hand, as told, was an undeclared tag and a
+ * map that no longer parsed (QUICKSTART walk, 2026-10-28).
  */
 export const LANDSCAPE_STUB = `// The fleet map: every service in services/ appears here, and every call
 // between two of them is an edge. This file is written by hand — loam never
@@ -84,6 +90,11 @@ export const LANDSCAPE_STUB = `// The fleet map: every service in services/ appe
 //   checkoutWeb -[calls]-> paymentService 'Authorizes' {
 //     metadata { op 'authorizePayment' }
 //   }
+//
+// Then run \`loam subsystem sync\`: architecture/services.likec4 — one overview
+// view per service this map draws — is generated from this file, and
+// \`loam validate --all\` reports it stale until it agrees. \`loam seed\` and
+// \`loam archive <FEAT>\` regenerate it themselves; a hand edit cannot.
 //
 // Every edge says what it carries with one of the relationship kinds declared
 // below, and points the way the evidence says — never a guess:
@@ -144,6 +155,13 @@ specification {
   // without losing "who depends on the Identity Provider", which the platform
   // view answers.
   tag platform
+
+  // #external marks somebody else's system — a SaaS, a partner, a broker the
+  // fleet does not own — so validate does not ask for a services/ directory
+  // nobody owes. Declared whether or not this fleet uses it yet: a tag must be
+  // declared before any element carries it, and an archive copies a delta's
+  // element but never a declaration (\`delta.specification-not-merged\`).
+  tag external
 
   // One kind per kind of traffic, each with one direction. The style is the
   // picture: amber for messages, green for data at rest, gray and dashed for

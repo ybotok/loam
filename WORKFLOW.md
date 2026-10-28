@@ -108,6 +108,14 @@ no fleet manifest, deliberately — the wiring is one file per repo, and it is r
    the moment `services/` holds a directory (an empty one counts, before a single document lands in
    it), because with no fleet map every cross-service check is blind rather than passing.
 
+   A hand edit that adds a service or an edge is followed by **`loam subsystem sync`**.
+   `architecture/services.likec4` — one overview view per service the map draws — is generated
+   from the map, and `loam validate --all` reports it stale (`subsystem.views-stale`) until it
+   agrees. `seed`, the subsystem verbs and `loam archive` regenerate it in their own commits;
+   an editor cannot, and `loam init --create` has nothing to write yet: the map it scaffolds draws
+   no service, and a map that draws none owes no file. The scaffolded map's comment and init's
+   closing list both name the step.
+
    What seed deliberately does not write is the operation on each edge. That token —
    `metadata { op 'createOrder' }` — is what turns a drawn arrow into a checked join, and adding it
    is what makes the [spine-first first hour](README.md#start-from-the-fleet-spine) pay off before
@@ -251,6 +259,17 @@ if the plan is incoherent. `--approve` carries the judgement calls; it deliberat
 carry the two mechanical losses — a living document still holding git conflict markers, and a living
 requirement that has strayed outside its `## Requirements` section. Those are not opinions about
 risk, they are data loss, and an override for them is a footgun with a label on it.
+
+The archive also leaves the fleet gate where it found it. A feature that adds a service or an edge
+changes the two generated views files (`architecture/services.likec4`, one overview per service the
+map draws, and `architecture/subsystems.likec4`), and the archive regenerates both in the same
+commit, from the map and tree its own plan leaves, with `loam subsystem sync`'s render — so a clean
+archive no longer leaves `validate --all` red until a second command runs. The step used to be a ⚠
+after the merge; a step that has to be remembered is one a walkthrough forgets, and the archive is
+the writer that just changed the files' inputs.
+[SCHEMA.md](SCHEMA.md#subsystems--a-navigable-tree-under-services) records the rule and why it is
+not a second writer that can disagree with `sync`. A hand edit of the map is still followed by
+`loam subsystem sync`: loam cannot see an edit it did not make.
 
 **2. The human vouch.** `draft → verified` is a person's act. `loam vouch` stamps the source and
 content digests that make later staleness detectable, and no command promotes a service on its own.

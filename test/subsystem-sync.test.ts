@@ -90,6 +90,26 @@ describe("loam subsystem sync writes both generated files, and only what changed
     }
   }, 60_000);
 
+  // Catches: "architecture/subsystems.likec4 is current (0 subsystem(s))" printed
+  // over a flat fleet where that file does not exist and never will — a reader
+  // goes looking for a file the sentence says is in order.
+  it("over a flat fleet it says the subsystem file is not generated, never that an absent file is current", async () => {
+    const p = await makeProject(coherentFixture());
+    try {
+      const res = await runLoam(p.workDir, "subsystem", "sync");
+      expect(res.code).toBe(0);
+      expect(p.exists(SUBSYSTEM_VIEWS)).toBe(false);
+      expect(res.stdout).not.toContain(`${SUBSYSTEM_VIEWS} is current`);
+      expect(res.stdout).toContain(`no subsystems under services/, so ${SUBSYSTEM_VIEWS} is not generated`);
+      // The machine answer keeps its frozen value: `current` — the file is as
+      // the tree requires it, which for a flat tree is absent.
+      const json = JSON.parse((await runLoam(p.workDir, "subsystem", "sync", "--json")).stdout);
+      expect(json.action).toBe("current");
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
   it("grades one `subsystem.views-stale` per file, each naming its own — and one sync clears both", async () => {
     const p = await makeProject(nestedFixture());
     try {

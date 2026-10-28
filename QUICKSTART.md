@@ -75,10 +75,12 @@ paths:
 ```
 
 Second, name the operation on the call edge in `architecture/landscape.likec4`. `seed` drew the
-edge bare; replace that line with this one, spelled the British way on purpose:
+call with no operation; replace that line with this one, spelled the British way on purpose. The
+`-[calls]->` is the edge's relationship kind — every edge on a loam map says what it carries, and
+the map declares the seven kinds (`loam instructions loam-drawing`):
 
 ```likec4
-  svc_order_service -> svc_payment_service 'Authorises the order' {
+  svc_order_service -[calls]-> svc_payment_service 'Authorises the order' {
     metadata { op 'authorisePayment' }
   }
 ```
@@ -88,8 +90,13 @@ loam validate --all --errors-only
 ```
 
 ```text
-No C4 model at <docs>/services/order-service/model.likec4. Run `loam adopt` for 'order-service' first.  (service.no-model)
-No C4 model at <docs>/services/payment-service/model.likec4. Run `loam adopt` for 'payment-service' first.  (service.no-model)
+2 services, 0 features — 3 errors, 3 warnings
+errors by code:
+  ✗ service.no-model ×2: order-service, payment-service
+  ✗ spine.op-undefined ×1: payment-service
+
+✗ No C4 model at services/order-service/model.likec4. Run `loam adopt` for 'order-service' first.  (service.no-model)
+✗ No C4 model at services/payment-service/model.likec4. Run `loam adopt` for 'payment-service' first.  (service.no-model)
 ⚠ payment-service: 1 operation(s) not governed by any requirement — authorizePayment  (api.ungoverned)
 ✗ payment-service: landscape edge order-service → payment-service calls 'authorisePayment', not defined in payment-service's OpenAPI  (spine.op-undefined)
 
@@ -99,8 +106,7 @@ No C4 model at <docs>/services/payment-service/model.likec4. Run `loam adopt` fo
 → `loam explain <code>` says what a code means and how to fix it
 ```
 
-(`<docs>` is the absolute path of the directory; a fleet scorecard follows, cut here.) The last
-`✗` line is the one you came for: one letter between the map and the provider's contract, an
+(A fleet scorecard follows, cut here.) The last `✗` line is the one you came for: one letter between the map and the provider's contract, an
 **error**, and no other check a team normally runs would see it. `loam explain spine.op-undefined`
 says what it means and what to do. The two `service.no-model` errors are not misconfiguration:
 they are a truthful reading of a fleet where adoption has not started, and they stay until each
@@ -160,10 +166,13 @@ FEAT-1
 ✓ order-service: requirements covered (1 requirement, all with scenarios)
 ✓ payment-service: requirements covered (1 requirement, all with scenarios)
   coherence: ✓ C4 · requirements · OpenAPI agree
-archive FEAT-1  (dry run)
+archive FEAT-1 · Idempotent payment authorization  (dry run)
 
   requirements: order-service — created living spec.md (1 requirement(s))
+      the delta's prose stays in features/archive/FEAT-1-idempotent-payment-authorization/specs/order-service/spec.md, linked from the new document — mark what belongs here '## Purpose' and archive carries it
+      order-service existed before FEAT-1 and was never adopted — this spec.md holds only the feature's slice, so it is written `adoption: partial` and order-service stays owed its adoption: `loam adopt --service order-service`, then delete the line
   requirements: payment-service — created living spec.md (1 requirement(s))
+      …the same two notes for payment-service
 
   plan — 2 file(s):
     create  services/order-service/spec.md
@@ -173,8 +182,10 @@ archive FEAT-1  (dry run)
   dry run — nothing was written.
 ```
 
-The archive would write each service's first living `spec.md` from the change itself, and the
-`Operations:` line already joins payment-service's requirement to the contract above. That is the
+The archive would write each service's first living `spec.md` from the change itself — marked
+`adoption: partial`, because it holds the feature's slice and nothing of what the service already
+did, so `loam status` keeps asking for the adoption below — and the `Operations:` line already joins
+payment-service's requirement to the contract above. That is the
 small-change loop WORKFLOW.md calls
 [the honestly-small change](WORKFLOW.md#the-honestly-small-change), used as a first entry. The adoption below is still how a service's existing behaviour gets written down; this is
 how a change that cannot wait for it starts.
@@ -216,7 +227,10 @@ In chat, use the explicit entry point:
 ```
 
 The agent loads the version-matched protocol, asks loam for an adoption brief, reads the code, writes
-the baseline as draft, and validates it. It must report what it did not inspect or could not prove.
+the baseline as draft, and validates it. Drawing the service on the fleet map is a hand edit, so the
+brief's closing list runs `loam subsystem sync` before `loam validate --all`: the per-service
+overview `architecture/services.likec4` is generated from the map and has to follow it. The agent
+must report what it did not inspect or could not prove.
 The agent does not vouch for its own work. After reviewing the baseline, a person runs:
 
 ```bash
@@ -249,7 +263,10 @@ intent and deltas, and validates the result. Then use the remaining entry points
 
 `loam-implement` runs in each affected code checkout. `loam-check`, `loam-verify` and `loam-ship`
 read the files and machine envelopes rather than relying on conversational memory. Shipping begins
-with an archive dry run and still waits for the code merge and any human-only decision.
+with an archive dry run and still waits for the code merge and any human-only decision. The archive
+leaves `loam validate --all` where it found it — it regenerates the generated views in the same
+commit as the merge — and a feature archived before every claim was verified stays listed in
+`loam status` under `archived, not verified` instead of disappearing.
 
 At any point, this is the reliable way to resume:
 

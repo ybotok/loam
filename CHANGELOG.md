@@ -67,6 +67,81 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   For such a feature the checklist gains the `service.exists` claim (its `digest` changes once, so a
   record against it reads `stale`), and `validate --feature` gains the warning.
 
+### Fixed — the QUICKSTART walk ends green
+
+- `loam subsystem sync` over a tree with no subsystems printed
+  `architecture/subsystems.likec4 is current (0 subsystem(s)).` about a file that does not exist.
+  It now prints `no subsystems under services/, so architecture/subsystems.likec4 is not
+  generated.` (with ` — nothing to write.` when the run wrote nothing). Text only: `--json`'s
+  `action` is still `current`.
+- `loam validate` with no target, in a repository whose `loam.json` names no service (every docs
+  repo `loam init --create` makes), refused with `No service. Pass --service <id> or set it in
+  loam.json.` and never mentioned `--all`. The refusal now also names `loam validate --all` and
+  `loam validate <FEAT>`. The code is still `invalid-option` and the exit code is still 1; only
+  `error.message` changes.
+- `loam archive` now writes the feature's `intent.md` `owner:` into the `spec.md` and
+  `arch.spec.md` it creates for a service the feature introduces, when the delta's own frontmatter
+  names no owner. Before, both documents drew `frontmatter.field-missing` the moment they landed. A
+  delta's own `owner` still wins, and a service that existed before the feature (its first spec is
+  `adoption: partial`) is not given the feature's owner. The plan note says
+  `owner (from intent.md)`.
+- `loam archive` now regenerates `architecture/services.likec4` and
+  `architecture/subsystems.likec4` inside its own commit when its plan changes the map or creates a
+  service. Before, a clean archive of a feature that added a service or an edge left
+  `loam validate --all` failing with `subsystem.views-stale` until `loam subsystem sync` ran. What a
+  repository notices after upgrading: the archive plan (text and `--json` `plan`) gains a row per
+  views file it creates, rewrites or removes (`create` / `update` / `delete`) — a repository that
+  never ran `loam subsystem sync` finds a new `architecture/services.likec4` in the archive's
+  commit — plus a `views: <path> — regenerated …` (or `removed …`) line; `staleViews` and
+  `subsystemViewsStale` are absent after such an archive because nothing is left stale; the views
+  files are in the snapshot, so `loam unarchive` restores them. A views file that does not start
+  with loam's mark is still never written; the archive names it in `staleViews`, as before, and
+  its text line is now the refusal sentence every writer of that path prints (`<path> left as it is
+  — its first line is not …`) rather than "run `loam subsystem sync`", which refuses the same
+  file. In a docs repo with no `services/` the archive writes no views file, as before; nor when
+  anything the views depend on cannot be read — the archive itself never fails over them. For such
+  an archive,
+  `loam unarchive` does not refuse with `snapshot-stale` over a views file some later writer
+  regenerated: it prints `left: <path> — regenerated since the archive; …`, lists it under neither
+  `restored` nor `discarded` (also with `--force`), and names it in `staleViews` when it no longer
+  matches the restored map. No code or exit code changes.
+- The adoption brief's `when you are done` list (`loam adopt` text) now names
+  `loam subsystem sync` before `loam validate --all`, and the `loam-adopt` protocol's fleet-run step
+  names `subsystem.views-stale`: drawing the service on the map is a hand edit, and the generated
+  `architecture/services.likec4` is left behind until sync runs. Text only.
+- Repository-wide `loam status` now lists every archived feature whose verification verdict is not
+  `verified` (no record, an unreadable record, unconfirmed claims, or scenarios resting on an
+  agent's word). Before, such a feature disappeared from every repository-wide surface at archive;
+  only `loam status <FEAT>` said "archived — not fully verified". `--json` gains the key
+  `unverifiedArchived` (`id`, `title`, `dirName`, `path`, `services`, `verification`), narrowed by
+  `--service` like `features`; the text view gains an `archived, not verified` section. `next[]`
+  changes: each such feature gets a `next.archived` step (the step `loam status <FEAT>` already
+  gives it), placed after the per-service rungs and before `next.elided` / the closing entry; it
+  does not turn `next.fleet-clean` into `next.fleet-gate`. No new code. `next.archived`'s
+  `execution` changes, in both `loam status` and `loam status <FEAT>`, from a runnable command
+  (`loam show <FEAT> --json`, still its `command`) to `kind: "human-review"`, `runnable: false`:
+  the record is frozen, nothing an agent runs discharges the step, and an agent following "run
+  `next[0]`, repeat" used to loop on it. `loam list --needs-work` no longer prints `nothing to do`
+  while such a feature exists; it names them after the service rows, or in place of
+  `nothing to do`. Its `--json` is unchanged.
+- Edges in the scaffolds now carry their relationship kind, as the `loam-feature` protocol tells
+  an agent to draw them. The `delta.likec4` that `loam new` writes declares `relationship calls`
+  and draws its commented example edge as `-[calls]->` (it was a bare `->`), QUICKSTART's map
+  edit draws `-[calls]->`, and `loam seed` draws each `fleet.yaml` call as
+  `svc_<a> -[calls]-> svc_<b>` where it wrote `svc_<a> -> svc_<b>` (the map already declared the
+  kind; re-seeding an untouched seeded map rewrites those lines, and a script that matched the bare
+  edge text no longer finds it). The fleet map `loam init --create` scaffolds now declares
+  `tag external`, as `loam seed`'s always did: an element tagged `#external`, which the stub's own
+  comments describe, no longer makes the map fail to parse. A map scaffolded by an earlier version
+  and never edited is still recognised as untouched, so `loam seed` still replaces it.
+- After `loam init --create`, the first hand edit that adds a service to the fleet map makes
+  `architecture/services.likec4` owed, and `loam validate --all` reports `subsystem.views-stale`
+  until `loam subsystem sync` writes it; nothing on the init path said so. `init --create` still
+  writes no `services.likec4`: the map it scaffolds draws no service, and a map that draws none owes
+  no file. The step is now named where a reader draws by hand: the scaffolded map's comment right
+  after "add the service here", and the closing list `init --create` prints with no service bound
+  gains `loam subsystem sync`. Text only; `--json` is unchanged.
+
 ## [0.2.0-alpha.16] - 2026-10-27
 
 Everything on `main` since `0.2.0-alpha.15`. Still a prerelease on the `alpha` line. When this

@@ -158,8 +158,10 @@ const SPEC_TARGET = join("services", "payment-service", "spec.md");
 
 describe("rollback under mid-write failure", () => {
   it("plans the three-update merge these tests depend on (fixture self-check)", async () => {
-    // If the plan ever stops being [spec.md, openapi.yaml, landscape], the
-    // faults below would land on the wrong step and test nothing.
+    // If the plan ever stops being [spec.md, openapi.yaml, landscape, …], the
+    // faults below would land on the wrong step and test nothing. The views
+    // file rides LAST (the archive regenerates it from the merged map), so the
+    // three swaps the faults target keep their order.
     const p = await makeProject(threeSwapFixture());
     try {
       const res = await runLoam(p.workDir, "archive", "FEAT-30", "--dry-run", "--json");
@@ -169,6 +171,7 @@ describe("rollback under mid-write failure", () => {
         "update services/payment-service/spec.md",
         "update services/payment-service/openapi.yaml",
         "update architecture/landscape.likec4",
+        "create architecture/services.likec4",
         "move features/FEAT-30-capture",
       ]);
     } finally {

@@ -227,7 +227,7 @@ model {
       // segment and the parent it nests in, and edges keep the full id.
       expect(line("checkout-web")).toContain("// web = softwareSystem 'checkout-web'");
       expect(line("checkout-web")).toContain("inside shop { }");
-      expect(lines.some((l) => l.includes("pay -> svc_split_service 'Calls createSplit'"))).toBe(true);
+      expect(lines.some((l) => l.includes("pay -[calls]-> svc_split_service 'Calls createSplit'"))).toBe(true);
       // A service the feature introduces is undrawn by definition: seed's convention.
       expect(line("split-service")).toContain("svc_split_service = softwareSystem 'split-service'");
     });

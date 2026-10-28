@@ -38,7 +38,7 @@
  *     own contract is pinned in test/adopt.test.ts.
  */
 import { describe, it, expect, afterEach } from "vitest";
-import { readFile, writeFile, realpath, rm } from "node:fs/promises";
+import { mkdir, readFile, writeFile, realpath, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, isAbsolute, resolve } from "node:path";
 import {
@@ -319,6 +319,38 @@ describe("init: the first-hour epilogue on the single-repo trial composition", (
     for (const [command] of docsRepoFirstHour()) expect(res.out).toContain(command);
     expect(res.out).not.toContain("loam vouch");
   });
+
+  // Catches: the map `init --create` scaffolds draws no service, so it owes no
+  // generated views file and none is written — and the first hand edit that
+  // adds a service turned `validate --all` red with `subsystem.views-stale`, a
+  // step nothing on the init path had named (QUICKSTART walk, 2026-10-28).
+  it("--create names `loam subsystem sync` for the hand-drawn map, and following it leaves the views current", async () => {
+    const dir = await throwawayDir();
+    const res = await runLoam(dir, "init", "--create", "--docs", "./d");
+    expect(res.code).toBe(0);
+    expect(res.out).toContain("loam subsystem sync");
+    const mapPath = join(dir, "d", "architecture", "landscape.likec4");
+    const stub = (await readFile(mapPath, "utf8")).replace(/\r\n/g, "\n");
+    // The stub says so right where it tells the reader to add a service.
+    expect(stub).toMatch(/add the service here:[\s\S]*Then run `loam subsystem sync`[\s\S]*Every edge says/);
+    expect(existsSync(join(dir, "d", "architecture", "services.likec4"))).toBe(false);
+
+    await writeFile(
+      mapPath,
+      stub.replace("model {\n}", "model {\n  svc_orders = softwareSystem 'orders' {\n    metadata { service 'orders' }\n  }\n}"),
+    );
+    await mkdir(join(dir, "d", "services", "orders"), { recursive: true });
+    const staleCodes = async (): Promise<string[]> => {
+      const run = await runLoam(dir, "validate", "--all", "--json");
+      return (JSON.parse(run.stdout) as { targets: Array<{ findings: Array<{ code: string }> }> }).targets
+        .flatMap((t) => t.findings)
+        .map((f) => f.code)
+        .filter((code) => code === "subsystem.views-stale");
+    };
+    expect(await staleCodes()).toEqual(["subsystem.views-stale"]);
+    expect((await runLoam(dir, "subsystem", "sync")).code).toBe(0);
+    expect(await staleCodes()).toEqual([]);
+  }, 60_000);
 
   it("never reaches --json: the envelope stays pure JSON with no epilogue text and no new keys", async () => {
     // Both variants: the docs-repo hour is text only, exactly as the trial's is.

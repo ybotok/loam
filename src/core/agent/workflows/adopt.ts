@@ -206,6 +206,11 @@ thin baseline that validates is thin, not done.
    has no edge is SILENT here: \`landscape.touched: false\` in step 1's brief is the
    only place that state is named, so read it before this run rather than hoping
    for it in it.
+   \`subsystem.views-stale\` naming \`architecture/services.likec4\` is the element and
+   edges you just drew: that file — one overview view per service the map draws — is
+   generated from the map, and a hand edit leaves it behind. Run
+   \`loam subsystem sync\` in the docs repo once the map edits are done; it rewrites
+   the file and the finding goes. Never edit the file itself.
    Six warnings on this run are about the RENDERER's wiring rather than about any
    document, and one command fixes four of them: \`service.model-excluded\` (the root
    \`likec4.config.json\` excludes a directory holding a model that extends the map, so
@@ -231,8 +236,8 @@ thin baseline that validates is thin, not done.
    renderer's project, so the one entry would come back once per model instead of once as
    the cause. Fix it first, then re-run and read the fifth.
    Done, stated once: step 4 clean when run from inside the service's own repo, this
-   run reporting no \`landscape.*\` finding, no \`service.*\` renderer warning and no
-   \`c4.fleet-project-invalid\`, and
+   run reporting no \`landscape.*\` finding, no \`subsystem.views-stale\`, no
+   \`service.*\` renderer warning and no \`c4.fleet-project-invalid\`, and
    step 1's brief re-run reporting \`landscape.touched: true\` — or, for a service that
    truly makes and receives no call, a stated reason its element is edgeless.
    The fleet run is never SILENT —

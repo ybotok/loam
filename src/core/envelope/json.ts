@@ -317,6 +317,16 @@ const NO_CONFIG_MESSAGE = "No loam.json found. Run `loam init --docs <dir>` firs
 export const NO_SERVICE_MESSAGE = "No service. Pass --service <id> or set it in loam.json.";
 
 /**
+ * `loam validate`'s spelling of the same refusal, which owes a THIRD answer:
+ * validate is the one service-scoped command that also grades the whole docs
+ * repo, and in the repository `loam init --create` just made — no service bound,
+ * by design — `--all` is the only spelling that works. QUICKSTART's first bare
+ * `loam validate` used to be refused with the two answers above and nothing
+ * about the third.
+ */
+export const NO_VALIDATE_TARGET_MESSAGE = `${NO_SERVICE_MESSAGE.slice(0, -1)} — or run \`loam validate --all\` to check the whole docs repo, or \`loam validate <FEAT>\` for one feature.`;
+
+/**
  * Report "no config" in whichever mode the caller is in — distinguishing a
  * config that is absent from one that exists but would not load, because the
  * two point at opposite fixes: a missing config wants `loam init`, a corrupt

@@ -545,11 +545,28 @@ The **boundary** each view draws is a fact about the landscape, never a setting:
    independent**; `loam subsystem move` never rewrites the map, and no finding compares them.
 
 Because the boundary depends on which *other* services sit under an element, an unrelated adoption
-or archive can flip a view from boxed to flat — a new reason to see `subsystem.views-stale`, and why
-`loam archive` withholds its "complete + current" line and names `loam subsystem sync` when it left
-the file behind. `archive --dry-run` names the same files before anything is written, asked of the
-map the merge preview stages and of the tree with the services the archive would create; both carry
-them in `--json` as `staleViews`.
+or archive can flip a view from boxed to flat — a new reason to see `subsystem.views-stale`.
+
+**`loam archive` regenerates both generated views files inside its own commit.** It is the writer
+that just changed the map and the tree they are a function of, so — exactly as every
+`loam subsystem` verb does — it renders them from its own planned bytes (every planned `.likec4`
+write under `architecture/` laid over the living project documents; the walked tree plus the
+services its writes create) with `loam subsystem sync`'s own render, compare and authored-file
+veto, and swaps them in with the rest of the merge: one journal, one snapshot, so a killed archive
+rolls them back with the map and `loam unarchive` restores them with it. The plan lists each one
+(`views: architecture/services.likec4 — regenerated …`). Through 0.2.0-alpha.16 it left both
+alone and printed a ⚠ naming `loam subsystem sync`, on the reasoning that a second writer computing
+the post-merge tree and map is how two writers come to disagree — and a clean archive then left
+`validate --all` red behind a step no walkthrough mentioned. The reasoning still decides the shape:
+nothing is computed a second way — the map parsed is the bytes the commit swaps in, and the render
+is sync's — and the archive still grades its result through `validate`'s staleness check after the
+commit. A plan that writes no map document and creates no service parses nothing and touches
+neither file, so a views file that was stale before the archive stays the fleet gate's finding.
+What the archive cannot write — a file loam did not author at one of the reserved paths, or a
+merged map that does not parse — it names instead and withholds its "complete + current" line,
+pointing at `loam subsystem sync`; `archive --dry-run` names the same files before anything is
+written, asked of the map the merge preview stages; both carry them in `--json` as `staleViews`,
+absent when nothing is stale.
 
 `loam subsystem sync` is the one regenerator (it also *removes* the file when the tree has no
 subsystems), every `loam subsystem` write verb regenerates it inside the same transaction, and
@@ -856,9 +873,12 @@ changes what the renderer draws and nothing loam decides. The convention loam te
 `delivers` from topic to consumer, `reads`, `writes` and `readsWrites` with a store edge always
 written service `->` store and the kind's style placing the arrowhead, `calls` for a request, and
 `connects` wherever no evidence gives a direction yet. The fleet map `loam init --create`
-scaffolds and the one `loam seed` templates both declare those seven kinds, and declare them only:
-seed's edges stay plain, because `fleet.yaml` says who calls whom and nothing about what an edge
-carries. One consequence is mechanical rather than a convention. `loam archive` splices a delta's
+scaffolds and the one `loam seed` templates both declare those seven kinds. Seed draws each
+`fleet.yaml` call as `-[calls]->` and uses no other kind: the list is named `calls` and every entry
+is written `caller -> callee`, so the person who wrote it stated the kind. Through 0.2.0-alpha.16
+seed drew them plain, on the reading that choosing a kind was a guess — and the first map a new user
+copied from taught the bare arrow the `loam-feature` protocol tells an agent never to draw. One
+consequence is mechanical rather than a convention. `loam archive` splices a delta's
 edge into the map verbatim and never copies a `specification` declaration, so a kind the living
 map does not declare would leave the merged map unparseable. **Declare a kind in the map before,
 or in the same change as, the feature that draws one.** The feature gate says so first:
@@ -1210,7 +1230,12 @@ cannot tell narrative about the service from narrative about the change, so a ne
 `services/<svc>/spec.md`, `arch.spec.md` or `capabilities/<cap>/spec.md` gets:
 
 - the delta's frontmatter **`owner`** (service specs; a capability document carries no frontmatter)
-  — the one field that describes the service rather than the change or a vouch;
+  — the one field that describes the service rather than the change or a vouch. Where the delta
+  names none and the service is one this archive brings into being, the feature's own
+  `intent.md` `owner`: whoever answers for the change answers for the service it introduced,
+  and without it the new documents drew `frontmatter.field-missing` the moment they landed. A
+  service that existed before the feature never takes the feature's owner — that is not the
+  feature author's to name;
 - the delta's **H1**, unless it is about the change — it names the feature, or calls itself a
   delta — in which case the title is the id (`<svc> — architecture` for an `arch.spec.md`);
 - the delta's **`## Purpose`** section, verbatim, with its links re-expressed like the
@@ -3284,9 +3309,13 @@ lists the files that need a hand.
 - `commit-interrupted` — a previous `archive`/`unarchive` was killed mid-commit and this run cannot
   repair it on its own.
 
-What `unarchive` restores is what the archive WROTE, and the two generated views files were never
-among it: `loam subsystem sync` owns them, and a sync run between the archive and the undo rewrote
-them against the merged map. So after the restore `unarchive` asks the question archive asks after
+What `unarchive` restores is what the archive WROTE. Since the archive regenerates the generated
+views files in its own commit, that includes them, and the undo puts the pre-archive views back with
+the pre-archive map. A views file a later writer regenerated (a subsystem verb, another archive, a
+sync) is stepped over rather than restored or refused: it is derived, never authored, so it is not a
+later change whose loss `--force` should be asked to accept, and its pre-image is no truer than its
+current bytes — the text output lists it as `left`. An archive made by 0.2.0-alpha.16 or earlier
+never wrote them at all. So after the restore `unarchive` asks the question archive asks after
 its merge — through `validate`'s own staleness grade — and when `architecture/subsystems.likec4` or
 `architecture/services.likec4` no longer matches the restored tree and map it names each one
 (`⚠ <path> no longer matches the tree and this map — run \`loam subsystem sync\``) instead of
@@ -4031,7 +4060,13 @@ repairing anything:
   `feature.title` (intent.md's title) and `checklist.claims` (what the checklist asks now; null once
   archived). The fleet form lists every feature in flight before any service's adoption rung — and
   carries every rung uncapped in `serviceSteps[]` (`{code, services, command}` per code), which the
-  human view folds into one counted line per code. It is
+  human view folds into one counted line per code. After the rungs comes one `next.archived` per
+  archived feature whose verification verdict is not `verified`, all of them also listed uncapped in
+  `unverifiedArchived[]` (`{id, title, dirName, path, services, verification}`): open claims do not
+  disappear at archive. The record is frozen — `loam verify` refuses an archived feature — so that
+  step's `execution` is a human review rather than a runnable command, and it never turns
+  `next.fleet-clean` into `next.fleet-gate`: nothing can discharge it, and a step that could never
+  clear would have stalled the "run `next[0]`, repeat" loop and retired the clean answer for good. It is
   capped at ten substantive steps plus a `next.elided` notice saying how many of which codes were left out, and
   whenever anything is outstanding its **last** entry is `next.fleet-gate` →
   `loam validate --all --json` (a repository with work in it must never get a list that omits the

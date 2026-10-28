@@ -23,6 +23,8 @@
  *   service rather than the change or a vouch (copying `vouched_by` or a digest
  *   would forge a review nobody performed). A capability document carries no
  *   frontmatter by decision (`planCapabilities` says why), so it gets none.
+ *   Where the delta names none, intent.md's `owner` — but only for a service
+ *   the archive brings into being (`fallbackOwner` says why).
  * - the delta's H1, unless it is about the change — it names the feature or
  *   calls itself a delta, which is exactly what the scaffold writes.
  * - the delta's `## Purpose` section, verbatim — the explicit marker, and the
@@ -73,6 +75,16 @@ export interface CreatedRequest {
    * adopted yet" until a person deletes the line.
    */
   adoption?: "partial";
+  /**
+   * intent.md's `owner`, written when the delta's own frontmatter names none —
+   * and passed ONLY for a service this archive creates. The intent's owner
+   * answers for the change, and a service the change brings into being has no
+   * other owner on record: without it the new spec.md and arch.spec.md drew
+   * `frontmatter.field-missing` the moment they landed, under an archive that
+   * called the living docs complete. A service that existed before the feature
+   * has an owner the feature's author does not get to name, so it gets none.
+   */
+  fallbackOwner?: string;
   requirements: Requirement[];
 }
 
@@ -100,6 +112,7 @@ interface HeadRequest {
   fallbackTitle: string;
   service: string | null;
   adoption?: "partial";
+  fallbackOwner?: string;
   /** The created document's relative link to the archived delta. */
   backLink: string;
 }
@@ -115,7 +128,8 @@ interface CreatedHead {
 function createdHead(request: HeadRequest): CreatedHead {
   const fm = parseFrontmatter(request.delta);
   const marked = markedParts(fm.body, request.featureId);
-  const owner = request.service === null ? undefined : stringField(fm, "owner");
+  const declared = request.service === null ? undefined : stringField(fm, "owner");
+  const owner = request.service === null ? undefined : (declared ?? request.fallbackOwner);
   const carried: string[] = [];
   let text = "";
   if (request.service !== null) {
@@ -126,7 +140,8 @@ function createdHead(request: HeadRequest): CreatedHead {
       ...(owner === undefined ? {} : { owner }),
     };
     text += `---\n${stringifyYaml(fields, { lineWidth: 0 })}---\n\n`;
-    if (owner !== undefined) carried.push("owner");
+    if (declared !== undefined) carried.push("owner");
+    else if (owner !== undefined) carried.push("owner (from intent.md)");
   }
   text += `# ${marked.title ?? request.fallbackTitle}\n\n`;
   if (marked.title !== undefined) carried.push("its title");

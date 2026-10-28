@@ -7,7 +7,8 @@
  */
 import { findingJson } from "../../core/vocabulary/report.js";
 import { executableNext } from "../../core/status/actions/execution.js";
-import type { FeatureStatusReport, FleetStatusReport } from "../../core/status/report.js";
+import type { FeatureStatusReport } from "../../core/status/report.js";
+import type { FleetStatusReport } from "../../core/status/fleet/report.js";
 import type { UseCaseBlastRadius } from "../../core/usecases/touch.js";
 
 export function featureJson(r: FeatureStatusReport): Record<string, unknown> {
@@ -48,6 +49,8 @@ export function fleetJson(r: FleetStatusReport): Record<string, unknown> {
     service: r.service,
     services: r.services,
     features: r.features,
+    // Additive (core/status/fleet/report.ts says why the archived are listed).
+    unverifiedArchived: r.unverifiedArchived,
     order: r.order,
     next: r.next.map(executableNext),
     serviceSteps: r.serviceSteps,

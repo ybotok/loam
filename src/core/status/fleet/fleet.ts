@@ -16,6 +16,7 @@ import { analyzeDependencies } from "../../dependencies/dependencies.js";
 import { type DependencyGraph } from "../../dependencies/facts.js";
 import { isLandscapeStub } from "../../scaffold/landscape.js";
 import { repoPath } from "../../envelope/json.js";
+import { inOrder } from "../../kernel/concurrency.js";
 import { FleetContext } from "../../fleet-context.js";
 import { compareIds, type FeatureEntry, type ServiceEntry } from "../../repo/entries.js";
 import { featurePaths, featureSpecPaths, landscapePath } from "../../repo/paths.js";
@@ -24,16 +25,12 @@ import { featureTitle, listFeatures, listServices } from "../../repo/repo.js";
 import { introducingFeatures } from "../../projection/introduced.js";
 import { contractEvidence, contractOwners, contractsHeldElsewhere, owesContract } from "../contracts.js";
 import { readInterruptedCommit } from "../interrupted.js";
-import {
-  type ArtifactStatus,
-  type FleetFeatureState,
-  type FleetStatusReport,
-  type InterruptedCommit,
-} from "../report.js";
+import { type ArtifactStatus, type InterruptedCommit, type NextStep } from "../report.js";
+import type { ArchivedFeatureState, FleetFeatureState, FleetStatusReport } from "./report.js";
 import { undocumented, vouched } from "./rungs.js";
 import { scanDeltas } from "../scan.js";
 import { fullyVerified, verificationState } from "../verification.js";
-import { fleetNext, groupServiceSteps, perServiceSteps, type Binding } from "./next.js";
+import { fleetNext, perServiceSteps, type Binding } from "./next.js";
 import type { DocsDir } from "../../kernel/ids/dirs.js";
 
 /**
@@ -95,6 +92,9 @@ export async function fleetStatus(
     ),
   );
   features.sort((a, b) => compareIds(a.id, b.id));
+  // The archived ones whose done-check is still open, under the same narrowing
+  // — `FleetStatusReport.unverifiedArchived` says why they are listed at all.
+  const unverifiedArchived = await openArchived(docsDir, narrowed, context);
 
   // The first-hour ladder's fact, computed exactly when the ladder can apply
   // — an unnarrowed run over a fleet with zero services and zero features —
@@ -126,6 +126,7 @@ export async function fleetStatus(
       contentStale: services.filter((s) => vouched(s) && s.contentStale.length > 0).length,
     },
     features,
+    unverifiedArchived,
     order: graph.order.filter((id) => features.some((f) => f.id === id)),
     service: narrowed ?? null,
     // The binding is passed only when this run was NOT narrowed, and that guard
@@ -138,7 +139,7 @@ export async function fleetStatus(
     // binding here costs the reader nothing and keeps `--service X` answering
     // only about X.
     next: fleetNext(
-      { services, features, graph, interrupted, teaching },
+      { services, features, archived: unverifiedArchived, graph, interrupted, teaching },
       narrowed === undefined ? binding : null,
     ),
     // The same rungs `next[]` carries, from the same function, before the cap.
@@ -169,6 +170,34 @@ async function landscapeTeaching(docsDir: DocsDir): Promise<"missing" | "stub" |
     // repository-unavailable refusal over a file status does not even parse.
     return "authored";
   }
+}
+
+/**
+ * Every archived feature in scope whose verdict is not `verified`. One record
+ * read per archived feature and no checklist derived — an archived record is
+ * frozen history, graded against nothing (`verificationState` says why) — so
+ * listing them costs this form no LikeC4 workspace, which is its whole rule.
+ * Exported for `loam list --needs-work`, whose "nothing to do" must not be
+ * said over one of these either.
+ */
+export async function openArchived(
+  docsDir: DocsDir,
+  narrowed: string | undefined,
+  context: FleetContext,
+): Promise<ArchivedFeatureState[]> {
+  const archived = (await listFeatures(docsDir, { includeArchived: true }, context)).filter(
+    (f) => f.archived && (narrowed === undefined || f.services.some((s) => s === narrowed)),
+  );
+  // Bounded fan-out over the one set that only ever grows (archive history).
+  const rows = await inOrder(archived, async (f) => ({
+      id: f.id,
+      title: await featureTitle(f),
+      dirName: f.dirName,
+      path: repoPath(docsDir, f.dir),
+      services: f.services,
+      verification: (await verificationState(docsDir, f)).state,
+    }));
+  return rows.filter((row) => !fullyVerified(row.verification)).sort((a, b) => compareIds(a.id, b.id));
 }
 
 /** What a feature's fleet row needs about the fleet AROUND it. */
@@ -254,4 +283,21 @@ async function fleetFeature(
     missing,
     verification,
   };
+}
+
+/**
+ * `perServiceSteps` grouped by code, in first-appearance order — the
+ * `serviceSteps` payload. `command` is the FIRST service's step command, so a
+ * reader folding forty rungs into one line still gets a literal to run rather
+ * than a second spelling of it.
+ */
+function groupServiceSteps(steps: NextStep[]): Array<{ code: string; services: string[]; command: string }> {
+  const groups = new Map<string, { code: string; services: string[]; command: string }>();
+  for (const step of steps) {
+    if (step.service === undefined) continue;
+    const group = groups.get(step.code) ?? { code: step.code, services: [], command: step.command };
+    group.services.push(step.service);
+    groups.set(step.code, group);
+  }
+  return [...groups.values()];
 }

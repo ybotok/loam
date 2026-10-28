@@ -48,6 +48,11 @@ export const STATUS_COMMAND = `- \`loam status [<FEAT>]\` is the orientation sur
   \`execution\` is a human review, never yours to run: prepare
   \`loam vouch --pack --service <id>\` and hand the vouch to a person), every one
   of them also listed uncapped in \`serviceSteps[]\` grouped by code; then
+  \`next.archived\` for each archived feature whose verdict is not \`verified\`
+  (also listed, uncapped, in \`unverifiedArchived[]\`; its \`execution\` is a human
+  review, never yours to run: the record is frozen, \`loam verify\` refuses an
+  archived feature, and only \`loam unarchive\` reopens its claims — so it never
+  turns \`next.fleet-clean\` into \`next.fleet-gate\`); then
   \`next.fleet-clean\`,
   \`next.elided\` (the fleet list hit its cap and says how many steps of which
   codes it left out — it is ordered most-unblocking first, so work down it and

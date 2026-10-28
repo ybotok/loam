@@ -61,6 +61,7 @@ import {
 } from "./service/views.js";
 import { likec4String, viewTitle } from "./text.js";
 import type { FleetTree, SubsystemEntry } from "../walk.js";
+import type { PlannedWrite } from "../../../staging/writes.js";
 
 /**
  * The global style group a generated view references when the map declares
@@ -332,4 +333,49 @@ export function subsystemViewId(sub: SubsystemEntry): string {
 export function viewsAgree(actual: string | null, expected: string | null): boolean {
   const lf = (text: string | null): string | null => (text === null ? null : text.replace(/\r\n|\r/g, "\n"));
   return lf(actual) === lf(expected);
+}
+
+/**
+ * ONE generated file: where it lives, and the bytes it must hold — `null` for
+ * "this file must not exist", which is a state of its own and not a blank file
+ * (`render/stale.ts` keeps the same three apart on the reading side).
+ */
+export interface ExpectedFile {
+  path: string;
+  content: string | null;
+}
+
+/** What a commit does to one generated file once every writer's own veto has passed. */
+export type ViewsAction = "created" | "updated" | "removed" | "current";
+
+/**
+ * Compare ONE generated file against what it must say: the write when they
+ * differ, and what that write is. Every writer of these files puts its own veto
+ * in front of this and nothing else — `loam subsystem sync`'s `planFile`
+ * (`commands/subsystem/sync.ts`), the subsystem verbs' `stageGenerated`
+ * (`commands/subsystem/txn/txn.ts`) and the archive's `planGeneratedViews`
+ * (`commands/archive/views.ts`) — because the rule is one rule, and a second
+ * spelling of it would be a second chance for two writers to answer
+ * differently about the same file. It lives down here, beside `viewsAgree`,
+ * because the archive became the third caller and a command importing another
+ * command's helper is the exception DESIGN rule 5 refuses to grow. A veto one
+ * writer needs (sync's `blocked` over an unreadable map, the verbs' refusal to
+ * protect an authored file) stays in that writer, never in here.
+ *
+ * The compare is over CONTENT, not bytes: `viewsAgree` records why, beside the
+ * generator. A Windows clone hands a generated file back CRLF with not one fact
+ * changed, and a byte compare made `sync` answer `updated` and rewrite it LF —
+ * after which git shows the file permanently modified and the next checkout puts
+ * the CRLF back — and folded the same rewrite into every subsystem move's
+ * transaction and journal. `validate` stopped demanding that rewrite; the
+ * writers must stop offering it, or they disagree about the same file. What gets
+ * WRITTEN is still the LF render as a Buffer, so the decode is a comparison only.
+ */
+export function planGenerated(file: ExpectedFile, current: string | null): { action: ViewsAction; write: PlannedWrite | null } {
+  if (viewsAgree(current, file.content)) return { action: "current", write: null };
+  const bytes = file.content === null ? null : Buffer.from(file.content, "utf8");
+  return {
+    action: current === null ? "created" : bytes === null ? "removed" : "updated",
+    write: { path: file.path, content: bytes },
+  };
 }

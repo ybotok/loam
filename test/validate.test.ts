@@ -181,6 +181,20 @@ describe("service mode: model + requirement + API coverage", () => {
     });
   });
 
+  // Catches: a docs repo's bare `loam validate` refusing with the service-scoped
+  // sentence alone — the first command a new user types in the repository QUICKSTART
+  // just made, answered without the one spelling that works there.
+  it("the no-service refusal names `loam validate --all`, in text and in the envelope", async () => {
+    await withProject(coherentFixture(), {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate");
+      expect(res.code).toBe(1);
+      expect(res.out).toContain("loam validate --all");
+      const json = JSON.parse((await runLoam(p.workDir, "validate", "--json")).stdout);
+      expect(json.error.code).toBe("invalid-option");
+      expect(json.error.message).toContain("loam validate --all");
+    });
+  });
+
   it("--service overrides the configured service", async () => {
     // config points at a service that has no docs at all; the flag must win.
     await withProject(coherentFixture(), { service: "no-such-service" }, async (p) => {

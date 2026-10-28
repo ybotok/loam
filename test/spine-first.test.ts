@@ -109,13 +109,13 @@ describe("the spine-first entry", () => {
     // hour asks for, and this is what it buys.
     const landscapePath = "architecture/landscape.likec4";
     const landscape = await project.read(landscapePath);
-    const bare = "  svc_order_service -> svc_payment_service\n";
+    const bare = "  svc_order_service -[calls]-> svc_payment_service\n";
     expect(landscape).toContain(bare);
     await project.write(
       landscapePath,
       landscape.replace(
         bare,
-        "  svc_order_service -> svc_payment_service 'Authorises' {\n" +
+        "  svc_order_service -[calls]-> svc_payment_service 'Authorises' {\n" +
           "    metadata { op 'authorisePayment' }\n" +
           "  }\n",
       ),

@@ -22,10 +22,11 @@
  *
  * SO DOES THE READ, AND SO DOES THE SENTENCE, and that is the correction this
  * module carries. The guard first shipped inside `loam subsystem sync` alone,
- * and there are FOUR other writers of exactly these two paths: the shared commit
+ * and there are other writers of exactly these two paths: the shared commit
  * window behind `subsystem new`, `rm`, `move` and `rename`
- * (`commands/subsystem/txn/txn.ts`) and `loam seed`
- * (`commands/seed/plan.ts`). Reproduced before this module grew: with a
+ * (`commands/subsystem/txn/txn.ts`), `loam seed` (`commands/seed/plan.ts`)
+ * and, since 0.2.0-alpha.17, `loam archive` (`commands/archive/views.ts`),
+ * which leaves an authored file alone and names it with `authoredRefusal`. Reproduced before this module grew: with a
  * hand-authored `architecture/services.likec4` in the tree, `loam subsystem new
  * platform` printed "architecture/services.likec4 updated" and destroyed it —
  * the file's digest changed and its first line became loam's header. A guard
@@ -112,9 +113,10 @@ export async function authoredGeneratedPaths(paths: readonly string[]): Promise<
 
 /**
  * The one sentence a refusal owes about ONE authored file, composed here and
- * parameterised by the file, because FIVE writers refuse for this reason and a
+ * parameterised by the file, because every writer refuses for this reason and a
  * reader who met the sentence from `loam subsystem sync` must recognise it
- * verbatim from `loam subsystem new`, `rm`, `move`, `rename` and `loam seed`.
+ * verbatim from `loam subsystem new`, `rm`, `move`, `rename`, `loam seed` and
+ * `loam archive` (which writes the rest of its merge and names the file).
  *
  * It names three things a person cannot get anywhere else: which file was left
  * alone, WHY loam thinks the file is not its own (the mark it looked for), and

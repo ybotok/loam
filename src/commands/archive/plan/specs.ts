@@ -19,7 +19,7 @@ import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import { rebaseLinks } from "../../../core/links/parse.js";
 import { planWrite, readUtf8 } from "../../../core/staging/writes.js";
-import { featureSpecPaths, SPEC_AXES } from "../../../core/repo/paths.js";
+import { featurePaths, featureSpecPaths, SPEC_AXES } from "../../../core/repo/paths.js";
 import { capabilityDocsDir, glossaryDir, livingCapabilityPaths } from "../../../core/repo/authored/paths.js";
 import { featureGlossary, livingTermPath } from "../../../core/glossary/delta.js";
 import { enumeratedServiceIds, locateServicePaths } from "../../../core/repo/service-target.js";
@@ -27,7 +27,7 @@ import { introducedServices } from "../../../core/projection/arch-slice.js";
 import { isRequirementsHeading, parseRequirements, sectionHeadings } from "../../../core/document/parse.js";
 import { applyRequirementDelta, droppedBy, droppedSentence, type DroppedRow } from "../../../core/document/apply.js";
 import { type Requirement } from "../../../core/document/spec.js";
-import { movedUnderVouch, parseFrontmatter, stringField } from "../../../core/document/frontmatter.js";
+import { movedUnderVouch, parseFrontmatter, readFrontmatter, stringField } from "../../../core/document/frontmatter.js";
 import { CodedFailure } from "../../../core/envelope/json.js";
 import { type Gated, type Plan } from "./state.js";
 import { featureRetarget } from "./document/links.js";
@@ -53,6 +53,11 @@ export async function planSpecs(
   // service, and the create branch below says so in its frontmatter.
   const existing = new Set<string>(await enumeratedServiceIds(config.docsDir, config.fleet));
   const introduced = new Set(introducedServices(gated.deltaDoc ?? null, gated.id));
+  // Who answers for a service this archive CREATES, when its delta names
+  // nobody: the feature's own owner (`./document/head.ts`, `fallbackOwner`).
+  // An intent.md that names no owner (or an empty one) leaves the fallback
+  // absent, and the document is written exactly as before.
+  const intentOwner = stringField(await readFrontmatter(featurePaths(featureDir).intent), "owner")?.trim() || undefined;
   // Requirements merge — apply ADDED/MODIFIED/REMOVED into each living service
   // spec. ONE code path for the pair of requirement-carrying files: the business
   // spec.md and the architecture arch.spec.md ride the same delta algebra, the
@@ -100,6 +105,7 @@ export async function planSpecs(
           fallbackTitle: axis.key === "spec" ? svc : `${svc} — architecture`,
           service: svc,
           ...(unadopted ? { adoption: "partial" as const } : {}),
+          ...(intentOwner !== undefined && !existing.has(svc) ? { fallbackOwner: intentOwner } : {}),
           requirements: created,
         });
         writes.push(planWrite(livingPath, doc.text));

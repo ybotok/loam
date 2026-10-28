@@ -3,8 +3,9 @@
  *
  * One function, because the question now has three askers — `validate --all`
  * (which turns a disagreement into `subsystem.views-stale`), `loam subsystem
- * sync` and the write verbs (which repair it), and `loam archive` (which must
- * not report a repo current when it has just made the file stale). Three
+ * sync`, the write verbs and `loam archive` (which regenerate it), and `loam
+ * archive` and `loam unarchive` again after their commits (which must not report
+ * a repo current while a file they could not write is stale). Three
  * private compares would be three chances to answer differently about one
  * file, and the module that mints the bytes is the one that owes the answer.
  *

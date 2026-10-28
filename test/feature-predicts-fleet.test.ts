@@ -610,16 +610,22 @@ describe("archive --dry-run says what the real run says in place of its closing 
     expect(real.stdout).not.toContain("complete + current");
   });
 
-  it("names the generated views the merge would leave stale — the same files the real run names after its commit", async () => {
-    // The dry run used to be silent on them: they are a fact about the map
-    // after the merge, and the only map it held was the living one. It now asks
-    // the merge preview, with the services the archive would create added to
-    // the tree.
+  it("plans the generated views the merge changes and leaves none stale — the dry run and the real run agree", async () => {
+    // The dry run used to NAME these files as left stale, and the real run left
+    // them so: archive did not write them, and `validate --all` was red after a
+    // clean archive until `loam subsystem sync`. The archive now regenerates them
+    // in its own commit (src/commands/archive/views.ts), so both runs plan the
+    // same write and neither predicts anything stale — and the gate agrees.
     const f = await exampleFleet(["FEAT-101-payment-splitting"]);
     const dry = JSON.parse((await runLoam(f.dir, "archive", "FEAT-101", "--dry-run", "--approve", "--json")).stdout);
     const real = JSON.parse((await runLoam(f.dir, "archive", "FEAT-101", "--approve", "--json")).stdout);
-    expect(real.staleViews ?? []).not.toEqual([]);
-    expect(dry.staleViews).toEqual(real.staleViews);
+    const views = (plan: Array<{ path: string; action: string }>): string[] =>
+      plan.filter((row) => row.path === "architecture/services.likec4" || row.path === "architecture/subsystems.likec4").map((row) => row.path);
+    expect(views(real.plan)).not.toEqual([]);
+    expect(views(dry.plan)).toEqual(views(real.plan));
+    expect(dry.staleViews).toBeUndefined();
+    expect(real.staleViews).toBeUndefined();
+    expect(ofCode(await findingsOf(f.dir, "--all"), "subsystem.views-stale")).toEqual([]);
   });
 
   it("files service.no-model at the severity validate gives the same fact, without gating the merge", async () => {

@@ -363,19 +363,23 @@ describe("a service directory moved after the archive", () => {
   });
 });
 
-describe("the generated views an archive never wrote", () => {
+describe("a generated views file the undo cannot put back", () => {
   /**
-   * Archive, then `loam subsystem sync` — the per-service overview gains the
-   * service the archive created — then the undo. The snapshot holds only what
-   * the ARCHIVE wrote, so the views file keeps naming a service the restored
-   * map and tree no longer have, and the undo used to close on "the living docs
-   * are back to what they said before the archive" over a red fleet.
+   * Archive, then another writer regenerates the per-service overview, then the
+   * undo. The archive writes the views in its own commit now (and an archive
+   * made before that never wrote them at all), but a views file regenerated
+   * since is stepped over rather than restored: it is derived, and its
+   * pre-image is no truer than its current bytes. So the file keeps naming a
+   * service the restored map and tree no longer have, and the undo used to
+   * close on "the living docs are back to what they said before the archive"
+   * over a red fleet.
    */
   async function syncedAfterArchive(): Promise<Project> {
     const p = await makeProject(coherentFixture());
     expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
     expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
-    expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
+    // Still loam's file — the mark survives — with bytes the archive did not write.
+    await p.write("architecture/services.likec4", `${await p.read("architecture/services.likec4")}\n// regenerated\n`);
     return p;
   }
 

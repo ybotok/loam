@@ -155,8 +155,17 @@ function views(out: SyncReport): string {
     out.projects.created.length === 0 &&
     out.projects.removed.length === 0 &&
     !out.projects.exclude.updated;
+  const tail = quiet ? " — nothing to write." : ".";
   const sentence: Record<SyncAction, string> = {
-    current: `architecture/subsystems.likec4 is current (${out.subsystems} subsystem(s))${quiet ? " — nothing to write." : "."}`,
+    // `current` over a FLAT tree means the file is absent and must stay so — the
+    // render answers null for a tree with no subsystems (`renderSubsystemViews`),
+    // and null agrees only with no file at all. "is current (0 subsystem(s))"
+    // said a file was in order that does not exist, and a new user went looking
+    // for it. The JSON `action` keeps its frozen value; only the words change.
+    current:
+      out.subsystems === 0
+        ? `no subsystems under services/, so architecture/subsystems.likec4 is not generated${tail}`
+        : `architecture/subsystems.likec4 is current (${out.subsystems} subsystem(s))${tail}`,
     created: `wrote architecture/subsystems.likec4 — ${out.subsystems} subsystem view(s).`,
     updated: `updated architecture/subsystems.likec4 — ${out.subsystems} subsystem view(s).`,
     removed: `removed architecture/subsystems.likec4 — the tree has no subsystems, so the generated file must be absent.`,
