@@ -21,6 +21,12 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   loam.json.` and never mentioned `--all`. The refusal now also names `loam validate --all` and
   `loam validate <FEAT>`. The code is still `invalid-option` and the exit code is still 1; only
   `error.message` changes.
+- `loam archive` now writes the feature's `intent.md` `owner:` into the `spec.md` and
+  `arch.spec.md` it creates for a service the feature introduces, when the delta's own frontmatter
+  names no owner. Before, both documents drew `frontmatter.field-missing` the moment they landed. A
+  delta's own `owner` still wins, and a service that existed before the feature (its first spec is
+  `adoption: partial`) is not given the feature's owner. The plan note says
+  `owner (from intent.md)`.
 
 ## [0.2.0-alpha.16] - 2026-10-27
 

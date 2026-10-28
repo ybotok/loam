@@ -1210,7 +1210,12 @@ cannot tell narrative about the service from narrative about the change, so a ne
 `services/<svc>/spec.md`, `arch.spec.md` or `capabilities/<cap>/spec.md` gets:
 
 - the delta's frontmatter **`owner`** (service specs; a capability document carries no frontmatter)
-  — the one field that describes the service rather than the change or a vouch;
+  — the one field that describes the service rather than the change or a vouch. Where the delta
+  names none and the service is one this archive brings into being, the feature's own
+  `intent.md` `owner`: whoever answers for the change answers for the service it introduced,
+  and without it the new documents drew `frontmatter.field-missing` the moment they landed. A
+  service that existed before the feature never takes the feature's owner — that is not the
+  feature author's to name;
 - the delta's **H1**, unless it is about the change — it names the feature, or calls itself a
   delta — in which case the title is the id (`<svc> — architecture` for an `arch.spec.md`);
 - the delta's **`## Purpose`** section, verbatim, with its links re-expressed like the

@@ -94,6 +94,91 @@ describe("a feature whose delta draws nothing inside its new service", () => {
   });
 });
 
+/**
+ * The OWNER of a service the archive creates. intent.md's `owner:` answers for
+ * the change, and a service the change brings into being has no other owner on
+ * record — so the living spec.md and arch.spec.md the archive writes for it took
+ * none, `frontmatter.field-missing` fired on both at once, and the archive said
+ * the living docs were complete and current over them (QUICKSTART walk,
+ * 2026-10-28).
+ */
+describe("a service the archive creates is owned by the feature that introduced it", () => {
+  const OWNED_INTENT = `---\nfeature: FEAT-1\nstatus: proposed\nowner: team-payments\n---\n\n# Split payments\n\nLet a payment be split across payees.\n`;
+  const ARCH_DELTA = `# payment-split-service — architecture delta for FEAT-1
+
+## ADDED Requirements
+
+### Requirement: Answers within two seconds
+Requirement-ID: SPLIT-ARCH-LATENCY
+
+The service SHALL answer a split request within two seconds.
+
+Covers: payment-split-service
+
+#### Scenario: A split is answered in time
+- **Given** a running payment-split-service
+- **When** a split is requested
+- **Then** it answers within two seconds
+`;
+
+  it("writes intent.md's owner into the new service's spec.md and arch.spec.md, and validate asks for none", async () => {
+    const files = coherentFixture();
+    files["features/FEAT-1-split/intent.md"] = OWNED_INTENT;
+    files["features/FEAT-1-split/specs/payment-split-service/arch.spec.md"] = ARCH_DELTA;
+    const p = await makeProject(files);
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-1");
+      expect(res.code, res.out).toBe(0);
+      for (const doc of ["spec.md", "arch.spec.md"]) {
+        expect(await p.read(`services/payment-split-service/${doc}`)).toContain("\nowner: team-payments\n");
+      }
+      expect(res.out).toContain("owner (from intent.md)");
+      const missing = (await findings(p.workDir, "--all")).filter(
+        (f) => f.code === "frontmatter.field-missing" && f.message.startsWith("payment-split-service:"),
+      );
+      expect(missing).toEqual([]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a delta that names its own owner keeps it — the delta is the closer statement about the document", async () => {
+    const files = coherentFixture();
+    files["features/FEAT-1-split/intent.md"] = OWNED_INTENT;
+    files["features/FEAT-1-split/specs/payment-split-service/spec.md"] = `---\nowner: team-ledger\n---\n\n${FEATURE_SPEC}`;
+    const p = await makeProject(files);
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+      const spec = await p.read("services/payment-split-service/spec.md");
+      expect(spec).toContain("\nowner: team-ledger\n");
+      expect(spec).not.toContain("team-payments");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a service that existed before the feature is never given the feature's owner", async () => {
+    // checkout-web is on disk and was never adopted: its first spec.md is the
+    // feature's slice, and who owns checkout-web is not the feature author's to say.
+    const files = coherentFixture();
+    files["features/FEAT-1-split/intent.md"] = OWNED_INTENT;
+    files["services/checkout-web/model.likec4"] = "model {\n}\n";
+    files["features/FEAT-1-split/specs/checkout-web/spec.md"] = FEATURE_SPEC.replaceAll("payment-split-service", "checkout-web").replace(
+      "Operations: createSplit\n\n",
+      "",
+    );
+    const p = await makeProject(files);
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-1", "--approve")).code).toBe(0);
+      const spec = await p.read("services/checkout-web/spec.md");
+      expect(spec).toContain("adoption: partial");
+      expect(spec).not.toContain("owner:");
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
 describe("a model goes to a service the merged map draws, and nowhere else", () => {
   const LEDGER_SPEC = FEATURE_SPEC.replace("# payment-split-service — delta for FEAT-1", "# ledger-service — delta for FEAT-1").replace(
     "Operations: createSplit\n\n",
