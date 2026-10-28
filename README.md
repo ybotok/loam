@@ -754,7 +754,7 @@ authored-capability axes with the `Realizes:` join, use cases graded as `dynamic
 `architecture/obligations.yaml` architectural obligations checked through `#obl-` tags and
 `Covers:`. Known limits, each with its owner in [ROADMAP.md](ROADMAP.md): the scheduled CI
 `stability` job has still to be observed green. Speculative `render`, health composition and UI
-generation come later. Behind that status stand **213 test files** (counted 2026-10-28): the count is graded
+generation come later. Behind that status stand **215 test files** (counted 2026-10-28): the count is graded
 against a live readdir by `test/docs-facts.test.ts`, so this sentence fails the suite the moment it
 trails the tree.
 

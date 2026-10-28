@@ -39,6 +39,23 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   whose parent it cannot resolve, so loam keeps that error.
 - No code, flag or payload key was added.
 
+### Changed — `validate` on a fleet whose weight is in the map
+
+- An extending service model that declares nothing (only comments and whitespace) no longer costs a
+  parse of the whole `architecture/` project. Every such model now shares one parse, and each still
+  gets exactly the answer its own project gave. A pilot fleet with an ~8k-line map and 78
+  mostly comment-only extending models measured `validate --all` at 56 s and `validate --feature` at
+  27 s. On a synthetic fleet of that shape, `validate --all` goes from 56.5 s to 21.0 s (2.7x) and
+  `validate --feature` from 20.1 s to 13.7 s (1.5x), interleaved medians on a 12-thread desktop,
+  with byte-identical `--json`. The shape is now a benchmark fixture,
+  `npm run bench:validate -- --fixture map-heavy`, with its table in docs/BENCHMARKS.md.
+- `npm run bench:validate` runs `loam subsystem sync` over its 120-service fixture before timing.
+  Since `architecture/services.likec4` became owed, `validate --all` failed there with
+  `subsystem.views-stale`, and the benchmark refused every run.
+- No code, flag or payload key was added to the CLI. The benchmark script gains `--fixture map-heavy`
+  and `--against <cli>`; the second interleaves two builds run by run, so a shared host's load lands
+  on both columns.
+
 ## [0.2.0-alpha.16] - 2026-10-27
 
 Everything on `main` since `0.2.0-alpha.15`. Still a prerelease on the `alpha` line. When this

@@ -108,3 +108,42 @@ export async function readModelShapes(paths: readonly string[]): Promise<Map<str
   const entries = await inOrder(paths, async (path) => [resolve(path), await readModelShape(path)] as const);
   return new Map(entries);
 }
+
+/**
+ * Whether a model's bytes declare NOTHING: whitespace and comments, every
+ * block comment closed. Such a file is an empty document to LikeC4 — no
+ * statement, no diagnostic — so its per-service project is exactly the
+ * `architecture/` documents on their own, and one parse of those answers for
+ * every such model (`./load.ts`, `../prefetch/fleet.ts`).
+ *
+ * It is the common case, not a corner: the adopt brief scaffolds a service's
+ * model as a comment until somebody draws its interior, and a pilot fleet
+ * measured on 2026-10-28 carried 78 extending models, most of them exactly that.
+ * Each one cost a full parse and link of a map of thousands of lines — the bulk
+ * of a 56-second `validate --all` (docs/BENCHMARKS.md, "A fleet whose weight is
+ * in the map").
+ *
+ * Over MASKED source, as `modelShape` reads it, so a declaration written in a
+ * comment counts for nothing. The closed-comment test is what keeps the claim
+ * exact: the mask runs an unclosed `/*` to the end of the file and blanks it,
+ * but LikeC4 refuses it, and a file it refuses is no empty document.
+ */
+export function modelInert(text: string): boolean {
+  const { code, comments } = maskSource(text);
+  if (/\S/.test(code)) return false;
+  return comments.every(
+    (span) => !text.startsWith("/*", span.start) || (span.end - span.start >= 4 && text.startsWith("*/", span.end - 2)),
+  );
+}
+
+/**
+ * `modelInert` for many files, as the set of RESOLVED paths that are inert. A
+ * file that cannot be read is not in it: its own project load owns that error,
+ * which a shared parse of the map could never report.
+ */
+export async function readInertModels(paths: readonly string[]): Promise<Set<string>> {
+  const inert = await inOrder(paths, async (path) =>
+    (await readFile(path, "utf8").then(modelInert, () => false)) ? resolve(path) : null,
+  );
+  return new Set(inert.filter((path): path is string => path !== null));
+}

@@ -12,6 +12,13 @@
  * is sampled per run by polling `ps -o rss=` every 25ms and the table carries
  * the median of the five per-run peaks.
  *
+ * `--fixture map-heavy` measures the OTHER shape instead: the generated fleet
+ * of test/helpers/map-heavy-fixture.ts, whose weight is in an ~8k-line map and
+ * whose 78 models extend it (most of them comment-only) — the shape a pilot
+ * fleet measured at 56 s for `validate --all` while the default fixture
+ * answered in under a second. Its generated views are written once by the
+ * CLI's own `subsystem sync` before anything is timed.
+ *
  * Run it via `npm run bench:validate` after `npm run build`. Nothing here is a
  * vitest test on purpose: a wall-clock assertion inside the parallel suite
  * measures the host's load, not the code — test/scale.test.ts keeps only a
@@ -24,6 +31,7 @@ import { cpus, platform, arch, totalmem, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fleetFiles, serviceCount, type FleetShape } from "../test/helpers/fleet-fixture.js";
+import { MAP_HEAVY_FEATURE, MAP_HEAVY_SHAPE, mapHeavyFiles } from "../test/helpers/map-heavy-fixture.js";
 
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -130,44 +138,141 @@ async function measureCommand(cliPath: string, args: string[], cwd: string): Pro
   };
 }
 
+/**
+ * `--against <cli>`: the same commands, alternating the two CLIs run by run —
+ * one warm-up each, then `RUNS` rounds with the order flipped every round — so
+ * whatever else the host is doing lands on both columns alike. Sequential
+ * blocks cannot promise that on a shared machine: measured 2026-10-28, five
+ * sequential runs of one command spread from 60 s to 123 s while other test
+ * suites came and went, which turned a before/after table into a table of
+ * the host's load. The fixture is prepared by `--cli` alone; both CLIs then
+ * read the same tree.
+ */
+async function compareInterleaved(after: string, before: string, commands: string[][], cwd: string): Promise<void> {
+  if (!existsSync(before)) throw new Error(`no CLI at ${before} for --against`);
+  console.log(`against: ${before}`);
+  console.log(`policy: fresh process per run, interleaved — 1 warm-up each, then ${RUNS} rounds alternating which CLI runs first`);
+  console.log("");
+  console.log("| command | before (median) | after (median) | runs before (ms) | runs after (ms) |");
+  console.log("|---|---|---|---|---|");
+  for (const args of commands) {
+    const label = `loam ${args.join(" ")}`;
+    for (const cli of [before, after]) assertSound(label, await runOnce(cli, args, cwd));
+    const runs = { before: [] as number[], after: [] as number[] };
+    for (let i = 0; i < RUNS; i += 1) {
+      const order = i % 2 === 0 ? (["before", "after"] as const) : (["after", "before"] as const);
+      for (const side of order) {
+        const run = await runOnce(side === "before" ? before : after, args, cwd);
+        assertSound(label, run);
+        runs[side].push(Math.round(run.ms));
+      }
+    }
+    console.log(
+      `| \`${label}\` | ${median(runs.before)} ms | ${median(runs.after)} ms | ${runs.before.join(", ")} | ${runs.after.join(", ")} |`,
+    );
+  }
+}
+
+/** A fixture the benchmark can time: its files, what it prints about itself, and the commands it measures. */
+interface Fixture {
+  files: Record<string, string>;
+  describe: string[];
+  commands: string[][];
+  /** Run once over the written tree before any timing — the map-heavy fleet's generated views. */
+  prepare: string[][];
+}
+
+/** The 120-service fleet the first two committed tables in docs/BENCHMARKS.md were measured on. */
+function benchmarkFixture(): Fixture {
+  const services = serviceCount(SHAPE);
+  const likec4Docs = 1 + services + SHAPE.features;
+  const opEdges = services - SHAPE.apiless - 1 + SHAPE.features;
+  return {
+    files: fleetFiles(SHAPE),
+    describe: [
+      `fixture: ${services} services (${SHAPE.apiless}/${SHAPE.documented}/${SHAPE.sourced}/${SHAPE.vouched}), ${SHAPE.features} features`,
+      `documents: ${likec4Docs} .likec4 (landscape + models + deltas), ${opEdges} op-linked edges`,
+    ],
+    commands: [
+      ["validate", "--all", "--json"],
+      ["validate", SINGLE_SERVICE, "--json"],
+      ["list", "--json"],
+    ],
+    // Without the generated `architecture/services.likec4` (0.2.0-alpha.16 made
+    // its absence `subsystem.views-stale`, an error) `validate --all` exits 1
+    // and every run of this fixture was refused as measuring nothing.
+    prepare: [["subsystem", "sync"]],
+  };
+}
+
+/** The pilot-shaped fleet (see the banner); its counts are test/helpers/map-heavy-fixture.ts's `MAP_HEAVY_SHAPE`. */
+function mapHeavyFixture(): Fixture {
+  const shape = MAP_HEAVY_SHAPE;
+  const files = mapHeavyFiles(shape);
+  const lines = files["architecture/landscape.likec4"]?.split("\n").length ?? 0;
+  return {
+    files,
+    describe: [
+      `fixture: map-heavy — ${shape.services} services in ${shape.subsystems} subsystems, ${shape.externals} external systems, ` +
+        `${shape.databases} stores, ${shape.groups} groups, ${shape.edges} edges (${shape.kinds} kinds, ${shape.tags} tags)`,
+      `documents: a ${lines}-line landscape with ${shape.mapViews} views, ${shape.drilldownViews} hand-written views beside it, ` +
+        `${shape.services} extending models (${shape.services - shape.drawnModels} comment-only), ` +
+        `one feature over ${shape.featureServices} services with ${shape.featureRequirements} requirements`,
+    ],
+    commands: [
+      ["validate", "--all", "--json"],
+      ["validate", "--feature", MAP_HEAVY_FEATURE, "--json"],
+      // svc-3 draws an interior; svc-40 is a comment-only placeholder.
+      ["validate", "svc-3", "--json"],
+      ["validate", "svc-40", "--json"],
+      ["list", "--json"],
+    ],
+    prepare: [["subsystem", "sync"]],
+  };
+}
+
 async function main(): Promise<void> {
   const cliFlag = process.argv.indexOf("--cli");
   const cliPath = resolve(cliFlag === -1 ? join(projectRoot, "dist", "cli.js") : (process.argv[cliFlag + 1] ?? ""));
   if (!existsSync(cliPath)) {
     throw new Error(`no CLI at ${cliPath} — run \`npm run build\` first (or pass --cli <path>)`);
   }
+  const fixtureFlag = process.argv.indexOf("--fixture");
+  const fixtureName = fixtureFlag === -1 ? "benchmark" : process.argv[fixtureFlag + 1];
+  if (fixtureName !== "benchmark" && fixtureName !== "map-heavy") {
+    throw new Error(`unknown --fixture '${fixtureName ?? ""}' — 'benchmark' (the default) or 'map-heavy'`);
+  }
+  const fixture = fixtureName === "map-heavy" ? mapHeavyFixture() : benchmarkFixture();
 
   const root = await mkdtemp(join(tmpdir(), "loam-bench-"));
   try {
     const workDir = join(root, "work");
     const docsDir = join(root, "docs");
     await mkdir(workDir, { recursive: true });
-    const files = fleetFiles(SHAPE);
-    for (const [rel, content] of Object.entries(files)) {
+    for (const [rel, content] of Object.entries(fixture.files)) {
       const path = join(docsDir, rel);
       await mkdir(dirname(path), { recursive: true });
       await writeFile(path, content, "utf8");
     }
     await writeFile(join(workDir, "loam.json"), `${JSON.stringify({ docsDir }, null, 2)}\n`, "utf8");
+    for (const args of fixture.prepare) {
+      const prepared = await runOnce(cliPath, args, workDir);
+      if (prepared.exitCode !== 0) throw new Error(`loam ${args.join(" ")}: exit ${prepared.exitCode} — the fixture is not ready`);
+    }
 
-    const services = serviceCount(SHAPE);
-    const likec4Docs = 1 + services + SHAPE.features;
-    const opEdges = services - SHAPE.apiless - 1 + SHAPE.features;
-    const commands: string[][] = [
-      ["validate", "--all", "--json"],
-      ["validate", SINGLE_SERVICE, "--json"],
-      ["list", "--json"],
-    ];
-
-    console.log(`fixture: ${services} services (${SHAPE.apiless}/${SHAPE.documented}/${SHAPE.sourced}/${SHAPE.vouched}), ${SHAPE.features} features`);
-    console.log(`documents: ${likec4Docs} .likec4 (landscape + models + deltas), ${opEdges} op-linked edges`);
+    for (const line of fixture.describe) console.log(line);
     console.log(`machine: ${platform()}/${arch()}, ${cpus().length}× ${cpus()[0]?.model ?? "unknown"}, ${mb(totalmem())} RAM`);
     console.log(`node: ${process.version}   cli: ${cliPath}   date: ${new Date().toISOString().slice(0, 10)}`);
+    const againstFlag = process.argv.indexOf("--against");
+    if (againstFlag !== -1) {
+      await compareInterleaved(cliPath, resolve(process.argv[againstFlag + 1] ?? ""), fixture.commands, workDir);
+      return;
+    }
     console.log(`policy: fresh process per run (warm page cache), ${WARMUPS} discarded warm-up + ${RUNS} measured, sequential`);
     console.log("");
     console.log("| command | median | runs (ms) | peak RSS (median of per-run peaks) |");
     console.log("|---|---|---|---|");
-    for (const args of commands) {
+    for (const args of fixture.commands) {
       const result = await measureCommand(cliPath, args, workDir);
       console.log(
         `| \`${result.label}\` | ${Math.round(result.medianMs)} ms | ${result.runsMs.join(", ")} | ${mb(result.peakRssBytes)} |`,
