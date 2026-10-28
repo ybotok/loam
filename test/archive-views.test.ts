@@ -113,6 +113,24 @@ describe("archive regenerates the generated views in its own commit", () => {
     }
   }, 90_000);
 
+  // Catches: the planner reading the tree of a docs repo with no services/ —
+  // which the archive tolerates on purpose for a landscape-only feature — and
+  // turning that clean archive into `internal`.
+  it("a landscape-only archive into a repo with no services/ still succeeds, writing no views", async () => {
+    const files = coherentFixture();
+    for (const path of Object.keys(files)) if (!path.startsWith("architecture/") && !path.endsWith("delta.likec4")) delete files[path];
+    const p = await makeProject(files);
+    try {
+      expect(p.exists("services")).toBe(false);
+      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--approve", "--json");
+      expect(res.code, res.stdout).toBe(0);
+      const payload = JSON.parse(res.stdout) as { plan: Array<{ path: string }> };
+      expect(payload.plan.map((row) => row.path)).not.toContain(SERVICE_VIEWS);
+    } finally {
+      await p.destroy();
+    }
+  }, 90_000);
+
   it("a requirements-only feature writes no views file — nothing it merges feeds them", async () => {
     const files = coherentFixture();
     delete files["features/FEAT-1-split/delta.likec4"];

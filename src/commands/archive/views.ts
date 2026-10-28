@@ -63,6 +63,7 @@ import { repoPath } from "../../core/envelope/json.js";
 import type { FleetContext } from "../../core/fleet-context.js";
 import { GENERATED_ARCHITECTURE_FILES, serviceViewsPath, servicesDir, subsystemViewsPath } from "../../core/repo/paths.js";
 import { listFleetTree } from "../../core/repo/repo.js";
+import { docsRepoState } from "../../core/repo/state.js";
 import { readGeneratedFile } from "../../core/repo/tree/render/service/header.js";
 import { renderServiceOverviews, renderSubsystemViews } from "../../core/repo/tree/render/views.js";
 import type { FleetTree } from "../../core/repo/tree/walk.js";
@@ -84,6 +85,12 @@ export async function planGeneratedViews(
   const mapWrites = writes.filter(
     (w) => w.path.endsWith(".likec4") && isPathInside(arch, w.path) && !generated.has(resolve(w.path)),
   );
+  // A docs repo with no services/ still archives a landscape-only feature
+  // exactly as before (`./run.ts` tolerates it on purpose), and has no tree to
+  // render from — `loam subsystem sync` refuses the same repository. The tree
+  // read would throw `DocsRepoUnavailableError` and turn a clean archive into
+  // `internal`, so the planner steps aside and the post-commit grade answers.
+  if (docsRepoState(docsDir).kind !== "ok") return [];
   const tree = await listFleetTree(docsDir, config.fleet);
   const created = createdServices(docsDir, tree, writes);
   if (mapWrites.length === 0 && created.length === 0) return [];
