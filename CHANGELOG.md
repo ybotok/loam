@@ -56,6 +56,17 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   `#external` system, unbound infrastructure, a tagged container's title, or a service drawn inside
   another system's box — where each used to answer with an empty brief at exit 0.
 
+### Fixed — a new service drawn inside the map's own group is a service
+
+- A delta that re-declares the living map's group around nothing but the service it introduces —
+  no sibling declared, and no `specs/` directory or `metadata { service }` binding yet — had that
+  service read as the group's own element: `loam verify` asked no `service.exists` of it,
+  `loam validate --feature` raised no `service.no-requirement-delta`, and `loam tasks` and
+  `loam delta` listed no such service and refused `--service` for it. A group the delta declares
+  but shows holding no service is now asked of the element the living map draws at the same id.
+  For such a feature the checklist gains the `service.exists` claim (its `digest` changes once, so a
+  record against it reads `stale`), and `validate --feature` gains the warning.
+
 ## [0.2.0-alpha.16] - 2026-10-27
 
 Everything on `main` since `0.2.0-alpha.15`. Still a prerelease on the `alpha` line. When this

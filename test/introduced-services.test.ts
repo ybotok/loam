@@ -288,6 +288,49 @@ describe("a grouping a delta draws around a new service is scenery", () => {
     expect(await existsClaims(f.dir, "FEAT-304")).toEqual(["rewards-service"]);
     expect(ofCode(await findingsOf(f.dir, "--feature", "FEAT-304"), "service.no-requirement-delta")).toEqual([]);
   });
+
+  it("the map's own group, re-declared around nothing but the new service, is still a grouping", async () => {
+    // The delta declares `marketplace` and, inside it, only the service it
+    // introduces — no sibling, so nothing IN THE DELTA shows the group holding
+    // a service, and fraud-service has no directory or binding yet. The group
+    // was then read as fraud-service's owner: no `service.exists`, no
+    // `service.no-requirement-delta`, and — once the work packet learned to
+    // keep non-services out — no service in `loam tasks` or `loam delta`
+    // either, while the map the merge leaves draws it as a service like any
+    // other. The living map's `marketplace` groups services, and that answers.
+    const f = await exampleFleet();
+    feature(f, "FEAT-305-fraud", {
+      delta: [
+        "  marketplace = group 'Marketplace' {",
+        "    fraudService = softwareSystem 'fraud-service' {",
+        "      #FEAT-305",
+        "      description 'Scores a payment for fraud'",
+        "    }",
+        "  }",
+        "  stripe = softwareSystem 'stripe'",
+        "  marketplace.fraudService -> stripe 'Scores a card' {",
+        "    #FEAT-305",
+        "    metadata { op 'scoreCard' }",
+        "  }",
+      ].join("\n"),
+      specs: {},
+    });
+    expect(await existsClaims(f.dir, "FEAT-305")).toEqual(["fraud-service"]);
+    expect(ofCode(await findingsOf(f.dir, "--feature", "FEAT-305"), "service.no-requirement-delta").map((x) => x.message)).toEqual([
+      "new service fraud-service has no requirement delta under specs/",
+    ]);
+
+    const tasks = JSON.parse((await runLoam(f.dir, "tasks", "FEAT-305", "--json")).stdout) as {
+      services: string[];
+      units: Array<{ kind: string; subject: string }>;
+    };
+    expect(tasks.services).toEqual(["fraud-service"]);
+    expect(tasks.units.filter((u) => u.kind === "c4.calls").map((u) => u.subject)).toEqual(["fraud-service"]);
+
+    const delta = await runLoam(f.dir, "delta", "FEAT-305", "--service", "fraud-service", "--json");
+    expect(delta.code, delta.out).toBe(0);
+    expect((JSON.parse(delta.stdout) as { services: string[] }).services).toEqual(["fraud-service"]);
+  });
 });
 
 /* ------------------------------------------------------------------ */

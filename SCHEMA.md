@@ -2359,7 +2359,9 @@ emptiness-by-accident:
   in the C4 delta with no `specs/<svc>/spec.md` gets `service.no-requirement-delta` as a warning,
   not an error. "New service" is the fleet census's reading of the map the merge leaves: a tagged
   `softwareSystem` of ours — not `#external`, not a grouping, drawn inside nothing but groupings
-  the delta declares — that no `services/<id>/` answers for and the living map does not already draw. A
+  the delta declares (a declared element that holds no service in the delta is asked of the living
+  map at the same id: the map's own group, re-declared around nothing but the new service, is still
+  a grouping) — that no `services/<id>/` answers for and the living map does not already draw. A
   delta's `#external` producer owes no requirement delta, and neither does the stub of a living
   element (whose living tags the merge keeps, so a re-declared `#external` system stays external
   whatever the stub says).
@@ -3328,7 +3330,7 @@ the one file `features/<FEAT>/verification.yaml`. `loam verify <FEAT>` derives a
 
 | kind | one claim per | reads |
 |---|---|---|
-| `service.exists` | tagged element the delta draws as a service of ours: at top level or only inside groupings the delta declares (elements that stand for no service and contain one — any other level owns what is drawn inside it), and not a person, `#external`, unbound infrastructure or a grouping itself. The stub of a living element is read with the living element's tags, and the stub of a service that already has a `services/<id>/` is asked about only when tagged at top level | `delta.likec4` |
+| `service.exists` | tagged element the delta draws as a service of ours: at top level or only inside groupings the delta declares (elements that stand for no service and contain one — in the delta, or failing that on the living map at the same id; any other level owns what is drawn inside it), and not a person, `#external`, unbound infrastructure or a grouping itself. The stub of a living element is read with the living element's tags, and the stub of a service that already has a `services/<id>/` is asked about only when tagged at top level | `delta.likec4` |
 | `api.exposes` | operationId the feature's openapi delta adds that the living one lacks | `specs/<svc>/openapi.yaml` |
 | `event.declares` | (direction, message) the feature's asyncapi delta declares that the living contract's send/receive sets lack — quotes and removals are never questions | `specs/<svc>/asyncapi.yaml` |
 | `c4.calls` | tagged edge carrying `metadata { op }` | `delta.likec4` |
