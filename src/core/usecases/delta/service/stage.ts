@@ -49,7 +49,7 @@ import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import type { LikeC4Error } from "../../../c4/likec4.js";
-import { architectureDir, architectureProjectDocuments } from "../../../c4/project/architecture.js";
+import { architectureDir, architectureProjectDocuments, projectViews, renderedViews } from "../../../c4/project/architecture.js";
 import { architectureDocuments } from "../../../c4/project/documents.js";
 import { asLoadedDoc, loadProject } from "../../../c4/project/load.js";
 import type { MergePreview } from "../../../c4/project/merge/preview.js";
@@ -143,7 +143,11 @@ export async function stageServiceProject(req: ServiceStageRequest): Promise<Ser
     await put(rel(req.paths.model), mergedModel === undefined ? { path: req.paths.model } : { text: mergedModel, at: req.paths.model });
     for (const path of siblings) await put(rel(path), { path });
 
-    const project = await loadProject(root, staged);
+    // Links graded as the service's own flow project grades them once the
+    // feature lands (`../../service/flows.ts`), so a flow the gate passes is
+    // one the living service can still read (`core/c4/navigation/unplaced.ts`).
+    const rendered = () => (req.shape === "extending" ? renderedViews(req.docsDir) : projectViews(req.paths.dir));
+    const project = await loadProject(root, staged, rendered);
     if (!project.clean) {
       const errors: LikeC4Error[] = asLoadedDoc(project).errors.map((e) =>
         e.sourceFsPath === undefined ? e : { ...e, sourceFsPath: authored.get(resolve(e.sourceFsPath)) ?? e.sourceFsPath },

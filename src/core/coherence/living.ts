@@ -14,6 +14,7 @@ import { readFile } from "node:fs/promises";
 import { loadFile, type LoadedDoc } from "../c4/likec4.js";
 import { elementService } from "../c4/resolve/service.js";
 import { closeIds } from "../c4/arch.js";
+import { featureViews, gradeLinks } from "../c4/project/architecture.js";
 import { serviceIdProblem, type PathableService } from "../kernel/ids/service.js";
 import { repoPath } from "../envelope/json.js";
 import type { Finding } from "../vocabulary/report.js";
@@ -63,7 +64,10 @@ export async function unknownDeltaServices(
   const deltaPath = featurePaths(featureDir).delta;
   let delta: LoadedDoc | undefined;
   if (existsSync(deltaPath)) {
-    delta = preloadedDelta ?? (context === undefined ? await loadFile(deltaPath) : await context.loadLikeC4(deltaPath));
+    const loaded = preloadedDelta ?? (context === undefined ? await loadFile(deltaPath) : await context.loadLikeC4(deltaPath));
+    // Graded as `featureCoherence` grades it, so a delta that is `delta.invalid`
+    // there is read as no delta here too (`core/c4/navigation/unplaced.ts`).
+    delta = await gradeLinks(loaded, () => featureViews(docsDir, featureDir));
   }
   if (delta !== undefined && delta.errors.length > 0) return [];
 

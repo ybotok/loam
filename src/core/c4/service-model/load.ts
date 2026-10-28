@@ -37,10 +37,12 @@ import { basename, relative, resolve } from "node:path";
 import type { DocsDir } from "../../kernel/ids/dirs.js";
 import type { ServicePaths } from "../../repo/paths.js";
 import type { Elem, LoadedDoc } from "../likec4.js";
-import { asLoadedDoc } from "../project/load.js";
-import { loadProjectBatch } from "../project/batch.js";
+import { asLoadedDoc, type ProjectDoc } from "../project/load.js";
+import { gradeLinks, projectViews, renderedViews } from "../project/architecture.js";
+import { loadProjectBatch, type ProjectRequest } from "../project/batch.js";
+import type { RenderedViews } from "../navigation/unplaced.js";
 import { modelProjectSets } from "./documents.js";
-import type { ModelShape } from "./shape.js";
+import { readInertModels, type ModelShape } from "./shape.js";
 import { sliceForService } from "./slice.js";
 
 export interface ServiceModel {
@@ -144,7 +146,12 @@ export function serviceModelAt(sources: ServiceModelSources): Promise<ServiceMod
     modelPath: relative(sources.docsDir, sources.paths.model).split(/[\\/]/).join("/"),
     known: sources.known,
     architecture: sources.architecture,
-    standalone: sources.standalone,
+    // A standalone model is a project of its own — its directory — so its
+    // links are graded against the views declared there and nowhere else: a
+    // link into a sibling flow file resolves for the renderer, and a link to a
+    // view nobody declares stays the `c4.invalid` it always was
+    // (`../navigation/unplaced.ts`).
+    standalone: async () => gradeLinks(await sources.standalone(), () => projectViews(sources.paths.dir)),
     project: sources.project,
   });
 }
@@ -228,23 +235,68 @@ export async function loadServiceModel(req: ServiceModelRequest): Promise<Servic
  * landed, and the two must not differ — a run that degrades one way and not the
  * other is a run whose report depends on the tmpdir).
  */
-export async function batchServiceProjects(
-  docsDir: DocsDir,
-  models: readonly string[],
-): Promise<Map<string, LoadedDoc>> {
+export async function batchServiceProjects(docsDir: DocsDir, models: readonly string[]): Promise<ProjectBatch> {
   const out = new Map<string, LoadedDoc>();
-  if (models.length === 0) return out;
-  const requests = (await modelProjectSets(docsDir, models)).map((set) => ({
-    key: resolve(set.model),
-    base: docsDir,
-    paths: set.paths,
-  }));
+  if (models.length === 0) return { projects: out, parses: 0 };
+  const sets = await modelProjectSets(docsDir, models);
+  // A model that declares nothing adds nothing to its project, so every such
+  // model's project is the same one: the architecture documents alone, staged
+  // from the same root (`./shape.ts`'s `modelInert` says why that is exact).
+  // Parsed ONCE rather than once per model — on a fleet whose map is thousands
+  // of lines and whose models are mostly placeholders, the per-model copies
+  // were most of the run (docs/BENCHMARKS.md, "A fleet whose weight is in the
+  // map").
+  const inert = await readInertModels(models);
+  const shared = sets.find((set) => inert.has(resolve(set.model)));
+  const requests: ProjectRequest[] = sets
+    .filter((set) => !inert.has(resolve(set.model)))
+    .map((set) => ({ key: resolve(set.model), base: docsDir, paths: set.paths }));
+  if (shared !== undefined) {
+    // The architecture set is the inert set minus its model, by construction
+    // of `modelProjectSets` — so the shared project cannot drift from the
+    // per-model one it stands for.
+    requests.push({ key: INERT, base: docsDir, paths: shared.paths.filter((path) => path !== shared.model) });
+  }
+  let loaded: Map<string, ProjectDoc>;
   try {
-    for (const [key, doc] of await loadProjectBatch(requests)) out.set(key, asLoadedDoc(doc));
+    // Every project is graded against the renderer's views, asked at most once
+    // for the whole batch: each is a slice of the same root project, and a map
+    // whose one link names a model's view leaves that link unresolved in every
+    // project but one.
+    let views: Promise<RenderedViews> | undefined;
+    loaded = await loadProjectBatch(requests, () => (views ??= renderedViews(docsDir)));
   } catch {
     // Unreadable is not invalid: the caller seeds nothing and every reader
     // falls back to its own per-project load.
-    return new Map();
+    return { projects: new Map(), parses: 0 };
   }
-  return out;
+  for (const [key, doc] of loaded) if (key !== INERT) out.set(key, asLoadedDoc(doc));
+  const common = loaded.get(INERT);
+  // A shared project that could not be staged leaves every inert model absent,
+  // which sends each to its own load — the batch's ordinary failure story.
+  if (common !== undefined) for (const model of inert) out.set(model, inertCopy(common));
+  return { projects: out, parses: loaded.size };
+}
+
+/** What `batchServiceProjects` prepared: a project per model, and how many parses that took. */
+export interface ProjectBatch {
+  projects: Map<string, LoadedDoc>;
+  /** One per project actually staged — the inert models share one, however many there are. */
+  parses: number;
+}
+
+/**
+ * The shared project's key in the batch. NUL cannot occur in a path, so it can
+ * never collide with a model's resolved path, which is every other key.
+ */
+const INERT = "\0inert";
+
+/**
+ * One inert model's own copy of the shared project. A COPY, because every
+ * other model's `LoadedDoc` is a value of its own — a reader that sorted or
+ * extended one model's arrays in place would otherwise be editing every
+ * placeholder service's answer at once.
+ */
+export function inertCopy(common: ProjectDoc): LoadedDoc {
+  return structuredClone(asLoadedDoc(common));
 }

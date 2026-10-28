@@ -36,6 +36,7 @@ import { join, resolve } from "node:path";
 import { LikeC4 } from "likec4";
 import { inOrder } from "../../kernel/concurrency.js";
 import type { LikeC4Error, ReadableModel } from "../likec4.js";
+import { placedLinksDropped, withoutLinks, type RenderedViews } from "../navigation/unplaced.js";
 import {
   cleanProjectDoc,
   emptyProject,
@@ -83,6 +84,7 @@ interface StagedProject {
  */
 export async function loadProjectBatch(
   projects: readonly ProjectRequest[],
+  rendered?: () => Promise<RenderedViews>,
 ): Promise<Map<string, ProjectDoc>> {
   const out = new Map<string, ProjectDoc>();
   if (projects.length === 0) return out;
@@ -96,7 +98,14 @@ export async function loadProjectBatch(
     // prints).
     const likec4 = await LikeC4.fromWorkspace(root, { logger: false });
     try {
-      const byProject = groupByProject(likec4.getErrors(), new Set(staged.map((s) => s.project)));
+      // A `navigateTo` a project cannot place is graded exactly as
+      // `loadProject` grades it: against the renderer's views when the caller
+      // hands them in, and dropped otherwise (`../navigation/unplaced.ts`). One
+      // `rendered` serves every project here, because each is a slice of the
+      // same renderer project.
+      const raw = likec4.getErrors();
+      const graded = rendered === undefined ? withoutLinks(raw) : await placedLinksDropped(raw, rendered);
+      const byProject = groupByProject(graded, new Set(staged.map((s) => s.project)));
       for (const { key, project, byRel } of staged) {
         const errors = groupErrorsByRel(byProject.get(project) ?? [], byRel);
         if (errors.size > 0) {

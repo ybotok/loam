@@ -63,7 +63,7 @@ export interface DocumentWalk {
 
 /**
  * The walk under `architectureDocuments` and the renderer root project's
- * enumeration (`commands/validate/fleet/views/root-documents.ts`): every
+ * enumeration (`./architecture.ts`'s `rootProjectDocuments`): every
  * `.likec4` under `dir`, recursively, absolute and sorted for the reason
  * above. A directory that cannot be read contributes nothing, never a throw —
  * for the missing-`architecture/` reason above, and because the root walk

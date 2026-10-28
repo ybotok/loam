@@ -22,7 +22,8 @@
  * the report. What is left over is exactly the class above: errors that exist
  * only because these documents were merged.
  *
- * WHICH DOCUMENTS ARE IN IT is `./root-documents.ts`'s question, and it is a
+ * WHICH DOCUMENTS ARE IN IT is `rootProjectDocuments`'s question
+ * (`core/c4/project/architecture.ts`), and it is a
  * walk of the docs root rather than a list of the shapes loam knows about: a
  * `.likec4` in a SUBSYSTEM directory — the parent of service directories — was
  * in none of the three roots this used to merge, and went unreported while the
@@ -61,6 +62,7 @@ import { existsSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import { errorText, type LikeC4Error, type LoadedDoc } from "../../../../core/c4/likec4.js";
 import { asLoadedDoc, loadProject } from "../../../../core/c4/project/load.js";
+import { renderedViews, rootProjectDocuments } from "../../../../core/c4/project/architecture.js";
 import type { ViewIdClaim } from "../../../../core/c4/parsed/view-ids.js";
 import type { ModelShape } from "../../../../core/c4/service-model/shape.js";
 import { FleetContext } from "../../../../core/fleet-context.js";
@@ -71,7 +73,6 @@ import { servicePathsAt, type ServicePaths } from "../../../../core/repo/paths.j
 import type { FleetTree } from "../../../../core/repo/tree/walk.js";
 import { readServiceFlows } from "../../../../core/usecases/service/flows.js";
 import type { Finding } from "../../../../core/vocabulary/report.js";
-import { rootProjectDocuments } from "./root-documents.js";
 
 export interface FleetProjectCheck {
   docsDir: DocsDir;
@@ -135,14 +136,20 @@ export async function fleetProjectFindings(check: FleetProjectCheck): Promise<Fl
   if (extending.length === 0) return { kind: "skipped" };
 
   const paths = extending.map((entry) => servicePathsAt(entry.dir));
-  // The TREE, not three roots. `./root-documents.ts` carries what comes out of
+  // The TREE, not three roots. `rootProjectDocuments` carries what comes out of
   // it and why; the standalone directories are handed in because their shape is
   // this run's memo and re-reading every model here would be a second scanner.
   const documents = await rootProjectDocuments(
     check.docsDir,
     check.entries.filter((entry) => shapeOf(entry) === "standalone").map((entry) => entry.dir),
   );
-  const project = await loadProject(check.docsDir, documents);
+  // Its links graded as every grading load grades them
+  // (`core/c4/navigation/unplaced.ts`). The generated views are left out of
+  // the load for the reason above, and `renderedViews` reads them back, so a
+  // link landing on one is not reported as if the renderer could not place it.
+  // A link into nothing in an extending model is that model's `c4.invalid`
+  // already, so `alreadyReported` keeps it from being filed twice.
+  const project = await loadProject(check.docsDir, documents, () => renderedViews(check.docsDir));
 
   if (project.clean) {
     // The census `subsystem.view-id-collision` needs and could not have until

@@ -7,6 +7,8 @@ import { readGlobalStyleIds, readViewIds, type ViewIdClaim } from "./parsed/view
 import { readSpecification, type DocSpecification } from "./parsed/specification.js";
 import { readDeployment, type DeploymentModel } from "./parsed/deployment.js";
 import { compareRels, descText, metaKey } from "./parsed/values.js";
+import { boundedMessage } from "./diagnostics/bounded.js";
+import { splitLinks } from "./navigation/unplaced.js";
 
 /** A parse/validation issue reported by LikeC4. */
 export interface LikeC4Error {
@@ -56,56 +58,6 @@ export function brokenDocumentPaths(docsDir: string, errors: readonly LikeC4Erro
   return [...new Set(errors.map((e) => e.sourceFsPath).filter((p): p is string => p !== undefined))]
     .map((abs) => relative(docsDir, abs).split(/[\\/]/).join("/"))
     .sort();
-}
-
-/**
- * How many alternatives of a parser's "one of these possible Token sequences"
- * list a printed diagnostic keeps — the number `likec4 validate` itself prints
- * before its `...`.
- */
-const TOKEN_ALTERNATIVES = 4;
-
-/** The heading line of Chevrotain's no-viable-alternative message, whose numbered list follows it. */
-const TOKEN_SEQUENCES = /possible Token sequences:$/;
-
-/** One numbered alternative in that list: `  12. [IdTerminal, Dot]`. */
-const ALTERNATIVE = /^\s+\d+\. /;
-
-/**
- * A LikeC4 message, with Chevrotain's list of expected token sequences cut to
- * its first few alternatives and a count of the rest.
- *
- * When the parser meets a token no rule can take, Chevrotain lists EVERY token
- * sequence any rule could have accepted there — and inside a LikeC4 `model { }`
- * block that is the whole grammar. Measured at the 1.59.2 pin: deleting the
- * closing quote of one `technology '…'` makes three such messages of about
- * 6,160 lines each, and `loam validate --service` printed 18,503 lines
- * (434 KB; 458 KB as `--json`) for one keystroke. `capDetails` bounds how MANY
- * details a finding prints, never how big one is, and `loam context` has no cap
- * at all — so a broken feature delta turned a 24 KB briefing into 626 KB for
- * every agent working on any service the feature touches. An agent in the
- * check-fix loop gets nothing from alternative 4,000: what it acts on is the
- * line number and the `but found: '…'` line, which is kept.
- *
- * Upstream `likec4 validate` keeps the first five lines of any message and
- * prints `...`; this cuts the LIST only, so the `but found:` line after it
- * survives, and says how many alternatives were dropped so nothing reads as
- * complete when it is not (the convention `capDetails` uses). Any other
- * message is returned exactly as LikeC4 wrote it.
- */
-function boundedMessage(message: string): string {
-  const lines = message.split("\n");
-  if (!TOKEN_SEQUENCES.test(lines[0] ?? "")) return message;
-  const alternatives = lines.filter((line) => ALTERNATIVE.test(line)).length;
-  if (alternatives <= TOKEN_ALTERNATIVES) return message;
-  const kept: string[] = [];
-  let seen = 0;
-  for (const line of lines) {
-    if (!ALTERNATIVE.test(line)) kept.push(line);
-    else if (++seen <= TOKEN_ALTERNATIVES) kept.push(line);
-    else if (seen === TOKEN_ALTERNATIVES + 1) kept.push(`  … (+${alternatives - TOKEN_ALTERNATIVES} more)`);
-  }
-  return kept.join("\n");
 }
 
 /**
@@ -201,6 +153,17 @@ export interface LoadedDoc {
    * specification can tell an inherited tag from an authored one.
    */
   specification?: DocSpecification;
+  /**
+   * The unresolved `navigateTo` links a DOCUMENT load set aside instead of
+   * reporting (`./navigation/unplaced.ts`): one document alone cannot tell a
+   * link into a view another document of its project declares from a link that
+   * lands nowhere. Absent when there were none, and never set by a project
+   * load, which is handed the evidence instead. A reader that knows which
+   * project the document renders in puts the dangling ones back as errors
+   * (`./project/architecture.ts`'s `gradeLinks`); a reader that only shows the
+   * document may ignore them, because nothing it reads depends on them.
+   */
+  unplaced?: LikeC4Error[];
   /**
    * The `dynamic view`s the document DECLARES — the ordered steps of a use
    * case, never a rendering (docs/DESIGN.md rule 26). Optional for exactly the
@@ -333,22 +296,25 @@ export async function loadFile(path: string): Promise<LoadedDoc> {
  * to prove a computed landscape parses BEFORE anything is written.
  */
 export async function loadSource(src: string): Promise<LoadedDoc> {
-  // LikeC4 owns a Langium workspace and registers a process-exit listener for
-  // it. Validation creates many short-lived instances, so every acquired
-  // instance must be disposed even on an invalid document or a failed model
-  // computation. Its logger is disabled because diagnostics are returned in
-  // LoadedDoc instead of being written out-of-band to stderr.
+  // LikeC4 owns a Langium workspace and registers a process-exit listener for it. Validation
+  // creates many short-lived instances, so every acquired instance must be disposed even on an
+  // invalid document or a failed model computation. Its logger is disabled because diagnostics
+  // are returned in LoadedDoc instead of being written out-of-band to stderr.
   const likec4 = await LikeC4.fromSource(src, { logger: false });
   try {
-    // Assigned, not cast: LikeC4 declares `getErrors()` as a non-nullable array
-    // whose element type is structurally wider than ours, so the compiler can
-    // check the shape here. The cast was the only thing standing between a
-    // dependency renaming `message` and a build that still succeeded — and the
-    // `?? []` it carried could never fire. Through `distinctErrors`, as every
-    // loader's diagnostics are, so this one agrees with the batch loader.
-    const errors: LikeC4Error[] = distinctErrors(likec4.getErrors());
+    // Assigned, not cast: LikeC4 declares `getErrors()` as a non-nullable array whose element
+    // type is structurally wider than ours, so the compiler can check the shape here. The cast was
+    // the only thing standing between a dependency renaming `message` and a build that still
+    // succeeded — and the `?? []` it carried could never fire. Through `distinctErrors`, as every
+    // loader's diagnostics are, so this one agrees with the batch loader — and split by
+    // `splitLinks`: whether a `navigateTo` lands is a question about the project this document
+    // renders in, which one document cannot answer, so the links travel as `unplaced` for the
+    // reader that can (`./navigation/unplaced.ts`).
+    const all: LikeC4Error[] = distinctErrors(likec4.getErrors());
+    const { errors, unplaced } = splitLinks(all);
+    const links = unplaced.length === 0 ? {} : { unplaced };
     if (errors.length > 0) {
-      return { errors, elements: [], relationships: [] };
+      return { errors, elements: [], relationships: [], ...links };
     }
 
     // `parsedModel`, not `computedModel`: the computed stage RESOLVES every
@@ -361,7 +327,7 @@ export async function loadSource(src: string): Promise<LoadedDoc> {
     // a second into minutes. The elements and relationships below are identical
     // either way. The `await` is load-bearing for anything reading `$data`: it is
     // undefined on the unresolved promise.
-    return cleanDoc((await likec4.parsedModel()) as ReadableModel);
+    return { ...cleanDoc((await likec4.parsedModel()) as ReadableModel), ...links };
   } finally {
     await likec4.dispose();
   }

@@ -28,15 +28,17 @@ import { memo } from "../../kernel/concurrency.js";
 import type { DocsDir } from "../../kernel/ids/dirs.js";
 import type { ServicePaths } from "../../repo/paths.js";
 import type { LoadedDoc } from "../likec4.js";
-import { loadArchitecture } from "../project/architecture.js";
-import { asLoadedDoc, loadProject } from "../project/load.js";
+import { architectureProjectDocuments, loadArchitecture, renderedViews } from "../project/architecture.js";
+import type { RenderedViews } from "../navigation/unplaced.js";
+import { asLoadedDoc, loadProject, type ProjectDoc } from "../project/load.js";
 import { modelProjectDocuments } from "../service-model/documents.js";
 import {
   batchServiceProjects,
+  inertCopy,
   serviceModelAt,
   type ServiceModel,
 } from "../service-model/load.js";
-import { readModelShape, readModelShapes, type ModelShape } from "../service-model/shape.js";
+import { readInertModels, readModelShape, readModelShapes, type ModelShape } from "../service-model/shape.js";
 
 /**
  * The three things this memo cannot know for itself, supplied once by whoever
@@ -57,6 +59,8 @@ export class ServiceModels {
   private readonly architectures = new Map<string, Promise<LoadedDoc>>();
   private readonly shapeOf = new Map<string, Promise<ModelShape>>();
   private readonly projects = new Map<string, Promise<LoadedDoc>>();
+  private readonly inerts = new Map<string, Promise<ProjectDoc>>();
+  private readonly rendered = new Map<string, Promise<RenderedViews>>();
   private readonly models = new Map<string, Promise<ServiceModel>>();
 
   constructor(private readonly deps: ModelDeps) {}
@@ -137,11 +141,14 @@ export class ServiceModels {
     const models = (shape: ModelShape): string[] =>
       [...shapes].filter(([, found]) => found === shape).map(([model]) => model);
     const extending = models("extending").filter((model) => !this.projects.has(model));
-    for (const [k, doc] of await batchServiceProjects(docsDir, extending)) {
+    const batch = await batchServiceProjects(docsDir, extending);
+    // Counted per PARSE, which is what the counter means: the inert models
+    // share one project, so a fleet of placeholders is one load, not one each.
+    for (let i = 0; i < batch.parses; i += 1) this.deps.onProjectLoad();
+    for (const [k, doc] of batch.projects) {
       // A concurrent load's promise stays authoritative: it is the one every
       // reader is already holding, and replacing it would count the parse twice.
       if (this.projects.has(k)) continue;
-      this.deps.onProjectLoad();
       this.projects.set(k, Promise.resolve(doc));
     }
     return models("standalone");
@@ -151,11 +158,35 @@ export class ServiceModels {
    * One service's project — the architecture documents and its model, parsed
    * together. Keyed on the model, which is what `prefetch` seeds above, so a
    * batched fleet run and a single-service run answer out of the same memo.
+   *
+   * A model that declares nothing (`modelInert`) is answered out of ONE parse
+   * of the architecture documents per invocation, as the batch answers it: a
+   * feature touching fourteen placeholder services used to parse the whole map
+   * fourteen times over, one service at a time.
    */
   private project(docsDir: DocsDir, modelPath: string): Promise<LoadedDoc> {
     return memo(this.projects, resolve(modelPath), async () => {
+      if ((await readInertModels([modelPath])).size > 0) return inertCopy(await this.inert(docsDir));
       this.deps.onProjectLoad();
-      return asLoadedDoc(await loadProject(docsDir, await modelProjectDocuments(docsDir, modelPath)));
+      const documents = await modelProjectDocuments(docsDir, modelPath);
+      return asLoadedDoc(await loadProject(docsDir, documents, () => this.views(docsDir)));
     });
+  }
+
+  /** The project every inert model shares — the architecture documents, staged from the docs root as a per-service project is. */
+  private inert(docsDir: DocsDir): Promise<ProjectDoc> {
+    return memo(this.inerts, resolve(docsDir), async () => {
+      this.deps.onProjectLoad();
+      return loadProject(docsDir, await architectureProjectDocuments(docsDir), () => this.views(docsDir));
+    });
+  }
+
+  /**
+   * The renderer's views, the evidence every per-service project grades its
+   * links against (`../navigation/unplaced.ts`) — scanned at most once per
+   * invocation, and only when some project failed to place a link.
+   */
+  private views(docsDir: DocsDir): Promise<RenderedViews> {
+    return memo(this.rendered, resolve(docsDir), () => renderedViews(docsDir));
   }
 }
