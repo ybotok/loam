@@ -25,12 +25,14 @@
  * THREE DELIBERATE NARROWINGS against the census, all because a delta is not a
  * whole map. An element is looked at only through ancestors the delta DECLARES
  * and that are themselves groupings — the map's domain or boundary drawn around
- * the services it re-declares. A level the delta does not declare may be a
- * living service's own element, and one that stands for no service yet groups
- * none — a new system's box, an `#external` vendor — is what its children
- * belong to: a container of a service with no directory yet is that service's,
- * and an endpoint inside a vendor is the vendor's (`core/gate/partners.ts`
- * reads it so). And a grouping must stand for no service itself: an element
+ * the services it re-declares, or, where the delta shows no service inside it,
+ * the element the living map draws at the same id grouping services there. A
+ * level the delta does not declare may be a living service's own element, and
+ * one that stands for no service yet groups none in either document — a new
+ * system's box, an `#external` vendor — is what its children belong to: a
+ * container of a service with no directory yet is that service's, and an
+ * endpoint inside a vendor is the vendor's (`core/gate/partners.ts` reads it
+ * so). And a grouping must stand for no service itself: an element
  * bound to a service IS one, whatever it contains — the census's answer too
  * wherever it matters, since a bound or directory-titled element never reaches
  * its undocumented pass.
@@ -72,17 +74,44 @@ export function groupsServices(e: Elem, elements: readonly Elem[], known: Readon
  * Is this element a service-level SYSTEM of ours in the document `elements`
  * comes from: not a person, not `#external`, not unbound infrastructure, not a
  * grouping, and drawn only inside groupings that document declares.
+ *
+ * `map` is the living map, passed when `elements` is a DELTA's: a delta
+ * re-declares the map's own group around the service it introduces and often
+ * nothing else, and a service with no directory yet stands for nothing the
+ * delta can show — so the group read as a box that groups none, and the new
+ * service inside it as that box's element. No `service.exists` was asked of
+ * it, no `service.no-requirement-delta` raised, and the work packet listed no
+ * such service, while the map the merge leaves draws it as a service like any
+ * other. A declared ancestor that groups nothing in the delta is therefore
+ * asked of the element the living map draws at the same id — WHAT THE DELTA'S
+ * TAGS CANNOT SAY, one level up — and only when the delta could not answer, so
+ * a delta that re-declares a sibling never parses the map for it.
  */
-function isServiceSystem(e: Elem, elements: readonly Elem[], known: ReadonlySet<string>): boolean {
+async function isServiceSystem(
+  e: Elem,
+  elements: readonly Elem[],
+  known: ReadonlySet<string>,
+  map?: () => Promise<LoadedDoc | null>,
+): Promise<boolean> {
   const kind = e.kind.toLowerCase();
   if (ACTOR_KINDS.has(kind) || e.tags.includes(EXTERNAL_TAG)) return false;
   if (INFRA_KINDS.has(kind) && !standsForService(e, known)) return false;
   const byId = new Map(elements.map((el) => [el.id, el]));
   for (const id of properAncestorIds(e.id)) {
     const parent = byId.get(id);
-    if (parent === undefined || !groupsServices(parent, elements, known)) return false;
+    if (parent === undefined) return false;
+    if (groupsServices(parent, elements, known)) continue;
+    if (map === undefined || !(await groupsOnTheMap(parent, map, known))) return false;
   }
   return !groupsServices(e, elements, known);
+}
+
+/** Does the living map draw, at this element's id, a grouping — and the element itself stand for no service? */
+async function groupsOnTheMap(e: Elem, map: () => Promise<LoadedDoc | null>, known: ReadonlySet<string>): Promise<boolean> {
+  if (standsForService(e, known)) return false;
+  const living = await map();
+  const counterpart = living?.elements.find((el) => el.id === e.id);
+  return living !== null && counterpart !== undefined && groupsServices(counterpart, living.elements, known);
 }
 
 /** What `readDeltaSystem` reads a tagged delta element against. */
@@ -93,7 +122,7 @@ export interface DeltaSystemScope {
   known: ReadonlySet<string>;
   /** The enumerated fleet alone — the services that already have a `services/<id>/`. */
   living: ReadonlySet<string>;
-  /** The living map (`livingMapOf`), read only when no directory answers for an element. */
+  /** The living map (`livingMapOf`), read only when the delta alone cannot answer for an element. */
   livingMap: () => Promise<LoadedDoc | null>;
 }
 
@@ -111,21 +140,23 @@ export interface DeltaSystemScope {
  *   feature's own `specs/<id>/`, or nothing has drawn it before.
  *
  * The living map is read only for an element no directory answers for — the
- * one case where the stub's missing tags can be the whole answer — so the
+ * one case where the stub's missing tags can be the whole answer — or one drawn
+ * inside a group the delta shows holding no service (`isServiceSystem`), so the
  * common delta, whose new services all have `specs/`, never parses it. A map
  * that is absent or does not parse leaves the delta to answer alone, which is
  * how every element was read before the map was asked.
  */
 export async function readDeltaSystem(e: Elem, scope: DeltaSystemScope): Promise<"none" | "living" | "drawn" | "service"> {
   const { elements, known } = scope;
-  if (!isServiceSystem(e, elements, known)) return "none";
+  if (!(await isServiceSystem(e, elements, known, scope.livingMap))) return "none";
   const service = elementService(e);
   if (scope.living.has(service)) return "living";
   if (known.has(service)) return "service";
   const map = await scope.livingMap();
   const counterpart = map === null ? undefined : livingCounterpart(e, map, known);
   if (map === null || counterpart === undefined) return "service";
-  return isServiceSystem(counterpart, map.elements, known) ? "drawn" : "none";
+  // Read inside the living map alone: there its groups are drawn whole.
+  return (await isServiceSystem(counterpart, map.elements, known)) ? "drawn" : "none";
 }
 
 /**

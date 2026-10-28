@@ -47,20 +47,29 @@ repository, which needs its own committed ./loam.json — if there is none,
    artifacts are still owed, whether another feature has to archive first, and
    what the next step is, each \`next[]\` entry carrying the literal command. It
    writes nothing, so it is always safe to re-run.
-1. \`loam context $2 --feature $1 --json\` — the briefing to load before touching
-   code: the service's living requirements and arch requirements verbatim, its
-   operations and messages as they stand today, the permissions and capabilities
-   its requirements join to, the fleet edges around it, and this feature's delta
-   over it (\`--feature $1\` narrows the in-flight section; drop it to see every
-   feature working over this service). The delta below is WHAT CHANGES; the pack
-   is what it changes INTO — read it first so a MODIFIED requirement lands as an
-   edit rather than a rewrite, and an operation you are about to add is caught
-   when the living contract already defines it. Exit 1 with \`ok: true\` means a
-   document behind the pack did not parse; the empty section beside the flag is
-   the parse failure, not "nothing here".
-2. \`loam delta $1 --service $2 --json\` (drop \`--service\` to use the service configured
-   in ./loam.json). That output IS the task:
-   - \`intent\` — why this exists
+1. \`loam context $2 --feature $1 --json --intent-ref\` — the briefing to load
+   before touching code: the service's living requirements and arch requirements
+   verbatim, its operations and messages as they stand today, the permissions and
+   capabilities its requirements join to, the fleet edges around it, and this
+   feature's delta over it (\`--feature $1\` narrows the in-flight section; drop
+   it to see every feature working over this service; \`--intent-ref\` carries
+   each feature's intent.md by reference, and step 2 says how to read it). The
+   delta below is WHAT CHANGES; the pack is what it changes INTO — read it first
+   so a MODIFIED requirement lands as an edit rather than a rewrite, and an
+   operation you are about to add is caught when the living contract already
+   defines it. Exit 1 with \`ok: true\` means a document behind the pack did not
+   parse; the empty section beside the flag is the parse failure, not "nothing
+   here".
+2. \`loam delta $1 --service $2 --json --intent-ref\` (drop \`--service\` to use the
+   service configured in ./loam.json). That output IS the task:
+   - \`intentRef\` — why this exists, by reference: the intent.md's \`path\`, the
+     \`sha256\` of its bytes, its size in \`bytes\`, its \`sections\` (each heading
+     with its line and size) and \`questions\` — \`naming\`, the open questions
+     that name $2, verbatim, beside their \`total\`. Read the file ONCE, or only
+     the sections you need, instead of having every brief repeat it; read it
+     again only when \`sha256\` changes. An intent can be hundreds of kilobytes,
+     and the loop below re-runs a brief after every recording. Without
+     \`--intent-ref\` the same key is \`intent\`, the whole text
    - \`requirements[]\` — what to build, with \`scenarios[].lines\` verbatim
    - \`archRequirements[]\` — the architectural obligations (outbox, retries, alerts),
      same shape; their scenarios become integration/ops tests, and \`covers\` names
@@ -87,7 +96,7 @@ repository, which needs its own committed ./loam.json — if there is none,
    document before building anything — for the delta, \`loam validate $1 --json\` names
    the error; the contract delta is not graded by validate, so read the parser message
    the payload carries.
-3. \`loam tasks $1 --service $2 --next --json\` — ONE unit of work, and the loop
+3. \`loam tasks $1 --service $2 --next --json --intent-ref\` — ONE unit of work, and the loop
    every step below runs inside. Step 2 is the whole brief; this is the next thing
    to do in it. It writes nothing: the projection is derived from the verify
    checklist, the delta scans, the feature's verification record and — in this,
@@ -118,7 +127,7 @@ repository, which needs its own committed ./loam.json — if there is none,
    that fact holds — never your own reading of the code you just wrote. Done means
    the unit no longer appears, and it stops appearing only once its claim is
    recorded confirmed in a verification record that is not stale. So re-run
-   \`loam tasks $1 --service $2 --json\` after every recording instead of working
+   \`loam tasks $1 --service $2 --json --intent-ref\` after every recording instead of working
    down a list you copied out: \`frontier\` (the first ten open unit ids, in order)
    and \`counts\` (\`open\`, \`done\`, \`attested\`) are recomputed from the documents on
    every run, which is what makes taking the head of it always safe.

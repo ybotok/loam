@@ -14,20 +14,23 @@ import { scenarioDigest } from "../../core/gherkin/stamp.js";
 import { stripFrontmatter } from "../../core/document/frontmatter.js";
 import { apiChanges } from "../../core/projection/api.js";
 import { eventChanges } from "../../core/projection/events.js";
-import { archSlice, introducedServices, livingServices } from "../../core/projection/arch-slice.js";
+import { archSlice, livingServices, touchedServices } from "../../core/projection/arch-slice.js";
 import { deltaUseCases, useCasesJson } from "./usecases.js";
 import { featureCapabilityDeltas } from "../../core/capabilities/delta/tree.js";
 import { capabilityDeltaSummaries } from "../../core/capabilities/delta/summary.js";
-import { printApi, printArchSlice, printCapabilities, printDropped, printEvents, printIntent, printRequirements, printUseCases } from "./print.js";
+import { printApi, printArchSlice, printCapabilities, printDropped, printEvents, printIntent, printIntentRef, printRequirements, printUseCases } from "./print.js";
 import { locateServicePaths } from "../../core/repo/service-target.js";
 import { droppedRows, reviewSlice, type SliceReview } from "./slice.js";
 import type { Review } from "../../core/projection/review.js";
 import { openQuestions, questionsNaming } from "../../core/document/intent/questions.js";
+import { intentReference, withIntentRef, type IntentRef } from "../../core/document/intent/reference.js";
+import { NotUtf8DocumentError } from "../../core/kernel/document-bytes.js";
 
 interface DeltaOptions {
   service?: string;
   json?: boolean;
   diff?: boolean;
+  intentRef?: boolean;
 }
 
 export function registerDelta(program: Command): void {
@@ -40,6 +43,9 @@ export function registerDelta(program: Command): void {
     // A review lens, off by default so the brief an agent implements from is
     // byte-identical without it (core/projection/review.ts says what it compares).
     .option("--diff", "say what each requirement, operation and message does to the living documents: new, quote, edit or remove, with the lines an edit changes")
+    // A size lens, off by default for the same reason: without it the brief is
+    // byte-identical (core/document/intent/reference.ts says what it carries).
+    .option("--intent-ref", "carry the intent by reference — path, sha256, size, outline and the open questions naming this service — instead of verbatim")
     .action(async (featureId: string, opts: DeltaOptions) => {
       const json = opts.json === true;
       const config = await configOrRefuse(json);
@@ -72,11 +78,14 @@ export function registerDelta(program: Command): void {
       const paths = featurePaths(feature.dir);
 
       const deltaDoc = existsSync(paths.delta) ? await loadFile(paths.delta) : null;
+      const living = await livingServices(config.docsDir);
       // Services the feature speaks about at all: one with a requirement delta,
-      // or one its C4 delta introduces. This is the list a refusal quotes.
-      const featureServices = [
-        ...new Set([...feature.services, ...introducedServices(deltaDoc, id)]),
-      ].sort(compareIds);
+      // or a service its C4 delta draws — never a person, an `#external` system
+      // or unbound infrastructure it tags (`touchedServices`). This is the list
+      // a refusal quotes.
+      const featureServices = (
+        await touchedServices(deltaDoc, id, { docsDir: config.docsDir, living, specs: feature.services, load: loadFile })
+      ).sort(compareIds);
 
       const service = opts.service ?? config.service;
       if (!service) {
@@ -108,7 +117,6 @@ export function registerDelta(program: Command): void {
       // report — no requirements, no edges, "no architecture change" — which an
       // agent consuming this as a task brief reads as "nothing to do here".
       // A typo must never be indistinguishable from a finished service.
-      const living = await livingServices(config.docsDir);
       if (!featureServices.includes(service) && !living.includes(service)) {
         const near = nearestIds(service, [...new Set([...featureServices, ...living])]);
         fail(
@@ -124,11 +132,22 @@ export function registerDelta(program: Command): void {
       // Why — business intent, and how many of its open questions are this
       // service's: the whole intent prints, so the count is what tells a team
       // which of twenty-five questions to read (core/document/intent/questions.ts).
-      const intent = existsSync(paths.intent)
-        ? stripFrontmatter(await readFile(paths.intent, "utf8")).trim()
-        : null;
+      const intentBytes = existsSync(paths.intent) ? await readFile(paths.intent) : null;
+      const intent = intentBytes === null ? null : stripFrontmatter(intentBytes.toString("utf8")).trim();
       const asked = openQuestions(intent ?? "");
       const questions = { total: asked.length, naming: questionsNaming(asked, service).length };
+      let intentRef: IntentRef | null = null;
+      if (opts.intentRef === true && intentBytes !== null) {
+        try {
+          intentRef = intentReference(intentBytes, repoPath(config.docsDir, paths.intent), [service]);
+        } catch (err) {
+          // Refused, not referenced: an intent that is not UTF-8 would come out
+          // with no sections and no questions — "nothing here for you".
+          if (!(err instanceof NotUtf8DocumentError)) throw err;
+          fail(json, "repository-unavailable", `Cannot carry the intent by reference: ${err.message}`);
+          return;
+        }
+      }
 
       // Requirement delta for this service (OpenSpec style), business and arch:
       // the same projection covers both axes, in the same shape, so the payload
@@ -272,7 +291,7 @@ export function registerDelta(program: Command): void {
             digest: scenarioDigest(service, s.lines, axis),
           })),
         });
-        emitJson({
+        const brief = {
           command: "delta",
           feature: id,
           service,
@@ -337,12 +356,14 @@ export function registerDelta(program: Command): void {
           // the shape `loam archive --json` carries as `dropped`. An empty array
           // is the answer for a feature that only adds.
           dropped,
-        });
+        };
+        emitJson(opts.intentRef === true ? withIntentRef(brief, intentRef) : brief);
         return;
       }
 
       console.log(`${id} · ${service}\n`);
-      printIntent(intent, questions, service);
+      if (opts.intentRef === true) printIntentRef(intentRef, service);
+      else printIntent(intent, questions, service);
       if (existsSync(specPaths.spec)) printRequirements(reqs, "Requirements", review?.business);
       else console.log("Requirements: (none for this service)\n");
       if (existsSync(specPaths.archSpec)) printRequirements(archReqs, "Arch requirements", review?.arch);

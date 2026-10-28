@@ -19,6 +19,7 @@ import { printPack } from "./print.js";
 
 interface ContextOptions {
   feature?: string;
+  intentRef?: boolean;
   json?: boolean;
 }
 
@@ -30,6 +31,7 @@ export function registerContext(program: Command): void {
       "Assemble one service's docs slice — spec, contracts, edges, permissions, capabilities, and the deltas in flight over it — as one deterministic briefing; writes nothing",
     )
     .option("--feature <FEAT>", "narrow the in-flight section to this one feature")
+    .option("--intent-ref", "carry each in-flight feature's intent by reference — path, sha256, size, outline and the open questions naming this service — instead of verbatim")
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (serviceArg: string, opts: ContextOptions) => {
       const json = opts.json === true;
@@ -71,10 +73,11 @@ export function registerContext(program: Command): void {
         // pack reads as "nothing to know here".
         const entries = await context.listServices(docsDir);
         const entry = entries.find((e) => e.id === serviceArg);
+        const byReference = opts.intentRef === true;
         const assembled: Assembled =
           entry !== undefined
-            ? { ok: true, pack: await assemblePack({ docsDir, entry, feature, context }) }
-            : await notLivingPack({ docsDir, name: serviceArg, feature, context });
+            ? { ok: true, pack: await assemblePack({ docsDir, entry, feature, context, byReference }) }
+            : await notLivingPack({ docsDir, name: serviceArg, feature, context, byReference });
         if (!assembled.ok) {
           fail(json, assembled.code, assembled.message);
           return;
@@ -120,6 +123,8 @@ interface NotLivingRequest {
   /** What `--feature` resolved to, or null when the flag was not given. */
   feature: FeatureEntry | null;
   context: FleetContext;
+  /** `--intent-ref`: the introducing feature's intent rides by reference, as a living pack's does. */
+  byReference: boolean;
 }
 
 /**
@@ -140,7 +145,7 @@ interface NotLivingRequest {
  * resolves, and silently briefing from the first would hide the other.
  */
 async function notLivingPack(req: NotLivingRequest): Promise<Assembled> {
-  const { docsDir, name, feature, context } = req;
+  const { docsDir, name, feature, context, byReference } = req;
   const introducing = await introducingFeatures(docsDir, name, context);
   const [first] = introducing;
   if (first === undefined) return unknownService(req);
@@ -171,7 +176,7 @@ async function notLivingPack(req: NotLivingRequest): Promise<Assembled> {
   // and the one value here that carries the fact that a directory produced it.
   const service: RawServiceId | undefined = chosen.services.find((s) => s === name);
   if (service === undefined) return unknownService(req);
-  const pack = await assembleIntroducedPack({ docsDir, service, feature: chosen, introducedBy: introducing, context });
+  const pack = await assembleIntroducedPack({ docsDir, service, feature: chosen, introducedBy: introducing, context, byReference });
   return { ok: true, pack };
 }
 

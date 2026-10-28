@@ -8,6 +8,8 @@
  */
 import { errorText, type Elem, type LoadedDoc, type Rel } from "../c4/likec4.js";
 import { elementService, serviceResolver } from "../c4/resolve/service.js";
+import { livingMapOf, readDeltaSystem } from "../c4/resolve/systems.js";
+import { landscapePath } from "../repo/paths.js";
 import { DocsRepoUnavailableError } from "../repo/state.js";
 import { listServices } from "../repo/repo.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
@@ -43,6 +45,43 @@ export async function livingServices(docsDir: DocsDir): Promise<string[]> {
 export function introducedServices(doc: LoadedDoc | null, featureId: string): string[] {
   if (doc === null || doc.errors.length > 0) return [];
   return doc.elements.filter((e: Elem) => e.tags.includes(featureId)).map(elementService);
+}
+
+/** What `touchedServices` reads a delta against — the fleet the merge leaves. */
+export interface TouchedScope {
+  docsDir: DocsDir;
+  /** The enumerated `services/` ids. */
+  living: readonly string[];
+  /** The feature's own `specs/<id>/` directories. */
+  specs: readonly string[];
+  /** How the living map is parsed, if it has to be — the caller's shared context, or a bare load. */
+  load: (path: string) => Promise<LoadedDoc>;
+}
+
+/**
+ * The services a feature speaks about: its `specs/` directories, plus the tagged
+ * elements of its C4 delta that are SERVICES on the map the merge leaves — the
+ * reading `service.exists` and `service.no-requirement-delta` already give a
+ * tagged element (`readDeltaSystem`). `introducedServices` maps every tagged
+ * element to a name, so a delta's human operator, its `#external` monitoring
+ * system and an unbound `database` were each a service the feature "touches"
+ * in `loam delta`'s refusal and beside every projection (a pilot fleet,
+ * 2026-10-28). A delta that does not parse names only its `specs/`, as before.
+ */
+export async function touchedServices(doc: LoadedDoc | null, featureId: string, scope: TouchedScope): Promise<string[]> {
+  const touched = new Set(scope.specs);
+  if (doc === null || doc.errors.length > 0) return [...touched];
+  const living = new Set(scope.living);
+  const systems = {
+    elements: doc.elements,
+    known: new Set([...living, ...scope.specs]),
+    living,
+    livingMap: livingMapOf(landscapePath(scope.docsDir), scope.load),
+  };
+  for (const e of doc.elements) {
+    if (e.tags.includes(featureId) && (await readDeltaSystem(e, systems)) !== "none") touched.add(elementService(e));
+  }
+  return [...touched];
 }
 
 /** The feature's tagged edges around one service, plus whether the service is new. */

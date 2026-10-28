@@ -16,6 +16,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { stripFrontmatter } from "../document/frontmatter.js";
+import { intentReference, withIntentRef, type IntentRef } from "../document/intent/reference.js";
 import { repoPath } from "../envelope/json.js";
 import { FleetContext } from "../fleet-context.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
@@ -234,6 +235,29 @@ export async function workPacket(request: PacketRequest): Promise<WorkPacket> {
     review: reviewNotes(feature.id, binding.gherkinDir ?? "features"),
     unreadable: contracts.unreadable,
   };
+}
+
+/** A packet whose intent rides by reference — what `--intent-ref` emits. */
+export type ReferencedPacket = Omit<WorkPacket, "intent"> & { intentRef: IntentRef | null };
+
+/**
+ * The packet with its verbatim `intent` swapped for a reference to the file
+ * (`core/document/intent/reference.ts` says what one holds, and why the leaf a
+ * worker is handed must not be the size of the intent).
+ *
+ * The questions kept are the ones naming the services the packet is ABOUT: the
+ * lens when there is one, else the subjects of the units it shows — so a leaf
+ * keeps its own unit's questions, and a whole-feature packet every unit's.
+ * Taken from the packet as shown rather than as derived, because `--next` cuts
+ * the units after the derivation and the reference must follow the cut.
+ */
+export async function packetByReference(packet: WorkPacket, docsDir: DocsDir, feature: FeatureEntry): Promise<ReferencedPacket> {
+  const services = packet.service !== null ? [packet.service] : [...new Set(packet.units.map((unit) => unit.subject))];
+  const path = featurePaths(feature.dir).intent;
+  // The BYTES, so the digest is the file's — and a file that is not UTF-8 throws
+  // `NotUtf8DocumentError` out of here for the command to refuse on.
+  const ref = existsSync(path) ? intentReference(await readFile(path), repoPath(docsDir, path), services) : null;
+  return withIntentRef(packet, ref);
 }
 
 /** `linkDependencies` mutates in place; this is the expression form the assembly above reads in. */

@@ -2359,7 +2359,9 @@ emptiness-by-accident:
   in the C4 delta with no `specs/<svc>/spec.md` gets `service.no-requirement-delta` as a warning,
   not an error. "New service" is the fleet census's reading of the map the merge leaves: a tagged
   `softwareSystem` of ours — not `#external`, not a grouping, drawn inside nothing but groupings
-  the delta declares — that no `services/<id>/` answers for and the living map does not already draw. A
+  the delta declares (a declared element that holds no service in the delta is asked of the living
+  map at the same id: the map's own group, re-declared around nothing but the new service, is still
+  a grouping) — that no `services/<id>/` answers for and the living map does not already draw. A
   delta's `#external` producer owes no requirement delta, and neither does the stub of a living
   element (whose living tags the merge keeps, so a re-declared `#external` system stays external
   whatever the stub says).
@@ -3328,7 +3330,7 @@ the one file `features/<FEAT>/verification.yaml`. `loam verify <FEAT>` derives a
 
 | kind | one claim per | reads |
 |---|---|---|
-| `service.exists` | tagged element the delta draws as a service of ours: at top level or only inside groupings the delta declares (elements that stand for no service and contain one — any other level owns what is drawn inside it), and not a person, `#external`, unbound infrastructure or a grouping itself. The stub of a living element is read with the living element's tags, and the stub of a service that already has a `services/<id>/` is asked about only when tagged at top level | `delta.likec4` |
+| `service.exists` | tagged element the delta draws as a service of ours: at top level or only inside groupings the delta declares (elements that stand for no service and contain one — in the delta, or failing that on the living map at the same id; any other level owns what is drawn inside it), and not a person, `#external`, unbound infrastructure or a grouping itself. The stub of a living element is read with the living element's tags, and the stub of a service that already has a `services/<id>/` is asked about only when tagged at top level | `delta.likec4` |
 | `api.exposes` | operationId the feature's openapi delta adds that the living one lacks | `specs/<svc>/openapi.yaml` |
 | `event.declares` | (direction, message) the feature's asyncapi delta declares that the living contract's send/receive sets lack — quotes and removals are never questions | `specs/<svc>/asyncapi.yaml` |
 | `c4.calls` | tagged edge carrying `metadata { op }` | `delta.likec4` |
@@ -3835,7 +3837,7 @@ can back up. `loam verify` exits 0 either way; branch on `verified` in the `--js
 ### The same checklist read forwards (`loam tasks`)
 
 `loam verify` answers *answered, and by whom*. `loam tasks <FEAT> [--service <id>] [--next]
-[--json]` answers the other half of the same question — *still open, at which step, and what fact
+[--intent-ref] [--json]` answers the other half of the same question — *still open, at which step, and what fact
 closes it* — and it is the identical checklist read in the other direction. It is derived on every
 run from the feature's deltas, the generated suite and the verification record; it writes nothing,
 anywhere, ever, and it adds no artifact for a later run to disagree with.
@@ -3898,6 +3900,25 @@ must also say how to check it was read correctly. A broken `delta.likec4` or con
 what it could not read in `unreadable` and exits 1 with `ok: true` — `loam delta`'s own rule rather
 than a new one: a feeder nothing could read empties the packet, an empty packet reads as "nothing to
 do", so the envelope stays true while the exit code stops a pipeline building on it.
+
+**`--intent-ref` carries the intent by reference.** `intent` is the feature's whole `intent.md`,
+verbatim, and an intent grows without bound — the analyze step writes every decision and every open
+question into it — so a leaf handed to a worker could be a few hundred bytes of unit under two
+hundred kilobytes of intent. With the flag, `intentRef` takes the key's place: `path` (docs-repo
+relative), `sha256` (of the file's bytes, so `sha256sum` says whether it moved), `bytes`,
+`sections[]` (each heading of level 1–3 outside the frontmatter and fenced blocks, with its
+`level`, `heading`, 1-based file `line` and the `bytes` under it) and `questions` — `total`, and
+`naming[]`, the open questions naming the services the payload is about, verbatim: the lens, else
+the subjects of the units it shows, so a leaf keeps its own unit's. `null` when the feature has no
+`intent.md`. `loam delta --intent-ref` and `loam context --intent-ref` carry the same object in
+place of their own `intent` (context's on each in-flight feature), with the questions naming the
+projected service. Without the flag every payload is byte-identical to what it was.
+
+**A unit's subject is a service.** A `c4.calls` claim is filed under its caller, and a caller that
+is a person, an `#external` system, infrastructure no directory binds, or a grouping — the census's
+reading of a drawn element, which `service.exists` already applied — has no repository to answer
+it. The checklist asks no such question, so the packet lists no such service, and `loam delta`
+names only services — never those elements — among the ones a feature touches.
 
 The command mints no finding or refusal code of its own, and `loam_tasks` serves the same projection
 read-only over MCP.
