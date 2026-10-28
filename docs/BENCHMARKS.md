@@ -128,14 +128,14 @@ loam `0.2.0-alpha.16` · fleet `examples/docs` · service `payment-service` · b
 | orientation, always loaded | `AGENTS.md` as `loam init --create` writes it | 11,618 | ~2,905 |
 | adopt brief | `loam adopt --service payment-service --json` | 60,482 | ~15,121 |
 | adopt brief, per-service part | `loam adopt --service payment-service --json --targets` | 25,201 | ~6,300 |
-| an adopt session before it reads code | the `loam-adopt` page + the full brief | 80,210 | ~20,053 |
+| an adopt session before it reads code | the `loam-adopt` page + the full brief | 80,621 | ~20,155 |
 | one code, median of 365 | `loam explain <code> --json` | 613 | ~153 |
 | one code, smallest / largest | `loam explain <code> --json` | 272 / 4,182 | ~68 / ~1,046 |
 | the whole code vocabulary | `loam explain --codes --json` | 260,483 | ~65,121 |
 
 | page | invocation | bytes | ~tokens | with `--no-fix-tables` | with `--fix-tables` |
 |---|---|---|---|---|---|
-| `loam-adopt` | `loam instructions loam-adopt payment-service` | 19,728 | ~4,932 | same bytes | same bytes |
+| `loam-adopt` | `loam instructions loam-adopt payment-service` | 20,139 | ~5,035 | same bytes | same bytes |
 | `loam-feature` | `loam instructions loam-feature FEAT-101 "Split payments"` | 15,524 | ~3,881 | same bytes | same bytes |
 | `loam-implement` | `loam instructions loam-implement FEAT-101 payment-service` | 11,915 | ~2,979 | same bytes | same bytes |
 | `loam-check` | `loam instructions loam-check FEAT-101` | 3,884 | ~971 | same bytes | 139,130 (~34,783) |

@@ -40,6 +40,10 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   some later writer regenerated: it leaves that file, prints
   `left: <path> — regenerated since the archive`, and names it in `staleViews`. No code or exit code
   changes.
+- The adoption brief's `when you are done` list (`loam adopt` text) now names
+  `loam subsystem sync` before `loam validate --all`, and the `loam-adopt` protocol's fleet-run step
+  names `subsystem.views-stale`: drawing the service on the map is a hand edit, and the generated
+  `architecture/services.likec4` is left behind until sync runs. Text only.
 - Repository-wide `loam status` now lists every archived feature whose verification verdict is not
   `verified` (no record, an unreadable record, unconfirmed claims, or scenarios resting on an
   agent's word). Before, such a feature disappeared from every repository-wide surface at archive;

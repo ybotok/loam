@@ -1012,6 +1012,19 @@ describe("the orientation block the human view opens with", () => {
     // and the never-overwrite rule keeps its place above the body
     expect(res.out).toContain("Do not overwrite an artifact that already exists");
   });
+
+  // Catches: a closing list that sent the agent from drawing the service on the
+  // map straight to `validate --all`, which then reported `subsystem.views-stale`
+  // against a generated file no edit of the agent's could repair — the brief
+  // never named `loam subsystem sync` (QUICKSTART walk, 2026-10-28).
+  it("names `loam subsystem sync` in its closing list, before the fleet run", async () => {
+    const p = await project(coherentFixture(), { service: SVC });
+    const res = await runLoam(p.workDir, "adopt");
+    const closing = res.out.slice(res.out.indexOf("when you are done"));
+    const sync = closing.indexOf("loam subsystem sync");
+    expect(sync).toBeGreaterThan(0);
+    expect(sync).toBeLessThan(closing.indexOf("loam validate --all --json"));
+  });
 });
 
 describe("the slash command that drives it", () => {
