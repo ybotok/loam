@@ -472,7 +472,9 @@ describe("the human view is honest about what one run wrote", () => {
       const res = await runLoam(p.workDir, "subsystem", "sync");
       expect(res.code, res.out).toBe(0);
       expect(res.stdout).toContain("rewrote likec4.config.json's `exclude`");
-      expect(res.stdout).toContain("architecture/subsystems.likec4 is current");
+      // A flat tree: the subsystem file is absent and must stay so, and the
+      // sentence says that rather than calling a missing file current.
+      expect(res.stdout).toContain("architecture/subsystems.likec4 is not generated");
       expect(res.stdout).not.toContain("nothing to write");
     } finally {
       await p.destroy();

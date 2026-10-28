@@ -10,6 +10,13 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Fixed — the QUICKSTART walk ends green
+
+- `loam subsystem sync` over a tree with no subsystems printed
+  `architecture/subsystems.likec4 is current (0 subsystem(s)).` about a file that does not exist.
+  It now prints `no subsystems under services/, so architecture/subsystems.likec4 is not
+  generated.` Text only: `--json`'s `action` is still `current`.
+
 ## [0.2.0-alpha.16] - 2026-10-27
 
 Everything on `main` since `0.2.0-alpha.15`. Still a prerelease on the `alpha` line. When this
