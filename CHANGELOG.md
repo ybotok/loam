@@ -52,6 +52,13 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   No new code. `loam list --needs-work` no longer prints `nothing to do` while such a feature
   exists; it names them after the service rows, or in place of `nothing to do`. Its `--json` is
   unchanged.
+- Edges in the scaffolds now carry their relationship kind, as the `loam-feature` protocol tells
+  an agent to draw them. The `delta.likec4` that `loam new` writes declares `relationship calls`
+  and draws its commented example edge as `-[calls]->` (it was a bare `->`), and QUICKSTART's map
+  edit draws `-[calls]->`. The fleet map `loam init --create` scaffolds now declares
+  `tag external`, as `loam seed`'s always did: an element tagged `#external`, which the stub's own
+  comments describe, no longer makes the map fail to parse. A map scaffolded by an earlier version
+  and never edited is still recognised as untouched, so `loam seed` still replaces it.
 
 ## [0.2.0-alpha.16] - 2026-10-27
 

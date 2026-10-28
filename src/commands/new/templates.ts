@@ -143,11 +143,16 @@ export function deltaTemplate(featureId: string, touched: string[], created: str
   // to join; otherwise placeholders, so it never invents a service.
   const from = touchedIds[0]?.[0] ?? createdIds[0]?.[0] ?? "consumer";
   const to = createdIds[0]?.[0] ?? touchedIds[1]?.[0] ?? "provider";
+  // Drawn with its kind, as `loam instructions loam-feature` tells the author to
+  // draw every edge: an example in the bare `->` taught the one spelling the
+  // protocol forbids, in the file an author copies from first.
   lines.push("  // New calls. `metadata { op }` is the spine: it names the OpenAPI operationId");
   lines.push("  // the call uses, and `loam validate` checks it against the target's contract.");
-  lines.push("  // Uncomment and adjust (both endpoints have to be declared above):");
+  lines.push("  // Every edge says what it carries with a relationship kind (`loam instructions");
+  lines.push("  // loam-drawing` has the seven). Uncomment and adjust (both endpoints have to be");
+  lines.push("  // declared above):");
   lines.push("  //");
-  lines.push(`  // ${from} -> ${to} 'Calls createSplit' {`);
+  lines.push(`  // ${from} -[calls]-> ${to} 'Calls createSplit' {`);
   lines.push(`  //   #${featureId}`);
   lines.push("  //   metadata { op 'createSplit' }");
   lines.push("  // }");
@@ -162,6 +167,10 @@ export function deltaTemplate(featureId: string, touched: string[], created: str
 
 specification {
   element softwareSystem
+  // The kinds the edges below draw, declared so this file parses alone. The
+  // fleet map declares the same ones; the archive copies an edge, never this
+  // block (\`delta.specification-not-merged\` names a kind the map lacks).
+  relationship calls
   tag ${featureId}
 }
 

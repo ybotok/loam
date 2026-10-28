@@ -75,10 +75,12 @@ paths:
 ```
 
 Second, name the operation on the call edge in `architecture/landscape.likec4`. `seed` drew the
-edge bare; replace that line with this one, spelled the British way on purpose:
+call with no operation; replace that line with this one, spelled the British way on purpose. The
+`-[calls]->` is the edge's relationship kind — every edge on a loam map says what it carries, and
+the map declares the seven kinds (`loam instructions loam-drawing`):
 
 ```likec4
-  svc_order_service -> svc_payment_service 'Authorises the order' {
+  svc_order_service -[calls]-> svc_payment_service 'Authorises the order' {
     metadata { op 'authorisePayment' }
   }
 ```
