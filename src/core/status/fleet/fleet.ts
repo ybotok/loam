@@ -25,9 +25,9 @@ import { featureTitle, listFeatures, listServices } from "../../repo/repo.js";
 import { introducingFeatures } from "../../projection/introduced.js";
 import { contractEvidence, contractOwners, contractsHeldElsewhere, owesContract } from "../contracts.js";
 import { readInterruptedCommit } from "../interrupted.js";
-import { type ArtifactStatus, type InterruptedCommit } from "../report.js";
+import { type ArtifactStatus, type InterruptedCommit, type NextStep } from "../report.js";
 import type { ArchivedFeatureState, FleetFeatureState, FleetStatusReport } from "./report.js";
-import { groupServiceSteps, undocumented, vouched } from "./rungs.js";
+import { undocumented, vouched } from "./rungs.js";
 import { scanDeltas } from "../scan.js";
 import { fullyVerified, verificationState } from "../verification.js";
 import { fleetNext, perServiceSteps, type Binding } from "./next.js";
@@ -283,4 +283,21 @@ async function fleetFeature(
     missing,
     verification,
   };
+}
+
+/**
+ * `perServiceSteps` grouped by code, in first-appearance order — the
+ * `serviceSteps` payload. `command` is the FIRST service's step command, so a
+ * reader folding forty rungs into one line still gets a literal to run rather
+ * than a second spelling of it.
+ */
+function groupServiceSteps(steps: NextStep[]): Array<{ code: string; services: string[]; command: string }> {
+  const groups = new Map<string, { code: string; services: string[]; command: string }>();
+  for (const step of steps) {
+    if (step.service === undefined) continue;
+    const group = groups.get(step.code) ?? { code: step.code, services: [], command: step.command };
+    group.services.push(step.service);
+    groups.set(step.code, group);
+  }
+  return [...groups.values()];
 }
