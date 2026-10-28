@@ -247,7 +247,7 @@ describe("examples/docs vs loam list suites", () => {
 });
 
 describe("examples/docs vs loam archive FEAT-101 --dry-run", () => {
-  it("plans a coherent eight-file merge plus the move, the new service's model among them, and warns of nothing", async () => {
+  it("plans a coherent nine-file merge plus the move, the new service's model and the views among them, and warns of nothing", async () => {
     const res = await runLoam(workDir, "archive", "FEAT-101", "--dry-run", "--json");
     expect(res.code).toBe(0);
     const payload = JSON.parse(res.stdout);
@@ -275,6 +275,10 @@ describe("examples/docs vs loam archive FEAT-101 --dry-run", () => {
       { path: "services/payment-service/asyncapi.yaml", action: "update" },
       { path: "architecture/landscape.likec4", action: "update" },
       { path: "services/payment-split-service/model.likec4", action: "create" },
+      // The per-service overviews gain the new service's view, in the same
+      // commit (src/commands/archive/views.ts) — so `validate --all` is not
+      // left red behind a `loam subsystem sync` nobody was told to run.
+      { path: "architecture/services.likec4", action: "update" },
       {
         path: "features/FEAT-101-payment-splitting",
         action: "move",
