@@ -243,7 +243,7 @@ export function printFleet(r: FleetStatusReport): void {
     const ids = pad(r.unverifiedArchived.map((f) => f.id));
     for (const f of r.unverifiedArchived) {
       console.log(`    ${f.id.padEnd(ids)}  ${f.title ?? ""}`.trimEnd());
-      console.log(`    ${" ".repeat(ids)}  ${archivedVerification(f.verification)} · ${f.services.join(", ")}`);
+      console.log(`    ${" ".repeat(ids)}  ${archivedVerification(f.verification)} · ${f.services.length > 0 ? f.services.join(", ") : "no service"}`);
     }
   }
 

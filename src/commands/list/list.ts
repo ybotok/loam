@@ -13,7 +13,7 @@ import { glossaryDir } from "../../core/repo/authored/paths.js";
 import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "../policy/gate.js";
 import { featureRow, serviceViews, type ServiceView } from "./views.js";
 import { capabilityJson, featureJson, glossaryJson, ownersJson, serviceRows, subsystemsJson } from "./json.js";
-import { printFeatures, printGlossary, printOwners, printServices, printWorklist } from "./print.js";
+import { printArchivedTail, printFeatures, printGlossary, printOwners, printServices, printWorklist } from "./print.js";
 import { printCapabilities } from "./capabilities/capabilities.js";
 import { openArchived } from "../../core/status/fleet/fleet.js";
 import { fanInByService, reviewLandscape, reviewOrder } from "./review.js";
@@ -337,12 +337,14 @@ export function registerList(program: Command): void {
         if (slice !== undefined && shown !== undefined) {
           console.log(`filtered to ${slice.label}: ${shown.length} of ${views!.length} service(s)`);
         }
+        // The open archived work the worklist must not deny (`printWorklist`), narrowed to the slice's services.
+        const archived = opts.needsWork ? (await openArchived(docsDir, undefined, fleet)).filter((a) => slice === undefined || a.services.some((s) => shown!.some((v) => v.entry.id === s))) : [];
         if (owned !== undefined && rows !== undefined && shown !== undefined) {
           if (opts.needsWork && rows.length === 0) {
             // printWorklist's own affordance — called rather than respelled —
             // kept under the grouping flag: empty owner groups would answer
             // "who owns the work" without saying there is none.
-            printWorklist([], shown.length, { archived: await openArchived(docsDir, undefined, fleet) });
+            printWorklist([], shown.length, { archived });
             return;
           }
           const kind = opts.needsWork
@@ -352,10 +354,10 @@ export function registerList(program: Command): void {
             ranked === undefined ? "" : " — review order (fan-in: services depending on each)";
           console.log(`${kind} — by owner (${owned.path})${ordered}`);
           printOwners(owned, new Map(rows.map((v) => [repoPath(docsDir, v.entry.dir), v])), ranked?.fanIn);
+          printArchivedTail(archived);
           return;
         }
         if (opts.needsWork) {
-          const archived = await openArchived(docsDir, undefined, fleet);
           printWorklist(ranked === undefined ? worklist : ranked.queue, shown!.length, { fanIn: ranked?.fanIn, archived });
           return;
         }

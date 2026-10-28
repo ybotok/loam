@@ -61,6 +61,29 @@ describe("an archived feature nobody verified stays on the repository-wide statu
     }
   }, 60_000);
 
+  // Catches: the step as next[0] of a quiet fleet with a RUNNABLE `loam show`
+  // that changes nothing — the documented "run next[0], repeat" loop never left
+  // it — and the step turning `next.fleet-clean` into `next.fleet-gate` for good,
+  // since a frozen record can never be discharged (contract-guard, 2026-10-28).
+  it("reports the step last, as a person's call, and leaves a quiet fleet clean", async () => {
+    const p = await makeProject(coherentFixture());
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+      const fleet = (await fleetStatus(p.workDir)) as FleetPayload & {
+        next: Array<Step & { execution: { kind: string; runnable: boolean } }>;
+      };
+      expect(fleet.next.map((s) => s.code)).toEqual(["next.archived", "next.fleet-clean"]);
+      expect(fleet.next[0]!.execution).toMatchObject({ kind: "human-review", runnable: false });
+      // The feature's own status gives the same, non-runnable step.
+      const own = JSON.parse((await runLoam(p.workDir, "status", "FEAT-1", "--json")).stdout) as {
+        next: Array<{ execution: { runnable: boolean } }>;
+      };
+      expect(own.next[0]!.execution.runnable).toBe(false);
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
   it("leaves out a verified archived feature, keeps an attested one, and honours --service", async () => {
     const root = await makeTmpDir("loam-archived-open-");
     const dir = join(root, "fleet");
@@ -117,6 +140,25 @@ describe("loam list --needs-work does not deny open archived work", () => {
     printWorklist([], 3, {});
     expect(printed()).toBe("nothing to do — all 3 service(s) are vouched");
   });
+
+  // Catches: `--subsystem` narrowing the rows and not the archived lines, so a
+  // slice's worklist named a feature that touches none of its services.
+  it("under --subsystem names only the archived features that touch the slice", async () => {
+    const files = coherentFixture();
+    files["services/web/subsystem.yaml"] = "title: Web\n";
+    files["services/web/checkout-web/spec.md"] = "---\nservice: checkout-web\nstatus: draft\n---\n\n# checkout-web\n";
+    const p = await makeProject(files);
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-1", "--approve")).code).toBe(0);
+      const sliced = await runLoam(p.workDir, "list", "--needs-work", "--subsystem", "web");
+      expect(sliced.code, sliced.out).toBe(0);
+      expect(sliced.stdout).not.toContain("FEAT-1");
+      const whole = await runLoam(p.workDir, "list", "--needs-work");
+      expect(whole.stdout).toContain("FEAT-1  never verified");
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
 
   it("names them after the service rows when services need work too", async () => {
     const p = await makeProject(coherentFixture());

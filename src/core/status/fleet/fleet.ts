@@ -16,6 +16,7 @@ import { analyzeDependencies } from "../../dependencies/dependencies.js";
 import { type DependencyGraph } from "../../dependencies/facts.js";
 import { isLandscapeStub } from "../../scaffold/landscape.js";
 import { repoPath } from "../../envelope/json.js";
+import { inOrder } from "../../kernel/concurrency.js";
 import { FleetContext } from "../../fleet-context.js";
 import { compareIds, type FeatureEntry, type ServiceEntry } from "../../repo/entries.js";
 import { featurePaths, featureSpecPaths, landscapePath } from "../../repo/paths.js";
@@ -187,16 +188,15 @@ export async function openArchived(
   const archived = (await listFeatures(docsDir, { includeArchived: true }, context)).filter(
     (f) => f.archived && (narrowed === undefined || f.services.some((s) => s === narrowed)),
   );
-  const rows = await Promise.all(
-    archived.map(async (f) => ({
+  // Bounded fan-out over the one set that only ever grows (archive history).
+  const rows = await inOrder(archived, async (f) => ({
       id: f.id,
       title: await featureTitle(f),
       dirName: f.dirName,
       path: repoPath(docsDir, f.dir),
       services: f.services,
       verification: (await verificationState(docsDir, f)).state,
-    })),
-  );
+    }));
   return rows.filter((row) => !fullyVerified(row.verification)).sort((a, b) => compareIds(a.id, b.id));
 }
 

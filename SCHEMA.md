@@ -4036,7 +4036,13 @@ repairing anything:
   `feature.title` (intent.md's title) and `checklist.claims` (what the checklist asks now; null once
   archived). The fleet form lists every feature in flight before any service's adoption rung — and
   carries every rung uncapped in `serviceSteps[]` (`{code, services, command}` per code), which the
-  human view folds into one counted line per code. It is
+  human view folds into one counted line per code. After the rungs comes one `next.archived` per
+  archived feature whose verification verdict is not `verified`, all of them also listed uncapped in
+  `unverifiedArchived[]` (`{id, title, dirName, path, services, verification}`): open claims do not
+  disappear at archive. The record is frozen — `loam verify` refuses an archived feature — so that
+  step's `execution` is a human review rather than a runnable command, and it never turns
+  `next.fleet-clean` into `next.fleet-gate`: nothing can discharge it, and a step that could never
+  clear would have stalled the "run `next[0]`, repeat" loop and retired the clean answer for good. It is
   capped at ten substantive steps plus a `next.elided` notice saying how many of which codes were left out, and
   whenever anything is outstanding its **last** entry is `next.fleet-gate` →
   `loam validate --all --json` (a repository with work in it must never get a list that omits the

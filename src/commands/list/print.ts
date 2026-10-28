@@ -200,6 +200,11 @@ export function printWorklist(
       `  ${v.entry.id.padEnd(width)}  ${rungLabel(v).padEnd(rungWidth)}${cell}  missing: ${v.missing.join(", ")}${note}`,
     );
   }
+  printArchivedTail(archived);
+}
+
+/** The archived features after a worklist's service rows — and nothing at all when there are none. */
+export function printArchivedTail(archived: readonly ArchivedFeatureState[]): void {
   if (archived.length > 0) console.log(`and ${archived.length} archived feature(s) are not verified:`);
   printOpenArchived(archived);
 }

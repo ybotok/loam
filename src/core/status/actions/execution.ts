@@ -45,6 +45,21 @@ function execution(step: NextStep): NextExecution {
       needs: ["compare the living docs with version control"],
     };
   }
+  // An archived feature's record is frozen — `loam verify` refuses it — so no
+  // command discharges the step: `loam show` reads, and re-running it changes
+  // nothing. As a runnable command it was next[0] of a quiet fleet and of every
+  // archived feature's own status, and the "run next[0], repeat" loop never
+  // left it. Whether what it left unverified matters is a person's call.
+  if (step.code === "next.archived") {
+    return {
+      kind: "human-review",
+      runnable: false,
+      cwd: "docs-repo",
+      needs: [
+        "nothing to run: the feature is archived and its record is frozen — a person decides whether anything it left unverified matters (`loam unarchive <FEAT>` reopens its claims)",
+      ],
+    };
+  }
   // A vouch is a person's act, never an agent's (`loam vouch` refuses without a
   // terminal or `--yes`), so the step is NOT runnable: an agent prepares the
   // reading list with `loam vouch --pack` and hands the stamp to a person.
