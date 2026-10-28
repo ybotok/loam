@@ -904,6 +904,24 @@ describe("doc staleness on every fleet readout — what validate warns, list, st
     });
   });
 
+  it("show qualifies the stamp `verified (stale)` and names the file that moved, in both views", async () => {
+    await withProject(fleet(true), {}, async (p) => {
+      const text = (await runLoam(p.workDir, "show", SVC)).out;
+      expect(text).toContain("verified (stale) · payments-team");
+      expect(text).toContain(`stale     spec.md changed since that vouch — \`loam vouch --pack --service ${SVC}\``);
+      const json = JSON.parse((await runLoam(p.workDir, "show", SVC, "--json")).stdout);
+      expect(json.contentStale).toEqual(["spec.md"]);
+      // The document still says what it says: the qualifier is on the screen.
+      expect(json.frontmatter.status).toBe("verified");
+    });
+    await withProject(fleet(false), {}, async (p) => {
+      const text = (await runLoam(p.workDir, "show", SVC)).out;
+      expect(text).toContain("verified · payments-team");
+      expect(text).not.toContain("stale");
+      expect(JSON.parse((await runLoam(p.workDir, "show", SVC, "--json")).stdout).contentStale).toEqual([]);
+    });
+  });
+
   it("status emits next.revouch — a person's step — instead of next.fleet-clean", async () => {
     await withProject(fleet(true), {}, async (p) => {
       const payload = JSON.parse((await runLoam(p.workDir, "status", "--json")).stdout);

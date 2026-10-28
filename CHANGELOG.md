@@ -188,6 +188,17 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   and `--against <cli>`; the second interleaves two builds run by run, so a shared host's load lands
   on both columns.
 
+### Fixed — `loam show <service>` says when a vouch is stale
+
+- A service whose `spec.md` or `arch.spec.md` changed after its vouch (`content.stale`) now shows
+  `verified (stale)` in `loam show`, as `loam list`, `loam status` and the scorecard already did,
+  plus a `stale` line under `provenance` that names the files and the `loam vouch --pack` command.
+  `sampled` and `stale` combine as `verified (sampled, stale)`. Before this, `show` printed a bare
+  `verified` while `validate` warned that nobody had read the words since.
+- `loam show <service> --json` gains `contentStale`, the files moved under the vouch (always
+  present, `[]` when none). The `status` key under `frontmatter` still reports the document's own
+  word.
+
 ## [0.2.0-alpha.16] - 2026-10-27
 
 Everything on `main` since `0.2.0-alpha.15`. Still a prerelease on the `alpha` line. When this

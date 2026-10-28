@@ -113,6 +113,12 @@ export async function showService(
     vouch_scope: scope,
   };
 
+  // The documents whose words moved after the vouch (`content.stale`). Every
+  // other readout — `list`, `status`, the scorecard — qualifies the stamp with
+  // them; this screen printed a bare `verified` while `validate` beside it
+  // warned that nobody had read the words since.
+  const contentStale = (await listServices(docsDir, context)).find((s) => s.id === id)?.contentStale ?? [];
+
   const governs = (op: string): string[] =>
     reqs.filter((r) => r.operations.includes(op)).map((r) => r.name);
 
@@ -155,6 +161,8 @@ export async function showService(
       // `description` and `shapedBy` are additive (core/envelope/json.ts).
       landscape: { inbound, outbound, description },
       shapedBy,
+      // Additive: the files `list --json` reports as moved under the vouch.
+      contentStale,
     });
     return;
   }
@@ -164,18 +172,34 @@ export async function showService(
   // actually covered attached. A bare `verified` over a sampled stamp is the
   // one reading this whole feature exists to prevent — and either axis earns
   // the qualifier, since either one is part of this service nobody read.
+  // `stale` is the other gap a stamp can hide, spelled as `list` spells it.
+  const qualifiers = [
+    ...(scope !== null || archScope !== null ? ["sampled"] : []),
+    ...(contentStale.length > 0 ? ["stale"] : []),
+  ];
   const shown =
-    provenance.status === null || (scope === null && archScope === null)
+    provenance.status === null || qualifiers.length === 0
       ? provenance.status
-      : `${provenance.status} (sampled)`;
+      : `${provenance.status} (${qualifiers.join(", ")})`;
   const badge = [shown, provenance.owner].filter((s) => s !== null).join(" · ");
   console.log(`${id}   ${repoPath(docsDir, paths.dir)}${badge ? `   ${badge}` : ""}\n`);
   if (description !== null) console.log(`  ${description}\n`);
   if (shapedBy.length > 0) console.log(`  shaped by  ${shapedBy.join(", ")} (archived)\n`);
 
-  if (provenance.sources.length > 0 || provenance.last_verified !== null || archScope !== null) {
+  if (
+    provenance.sources.length > 0 ||
+    provenance.last_verified !== null ||
+    archScope !== null ||
+    contentStale.length > 0
+  ) {
     console.log("  provenance");
     if (provenance.last_verified !== null) console.log(`    verified  ${provenance.last_verified}`);
+    if (contentStale.length > 0) {
+      console.log(
+        `    stale     ${contentStale.join(", ")} changed since that vouch — ` +
+          `\`loam vouch --pack --service ${id}\` shows what to re-read`,
+      );
+    }
     // Per axis and named, because they can disagree: one file read in full,
     // the other from a sample, is an ordinary outcome of one `--sample` run.
     if (scope !== null) console.log(`    scope     spec.md ${scope} — the rest of it was not read at that vouch`);
