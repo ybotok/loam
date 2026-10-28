@@ -16,6 +16,11 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   `architecture/subsystems.likec4 is current (0 subsystem(s)).` about a file that does not exist.
   It now prints `no subsystems under services/, so architecture/subsystems.likec4 is not
   generated.` Text only: `--json`'s `action` is still `current`.
+- `loam validate` with no target, in a repository whose `loam.json` names no service (every docs
+  repo `loam init --create` makes), refused with `No service. Pass --service <id> or set it in
+  loam.json.` and never mentioned `--all`. The refusal now also names `loam validate --all` and
+  `loam validate <FEAT>`. The code is still `invalid-option` and the exit code is still 1; only
+  `error.message` changes.
 
 ## [0.2.0-alpha.16] - 2026-10-27
 

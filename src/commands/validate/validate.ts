@@ -18,7 +18,7 @@ import { resolveServiceTarget } from "../../core/repo/service-target.js";
 import type { LoadedDoc } from "../../core/c4/likec4.js";
 import type { FeatureEntry } from "../../core/repo/entries.js";
 import { loamOwnedFiles } from "../../core/envelope/config.js";
-import { configOrRefuse, emitJson, fail, NO_SERVICE_MESSAGE } from "../../core/envelope/json.js";
+import { configOrRefuse, emitJson, fail, NO_VALIDATE_TARGET_MESSAGE } from "../../core/envelope/json.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { agentsPath as agentsFile, landscapePath as landscapeFile } from "../../core/repo/paths.js";
 import { listFeatures, listServices, missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
@@ -252,7 +252,7 @@ export function registerValidate(program: Command): void {
           }
         } else {
           const service = opts.service ?? config.service;
-          if (!service) return fail(json, "invalid-option", NO_SERVICE_MESSAGE);
+          if (!service) return fail(json, "invalid-option", NO_VALIDATE_TARGET_MESSAGE);
           const resolved = await resolveServiceTarget(docsDir, service, "--service", fleet);
           if (!resolved.ok) return fail(json, "invalid-option", resolved.problem);
           // A bound service a feature in flight introduces has no services/ directory yet, so its documents are
