@@ -110,10 +110,10 @@ paths:
           description: Authorized
 `;
 
-/** The edge `loam seed` writes bare, and what naming its operation turns it into. */
-const BARE_EDGE = "  svc_order_service -> svc_payment_service\n";
+/** The edge `loam seed` writes with no operation, and what naming its operation turns it into. */
+const BARE_EDGE = "  svc_order_service -[calls]-> svc_payment_service\n";
 const namedEdge = (op: string): string =>
-  `  svc_order_service -> svc_payment_service 'Authorises' {\n    metadata { op '${op}' }\n  }\n`;
+  `  svc_order_service -[calls]-> svc_payment_service 'Authorises' {\n    metadata { op '${op}' }\n  }\n`;
 
 /**
  * A freshly seeded spine-first fleet — README's "Start from the fleet spine",

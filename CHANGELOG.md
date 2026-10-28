@@ -69,8 +69,11 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   `nothing to do`. Its `--json` is unchanged.
 - Edges in the scaffolds now carry their relationship kind, as the `loam-feature` protocol tells
   an agent to draw them. The `delta.likec4` that `loam new` writes declares `relationship calls`
-  and draws its commented example edge as `-[calls]->` (it was a bare `->`), and QUICKSTART's map
-  edit draws `-[calls]->`. The fleet map `loam init --create` scaffolds now declares
+  and draws its commented example edge as `-[calls]->` (it was a bare `->`), QUICKSTART's map
+  edit draws `-[calls]->`, and `loam seed` draws each `fleet.yaml` call as
+  `svc_<a> -[calls]-> svc_<b>` where it wrote `svc_<a> -> svc_<b>` (the map already declared the
+  kind; re-seeding an untouched seeded map rewrites those lines, and a script that matched the bare
+  edge text no longer finds it). The fleet map `loam init --create` scaffolds now declares
   `tag external`, as `loam seed`'s always did: an element tagged `#external`, which the stub's own
   comments describe, no longer makes the map fail to parse. A map scaffolded by an earlier version
   and never edited is still recognised as untouched, so `loam seed` still replaces it.

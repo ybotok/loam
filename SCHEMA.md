@@ -873,9 +873,12 @@ changes what the renderer draws and nothing loam decides. The convention loam te
 `delivers` from topic to consumer, `reads`, `writes` and `readsWrites` with a store edge always
 written service `->` store and the kind's style placing the arrowhead, `calls` for a request, and
 `connects` wherever no evidence gives a direction yet. The fleet map `loam init --create`
-scaffolds and the one `loam seed` templates both declare those seven kinds, and declare them only:
-seed's edges stay plain, because `fleet.yaml` says who calls whom and nothing about what an edge
-carries. One consequence is mechanical rather than a convention. `loam archive` splices a delta's
+scaffolds and the one `loam seed` templates both declare those seven kinds. Seed draws each
+`fleet.yaml` call as `-[calls]->` and uses no other kind: the list is named `calls` and every entry
+is written `caller -> callee`, so the person who wrote it stated the kind. Through 0.2.0-alpha.16
+seed drew them plain, on the reading that choosing a kind was a guess — and the first map a new user
+copied from taught the bare arrow the `loam-feature` protocol tells an agent never to draw. One
+consequence is mechanical rather than a convention. `loam archive` splices a delta's
 edge into the map verbatim and never copies a `specification` declaration, so a kind the living
 map does not declare would leave the merged map unparseable. **Declare a kind in the map before,
 or in the same change as, the feature that draws one.** The feature gate says so first:

@@ -94,7 +94,7 @@ export function renderLandscape(seed: FleetSeed): string {
     "// As contracts arrive, give each call the operationId it uses, so",
     "// requirements, C4 and OpenAPI can be cross-checked:",
     "//",
-    "//   svc_checkout -> svc_payment_service 'Calls authorizePayment' {",
+    "//   svc_checkout -[calls]-> svc_payment_service 'Calls authorizePayment' {",
     "//     metadata { op 'authorizePayment' }",
     "//   }",
     "",
@@ -112,12 +112,16 @@ export function renderLandscape(seed: FleetSeed): string {
     "  tag external",
     // The relationship kinds are DUPLICATED from core/scaffold/landscape.ts's
     // LANDSCAPE_STUB for the views block's reason below, and test/seed.test.ts
-    // compares the two byte for byte the same way. Declared, never used: the
-    // calls below stay plain edges, because fleet.yaml says who calls whom and
-    // has no spelling for what an edge carries — choosing a kind here would be
-    // the guess this templater exists not to make. Declaring them is what lets
-    // the adoptions and feature deltas that follow draw kinded edges into this
-    // map, and lets an archive that copies one in still parse.
+    // compares the two byte for byte the same way. One of them is used: the
+    // calls below are drawn `-[calls]->`. They were plain edges, on the reading
+    // that fleet.yaml has no spelling for what an edge carries and choosing a
+    // kind would be a guess — but its list is named `calls` and each entry is
+    // written 'caller -> callee', so the person who wrote it stated the kind,
+    // and the plain arrow taught the one spelling `loam instructions
+    // loam-feature` tells an agent never to draw (QUICKSTART walk, 2026-10-28).
+    // No other kind is ever chosen here. Declaring all seven is what lets the
+    // adoptions and feature deltas that follow draw kinded edges into this map,
+    // and lets an archive that copies one in still parse.
     "",
     "  // One kind per kind of traffic, each with one direction. The style is the",
     "  // picture: amber for messages, green for data at rest, gray and dashed for",
@@ -197,7 +201,11 @@ export function renderLandscape(seed: FleetSeed): string {
     a.from === b.from ? (a.to < b.to ? -1 : 1) : a.from < b.from ? -1 : 1,
   );
   if (calls.length > 0) lines.push("");
-  for (const c of calls) lines.push(`  ${el(c.from)} -> ${el(c.to)}`);
+  // Drawn with its kind, as `loam instructions loam-feature` tells an agent to
+  // draw every edge: fleet.yaml's `calls:` list states that kind, so this
+  // chooses nothing, and a bare `->` on the first map a new user copies from
+  // taught the one spelling the protocol forbids.
+  for (const c of calls) lines.push(`  ${el(c.from)} -[calls]-> ${el(c.to)}`);
   lines.push("}");
 
   // The views block below is DUPLICATED from core/docs.ts's LANDSCAPE_STUB
