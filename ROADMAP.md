@@ -116,7 +116,10 @@ the `package` job ran green on a pushed commit across three runner/Node combinat
 publication path ran green on tag `v0.2.0-alpha.4`. The CI `stability` job has still to be OBSERVED
 green — it is skipped on a push and runs on the weekly schedule — so it is still release evidence to
 collect, not an improvement to make. `workflow_dispatch` is the way to collect it deliberately
-rather than waiting for Monday.
+rather than waiting for Monday. Until 2026-10-28 no run could have collected it: the job's own
+45-minute limit cancelled its Node 24 coverage leg on every scheduled run from 2026-10-05 on, before
+its three coverage runs could finish, and a cancelled job is not a verdict. The job now budgets
+three times `gate-stress.mjs`'s per-run ceiling, so every run ends with a classified verdict.
 
 An item returns to this section from [Later](#later--promote-only-from-evidence) when fleet evidence
 names its operator, repeated task, failure mode, frequency, current workaround and measurable

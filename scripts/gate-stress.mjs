@@ -38,7 +38,12 @@ if (!Number.isInteger(runs) || runs < 1) {
 const testFiles = (await readdir("test")).filter((f) => f.endsWith(".test.ts")).sort();
 const scratch = await mkdtemp(join(tmpdir(), "loam-gate-stress-"));
 
-/** One vitest child, captured. The 45-minute ceiling matches the CI job's own. */
+/**
+ * One vitest child, captured. The 45-minute ceiling is one CI test leg's whole
+ * budget, and it is the limit that should end a hung run: a killed run leaves
+ * no report and is classified runner-policy, where a CI job cancelled at its
+ * own limit prints no verdict. ci.yml's stability job budgets runs × this.
+ */
 function vitest(reportPath) {
   const flags = ["vitest", "run", "--reporter=default", "--reporter=json", `--outputFile=${reportPath}`];
   if (coverage) flags.splice(2, 0, "--coverage");

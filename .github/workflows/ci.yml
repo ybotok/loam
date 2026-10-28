@@ -120,7 +120,14 @@ jobs:
   stability:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Three runs times gate-stress.mjs's own 45-minute ceiling per run, plus
+    # setup. The job limit must never be what ends a run: a run the script
+    # kills is classified and summarized, while a job GitHub cancels prints no
+    # verdict at all. At 45 the Node 24 leg was cancelled on every scheduled run
+    # from 2026-10-05 to 2026-10-26 — one coverage run took 12.9–21.1 minutes in
+    # the test job those weeks, so three need up to 63 — and the Node 22 leg's
+    # three plain runs had reached 39.
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
