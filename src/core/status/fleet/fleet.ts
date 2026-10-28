@@ -24,16 +24,12 @@ import { featureTitle, listFeatures, listServices } from "../../repo/repo.js";
 import { introducingFeatures } from "../../projection/introduced.js";
 import { contractEvidence, contractOwners, contractsHeldElsewhere, owesContract } from "../contracts.js";
 import { readInterruptedCommit } from "../interrupted.js";
-import {
-  type ArtifactStatus,
-  type FleetFeatureState,
-  type FleetStatusReport,
-  type InterruptedCommit,
-} from "../report.js";
-import { undocumented, vouched } from "./rungs.js";
+import { type ArtifactStatus, type InterruptedCommit } from "../report.js";
+import type { ArchivedFeatureState, FleetFeatureState, FleetStatusReport } from "./report.js";
+import { groupServiceSteps, undocumented, vouched } from "./rungs.js";
 import { scanDeltas } from "../scan.js";
 import { fullyVerified, verificationState } from "../verification.js";
-import { fleetNext, groupServiceSteps, perServiceSteps, type Binding } from "./next.js";
+import { fleetNext, perServiceSteps, type Binding } from "./next.js";
 import type { DocsDir } from "../../kernel/ids/dirs.js";
 
 /**
@@ -95,6 +91,9 @@ export async function fleetStatus(
     ),
   );
   features.sort((a, b) => compareIds(a.id, b.id));
+  // The archived ones whose done-check is still open, under the same narrowing
+  // — `FleetStatusReport.unverifiedArchived` says why they are listed at all.
+  const unverifiedArchived = await openArchived(docsDir, narrowed, context);
 
   // The first-hour ladder's fact, computed exactly when the ladder can apply
   // — an unnarrowed run over a fleet with zero services and zero features —
@@ -126,6 +125,7 @@ export async function fleetStatus(
       contentStale: services.filter((s) => vouched(s) && s.contentStale.length > 0).length,
     },
     features,
+    unverifiedArchived,
     order: graph.order.filter((id) => features.some((f) => f.id === id)),
     service: narrowed ?? null,
     // The binding is passed only when this run was NOT narrowed, and that guard
@@ -138,7 +138,7 @@ export async function fleetStatus(
     // binding here costs the reader nothing and keeps `--service X` answering
     // only about X.
     next: fleetNext(
-      { services, features, graph, interrupted, teaching },
+      { services, features, archived: unverifiedArchived, graph, interrupted, teaching },
       narrowed === undefined ? binding : null,
     ),
     // The same rungs `next[]` carries, from the same function, before the cap.
@@ -169,6 +169,35 @@ async function landscapeTeaching(docsDir: DocsDir): Promise<"missing" | "stub" |
     // repository-unavailable refusal over a file status does not even parse.
     return "authored";
   }
+}
+
+/**
+ * Every archived feature in scope whose verdict is not `verified`. One record
+ * read per archived feature and no checklist derived — an archived record is
+ * frozen history, graded against nothing (`verificationState` says why) — so
+ * listing them costs this form no LikeC4 workspace, which is its whole rule.
+ * Exported for `loam list --needs-work`, whose "nothing to do" must not be
+ * said over one of these either.
+ */
+export async function openArchived(
+  docsDir: DocsDir,
+  narrowed: string | undefined,
+  context: FleetContext,
+): Promise<ArchivedFeatureState[]> {
+  const archived = (await listFeatures(docsDir, { includeArchived: true }, context)).filter(
+    (f) => f.archived && (narrowed === undefined || f.services.some((s) => s === narrowed)),
+  );
+  const rows = await Promise.all(
+    archived.map(async (f) => ({
+      id: f.id,
+      title: await featureTitle(f),
+      dirName: f.dirName,
+      path: repoPath(docsDir, f.dir),
+      services: f.services,
+      verification: (await verificationState(docsDir, f)).state,
+    })),
+  );
+  return rows.filter((row) => !fullyVerified(row.verification)).sort((a, b) => compareIds(a.id, b.id));
 }
 
 /** What a feature's fleet row needs about the fleet AROUND it. */

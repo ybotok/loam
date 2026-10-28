@@ -9,12 +9,9 @@ import { serviceTreePath } from "../../kernel/ids/dirs.js";
 import { compareIds, type ServiceEntry } from "../../repo/entries.js";
 import { recoverStep } from "../interrupted.js";
 import { featureLabel, fleetStageWords } from "../feature/words.js";
-import {
-  type ArtifactStatus,
-  type FleetFeatureState,
-  type InterruptedCommit,
-  type NextStep,
-} from "../report.js";
+import { archivedStep } from "../feature/next.js";
+import { type ArtifactStatus, type InterruptedCommit, type NextStep } from "../report.js";
+import type { ArchivedFeatureState, FleetFeatureState } from "./report.js";
 import { undocumented, vouched } from "./rungs.js";
 
 /** How urgent a stage is at fleet level. See {@link fleetNext}. */
@@ -63,6 +60,8 @@ export const FLEET_NEXT_LIMIT = 10;
 export interface Fleet {
   services: ServiceEntry[];
   features: FleetFeatureState[];
+  /** Archived features whose done-check is still open (`FleetStatusReport.unverifiedArchived`). */
+  archived: ArchivedFeatureState[];
   graph: DependencyGraph;
   interrupted: InterruptedCommit | null;
   /**
@@ -98,7 +97,7 @@ export interface Binding {
 }
 
 export function fleetNext(fleet: Fleet, binding: Binding | null): NextStep[] {
-  const { services, features, graph, interrupted, teaching } = fleet;
+  const { services, features, archived, graph, interrupted, teaching } = fleet;
   const steps: NextStep[] = [];
   // The two arms of the binding, each named for the question it answers. The
   // first reproduces the old parameter exactly, so everything reading it below
@@ -253,6 +252,13 @@ export function fleetNext(fleet: Fleet, binding: Binding | null): NextStep[] {
     });
   }
 
+  // Archived features whose done-check is still open: after the work in
+  // flight, which is what somebody is doing now, and before the adoption
+  // backlog — a claim the feature asked and nobody confirmed is work that was
+  // started, and an archive is not where it should stop being seen. The step is
+  // the one `loam status <FEAT>` gives the same feature, through one builder.
+  for (const a of archived) steps.push(archivedStep(a.id, a.verification));
+
   steps.push(...perServiceSteps(services, adoptedBinding));
 
   const left = steps.slice(FLEET_NEXT_LIMIT);
@@ -377,21 +383,4 @@ export function perServiceSteps(services: ServiceEntry[], adoptedBinding: string
         ...perService.filter((s) => s.service === adoptedBinding),
         ...perService.filter((s) => s.service !== adoptedBinding),
       ];
-}
-
-/**
- * `perServiceSteps` grouped by code, in first-appearance order — the
- * `serviceSteps` payload. `command` is the FIRST service's step command, so a
- * reader folding forty rungs into one line still gets a literal to run rather
- * than a second spelling of it.
- */
-export function groupServiceSteps(steps: NextStep[]): Array<{ code: string; services: string[]; command: string }> {
-  const groups = new Map<string, { code: string; services: string[]; command: string }>();
-  for (const step of steps) {
-    if (step.service === undefined) continue;
-    const group = groups.get(step.code) ?? { code: step.code, services: [], command: step.command };
-    group.services.push(step.service);
-    groups.set(step.code, group);
-  }
-  return [...groups.values()];
 }

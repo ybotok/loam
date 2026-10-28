@@ -16,7 +16,7 @@
  */
 import type { Finding } from "../../vocabulary/report.js";
 import { recoverStep } from "../interrupted.js";
-import type { ArtifactId, ArtifactState, NextStep } from "../report.js";
+import type { ArtifactId, ArtifactState, NextStep, VerificationState } from "../report.js";
 import { testStep, verifyStep } from "../verification.js";
 import { type FeatureState } from "./state.js";
 import { archivedVerification } from "./words.js";
@@ -34,6 +34,24 @@ export function unshippable(f: Finding): boolean {
 /** Codes whose one fix is `loam rebase`: a pin nobody ever wrote, on any of the three axes. */
 const UNPINNED = new Set(["delta.baseline-missing", "openapi.baseline-missing", "asyncapi.baseline-missing"]);
 
+/**
+ * The step for an archived feature: the whole of this form's answer for one,
+ * and the fleet form's for each whose done-check is still open — one builder,
+ * so the two can never say different things about the same record.
+ */
+export function archivedStep(id: string, verification: VerificationState): NextStep {
+  return {
+    code: "next.archived",
+    // Not "it shipped": archive folds documents and checks no code and no
+    // evidence, so the sentence says what archiving did and then, in the
+    // done-check's own words, whether anybody verified it.
+    statement:
+      `${id} is archived — its deltas are folded into the living docs. Archiving checks documents, not code: ` +
+      `${id} is ${archivedVerification(verification)}.`,
+    command: `loam show ${id} --json`,
+  };
+}
+
 export function featureNext(state: FeatureState, boundService: string | undefined): NextStep[] {
   const { feature, services, artifacts, findings, blockedBy, verification, scans, interrupted } = state;
   const id = feature.id;
@@ -41,21 +59,7 @@ export function featureNext(state: FeatureState, boundService: string | undefine
   // own, and "it shipped" is not a thing to tell somebody whose living docs are
   // half-written.
   const first = interrupted === null ? [] : [recoverStep(interrupted)];
-  if (feature.archived) {
-    return [
-      ...first,
-      {
-        code: "next.archived",
-        // Not "it shipped": archive folds documents and checks no code and no
-        // evidence, so the sentence says what archiving did and then, in the
-        // done-check's own words, whether anybody verified it.
-        statement:
-          `${id} is archived — its deltas are folded into the living docs. Archiving checks documents, not code: ` +
-          `${id} is ${archivedVerification(verification)}.`,
-        command: `loam show ${id} --json`,
-      },
-    ];
-  }
+  if (feature.archived) return [...first, archivedStep(id, verification)];
 
   const steps: NextStep[] = [...first];
   const owed = (kind: ArtifactId, service?: string): ArtifactState | undefined =>

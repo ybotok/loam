@@ -15,14 +15,14 @@
 import { answeredSplit } from "../../core/verify/record.js";
 import { SEVERITY_MARK } from "../../core/vocabulary/report.js";
 import { unshippable } from "../../core/status/feature/next.js";
-import { featureLabel, fleetStageWords, stageWords } from "../../core/status/feature/words.js";
+import { archivedVerification, featureLabel, fleetStageWords, stageWords } from "../../core/status/feature/words.js";
 import type {
   ArtifactState,
   FeatureStatusReport,
-  FleetStatusReport,
   InterruptedCommit,
   VerificationState,
 } from "../../core/status/report.js";
+import type { FleetStatusReport } from "../../core/status/fleet/report.js";
 import { printFleetNext, printNext } from "./fleet-next.js";
 
 function pad(values: string[]): number {
@@ -233,6 +233,17 @@ export function printFleet(r: FleetStatusReport): void {
       console.log(`    ${f.id.padEnd(ids)}  ${f.title ?? ""}`.trimEnd());
       const where = fleetStageWords(f, r.interrupted !== null);
       console.log(`    ${" ".repeat(ids)}  ${where} · ${f.services.length > 0 ? f.services.join(", ") : "no service yet"}`);
+    }
+  }
+  // Archived with the done-check still open — listed so open work does not
+  // vanish at archive (`FleetStatusReport.unverifiedArchived` says why). The
+  // verdict sentence is the one `loam status <FEAT>` prints for the same record.
+  if (r.unverifiedArchived.length > 0) {
+    console.log("\n  archived, not verified");
+    const ids = pad(r.unverifiedArchived.map((f) => f.id));
+    for (const f of r.unverifiedArchived) {
+      console.log(`    ${f.id.padEnd(ids)}  ${f.title ?? ""}`.trimEnd());
+      console.log(`    ${" ".repeat(ids)}  ${archivedVerification(f.verification)} · ${f.services.join(", ")}`);
     }
   }
 

@@ -42,7 +42,11 @@ export const STATUS_COMMAND = `- \`loam status [<FEAT>]\` is the orientation sur
   Fleet-wide the rest are, in order, \`next.adopt-bound\` (or, when a feature in
   flight introduces the service this repository is bound to, that feature's
   \`next.feature\` instead — there is no code to adopt yet), every feature in
-  flight — \`next.feature\`, \`next.archive\` — and then each service's
+  flight — \`next.feature\`, \`next.archive\` — then \`next.archived\` for each
+  archived feature whose verdict is not \`verified\` (also listed, uncapped, in
+  \`unverifiedArchived[]\`: its record is frozen, so the step reports rather than
+  asks — \`loam verify\` refuses an archived feature, and only
+  \`loam unarchive\` reopens its claims), and then each service's
   adoption rungs: \`next.adopt\`, \`next.complete-service\`, \`next.revouch\` (a
   vouched document's words moved under its stamp — \`content.stale\`; its
   \`execution\` is a human review, never yours to run: prepare

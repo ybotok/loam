@@ -16,7 +16,8 @@
  * spelling of "what does ready mean" is the drift that made the first one
  * misleading.
  */
-import type { ArtifactStatus, FleetFeatureState, VerificationState } from "../report.js";
+import type { ArtifactStatus, VerificationState } from "../report.js";
+import type { FleetFeatureState } from "../fleet/report.js";
 
 /**
  * What a stage sentence needs to be honest — every field a fact somebody

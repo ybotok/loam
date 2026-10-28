@@ -10,7 +10,8 @@
  * counted line from the uncapped `serviceSteps`, so adoption debt reads as the
  * backlog it is, under the features, with its size stated.
  */
-import type { FleetStatusReport, NextStep } from "../../core/status/report.js";
+import type { NextStep } from "../../core/status/report.js";
+import type { FleetStatusReport } from "../../core/status/fleet/report.js";
 
 /** How many services a folded line names before it says "+N more". */
 const NAMED = 6;

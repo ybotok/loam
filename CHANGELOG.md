@@ -40,6 +40,18 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   some later writer regenerated: it leaves that file, prints
   `left: <path> — regenerated since the archive`, and names it in `staleViews`. No code or exit code
   changes.
+- Repository-wide `loam status` now lists every archived feature whose verification verdict is not
+  `verified` (no record, an unreadable record, unconfirmed claims, or scenarios resting on an
+  agent's word). Before, such a feature disappeared from every repository-wide surface at archive;
+  only `loam status <FEAT>` said "archived — not fully verified". `--json` gains the key
+  `unverifiedArchived` (`id`, `title`, `dirName`, `path`, `services`, `verification`), narrowed by
+  `--service` like `features`; the text view gains an `archived, not verified` section. `next[]`
+  changes: each such feature gets a `next.archived` step (the step `loam status <FEAT>` already
+  gives it), placed after the features in flight and before the per-service rungs, so in a
+  repository with such features the later steps move down and may be elided past the cap of ten.
+  No new code. `loam list --needs-work` no longer prints `nothing to do` while such a feature
+  exists; it names them after the service rows, or in place of `nothing to do`. Its `--json` is
+  unchanged.
 
 ## [0.2.0-alpha.16] - 2026-10-27
 
