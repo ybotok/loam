@@ -10,6 +10,52 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Added — `--intent-ref`: the briefs carry the intent by reference
+
+- `loam tasks`, `loam delta` and `loam context` take `--intent-ref`, and the MCP tools `loam_tasks`,
+  `loam_delta` and `loam_context` take `intentRef`. An opt-in flag, decided so that the frozen
+  `--json` contract holds: without it every payload is byte-identical to before. With it, the
+  verbatim `intent` key is replaced, in the same position, by `intentRef` — `path`, `sha256` (of the
+  file's bytes), `bytes`, `sections[]` (`level`, `heading`, `line`, `bytes`; headings of level 1–3)
+  and `questions` (`total`, and `naming[]`: the open questions naming the services the payload is
+  about, verbatim) — or `null` when the feature has no `intent.md`. In `loam context` it replaces
+  each in-flight feature's `intent`. The human views of `delta` and `context` print the path, the
+  size and the questions naming the service instead of the text. With the flag, an `intent.md` that
+  is not UTF-8 is refused (`repository-unavailable`, exit 1) rather than referenced as empty —
+  `loam context` already refused it.
+- On a synthetic fleet shaped like the measured one (a 212 KB `intent.md` with 25 decisions and 173
+  open questions), `loam tasks <FEAT> --next --json` goes from 214,346 bytes to 12,048,
+  `loam delta <FEAT> --service <svc> --json` from 441,774 to 239,476 and `loam context <svc> --json`
+  from 434,531 to 233,033 — what remains there is the service's requirement list itself.
+- The `loam-implement` page and the docs repo's `AGENTS.md` now spell `loam context`, `loam delta`
+  and `loam tasks` with `--intent-ref`, and say how to read `intentRef`: the file once, or only the
+  sections needed, again when `sha256` changes. A docs repo's existing `AGENTS.md` keeps the old
+  spelling until it is reviewed against the next version, which `agents.stale` asks for.
+
+### Fixed — a person, an `#external` system or unbound infrastructure is not a service
+
+- A `c4.calls` claim whose caller is a person, an `#external` system, infrastructure no directory
+  binds, or a grouping — the reading `service.exists` already gave a tagged delta element — is no
+  longer minted. `loam tasks` listed such an element as a service with a unit of work (a delta's
+  monitoring system and its human operator, on a pilot fleet), and `loam verify` asked a question
+  no repository could answer. For a feature that draws such an edge, the checklist `digest` changes
+  once, so a verification record against it reads `stale` until it is recorded again.
+- A call drawn from a container of a new service that has no directory yet is filed under that
+  service, not under the container's title: its `c4.calls` claim gets a new id and the checklist
+  `digest` changes. A record against the old checklist reads `stale` (and `loam gate` says so), and
+  an answers file that still names the old id is refused `answers-mismatch` until it is answered
+  against the re-derived checklist.
+- `loam delta`'s `services` — in its payload, and in the refusal that asks which service to project
+  onto — and `loam context`'s per-feature `services` name only the delta's tagged elements that
+  are services, the same reading, beside the feature's `specs/` directories. A tagged container no
+  longer appears as a service called by its own title, and an edge drawn into or out of a tagged
+  container or store now appears among the `architecture` slice's `inbound` and `outbound` edges
+  under the service that owns it — the owner `loam validate` already graded it against.
+- So `loam delta <FEAT> --service <name>` and `loam tasks <FEAT> --service <name>` now refuse with
+  `unknown-target` (exit 1) for a name the delta draws that is not a service — a person, an
+  `#external` system, unbound infrastructure, a tagged container's title, or a service drawn inside
+  another system's box — where each used to answer with an empty brief at exit 0.
+
 ## [0.2.0-alpha.16] - 2026-10-27
 
 Everything on `main` since `0.2.0-alpha.15`. Still a prerelease on the `alpha` line. When this

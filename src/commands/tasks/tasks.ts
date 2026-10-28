@@ -23,12 +23,14 @@ import { InvalidIdError, assertServiceId } from "../../core/kernel/ids/service.j
 import { livingServices } from "../../core/projection/arch-slice.js";
 import { nearestIds } from "../../core/repo/entries.js";
 import { missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
-import { workPacket, type WorkPacket } from "../../core/tasks/packet.js";
+import { packetByReference, workPacket, type ReferencedPacket, type WorkPacket } from "../../core/tasks/packet.js";
+import { NotUtf8DocumentError } from "../../core/kernel/document-bytes.js";
 import { renderNext, renderPacket } from "./render.js";
 
 interface TasksOptions {
   service?: string;
   next?: boolean;
+  intentRef?: boolean;
   json?: boolean;
 }
 
@@ -39,6 +41,7 @@ export function registerTasks(program: Command): void {
     .description("What is still open on a feature, at which step, and what closes each unit — read-only")
     .option("--service <id>", "narrow the packet to the units one service owns (a lens: no binding needed)")
     .option("--next", "the frontier head alone — the single leaf to hand to a worker")
+    .option("--intent-ref", "carry the intent by reference — path, sha256, size, outline and the open questions naming these units' services — instead of verbatim")
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (featureId: string, opts: TasksOptions) => {
       const json = opts.json === true;
@@ -126,7 +129,22 @@ export function registerTasks(program: Command): void {
 
       const shown = opts.next === true ? leaf(packet) : packet;
       if (json) {
-        emitJson({ command: "tasks", ...shown });
+        // After the leaf is cut, so the questions the reference keeps are the
+        // ones naming the unit a worker is actually handed.
+        let payload: WorkPacket | ReferencedPacket = shown;
+        if (opts.intentRef === true) {
+          try {
+            payload = await packetByReference(shown, config.docsDir, feature);
+          } catch (err) {
+            // `loam context`'s answer for the same file, and `loam gherkin`'s
+            // code: a reference to an intent nobody could read would say "no
+            // open questions for you" about it.
+            if (!(err instanceof NotUtf8DocumentError)) throw err;
+            fail(json, "repository-unavailable", `Cannot carry the intent by reference: ${err.message}`);
+            return;
+          }
+        }
+        emitJson({ command: "tasks", ...payload });
         return;
       }
       const view = { explicitLens: opts.service !== undefined, bound: config.service };

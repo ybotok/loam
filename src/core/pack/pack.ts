@@ -30,6 +30,8 @@ export interface PackRequest {
   /** The one feature `--feature` resolved, or null for every touching feature. */
   feature: FeatureEntry | null;
   context: FleetContext;
+  /** `--intent-ref`: each in-flight feature's intent by reference rather than verbatim (`./features.ts`). */
+  byReference: boolean;
 }
 
 export interface ContextPack extends LivingSlice, JoinsSlice {
@@ -54,14 +56,14 @@ export interface ContextPack extends LivingSlice, JoinsSlice {
  * answer is a refusal naming the path, not a pack with a silent hole.
  */
 export async function assemblePack(req: PackRequest): Promise<ContextPack> {
-  const { docsDir, entry, feature, context } = req;
+  const { docsDir, entry, feature, context, byReference } = req;
   // The three sections are independent derivations over one shared read
   // index; identical reads share their in-flight promise, so the fan-out
   // costs no duplicate I/O and no section can see a different file version.
   const [living, joins, features] = await Promise.all([
     buildLiving({ docsDir, entry, context }),
     buildJoins({ docsDir, entry, context }),
-    buildFeatures({ docsDir, entry, feature, context }),
+    buildFeatures({ docsDir, entry, feature, context, byReference }),
   ]);
   return {
     service: entry.id,
@@ -105,6 +107,7 @@ export interface IntroducedPackRequest {
   /** `introducingFeatures`' whole answer, so the pack can name the features it did NOT brief from. */
   introducedBy: FeatureEntry[];
   context: FleetContext;
+  byReference: boolean;
 }
 
 /**
@@ -117,7 +120,7 @@ export interface IntroducedPackRequest {
  * following the implement protocol on a NEW service was refused at step 1.
  */
 export async function assembleIntroducedPack(req: IntroducedPackRequest): Promise<IntroducedPack> {
-  const { docsDir, service, feature, introducedBy, context } = req;
+  const { docsDir, service, feature, introducedBy, context, byReference } = req;
   // The living slice is read at the unfiled spelling — where `archive`
   // materialises a new service, and `unfiledServicePaths`' stated fallback for
   // a service the enumeration does not answer. Nothing exists there (a
@@ -136,7 +139,7 @@ export async function assembleIntroducedPack(req: IntroducedPackRequest): Promis
     vouchScope: null,
     contentStale: [],
   };
-  const { service: id, ...pack } = await assemblePack({ docsDir, entry: landing, feature, context });
+  const { service: id, ...pack } = await assemblePack({ docsDir, entry: landing, feature, context, byReference });
   // The marker leads, straight after the id, so a person reading the JSON sees
   // it before the empty living sections it explains.
   return {

@@ -223,7 +223,15 @@ function printFeature(f: PackFeature, service: string): void {
   // collides with the pack's own. Demoted three levels (below the feature
   // heading), capped at H6 because a seventh `#` renders as literal text.
   // Body lines are untouched — the demotion is structural, not a paraphrase.
-  if (f.intent !== null && f.intent.length > 0) console.log(`${demoteHeadings(f.intent)}\n`);
+  if ("intent" in f) {
+    if (f.intent !== null && f.intent.length > 0) console.log(`${demoteHeadings(f.intent)}\n`);
+  } else if (f.intentRef !== null) {
+    // `--intent-ref`: where the why lives, and the questions that are this service's.
+    const { path, bytes, questions } = f.intentRef;
+    console.log(`Intent: ${path} (${bytes.toLocaleString("en-US")} bytes, not inlined)`);
+    for (const row of questions.naming) console.log(`- ${row}`);
+    console.log();
+  }
   if (f.requirements.length > 0) printRequirements("Requirement delta", f.requirements, "###");
   if (f.archRequirements.length > 0) printRequirements("Arch requirement delta", f.archRequirements, "###");
 

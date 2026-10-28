@@ -22,17 +22,22 @@
  * summed below. Byte counts were cross-checked against `node dist/cli.js … |
  * wc -c` when this script was written.
  *
- * One normalisation, and it is the only one: the adopt brief echoes the docs
- * repo's ABSOLUTE path (`docsDir`), which is different on every machine. It is
- * counted as {@link DOCS_PLACEHOLDER}, so the table is a fact about this tree
- * rather than about the checkout that measured it.
+ * Two normalisations, and they are the only ones: the adopt brief (and the
+ * context pack) echoes the docs repo's ABSOLUTE path (`docsDir`), which is
+ * different on every machine — it is counted as {@link DOCS_PLACEHOLDER} — and
+ * the implementer briefs, the one row family that quotes the fleet's FILES, run
+ * against an LF copy of it ({@link lfFleet}), because a Windows checkout holds
+ * those files with CRLF. Both so the table is a fact about this tree rather than
+ * about the checkout that measured it.
  *
  *   npx tsx scripts/payload-sizes.ts           print the block
  *   npx tsx scripts/payload-sizes.ts --write   rewrite it in docs/BENCHMARKS.md
  *   npx tsx scripts/payload-sizes.ts --check   exit 1 if the page is behind
  */
+import { isUtf8 } from "node:buffer";
 import { realpathSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { format } from "node:util";
@@ -67,7 +72,7 @@ interface Captured {
  * console.log and the cwd are process-global, so two of these interleaved
  * would steal each other's lines.
  */
-async function capture(args: readonly string[]): Promise<Captured> {
+async function capture(args: readonly string[], fleet: string): Promise<Captured> {
   const prevCwd = process.cwd();
   const prevExit = process.exitCode;
   const origLog = console.log;
@@ -81,7 +86,7 @@ async function capture(args: readonly string[]): Promise<Captured> {
   console.error = () => undefined;
   process.exitCode = undefined;
   try {
-    process.chdir(FLEET);
+    process.chdir(fleet);
     await buildProgram().parseAsync(["node", "loam", ...args]);
   } finally {
     console.log = origLog;
@@ -94,20 +99,42 @@ async function capture(args: readonly string[]): Promise<Captured> {
 }
 
 /** The brief's absolute path, in every spelling it can appear in (raw, and JSON-escaped on Windows). */
-function normalised(stdout: string): string {
+function normalised(stdout: string, fleet: string): string {
   let out = stdout;
-  for (const dir of new Set([FLEET, realpathSync(FLEET)])) {
+  for (const dir of new Set([fleet, realpathSync(fleet)])) {
     out = out.split(JSON.stringify(dir).slice(1, -1)).join(DOCS_PLACEHOLDER).split(dir).join(DOCS_PLACEHOLDER);
   }
   return out;
 }
 
-async function bytesOf(args: readonly string[]): Promise<number> {
-  const run = await capture(args);
+async function bytesOf(args: readonly string[], fleet = FLEET): Promise<number> {
+  const run = await capture(args, fleet);
   if (run.code !== 0) {
     throw new Error(`payload-sizes: \`loam ${args.join(" ")}\` exited ${run.code} — it measured a refusal, not a payload`);
   }
-  return Buffer.byteLength(normalised(run.stdout), "utf8");
+  return Buffer.byteLength(normalised(run.stdout, fleet), "utf8");
+}
+
+/**
+ * A copy of the example fleet with every text file's line endings as the
+ * repository stores them — LF — for the briefs, which are the one row family
+ * that quotes the fleet's FILES. The repository carries no `.gitattributes`, so
+ * a Windows clone with `core.autocrlf=true` holds the same intent.md with CRLF,
+ * and a verbatim intent then escapes one `\r` per line: the default brief rows
+ * read 70 bytes larger there than on CI, and the pin failed on the checkout
+ * rather than on the numbers (the same reason `committedBlock` reads the page
+ * as LF). Removed by the caller.
+ */
+async function lfFleet(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "loam-payload-"));
+  await cp(FLEET, dir, { recursive: true });
+  for (const entry of await readdir(dir, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const file = join(entry.parentPath, entry.name);
+    const bytes = await readFile(file);
+    if (isUtf8(bytes) && bytes.includes("\r\n")) await writeFile(file, bytes.toString("utf8").replace(/\r\n/g, "\n"));
+  }
+  return dir;
 }
 
 /** `~` tokens as bytes ÷ 4, the usual rough rule for English and code; real tokenizers differ. */
@@ -144,6 +171,21 @@ const PAGES: readonly (readonly string[])[] = [
   ["loam-drawing"],
 ];
 
+/**
+ * The three briefs an implementer is handed, as the `loam-implement` page has
+ * an agent call them — measured in their default form and with `--intent-ref`,
+ * the flag that carries the feature's intent.md by reference. The example
+ * fleet's intent is small, so the difference here is small; the module comment
+ * of `src/core/document/intent/reference.ts` says what it is on a fleet whose
+ * intent is not.
+ */
+const BRIEFS: readonly (readonly string[])[] = [
+  ["tasks", "FEAT-101", "--service", SERVICE, "--next", "--json"],
+  ["tasks", "FEAT-101", "--json"],
+  ["delta", "FEAT-101", "--service", SERVICE, "--json"],
+  ["context", SERVICE, "--feature", "FEAT-101", "--json"],
+];
+
 function median(values: readonly number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
@@ -152,7 +194,7 @@ function median(values: readonly number[]): number {
 
 /** Every code `loam explain --codes --json` lists, and each one's own `explain <code> --json` size. */
 async function explainSizes(): Promise<{ count: number; sizes: number[]; vocabulary: number }> {
-  const listing = await capture(["explain", "--codes", "--json"]);
+  const listing = await capture(["explain", "--codes", "--json"], FLEET);
   const codes = (JSON.parse(listing.stdout) as { codes: { code: string }[] }).codes.map((row) => row.code);
   const sizes: number[] = [];
   for (const code of codes) sizes.push(await bytesOf(["explain", code, "--json"]));
@@ -168,6 +210,13 @@ interface PageSizes {
   readonly tabled: number;
 }
 
+/** One implementer brief: as called, and with `--intent-ref`. */
+interface BriefSizes {
+  readonly args: readonly string[];
+  readonly bare: number;
+  readonly ref: number;
+}
+
 /** Everything the block and the payload ceiling read — measured once per run. */
 export interface Payloads {
   readonly agents: number;
@@ -175,6 +224,7 @@ export interface Payloads {
   readonly targets: number;
   readonly explained: { count: number; sizes: number[]; vocabulary: number };
   readonly pages: readonly PageSizes[];
+  readonly briefs: readonly BriefSizes[];
 }
 
 /** Every measurement the block prints, in process — the expensive half, so a test takes it once. */
@@ -188,12 +238,20 @@ export async function measurePayloads(): Promise<Payloads> {
       tabled: await bytesOf(["instructions", ...page, "--fix-tables"]),
     });
   }
+  const briefs: BriefSizes[] = [];
+  const lf = await lfFleet();
+  try {
+    for (const args of BRIEFS) briefs.push({ args, bare: await bytesOf(args, lf), ref: await bytesOf([...args, "--intent-ref"], lf) });
+  } finally {
+    await rm(lf, { recursive: true, force: true });
+  }
   return {
     agents: Buffer.byteLength(AGENTS_MD, "utf8"),
     brief: await bytesOf(["adopt", "--service", SERVICE, "--json"]),
     targets: await bytesOf(["adopt", "--service", SERVICE, "--json", "--targets"]),
     explained: await explainSizes(),
     pages,
+    briefs,
   };
 }
 
@@ -217,6 +275,7 @@ export function defaultCalls(m: Payloads): Array<{ invocation: string; bytes: nu
     { invocation: "`loam explain <code> --json`, the largest", bytes: Math.max(...m.explained.sizes) },
     { invocation: shown(["explain", "--codes", "--json"]), bytes: m.explained.vocabulary },
     ...m.pages.map((page) => ({ invocation: shown(["instructions", ...page.args]), bytes: page.bare })),
+    ...m.briefs.map((brief) => ({ invocation: shown(brief.args), bytes: brief.bare })),
   ];
 }
 
@@ -264,6 +323,10 @@ export async function payloadBlock(measured?: Payloads): Promise<string> {
       `| \`${page.args[0]}\` | ${shown(["instructions", ...page.args])} | ${n(page.bare)} | ${tokens(page.bare)} `
         + `| ${variant(page.narrowed, page.bare)} | ${variant(page.tabled, page.bare)} |`,
     );
+  }
+  lines.push("", "| brief | invocation | bytes | ~tokens | with `--intent-ref` |", "|---|---|---|---|---|");
+  for (const brief of m.briefs) {
+    lines.push(`| \`${brief.args[0]}\` | ${shown(brief.args)} | ${n(brief.bare)} | ${tokens(brief.bare)} | ${variant(brief.ref, brief.bare)} |`);
   }
   lines.push("", END);
   return lines.join("\n");

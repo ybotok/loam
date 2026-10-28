@@ -30,22 +30,28 @@ import { FleetContext } from "../fleet-context.js";
 import { type LoadedDoc } from "../c4/likec4.js";
 import { repoPath } from "../envelope/json.js";
 import { stripFrontmatter } from "../document/frontmatter.js";
+import { intentReference, withIntentRef, type IntentRef } from "../document/intent/reference.js";
 import { inOrder } from "../kernel/concurrency.js";
 import { apiChanges, type ApiChange, type ApiSlice } from "../projection/api.js";
 import { eventChanges, type EventSlice } from "../projection/events.js";
-import { archSlice, introducedServices, type ArchSlice } from "../projection/arch-slice.js";
+import { archSlice, touchedServices, type ArchSlice } from "../projection/arch-slice.js";
 import { compareIds, type FeatureEntry, type ServiceEntry } from "../repo/entries.js";
 import { featurePaths, featureSpecPaths } from "../repo/paths.js";
 import { packRequirement, type PackRequirement } from "./living.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 
-/** One active feature's projection onto the pack's service — `loam delta`'s shapes, verbatim. */
-export interface PackFeature {
+/**
+ * One active feature's projection onto the pack's service — `loam delta`'s
+ * shapes, verbatim, the intent included: the text by default, a reference to the
+ * file under `--intent-ref`, in the same position either way.
+ */
+export type PackFeature = PackFeatureBody & ({ intent: string | null } | { intentRef: IntentRef | null });
+
+interface PackFeatureBody {
   feature: string;
   path: string;
-  /** Every service the feature speaks about: its spec deltas plus what its C4 delta introduces. */
+  /** Every service the feature speaks about: its spec deltas plus the services its C4 delta draws. */
   services: string[];
-  intent: string | null;
   requirements: PackRequirement[];
   archRequirements: PackRequirement[];
   api: ApiChange[];
@@ -60,6 +66,8 @@ export interface FeaturesRequest {
   /** The one feature `--feature` named, or null for every touching feature. */
   feature: FeatureEntry | null;
   context: FleetContext;
+  /** Each feature's intent by reference — the questions kept are the ones naming `entry`. */
+  byReference: boolean;
 }
 
 /** A feature with its delta loaded and its full service list derived. */
@@ -70,7 +78,7 @@ interface LoadedFeature {
 }
 
 export async function buildFeatures(req: FeaturesRequest): Promise<PackFeature[]> {
-  const { docsDir, entry, feature, context } = req;
+  const { docsDir, entry, feature, context, byReference } = req;
 
   // `--feature` narrows to the one feature and includes it even when it does
   // not touch the service — a known feature projects onto any living service
@@ -87,15 +95,18 @@ export async function buildFeatures(req: FeaturesRequest): Promise<PackFeature[]
   await context.prefetchLikeC4(
     candidates.filter((f) => f.has.delta).map((f) => featurePaths(f.dir).delta),
   );
+  // The living∪feature known-set delta.ts builds, so a container-targeted edge
+  // resolves to the same owner here and there — and so a tagged element is read
+  // as a service, or not, exactly as `loam delta` reads it (`touchedServices`).
+  const living = (await context.listServices(docsDir)).map((s) => s.id);
   // Through the pool: each delta load holds a LikeC4/Langium workspace, and an
   // unbounded fan-out over the features in flight is the memory shape the pool
   // exists to cap. Results come back in input order, which listFeatures already
   // sorted with compareIds — the pack's feature order is that order.
   const loaded: LoadedFeature[] = await inOrder(candidates, async (f) => {
     const deltaDoc = f.has.delta ? await context.loadLikeC4(featurePaths(f.dir).delta) : null;
-    const services = [...new Set([...f.services, ...introducedServices(deltaDoc, f.id)])].sort(
-      compareIds,
-    );
+    const scope = { docsDir, living, specs: f.services, load: (path: string) => context.loadLikeC4(path) };
+    const services = (await touchedServices(deltaDoc, f.id, scope)).sort(compareIds);
     return { entry: f, deltaDoc, services };
   });
   // A feature whose delta does not parse names no services — `services` above
@@ -112,10 +123,7 @@ export async function buildFeatures(req: FeaturesRequest): Promise<PackFeature[]
       ? loaded
       : loaded.filter((l) => l.services.includes(entry.id) || deltaUnread(l));
 
-  // The living∪feature known-set delta.ts builds, so a container-targeted edge
-  // resolves to the same owner here and there.
-  const living = (await context.listServices(docsDir)).map((s) => s.id);
-  return inOrder(included, (l) => projectFeature({ docsDir, service: entry.id, living, context, loaded: l }));
+  return inOrder(included, (l) => projectFeature({ docsDir, service: entry.id, living, context, loaded: l, byReference }));
 }
 
 interface ProjectRequest {
@@ -124,10 +132,11 @@ interface ProjectRequest {
   living: string[];
   context: FleetContext;
   loaded: LoadedFeature;
+  byReference: boolean;
 }
 
 async function projectFeature(req: ProjectRequest): Promise<PackFeature> {
-  const { docsDir, service, living, context, loaded } = req;
+  const { docsDir, service, living, context, loaded, byReference } = req;
   const { entry: f, deltaDoc, services } = loaded;
   const paths = featurePaths(f.dir);
   const specPaths = featureSpecPaths(f.dir, service);
@@ -144,7 +153,7 @@ async function projectFeature(req: ProjectRequest): Promise<PackFeature> {
     eventChanges(specPaths.asyncapi),
   ]);
 
-  return {
+  const projected = {
     feature: f.id,
     path: repoPath(docsDir, f.dir),
     services,
@@ -155,6 +164,12 @@ async function projectFeature(req: ProjectRequest): Promise<PackFeature> {
     events,
     architecture: archSlice(deltaDoc, service, f.id, new Set([...living, ...services])),
   };
+  if (!byReference) return projected;
+  // The text the projection already read (the context memoizes it). The read
+  // decoded it strictly, so re-encoding gives back the file's exact bytes —
+  // frontmatter included, which the default form strips and the digest keeps.
+  const ref = intentText === null ? null : intentReference(Buffer.from(intentText, "utf8"), repoPath(docsDir, paths.intent), [service]);
+  return withIntentRef(projected, ref);
 }
 
 /**

@@ -28,7 +28,8 @@ import { readFile } from "node:fs/promises";
 import { readAsyncapi } from "../asyncapi/read.js";
 import { type Elem } from "../c4/likec4.js";
 import { elementService, serviceResolver } from "../c4/resolve/service.js";
-import { livingMapOf, readDeltaSystem } from "../c4/resolve/systems.js";
+import { livingMapOf, readDeltaSystem, type DeltaSystemScope } from "../c4/resolve/systems.js";
+import { ancestorIds } from "../kernel/ids/fqn/ancestors.js";
 import { scenarioGherkin } from "../vocabulary/steps.js";
 import { operationIds, operations } from "../openapi/doc.js";
 import { featurePaths, featureSpecPaths, landscapePath } from "../repo/paths.js";
@@ -39,6 +40,7 @@ import { FleetContext } from "../fleet-context.js";
 import { parseRequirements } from "../document/parse.js";
 import { scenarioBodyHash } from "../gherkin/digest.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
+import type { DeclaredService } from "../kernel/ids/service.js";
 // The kind vocabulary and both hash recipes live in ./claims/identity.ts —
 // one module for everything that decides whether two runs ask the same
 // question, and this one for how the questions are derived.
@@ -225,7 +227,13 @@ export async function featureChecklist(
         // Untagged edges are context for the diagram; an edge with no operation
         // names nothing specific enough to look for in the code.
         if (!r.tags.includes(featureId) || r.op === undefined) continue;
-        const from = svcOf(r.source);
+        // A claim is filed under its CALLER, so a caller that is no service of
+        // ours files it under a repository nobody has: the skip above, asked of
+        // the edge's other end. `loam tasks` listed a delta's monitoring system
+        // and its human operator as services, each with a unit of work, on a
+        // pilot fleet (2026-10-28).
+        const from = await callerService(r.source, svcOf(r.source), systems);
+        if (from === null) continue;
         const to = svcOf(r.target);
         calls.push({
           ...claim("c4.calls", from, [from, to, r.op], `${from} calls '${r.op}' on ${to}`),
@@ -339,4 +347,29 @@ export async function featureChecklist(
 
   const claims = [...exists, ...exposes, ...declares, ...calls, ...scenarios];
   return { feature: featureId, claims, digest: checklistDigest(claims.map((c) => c.id)) };
+}
+
+/**
+ * The service the CALLER end of a tagged op-edge stands for, or null when it
+ * is no service of ours.
+ *
+ * A directory answers first, exactly as the resolver's own rungs do: a caller
+ * that resolves (`resolved`, the resolver's answer) to a `services/<id>/` or to
+ * one of the feature's `specs/<id>/` has a repository the call can be found in,
+ * whatever its box looks like. Otherwise the endpoint and each element it is
+ * drawn inside are read the way `service.exists` reads a tagged element
+ * (`readDeltaSystem`, the census's reading), and the first that is a system of
+ * ours is the caller — so the container of a new service with no directory yet
+ * files its call under that service rather than under its own title, while a
+ * person, an `#external` system, unbound infrastructure, a grouping, and
+ * anything drawn inside one of the first three, is nobody's.
+ */
+async function callerService(source: string, resolved: DeclaredService, systems: DeltaSystemScope): Promise<DeclaredService | null> {
+  if (systems.known.has(resolved)) return resolved;
+  const byId = new Map(systems.elements.map((e) => [e.id, e]));
+  for (const id of ancestorIds(source)) {
+    const element = byId.get(id);
+    if (element !== undefined && (await readDeltaSystem(element, systems)) !== "none") return elementService(element);
+  }
+  return null;
 }

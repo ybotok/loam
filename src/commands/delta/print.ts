@@ -15,6 +15,7 @@ import { type HopInside, type JoinedUseCase } from "../../core/usecases/join/ins
 import { compareIds } from "../../core/repo/entries.js";
 import { type CapabilityDeltaSummary } from "../../core/capabilities/delta/summary.js";
 import { droppedSentence, type DroppedRow } from "../../core/document/apply.js";
+import type { IntentRef } from "../../core/document/intent/reference.js";
 import type { Change, DiffLine, Review } from "../../core/projection/review.js";
 
 /**
@@ -332,6 +333,21 @@ export function printIntent(intent: string | null, questions: { total: number; n
   if (questions.total > 0) {
     console.log(`  open questions: ${questions.total}, ${questions.naming} of them naming ${service}\n`);
   }
+}
+
+/**
+ * `--intent-ref`'s view of the same section: where the why lives and what it
+ * costs to read, then the open questions naming this service verbatim — the
+ * part of the intent that is this team's work, and all of it a reader skims
+ * here rather than opening the file for.
+ */
+export function printIntentRef(ref: IntentRef | null, service: string): void {
+  if (ref === null) return;
+  console.log(`  intent: ${ref.path} — ${ref.bytes.toLocaleString("en-US")} bytes, sha256 ${ref.sha256.slice(0, 12)}…, not inlined`);
+  const { total, naming } = ref.questions;
+  if (total > 0) console.log(`  open questions: ${total}, ${naming.length} of them naming ${service}`);
+  for (const row of naming) console.log(`    ${row}`);
+  console.log();
 }
 
 export function indent(text: string, pad: string): string {
