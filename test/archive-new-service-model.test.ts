@@ -53,7 +53,9 @@ describe("a feature whose delta draws nothing inside its new service", () => {
     const p = await makeProject(coherentFixture());
     try {
       // The fixture carries no generated views file, so the gate is red before
-      // anything is archived; what the archive owes is not to add to it.
+      // anything is archived; what the archive owes is not to add to it. It
+      // TAKES one away now: the archive renders the views in its own commit
+      // (src/commands/archive/views.ts), so `subsystem.views-stale` is gone after.
       const errorsBefore = (await findings(p.workDir, "--all")).filter((f) => f.severity === "error").map((f) => f.code);
       const dry = JSON.parse((await runLoam(p.workDir, "archive", "FEAT-1", "--dry-run", "--json")).stdout) as {
         ok: boolean;
@@ -74,7 +76,10 @@ describe("a feature whose delta draws nothing inside its new service", () => {
       expect(res.out).not.toContain("loam subsystem move");
 
       const after = await findings(p.workDir, "--all");
-      expect(after.filter((f) => f.severity === "error").map((f) => f.code)).toEqual(errorsBefore);
+      expect(errorsBefore).toContain("subsystem.views-stale");
+      expect(after.filter((f) => f.severity === "error").map((f) => f.code)).toEqual(
+        errorsBefore.filter((code) => code !== "subsystem.views-stale"),
+      );
       expect(after.find((f) => f.code === "c4.valid" && f.message.startsWith("payment-split-service:"))).toBeDefined();
     } finally {
       await p.destroy();

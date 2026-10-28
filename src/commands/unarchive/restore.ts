@@ -9,7 +9,7 @@
  */
 import { existsSync } from "node:fs";
 import { readFile, rename } from "node:fs/promises";
-import { dirname, join, relative, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { CodedFailure, emitJson, fail, repoPath } from "../../core/envelope/json.js";
 import { acrossRename, isPathInside } from "../../core/kernel/path-safety.js";
 import { archiveDir as archiveRoot, featuresDir as featuresRoot } from "../../core/repo/paths.js";
@@ -29,7 +29,7 @@ import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js
 import { SNAPSHOT_DIR } from "../../core/staging/snapshot/manifest.js";
 import { planWrite, sha256, type PlannedWrite } from "../../core/staging/writes.js";
 import { readManifest } from "./manifest.js";
-import { staleGeneratedViews } from "../../core/c4/project/architecture.js";
+import { generatedArchitectureDocuments, staleGeneratedViews } from "../../core/c4/project/architecture.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 export async function unarchiveLocked(
@@ -115,6 +115,16 @@ export async function unarchiveLocked(
   // deleted — and calling the row drift would send the reader to `--force`,
   // which does exactly that. Nothing edited it: it is left as it is, and said.
   const left: string[] = [];
+  // The generated views files an archive wrote since it began regenerating them
+  // in its own commit (`../archive/views.ts`). They are DERIVED, never authored:
+  // one a later writer regenerated — a subsystem verb, another archive, a sync —
+  // is not "a later change" whose loss `--force` should be asked to accept, and
+  // its pre-image is no truer than its current bytes. So a drifted one is
+  // stepped over rather than restored or refused, and the post-commit grade
+  // below names it if the restored map leaves it stale. One untouched since the
+  // archive is restored like any other file, which is the exact undo.
+  const generated = new Set(generatedArchitectureDocuments(docsDir).map((path) => resolve(path)));
+  const regenerated: string[] = [];
   for (const entry of manifest.files) {
     const owner = inFlightFeatureDir(featuresDir, archiveDir, entry.target);
     if (owner !== null && owner !== dest && !existsSync(owner)) {
@@ -134,6 +144,10 @@ export async function unarchiveLocked(
     // file at all. Read as bytes, a delete's empty-digest `after` matched
     // nothing on disk, and every retired flow was reported as edited since.
     const asArchived = entry.removed ? now === null : now === entry.after;
+    if (!asArchived && !restored && generated.has(resolve(entry.target))) {
+      regenerated.push(entry.path);
+      continue;
+    }
     if (!asArchived && !restored) drifted.push(entry.path);
     let before: Buffer | null = null;
     if (entry.snapshot !== null) {
@@ -250,6 +264,7 @@ export async function unarchiveLocked(
   for (const p of restored) console.log(`  restored: ${p}`);
   for (const p of removed) console.log(`  removed:  ${p}`);
   for (const p of left) console.log(`  left:     ${p} — its feature is no longer in flight, so its pre-archive text is not put back`);
+  for (const p of regenerated) console.log(`  left:     ${p} — regenerated since the archive; a generated file is re-derived, never restored`);
   console.log(`\n  reopened: features/archive/${feature.dirName} → features/${feature.dirName}`);
   if (staleViews.length === 0) {
     console.log("  the living docs are back to what they said before the archive.");

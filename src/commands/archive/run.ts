@@ -41,6 +41,7 @@ import { planFeatureLinks, planInboundLinks } from "./plan/document/links.js";
 import { emptyPlan } from "./plan/state.js";
 import { checklistAtArchive } from "./shipped.js";
 import { outstandingLines } from "./closing.js";
+import { planGeneratedViews, viewsLine } from "./views.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 export async function archiveLocked(
@@ -121,6 +122,14 @@ export async function archiveLocked(
   // And the links the rest of the corpus holds INTO the feature, after every
   // merge so a document the merge rewrites is relinked from its merged text.
   await planInboundLinks(read, gated, planned, say);
+  // The generated views files LAST, because they are a function of the map and
+  // the tree every merge above just planned: rendered from those planned bytes,
+  // they land in the same commit, as every subsystem verb's do — ./views.ts says
+  // why that is not a second writer that can disagree with `loam subsystem sync`.
+  for (const write of await planGeneratedViews(read, planned.writes)) {
+    planned.writes.push(write);
+    say(viewsLine(config.docsDir, write));
+  }
   const { writes, planWarns, planGates, openapiRemovals, asyncapiRemovals } = planned;
   const revouchOwed = planned.revouchOwed.map((r) => ({ ...r, path: repoPath(config.docsDir, r.path) }));
 
@@ -197,16 +206,22 @@ export async function archiveLocked(
   });
 
   if (dryRun) {
-    // The generated views this merge would leave stale, predicted from the map
-    // the preview stages and the services the archive would create — what the
-    // real run names after its commit (core/c4/project/staged.ts).
-    const staleViews = await staleViewsAfterMerge({
+    // The generated views this merge would STILL leave stale, predicted from the
+    // map the preview stages and the services the archive would create — what
+    // the real run names after its commit (core/c4/project/staged.ts). A file the
+    // plan above already rewrites is not stale after it, so it is not named; what
+    // remains is a file the plan could not write (one loam did not author, a map
+    // that would not parse) or a disagreement between the two readings, which is
+    // exactly what a reader should see before deciding.
+    const rewritten = new Set(writes.map((w) => repoPath(config.docsDir, w.path)));
+    const predicted = await staleViewsAfterMerge({
       docsDir: config.docsDir,
       featureDir,
       featureId: id,
       models: await extendingModels(config.docsDir, read.fleet),
       created: [...gated.deltaServices, ...planned.architectureServices],
     });
+    const staleViews = predicted.filter((path) => !rewritten.has(path));
     if (json) emitJson({ ...payload(false), ...(staleViews.length === 0 ? {} : { staleViews }) });
     // What the real run would print in place of its closing line, said BEFORE
     // anything is written — the one moment a reader can still act on it.
@@ -328,13 +343,13 @@ export async function archiveLocked(
   // function of the tree AND the map: a delta whose element lands inside a
   // group that exactly covered a subsystem takes that subsystem's boundary
   // line away, a delta binding an element to a filed service adds an include,
-  // and one new edge changes exactly one service's overview. Archive does not
-  // rewrite either file — `loam subsystem sync` owns them outright, and folding
-  // a second generated artifact into this transaction would mean archive
-  // computing the post-merge tree AND the post-merge map, which is how the two
-  // writers disagree — but it must not report a repo as current when the next
-  // `validate --all` will call it stale. Graded through validate's own
-  // functions, so the two cannot answer differently.
+  // and one new edge changes exactly one service's overview. The plan rewrote
+  // both from its own bytes (./views.ts) — and the result is still GRADED here,
+  // through validate's own functions, because the closing line must never call
+  // a repo current that the next `validate --all` calls stale: a file the plan
+  // could not write (one loam did not author, a merged map that would not
+  // parse) or any disagreement with sync's reading comes out as the old ⚠
+  // naming `loam subsystem sync`, never as silence.
   const staleViews = await staleGeneratedViews(config.docsDir);
 
   if (json) {

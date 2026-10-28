@@ -252,6 +252,17 @@ carry the two mechanical losses — a living document still holding git conflict
 requirement that has strayed outside its `## Requirements` section. Those are not opinions about
 risk, they are data loss, and an override for them is a footgun with a label on it.
 
+The archive also leaves the fleet gate where it found it. A feature that adds a service or an edge
+changes the two generated views files (`architecture/services.likec4`, one overview per service the
+map draws, and `architecture/subsystems.likec4`), and the archive regenerates both in the same
+commit, from the map and tree its own plan leaves, with `loam subsystem sync`'s render — so a clean
+archive no longer leaves `validate --all` red until a second command runs. The step used to be a ⚠
+after the merge; a step that has to be remembered is one a walkthrough forgets, and the archive is
+the writer that just changed the files' inputs.
+[SCHEMA.md](SCHEMA.md#subsystems--a-navigable-tree-under-services) records the rule and why it is
+not a second writer that can disagree with `sync`. A hand edit of the map is still followed by
+`loam subsystem sync`: loam cannot see an edit it did not make.
+
 **2. The human vouch.** `draft → verified` is a person's act. `loam vouch` stamps the source and
 content digests that make later staleness detectable, and no command promotes a service on its own.
 That is the whole trust chain's anchor.

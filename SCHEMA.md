@@ -545,11 +545,28 @@ The **boundary** each view draws is a fact about the landscape, never a setting:
    independent**; `loam subsystem move` never rewrites the map, and no finding compares them.
 
 Because the boundary depends on which *other* services sit under an element, an unrelated adoption
-or archive can flip a view from boxed to flat — a new reason to see `subsystem.views-stale`, and why
-`loam archive` withholds its "complete + current" line and names `loam subsystem sync` when it left
-the file behind. `archive --dry-run` names the same files before anything is written, asked of the
-map the merge preview stages and of the tree with the services the archive would create; both carry
-them in `--json` as `staleViews`.
+or archive can flip a view from boxed to flat — a new reason to see `subsystem.views-stale`.
+
+**`loam archive` regenerates both generated views files inside its own commit.** It is the writer
+that just changed the map and the tree they are a function of, so — exactly as every
+`loam subsystem` verb does — it renders them from its own planned bytes (every planned `.likec4`
+write under `architecture/` laid over the living project documents; the walked tree plus the
+services its writes create) with `loam subsystem sync`'s own render, compare and authored-file
+veto, and swaps them in with the rest of the merge: one journal, one snapshot, so a killed archive
+rolls them back with the map and `loam unarchive` restores them with it. The plan lists each one
+(`views: architecture/services.likec4 — regenerated …`). Through 0.2.0-alpha.16 it left both
+alone and printed a ⚠ naming `loam subsystem sync`, on the reasoning that a second writer computing
+the post-merge tree and map is how two writers come to disagree — and a clean archive then left
+`validate --all` red behind a step no walkthrough mentioned. The reasoning still decides the shape:
+nothing is computed a second way — the map parsed is the bytes the commit swaps in, and the render
+is sync's — and the archive still grades its result through `validate`'s staleness check after the
+commit. A plan that writes no map document and creates no service parses nothing and touches
+neither file, so a views file that was stale before the archive stays the fleet gate's finding.
+What the archive cannot write — a file loam did not author at one of the reserved paths, or a
+merged map that does not parse — it names instead and withholds its "complete + current" line,
+pointing at `loam subsystem sync`; `archive --dry-run` names the same files before anything is
+written, asked of the map the merge preview stages; both carry them in `--json` as `staleViews`,
+absent when nothing is stale.
 
 `loam subsystem sync` is the one regenerator (it also *removes* the file when the tree has no
 subsystems), every `loam subsystem` write verb regenerates it inside the same transaction, and
@@ -3287,9 +3304,13 @@ lists the files that need a hand.
 - `commit-interrupted` — a previous `archive`/`unarchive` was killed mid-commit and this run cannot
   repair it on its own.
 
-What `unarchive` restores is what the archive WROTE, and the two generated views files were never
-among it: `loam subsystem sync` owns them, and a sync run between the archive and the undo rewrote
-them against the merged map. So after the restore `unarchive` asks the question archive asks after
+What `unarchive` restores is what the archive WROTE. Since the archive regenerates the generated
+views files in its own commit, that includes them, and the undo puts the pre-archive views back with
+the pre-archive map. A views file a later writer regenerated (a subsystem verb, another archive, a
+sync) is stepped over rather than restored or refused: it is derived, never authored, so it is not a
+later change whose loss `--force` should be asked to accept, and its pre-image is no truer than its
+current bytes — the text output lists it as `left`. An archive made by 0.2.0-alpha.16 or earlier
+never wrote them at all. So after the restore `unarchive` asks the question archive asks after
 its merge — through `validate`'s own staleness grade — and when `architecture/subsystems.likec4` or
 `architecture/services.likec4` no longer matches the restored tree and map it names each one
 (`⚠ <path> no longer matches the tree and this map — run \`loam subsystem sync\``) instead of

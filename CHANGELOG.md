@@ -27,6 +27,19 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   delta's own `owner` still wins, and a service that existed before the feature (its first spec is
   `adoption: partial`) is not given the feature's owner. The plan note says
   `owner (from intent.md)`.
+- `loam archive` now regenerates `architecture/services.likec4` and
+  `architecture/subsystems.likec4` inside its own commit when its plan changes the map or creates a
+  service. Before, a clean archive of a feature that added a service or an edge left
+  `loam validate --all` failing with `subsystem.views-stale` until `loam subsystem sync` ran. What a
+  repository notices after upgrading: the archive plan (text and `--json` `plan`) gains a row per
+  views file it rewrites, plus a `views: <path> — regenerated …` line; `staleViews` and
+  `subsystemViewsStale` are absent after such an archive because nothing is left stale; the views
+  files are in the snapshot, so `loam unarchive` restores them. A views file that does not start
+  with loam's mark is still never written; the archive names it in `staleViews`, as before.
+  For such an archive, `loam unarchive` does not refuse with `snapshot-stale` over a views file
+  some later writer regenerated: it leaves that file, prints
+  `left: <path> — regenerated since the archive`, and names it in `staleViews`. No code or exit code
+  changes.
 
 ## [0.2.0-alpha.16] - 2026-10-27
 
