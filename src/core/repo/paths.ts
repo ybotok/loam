@@ -196,6 +196,9 @@ export function featureSpecPaths(featureDir: FeatureDir, service: PathableServic
   };
 }
 
+/** The living map's file name — spelled once, read here and by the reserved-name check in `core/deployment/delta.ts`. */
+export const LANDSCAPE_FILE = "landscape.likec4";
+
 export function landscapePath(docsDir: DocsDir): string {
   return join(docsDir, "architecture", LANDSCAPE_FILE);
 }
@@ -278,34 +281,6 @@ export function subsystemViewsPath(docsDir: DocsDir): string {
 export function serviceViewsPath(docsDir: DocsDir): string {
   return join(docsDir, "architecture", SERVICE_VIEWS_FILE);
 }
-
-/**
- * Names inside `architecture/` that LOAM owns, and what goes wrong if a
- * feature's own document claims one. `features/<FEAT>/deployment/<name>.likec4`
- * merges as a whole-file COPY straight into `architecture/` — unlike a flow,
- * which lands under `usecases/` — so its `<name>` is free to be any of them. A
- * generated name fails silently both ways (the table above says how); a copy over
- * `landscape.likec4` would discard the living map the archive SPLICES; and
- * `usecases/` is the flow tree the scan walks, where a deployment document parses
- * and is then looked for by a reader asking another question. Returns the reason,
- * or null when the name is the author's — over the rel a walk produced, never argv.
- */
-export function reservedArchitectureName(rel: string): string | null {
-  const parts = rel.split("/");
-  if (parts[0] === USECASE_DIR) {
-    return `\`${USECASE_DIR}/\` is the use-case tree — a flow belongs in \`features/<FEAT>/usecases/\`, which merges there`;
-  }
-  // Own key only: a bare lookup answers `constructor` with something inherited.
-  if (Object.hasOwn(GENERATED_ARCHITECTURE_FILES, rel)) return GENERATED_ARCHITECTURE_FILES[rel]!;
-  if (rel === LANDSCAPE_FILE) {
-    return "`landscape.likec4` is the living fleet map, which the archive SPLICES into rather than replaces";
-  }
-  return null;
-}
-
-/** The living map's file name, and the flow tree's directory — spelled once, read by the reservation. */
-const LANDSCAPE_FILE = "landscape.likec4";
-const USECASE_DIR = "usecases";
 
 export function featuresDir(docsDir: DocsDir): string {
   return join(docsDir, "features");
