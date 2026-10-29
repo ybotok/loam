@@ -65,7 +65,8 @@ import { serviceViewsPath, servicesDir, subsystemViewsPath } from "../../core/re
 import { listFleetTree } from "../../core/repo/repo.js";
 import { docsRepoState } from "../../core/repo/state.js";
 import { readGeneratedFile } from "../../core/repo/tree/render/service/header.js";
-import { planGenerated, renderServiceOverviews, renderSubsystemViews } from "../../core/repo/tree/render/views.js";
+import { planGenerated } from "../../core/repo/tree/render/stale.js";
+import { renderServiceOverviews, renderSubsystemViews } from "../../core/repo/tree/render/views.js";
 import type { FleetTree } from "../../core/repo/tree/walk.js";
 import { planWrite, type PlannedWrite } from "../../core/staging/writes.js";
 

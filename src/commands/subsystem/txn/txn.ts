@@ -52,7 +52,7 @@ import { commitStaged } from "../../../core/staging/txn/transaction.js";
 import { type PlannedWrite } from "../../../core/staging/writes.js";
 import { authoredGeneratedPaths, authoredRefusal } from "../../../core/repo/tree/render/service/header.js";
 import { expectedViews, LANDSCAPE_UNREADABLE_NOTE } from "./views.js";
-import { type ExpectedFile, planGenerated, type ViewsAction } from "../../../core/repo/tree/render/views.js";
+import { type ExpectedFile, planGenerated, type ViewsAction } from "../../../core/repo/tree/render/stale.js";
 
 /**
  * What one commit did to EACH generated file, kept apart.

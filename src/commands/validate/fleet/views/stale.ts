@@ -29,10 +29,10 @@
  * not exist, or a group deleted months ago keeps a view forever.
  *
  * The compare is over CONTENT, not BYTES, and `viewsAgree` in
- * `core/repo/tree/render/views.ts` both performs it and records why: an ordinary
+ * `core/repo/tree/render/stale.ts` both performs it and records why: an ordinary
  * Windows clone hands this file back with CRLF and not one fact in it changed,
  * and under a byte compare the advertised repair is a loop rather than a
- * diagnosis. The rule lives beside the generator because the module that mints
+ * diagnosis. The rule lives in the render package because the package that mints
  * the bytes is the one that owes an answer about them.
  *
  * Graded only when the landscape PARSED (the caller holds that gate): the

@@ -24,12 +24,8 @@ import { loadFile } from "../../../core/c4/likec4.js";
 import { architectureProjectDocuments, loadArchitecture } from "../../../core/c4/project/architecture.js";
 import { serviceDirOf, type DocsDir } from "../../../core/kernel/ids/dirs.js";
 import { landscapePath, serviceViewsPath, subsystemViewsPath } from "../../../core/repo/paths.js";
-import {
-  type ExpectedFile,
-  type MapFacts,
-  renderServiceOverviews,
-  renderSubsystemViews,
-} from "../../../core/repo/tree/render/views.js";
+import type { ExpectedFile } from "../../../core/repo/tree/render/stale.js";
+import { type MapFacts, renderServiceOverviews, renderSubsystemViews } from "../../../core/repo/tree/render/views.js";
 import type { FleetTree } from "../../../core/repo/tree/walk.js";
 
 /** What one read of the map yielded, and whether it came from the whole project. */

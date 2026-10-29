@@ -26,12 +26,8 @@ import {
 } from "../../core/repo/paths.js";
 import { SUBSYSTEM_MARKER } from "../../core/repo/tree/marker.js";
 import { readGeneratedFile } from "../../core/repo/tree/render/service/header.js";
-import {
-  type MapFacts,
-  renderServiceOverviews,
-  renderSubsystemViews,
-  viewsAgree,
-} from "../../core/repo/tree/render/views.js";
+import { viewsAgree } from "../../core/repo/tree/render/stale.js";
+import { type MapFacts, renderServiceOverviews, renderSubsystemViews } from "../../core/repo/tree/render/views.js";
 import type { FleetTree, SubsystemEntry, WalkedService } from "../../core/repo/tree/walk.js";
 import { TEMP_FILE_RE } from "../../core/staging/commit.js";
 import { planWrite, type PlannedWrite } from "../../core/staging/writes.js";
@@ -271,7 +267,7 @@ export async function planSeedWrites(req: SeedPlanInput, tree: FleetTree): Promi
   // over itself.
   //
   // "Already says this" is content, not bytes: `viewsAgree` performs the
-  // comparison and records the Windows reason for it, beside the generator
+  // comparison and records the Windows reason for it, in the render package
   // that mints the bytes. What gets WRITTEN is unchanged — the LF render, as a
   // Buffer — so this decode is a comparison only, never the string round trip
   // to disk that writes.ts forbids; a views file whose bytes are not UTF-8
