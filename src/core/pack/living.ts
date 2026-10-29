@@ -27,7 +27,7 @@ import { landscapePath, servicePathsAt } from "../repo/paths.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 import { NO_DEPLOYMENT } from "../c4/parsed/deployment.js";
 import { serviceTopology, type ServiceTopology } from "../deployment/objects.js";
-import { packRequirement, type PackRequirement } from "./requirement.js";
+import { packSection, type PackItem } from "./requirement.js";
 
 export interface LivingSlice {
   maturity: Maturity;
@@ -109,8 +109,9 @@ export interface LivingSlice {
    * agent reading this slice is exactly the reader that sentence is for.
    */
   deployment: ServiceTopology;
-  requirements: PackRequirement[];
-  archRequirements: PackRequirement[];
+  /** Verbatim by default, an outline under `--outline` (`./requirement.ts`). */
+  requirements: PackItem[];
+  archRequirements: PackItem[];
   /** Whether the living contract could be read at all — the vacuously-green guard every sibling carries. */
   openapi: { unreadable: boolean; error?: string };
   operations: Array<{ id: string; method: string; path: string; governedBy: string[] }>;
@@ -128,10 +129,12 @@ export interface LivingRequest {
   docsDir: DocsDir;
   entry: ServiceEntry;
   context: FleetContext;
+  /** Each requirement as an outline rather than verbatim (`./requirement.ts`). */
+  outline: boolean;
 }
 
 export async function buildLiving(req: LivingRequest): Promise<LivingSlice> {
-  const { docsDir, entry, context } = req;
+  const { docsDir, entry, context, outline } = req;
   const paths = servicePathsAt(entry.dir);
 
   // Independent reads, fanned out together; each is memoized on the shared
@@ -230,8 +233,8 @@ export async function buildLiving(req: LivingRequest): Promise<LivingSlice> {
     archSpec: { vouch_scope: scopeText(header(archText)) },
     landscape: { present, parses, broken: land === null ? [] : brokenDocumentPaths(docsDir, land.errors), modelled, inbound, outbound },
     deployment,
-    requirements: reqs.map(packRequirement),
-    archRequirements: archReqs.map(packRequirement),
+    requirements: packSection({ reqs, md: specText, path: repoPath(docsDir, paths.spec) }, outline),
+    archRequirements: packSection({ reqs: archReqs, md: archText, path: repoPath(docsDir, paths.archSpec) }, outline),
     openapi: { unreadable: api.unreadable, ...(api.error === undefined ? {} : { error: api.error }) },
     // Document order — a fact of the file, hence of the state. `x-loam-remove`
     // markers are filtered exactly as `show` filters them: they are deletion

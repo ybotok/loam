@@ -33,8 +33,11 @@ export const CONTEXT_COMMAND = `- \`loam context <service>\` assembles the docs 
   not touch the service still projects, with empty sections and its own
   services list. \`--intent-ref\` carries each feature's intent.md by reference
   instead of verbatim — \`intentRef\` in place of \`intent\`: its \`path\`, the
-  \`sha256\` of its bytes, its size, its outline and the open questions naming
-  the service — and \`loam delta\` and \`loam tasks\` take the same flag. A service an active feature INTRODUCES (its
+  \`sha256\` of its bytes, its size, its outline and the lines of the open questions naming
+  the service — and \`loam delta\` and \`loam tasks\` take the same flag. \`--outline\`
+  carries every requirement, living and in flight, without its text or its
+  scenarios' lines but with its \`path\`, \`line\`, \`endLine\` and \`bytes\` — those
+  lines of that file are the requirement — and \`loam delta\` takes it too. A service an active feature INTRODUCES (its
   \`features/<FEAT>/specs/<svc>/\` exists, \`services/<svc>/\` does not yet) is
   briefed from that feature's delta: the payload carries \`living: false\` and
   \`introducedBy\`, the living sections are empty, and \`path\` is the feature's

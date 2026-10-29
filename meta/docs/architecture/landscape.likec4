@@ -267,6 +267,7 @@ model {
   loam.commands.delta -> loam.core.fleet_context
   loam.commands.delta -> loam.core.gherkin
   loam.commands.delta -> loam.core.kernel
+  loam.commands.delta -> loam.core.pack
   loam.commands.delta -> loam.core.projection
   loam.commands.delta -> loam.core.repo
   loam.commands.delta -> loam.core.usecases

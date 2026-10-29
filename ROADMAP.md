@@ -22,7 +22,7 @@ The tree contains **567 TypeScript modules in 180 source packages**, with an acy
 checked by
 [scripts/package-graph.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-graph.mjs). The
 CLI exposes **31 commands** from [src/cli.ts](https://github.com/ybotok/loam/blob/main/src/cli.ts),
-and the suite stands at **221 test files**. Those four counts are deliberately stated OUTSIDE the
+and the suite stands at **222 test files**. Those four counts are deliberately stated OUTSIDE the
 dated snapshot below: each derives from the tree in one readdir, so
 [test/docs-facts.test.ts](https://github.com/ybotok/loam/blob/main/test/docs-facts.test.ts) grades
 them live and this paragraph cannot quietly trail the code the way its predecessor did.

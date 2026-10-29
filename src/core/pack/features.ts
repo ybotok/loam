@@ -37,7 +37,7 @@ import { eventChanges, type EventSlice } from "../projection/events.js";
 import { archSlice, touchedServices, type ArchSlice } from "../projection/arch-slice.js";
 import { compareIds, type FeatureEntry, type ServiceEntry } from "../repo/entries.js";
 import { featurePaths, featureSpecPaths } from "../repo/paths.js";
-import { packRequirement, type PackRequirement } from "./requirement.js";
+import { packSection, type PackItem } from "./requirement.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 
 /**
@@ -52,8 +52,8 @@ interface PackFeatureBody {
   path: string;
   /** Every service the feature speaks about: its spec deltas plus the services its C4 delta draws. */
   services: string[];
-  requirements: PackRequirement[];
-  archRequirements: PackRequirement[];
+  requirements: PackItem[];
+  archRequirements: PackItem[];
   api: ApiChange[];
   openapi: { unreadable: boolean; error?: string };
   events: EventSlice;
@@ -68,6 +68,8 @@ export interface FeaturesRequest {
   context: FleetContext;
   /** Each feature's intent by reference — the questions kept are the ones naming `entry`. */
   byReference: boolean;
+  /** Each requirement delta as an outline rather than verbatim (`./requirement.ts`). */
+  outline: boolean;
 }
 
 /** A feature with its delta loaded and its full service list derived. */
@@ -78,7 +80,7 @@ interface LoadedFeature {
 }
 
 export async function buildFeatures(req: FeaturesRequest): Promise<PackFeature[]> {
-  const { docsDir, entry, feature, context, byReference } = req;
+  const { docsDir, entry, feature, context, byReference, outline } = req;
 
   // `--feature` narrows to the one feature and includes it even when it does
   // not touch the service — a known feature projects onto any living service
@@ -123,7 +125,7 @@ export async function buildFeatures(req: FeaturesRequest): Promise<PackFeature[]
       ? loaded
       : loaded.filter((l) => l.services.includes(entry.id) || deltaUnread(l));
 
-  return inOrder(included, (l) => projectFeature({ docsDir, service: entry.id, living, context, loaded: l, byReference }));
+  return inOrder(included, (l) => projectFeature({ docsDir, service: entry.id, living, context, loaded: l, forms: { byReference, outline } }));
 }
 
 interface ProjectRequest {
@@ -132,11 +134,11 @@ interface ProjectRequest {
   living: string[];
   context: FleetContext;
   loaded: LoadedFeature;
-  byReference: boolean;
+  forms: { byReference: boolean; outline: boolean };
 }
 
 async function projectFeature(req: ProjectRequest): Promise<PackFeature> {
-  const { docsDir, service, living, context, loaded, byReference } = req;
+  const { docsDir, service, living, context, loaded, forms } = req;
   const { entry: f, deltaDoc, services } = loaded;
   const paths = featurePaths(f.dir);
   const specPaths = featureSpecPaths(f.dir, service);
@@ -145,10 +147,13 @@ async function projectFeature(req: ProjectRequest): Promise<PackFeature> {
   // readability flags, so nothing here throws for a document that merely does
   // not parse — an unparseable delta is a HOLE the pack reports and the
   // command turns into exit 1, never a refusal.
-  const [intentText, reqs, archReqs, api, events] = await Promise.all([
+  const [intentText, reqs, archReqs, specText, archText, api, events] = await Promise.all([
     f.has.intent ? context.readText(paths.intent) : null,
     existsSync(specPaths.spec) ? context.readRequirements(specPaths.spec) : [],
     existsSync(specPaths.archSpec) ? context.readRequirements(specPaths.archSpec) : [],
+    // Memo hits on the reads above — the outline's spans count the same bytes.
+    existsSync(specPaths.spec) ? context.readText(specPaths.spec) : null,
+    existsSync(specPaths.archSpec) ? context.readText(specPaths.archSpec) : null,
     apiChanges(specPaths.openapi),
     eventChanges(specPaths.asyncapi),
   ]);
@@ -158,13 +163,13 @@ async function projectFeature(req: ProjectRequest): Promise<PackFeature> {
     path: repoPath(docsDir, f.dir),
     services,
     intent: intentText === null ? null : stripFrontmatter(intentText).trim(),
-    requirements: reqs.map(packRequirement),
-    archRequirements: archReqs.map(packRequirement),
+    requirements: packSection({ reqs, md: specText, path: repoPath(docsDir, specPaths.spec) }, forms.outline),
+    archRequirements: packSection({ reqs: archReqs, md: archText, path: repoPath(docsDir, specPaths.archSpec) }, forms.outline),
     ...apiSplit(api),
     events,
     architecture: archSlice(deltaDoc, service, f.id, new Set([...living, ...services])),
   };
-  if (!byReference) return projected;
+  if (!forms.byReference) return projected;
   // The text the projection already read (the context memoizes it). The read
   // decoded it strictly, so re-encoding gives back the file's exact bytes —
   // frontmatter included, which the default form strips and the digest keeps.

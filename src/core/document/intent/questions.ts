@@ -43,31 +43,94 @@ const LIST_ITEM = /^ {0,3}(?:[-*+]|\d+[.)])[ \t]+\S/;
  * comments — the scaffold's hint text — are nobody's question.
  */
 export function openQuestions(text: string): string[] {
-  const body = text.replace(/^﻿/, "").replace(/\r\n/g, "\n").replace(/<!--[\s\S]*?-->/g, "");
-  return (body.match(OPEN_QUESTIONS_SECTION) ?? []).flatMap(questionsIn);
+  return openQuestionRows(text).map((row) => row.text);
 }
 
-function questionsIn(section: string): string[] {
-  const out: string[] = [];
+/** One open question, and the 1-based line of `text` it was read from. */
+export interface QuestionRow {
+  text: string;
+  line: number;
+}
+
+/**
+ * `openQuestions`, each with the line it sits on in the text it was read from —
+ * which is the FILE's line when the caller hands in the whole file, frontmatter
+ * included, as `--intent-ref` does: a reference is only useful if an editor or
+ * `sed -n` opens the line it names.
+ *
+ * The comments are cut exactly as before, so the questions are the same
+ * strings; the cut only also remembers, for every line left, the line it began
+ * on, because a comment spanning lines would otherwise shift every question
+ * below it.
+ */
+export function openQuestionRows(text: string): QuestionRow[] {
+  const { body, origin } = uncommented(text.replace(/^﻿/, "").replace(/\r\n/g, "\n"));
+  const rows: QuestionRow[] = [];
+  for (const match of body.matchAll(OPEN_QUESTIONS_SECTION)) {
+    const heading = body.slice(0, match.index).split("\n").length - 1;
+    for (const { text: row, offset } of questionsIn(match[0])) rows.push({ text: row, line: origin[heading + offset]! });
+  }
+  return rows;
+}
+
+/**
+ * `text` without its HTML comments, and `origin[i]`: the 1-based line of `text`
+ * that line `i` of the result is read from — where its first non-blank
+ * character sits, which is not where the line starts when a comment spanning
+ * lines was cut from its front: `<!-- hint\nmore -->- the question` is read as
+ * one line beginning on the comment's line, and the question is on the next.
+ */
+function uncommented(text: string): { body: string; origin: number[] } {
+  const kept: string[] = [];
+  const origin = [1];
+  let line = 1;
+  let from = 0;
+  // Whether the current result line has met its first non-blank character yet.
+  let placed = false;
+  const keep = (chunk: string): void => {
+    kept.push(chunk);
+    for (const ch of chunk) {
+      if (ch === "\n") {
+        origin.push(++line);
+        placed = false;
+      } else if (!placed && ch.trim() !== "") {
+        origin[origin.length - 1] = line;
+        placed = true;
+      }
+    }
+  };
+  for (const comment of text.matchAll(/<!--[\s\S]*?-->/g)) {
+    keep(text.slice(from, comment.index));
+    line += comment[0].split("\n").length - 1;
+    from = comment.index + comment[0].length;
+  }
+  keep(text.slice(from));
+  return { body: kept.join(""), origin };
+}
+
+/** Each question of one section, with its line counted from the section's heading (0). */
+function questionsIn(section: string): Array<{ text: string; offset: number }> {
+  const out: Array<{ text: string; offset: number }> = [];
   // Every table opens with a header row; a line that is not a table row closes
   // the table, so a second table further down gets its own header skipped.
   let header = true;
   // The column the open question's text starts at. A line indented that far is
   // inside it; any other non-blank line closes it.
   let inside = Infinity;
-  for (const line of section.split("\n").slice(1)) {
+  for (const [offset, line] of section.split("\n").entries()) {
+    if (offset === 0) continue; // the heading
     const row = line.trim();
     if (row !== "" && line.length - line.trimStart().length < inside) inside = Infinity;
     if (row.startsWith("|")) {
       if (TABLE_SEPARATOR.test(row)) continue;
       if (header) header = false;
-      else out.push(row);
+      else out.push({ text: row, offset });
       continue;
     }
     header = true;
     const item = inside === Infinity ? LIST_ITEM.exec(line) : null;
     if (item === null) continue;
-    out.push(row);
+    out.push({ text: row, offset });
     inside = item[0].length - 1;
   }
   return out;

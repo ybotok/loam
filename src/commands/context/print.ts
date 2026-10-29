@@ -12,7 +12,7 @@
  * one level deeper, because each sits under its feature's own `###` heading.
  */
 import { type ContextPack, type IntroducedPack } from "../../core/pack/pack.js";
-import { type PackRequirement } from "../../core/pack/requirement.js";
+import { type PackItem } from "../../core/pack/requirement.js";
 import { type PackFeature } from "../../core/pack/features.js";
 
 export function printPack(pack: ContextPack | IntroducedPack): void {
@@ -195,12 +195,20 @@ export function printPack(pack: ContextPack | IntroducedPack): void {
   for (const f of pack.features) printFeature(f, pack.service);
 }
 
-function printRequirements(label: string, reqs: PackRequirement[], level = "##"): void {
+function printRequirements(label: string, reqs: PackItem[], level = "##"): void {
   console.log(`${level} ${label}\n`);
   if (reqs.length === 0) console.log("(none)\n");
   for (const r of reqs) {
     const tag = r.kind === "BASE" ? "" : `[${r.kind}] `;
     console.log(`${level}# Requirement: ${tag}${r.name}`);
+    if (!("text" in r)) {
+      // `--outline`: where the requirement is and what opening it costs, then
+      // its scenarios by name — the words stay in the file the lines point at.
+      console.log(`${r.path} lines ${r.line}–${r.endLine} (${r.bytes.toLocaleString("en-US")} bytes)`);
+      for (const s of r.scenarios) console.log(`- Scenario: ${s.name} (line ${s.line})`);
+      console.log();
+      continue;
+    }
     if (r.text.length > 0) console.log(r.text);
     for (const s of r.scenarios) {
       console.log(`\n${level}## Scenario: ${s.name}`);
@@ -229,7 +237,7 @@ function printFeature(f: PackFeature, service: string): void {
     // `--intent-ref`: where the why lives, and the questions that are this service's.
     const { path, bytes, questions } = f.intentRef;
     console.log(`Intent: ${path} (${bytes.toLocaleString("en-US")} bytes, not inlined)`);
-    for (const row of questions.naming) console.log(`- ${row}`);
+    if (questions.naming.length > 0) console.log(`Open questions naming ${service}: lines ${questions.naming.map((q) => q.line).join(", ")}`);
     console.log();
   }
   if (f.requirements.length > 0) printRequirements("Requirement delta", f.requirements, "###");

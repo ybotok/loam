@@ -3999,11 +3999,28 @@ hundred kilobytes of intent. With the flag, `intentRef` takes the key's place: `
 relative), `sha256` (of the file's bytes, so `sha256sum` says whether it moved), `bytes`,
 `sections[]` (each heading of level 1–3 outside the frontmatter and fenced blocks, with its
 `level`, `heading`, 1-based file `line` and the `bytes` under it) and `questions` — `total`, and
-`naming[]`, the open questions naming the services the payload is about, verbatim: the lens, else
-the subjects of the units it shows, so a leaf keeps its own unit's. `null` when the feature has no
-`intent.md`. `loam delta --intent-ref` and `loam context --intent-ref` carry the same object in
-place of their own `intent` (context's on each in-flight feature), with the questions naming the
-projected service. Without the flag every payload is byte-identical to what it was.
+`naming[]`, where the open questions naming the services the payload is about sit — `{ line }`, each
+one's 1-based file line, never its text, because the loop re-runs the brief after every recording
+and the worker reads the file once: the lens, else the subjects of the units it shows, so a leaf
+keeps its own unit's. `null` when the feature has no `intent.md`. `loam delta --intent-ref` and
+`loam context --intent-ref` carry the same object in place of their own `intent` (context's on
+each in-flight feature), with the questions naming the projected service. Without the flag every
+payload is byte-identical to what it was.
+
+**`--outline` carries the requirements the same way, and `--requirement` reads one.** The intent was
+the first document a brief inlined without bound; a service's requirement delta is the second, and
+`loam delta` and `loam context` both carried it verbatim. Under `--outline` each requirement item —
+in `loam context`, the living ones and each in-flight feature's — keeps every key that says what it
+touches (`kind`, `id`, `name`, the join lines, each scenario's `name` and, in `loam delta`, its
+`digest`) and drops the two that say what it says, `text` and each scenario's `lines`; in their
+place it carries `path`, `line`, `endLine` and `bytes`. The span is the parse's own: from the
+`### Requirement:` heading every line is the requirement's until the next requirement or `##`
+heading, fenced lines included, so lines `line` to `endLine` of `path` are the requirement and
+`bytes` is what reading them costs, line endings included. `loam delta --requirement <id>`
+(repeatable) narrows both requirement sections to the named ones, verbatim in the default shape —
+a `Requirement-ID`, or the heading of a requirement that has none — and refuses a name nothing
+answers to with `unknown-target`, because an empty list is what a finished service looks like.
+Nothing else in either payload moves under either flag.
 
 **A unit's subject is a service.** A `c4.calls` claim is filed under its caller, and a caller that
 is a person, an `#external` system, infrastructure no directory binds, or a grouping — the census's

@@ -611,7 +611,10 @@ loam derives the answer instead, at three altitudes:
   around it. That output *is* the coding task, and it is regenerated from the spec each time rather
   than transcribed from it once. An intent can run to hundreds of kilobytes, so all three briefs take
   `--intent-ref`: the intent rides by reference — its path, the sha256 of its bytes, its size, its
-  outline and the open questions naming the service — and the agent reads the file once.
+  outline and the lines of the open questions naming the service — and the agent reads the file once.
+  A service's requirements can run as long, so `loam delta` and `loam context` take `--outline`:
+  each requirement as its id, its joins and its scenarios' names, with the path and lines it sits at,
+  and the agent reads one requirement at a time — at those lines, or with `--requirement <id>`.
 
 Then `loam gherkin` turns the scenarios into digest-stamped `.feature` files — a checklist that
 executes. A valid Markdown table becomes the `Examples:` of a Scenario Outline, so a permission or

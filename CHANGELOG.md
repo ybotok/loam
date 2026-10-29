@@ -10,6 +10,37 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Added — `--outline` and `--requirement`: a service's requirements one at a time
+
+- `loam delta` and `loam context` take `--outline`, and the MCP tools `loam_delta` and
+  `loam_context` take `outline`. An opt-in flag for the reason `--intent-ref` is one: without it
+  every payload is byte-identical to before. With it, each item of `requirements[]` and
+  `archRequirements[]` — in `loam context`, the living ones and each in-flight feature's — drops
+  `text` and each scenario's `lines`, and gains `path` (docs-repo relative), `endLine` (1-based,
+  inclusive: the last line before the next requirement or `##` heading) and `bytes` (of the lines
+  from `line` to `endLine`, line endings included) — and, in `loam context`, `line` itself, which
+  `loam delta`'s items already carried. Every other key stays, `loam delta`'s scenario `digest`
+  among them; `loam context`'s scenarios gain their `line`. Lines `line` to `endLine` of `path` are
+  the requirement, fenced lines included. The human views print one line per requirement instead
+  of its text.
+- `loam delta` takes `--requirement <id>`, repeatable, and `loam_delta` takes `requirement`: only
+  the named requirements are carried, in full and in the default shape — named by
+  `Requirement-ID`, or by heading where a requirement has none, on either axis, and in full even
+  beside `--outline`. A name no requirement of the brief answers to is refused with
+  `unknown-target` (exit 1), naming the nearest ids, rather than answered with an empty list.
+- On a pilot fleet whose largest service carries 23 requirements and 187 scenarios,
+  `loam delta <FEAT> --service <svc> --json --intent-ref` goes from 434,889 bytes to 66,839 with
+  `--outline`, and `loam context <svc> --feature <FEAT> --json --intent-ref` from 424,550 to 55,166;
+  one requirement read with `--requirement` is 36,880.
+- `naming[]` under the `questions` of `intentRef` — unreleased, from the entry below — is now `{ line }` per open
+  question, its 1-based line in the file, rather than the question's text: on the same fleet one
+  service was named by 47 of 173 questions, and `loam tasks <FEAT> --service <svc> --next --json
+  --intent-ref` repeated their 34 KB after every recording beside a unit of 300 bytes; it is now
+  7,590 bytes where it was 38,105. The human views print the lines.
+- The `loam-implement` page and the docs repo's `AGENTS.md` now spell `loam context` and `loam delta`
+  with `--outline`, and say how to read an outline: plan from it, then read one requirement at a
+  time at its lines or with `--requirement`.
+
 ### Added — the platform picture: `architecture/platform.likec4` and `loam views`
 
 - A third generated document, `architecture/platform.likec4`, holds the two views above a
@@ -62,16 +93,18 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   `--json` contract holds: without it every payload is byte-identical to before. With it, the
   verbatim `intent` key is replaced, in the same position, by `intentRef` — `path`, `sha256` (of the
   file's bytes), `bytes`, `sections[]` (`level`, `heading`, `line`, `bytes`; headings of level 1–3)
-  and `questions` (`total`, and `naming[]`: the open questions naming the services the payload is
-  about, verbatim) — or `null` when the feature has no `intent.md`. In `loam context` it replaces
-  each in-flight feature's `intent`. The human views of `delta` and `context` print the path, the
-  size and the questions naming the service instead of the text. With the flag, an `intent.md` that
+  and `questions` (`total`, and `naming[]`: the line of each open question naming the services the
+  payload is about — see the entry above) — or `null` when the feature has no `intent.md`. In
+  `loam context` it replaces each in-flight feature's `intent`. The human views of `delta` and
+  `context` print the path, the size and the lines of the questions naming the service instead of
+  the text. With the flag, an `intent.md` that
   is not UTF-8 is refused (`repository-unavailable`, exit 1) rather than referenced as empty —
   `loam context` already refused it.
 - On a synthetic fleet shaped like the measured one (a 212 KB `intent.md` with 25 decisions and 173
   open questions), `loam tasks <FEAT> --next --json` goes from 214,346 bytes to 12,048,
   `loam delta <FEAT> --service <svc> --json` from 441,774 to 239,476 and `loam context <svc> --json`
-  from 434,531 to 233,033 — what remains there is the service's requirement list itself.
+  from 434,531 to 233,033 — what remains there is the service's requirement list itself, which
+  `--outline` (the entry above) carries next. Measured while the questions were still verbatim.
 - The `loam-implement` page and the docs repo's `AGENTS.md` now spell `loam context`, `loam delta`
   and `loam tasks` with `--intent-ref`, and say how to read `intentRef`: the file once, or only the
   sections needed, again when `sha256` changes. A docs repo's existing `AGENTS.md` keeps the old

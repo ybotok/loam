@@ -150,14 +150,16 @@ export const MCP_TOOLS: readonly McpTool[] = [
       "Project a feature onto a service: why + requirement delta + C4 changes. With diff, each requirement, " +
       "operation and message also says what it does to the living documents (new, quote, edit, remove) and " +
       "carries the lines an edit changes — the design review's view. " +
-      "CLI equivalent: loam delta <featureId> [--service <id>] [--diff] [--intent-ref] --json",
+      "CLI equivalent: loam delta <featureId> [--service <id>] [--diff] [--intent-ref] [--outline] [--requirement <id>...] --json",
     positionals: [
       { property: "featureId", required: true, variadic: false, description: "feature id, e.g. FEAT-101" },
     ],
     flags: [
       { ...SERVICE_FLAG, description: "service to project onto (defaults to the configured service)" },
       { property: "diff", flag: "--diff", kind: "boolean", description: "compare each item with the living documents: new, quote, edit or remove, with an edit's changed lines" },
-      { property: "intentRef", flag: "--intent-ref", kind: "boolean", description: "the intent by reference — path, sha256, size, outline and the open questions naming this service — instead of verbatim" },
+      { property: "intentRef", flag: "--intent-ref", kind: "boolean", description: "the intent by reference — path, sha256, size, outline and the lines of the open questions naming this service — instead of verbatim" },
+      { property: "outline", flag: "--outline", kind: "boolean", description: "every requirement as an outline — id, name, joins, scenario names and digests, and the path and lines it sits at — instead of verbatim" },
+      { property: "requirement", flag: "--requirement", kind: "strings", description: "only these requirements, verbatim — each a Requirement-ID, or the heading of one that has none; repeatable" },
     ],
   },
   {
@@ -172,7 +174,7 @@ export const MCP_TOOLS: readonly McpTool[] = [
     flags: [
       { ...SERVICE_FLAG, description: "narrow the packet to the units one service owns (a lens: no binding needed)" },
       { property: "next", flag: "--next", kind: "boolean", description: "the frontier head alone — the single leaf to hand to a worker" },
-      { property: "intentRef", flag: "--intent-ref", kind: "boolean", description: "the intent by reference — path, sha256, size, outline and the open questions naming these units' services — instead of verbatim" },
+      { property: "intentRef", flag: "--intent-ref", kind: "boolean", description: "the intent by reference — path, sha256, size, outline and the lines of the open questions naming these units' services — instead of verbatim" },
     ],
   },
   {
@@ -232,13 +234,14 @@ export const MCP_TOOLS: readonly McpTool[] = [
     command: "context",
     description:
       "Assemble one service's whole docs slice as one deterministic briefing. " +
-      "CLI equivalent: loam context <service> [--feature <FEAT>] [--intent-ref] --json",
+      "CLI equivalent: loam context <service> [--feature <FEAT>] [--intent-ref] [--outline] --json",
     positionals: [
       { property: "service", required: true, variadic: false, description: "service id, e.g. payment-service" },
     ],
     flags: [
       { property: "feature", flag: "--feature", kind: "string", description: "narrow the in-flight section to this one feature" },
-      { property: "intentRef", flag: "--intent-ref", kind: "boolean", description: "each in-flight feature's intent by reference — path, sha256, size, outline and the open questions naming this service — instead of verbatim" },
+      { property: "intentRef", flag: "--intent-ref", kind: "boolean", description: "each in-flight feature's intent by reference — path, sha256, size, outline and the lines of the open questions naming this service — instead of verbatim" },
+      { property: "outline", flag: "--outline", kind: "boolean", description: "every requirement, living and in flight, as an outline — id, name, joins, scenario names, and the path and lines it sits at — instead of verbatim" },
     ],
   },
   {
