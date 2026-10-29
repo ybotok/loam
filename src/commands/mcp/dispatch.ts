@@ -48,7 +48,8 @@ import { registerGherkin } from "../gherkin/gherkin.js";
 import { registerArchive } from "../archive/archive.js";
 import type { ToolRunOutcome } from "../../core/mcp/protocol.js";
 import type { ToolRunner } from "./serve.js";
-import { MCP_TOOLS, type McpTool } from "../../core/mcp/tools.js";
+import { MCP_TOOLS } from "../../core/mcp/tools.js";
+import type { McpTool } from "../../core/mcp/argv.js";
 
 /** Console sinks for one dispatch — a value, not module state, so calls cannot share buffers. */
 export interface Sinks {

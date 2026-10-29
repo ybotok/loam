@@ -5,8 +5,49 @@
  * module owns the crossing, and the inputSchema that declares it: the schema
  * a client validates against and the argv builder that refuses what it
  * forbids are one contract written twice, so they sit in one module.
+ *
+ * The SHAPE of a table entry lives here too, for the same reason one step
+ * back: every field of it — a positional's order, a flag's `kind`, `required`
+ * — is a statement about how the call crosses, and this module is the one
+ * that reads each of them. The table only fills the shape in.
  */
-import type { McpTool } from "./tools.js";
+
+/** A positional argument, in declaration order. A variadic one is always last. */
+export interface ToolPositional {
+  readonly property: string;
+  readonly required: boolean;
+  /** True when the JSON argument is an array of strings spread as trailing positionals. */
+  readonly variadic: boolean;
+  readonly description: string;
+}
+
+/** One CLI flag: `kind` decides both the JSON Schema type and the argv shape. */
+export interface ToolFlag {
+  readonly property: string;
+  readonly flag: string;
+  readonly kind: "string" | "boolean" | "strings";
+  /**
+   * Set when the CLI declares the option with `requiredOption` — the schema
+   * then requires the property and the argv builder refuses its absence, so
+   * a client learns the requirement from the schema instead of from an
+   * invalid-option envelope after the call. The shape test asserts this
+   * mirrors commander's own `mandatory`, both ways.
+   */
+  readonly required?: true;
+  readonly description: string;
+}
+
+export interface McpTool {
+  readonly name: string;
+  readonly command: string;
+  readonly description: string;
+  readonly positionals: readonly ToolPositional[];
+  readonly flags: readonly ToolFlag[];
+  /** Arguments enforced by the server rather than exposed to the caller. */
+  readonly fixed?: readonly string[];
+  readonly annotations?: Readonly<Record<string, boolean>>;
+}
+
 
 /**
  * The MCP inputSchema for one tool: a closed object, so a typo'd argument

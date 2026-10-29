@@ -1,5 +1,5 @@
 /** Opt-in MCP writers. Vouch and a committing archive are never exposed. */
-import type { McpTool } from "./tools.js";
+import type { McpTool } from "./argv.js";
 
 const WRITE_ANNOTATIONS = {
   readOnlyHint: false,

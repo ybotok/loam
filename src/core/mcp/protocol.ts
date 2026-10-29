@@ -16,12 +16,11 @@
  */
 import { isRecord } from "../kernel/records.js";
 import { LOAM_VERSION } from "../envelope/version.js";
-import { toArgv, toInputSchema } from "./argv.js";
+import { toArgv, toInputSchema, type McpTool } from "./argv.js";
 import {
   MCP_TOOLS,
   READ_ONLY_ANNOTATIONS,
   toolByName,
-  type McpTool,
 } from "./tools.js";
 import { AGENTS_MD } from "../agent/agents-md.js";
 import { PROTOCOLS } from "../agent/protocol.js";
