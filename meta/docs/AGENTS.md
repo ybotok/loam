@@ -127,7 +127,7 @@ seventh lifecycle step.
    `loam validate <FEAT> --json`, and use `loam explain <code>` for reported
    codes. `loam dependencies --json` names features that must archive first.
 6. **Build** — load `loam instructions loam-implement <FEAT>`.
-   `loam delta <FEAT> --service <id> --json --intent-ref` is one service's task;
+   `loam delta <FEAT> --service <id> --json --intent-ref --outline` outlines one service's task;
    `loam tasks <FEAT> --service <id> --next --json --intent-ref` is the next open unit of it —
    its `at` says whether you owe a scenario, a generated suite or code, and
    `done.check` is the fact that closes it. In that

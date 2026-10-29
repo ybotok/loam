@@ -21,7 +21,7 @@ export const REFUSAL_MEANINGS = {
   "config-invalid":
     "loam.json exists but cannot be loaded — repair the file (or delete it and re-run `loam init`); the code is distinct from `no-config` because running init over a corrupt config would silently rewrite it.",
   "unknown-target":
-    "The name resolves to nothing this command can address — no such service, feature, workflow or subject; the message offers the closest known names.",
+    "The name resolves to nothing this command can address — no such service, feature, requirement, workflow or subject; the message offers the closest known names.",
   "invalid-option":
     "The invocation itself is wrong — flags that contradict each other, a value that cannot be right, or a mistyped flag or command; nothing was read or written, and with `--json` anywhere in the arguments even commander's own usage errors arrive as this envelope.",
   "already-exists":

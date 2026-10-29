@@ -41,7 +41,7 @@ export function registerTasks(program: Command): void {
     .description("What is still open on a feature, at which step, and what closes each unit — read-only")
     .option("--service <id>", "narrow the packet to the units one service owns (a lens: no binding needed)")
     .option("--next", "the frontier head alone — the single leaf to hand to a worker")
-    .option("--intent-ref", "carry the intent by reference — path, sha256, size, outline and the open questions naming these units' services — instead of verbatim")
+    .option("--intent-ref", "carry the intent by reference — path, sha256, size, outline and the lines of the open questions naming these units' services — instead of verbatim")
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (featureId: string, opts: TasksOptions) => {
       const json = opts.json === true;

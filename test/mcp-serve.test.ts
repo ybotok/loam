@@ -15,7 +15,8 @@ import { serve, type ToolRunner } from "../src/commands/mcp/serve.js";
 import { captureConsole, resolveRegistrars, toolRunner, type Sinks } from "../src/commands/mcp/dispatch.js";
 import { mcpToolTable, startMcp } from "../src/commands/mcp/mcp.js";
 import { LOAM_VERSION } from "../src/core/envelope/version.js";
-import { MCP_TOOLS, type McpTool } from "../src/core/mcp/tools.js";
+import { MCP_TOOLS } from "../src/core/mcp/tools.js";
+import type { McpTool } from "../src/core/mcp/argv.js";
 import { MCP_AUTHOR_TOOLS } from "../src/core/mcp/author-tools.js";
 
 interface SessionResult {

@@ -29,7 +29,7 @@ export const LOAM_IMPLEMENT: CommandContent = {
   spine: [
     "`loam status` — where this feature actually is, and what is owed before you start",
     "`loam context` — the briefing: the service's living slice, and every delta in flight over it",
-    "`loam delta` — the task: the intent, every requirement verbatim, the endpoints, and the calls in and out",
+    "`loam delta` — the task: the intent, every requirement (outlined, then read one at a time), the endpoints, and the calls in and out",
     "`loam tasks` — the open units, ordered; `--next` is the single next unit, with the scenario verbatim and the fact that closes it",
     "`loam gherkin` in the service's repo — the digest-stamped `.feature` files. Never edit them",
     "write step definitions for the generated scenarios first, outside the generated directory",
@@ -47,30 +47,39 @@ repository, which needs its own committed ./loam.json — if there is none,
    artifacts are still owed, whether another feature has to archive first, and
    what the next step is, each \`next[]\` entry carrying the literal command. It
    writes nothing, so it is always safe to re-run.
-1. \`loam context $2 --feature $1 --json --intent-ref\` — the briefing to load
-   before touching code: the service's living requirements and arch requirements
-   verbatim, its operations and messages as they stand today, the permissions and
+1. \`loam context $2 --feature $1 --json --intent-ref --outline\` — the briefing to load
+   before touching code: the service's living requirements and arch requirements,
+   its operations and messages as they stand today, the permissions and
    capabilities its requirements join to, the fleet edges around it, and this
    feature's delta over it (\`--feature $1\` narrows the in-flight section; drop
    it to see every feature working over this service; \`--intent-ref\` carries
-   each feature's intent.md by reference, and step 2 says how to read it). The
+   each feature's intent.md by reference and \`--outline\` each requirement, and
+   step 2 says how to read both). The
    delta below is WHAT CHANGES; the pack is what it changes INTO — read it first
    so a MODIFIED requirement lands as an edit rather than a rewrite, and an
    operation you are about to add is caught when the living contract already
    defines it. Exit 1 with \`ok: true\` means a document behind the pack did not
    parse; the empty section beside the flag is the parse failure, not "nothing
    here".
-2. \`loam delta $1 --service $2 --json --intent-ref\` (drop \`--service\` to use the
+2. \`loam delta $1 --service $2 --json --intent-ref --outline\` (drop \`--service\` to use the
    service configured in ./loam.json). That output IS the task:
    - \`intentRef\` — why this exists, by reference: the intent.md's \`path\`, the
      \`sha256\` of its bytes, its size in \`bytes\`, its \`sections\` (each heading
-     with its line and size) and \`questions\` — \`naming\`, the open questions
-     that name $2, verbatim, beside their \`total\`. Read the file ONCE, or only
-     the sections you need, instead of having every brief repeat it; read it
+     with its line and size) and \`questions\` — \`naming\`, the \`line\` of each
+     open question that names $2, beside their \`total\`. Read the file ONCE, or only
+     the sections and lines you need, instead of having every brief repeat it; read it
      again only when \`sha256\` changes. An intent can be hundreds of kilobytes,
      and the loop below re-runs a brief after every recording. Without
      \`--intent-ref\` the same key is \`intent\`, the whole text
-   - \`requirements[]\` — what to build, with \`scenarios[].lines\` verbatim
+   - \`requirements[]\` — what to build. Under \`--outline\` each one is an
+     outline: its id, name and every join line, its scenarios by \`name\`, \`line\`
+     and \`digest\`, and \`path\`, \`line\`, \`endLine\` and \`bytes\` — lines \`line\` to
+     \`endLine\` of \`path\` ARE the requirement, Given/When/Then included. Plan
+     from the outline, then read one requirement at a time: those lines, or
+     \`loam delta $1 --service $2 --json --requirement <id>\` for it in full (its
+     \`Requirement-ID\`, or its heading when it has none; repeatable). A service's
+     requirements can run to hundreds of kilobytes. Without \`--outline\` every
+     requirement comes verbatim, with \`text\` and \`scenarios[].lines\`
    - \`archRequirements[]\` — the architectural obligations (outbox, retries, alerts),
      same shape; their scenarios become integration/ops tests, and \`covers\` names
      the model objects each exercises

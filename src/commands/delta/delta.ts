@@ -8,9 +8,6 @@ import { compareIds, nearestIds } from "../../core/repo/entries.js";
 import { featurePaths, featureSpecPaths } from "../../core/repo/paths.js";
 import { missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
 import { parseRequirements } from "../../core/document/parse.js";
-import { type Requirement } from "../../core/document/spec.js";
-import { type ScenarioAxis } from "../../core/gherkin/digest.js";
-import { scenarioDigest } from "../../core/gherkin/stamp.js";
 import { stripFrontmatter } from "../../core/document/frontmatter.js";
 import { apiChanges } from "../../core/projection/api.js";
 import { eventChanges } from "../../core/projection/events.js";
@@ -18,7 +15,9 @@ import { archSlice, livingServices, touchedServices } from "../../core/projectio
 import { deltaUseCases, useCasesJson } from "./usecases.js";
 import { featureCapabilityDeltas } from "../../core/capabilities/delta/tree.js";
 import { capabilityDeltaSummaries } from "../../core/capabilities/delta/summary.js";
-import { printApi, printArchSlice, printCapabilities, printDropped, printEvents, printIntent, printIntentRef, printRequirements, printUseCases } from "./print.js";
+import { printApi, printArchSlice, printCapabilities, printDropped, printEvents, printIntent, printIntentRef, printOutline, printRequirements, printUseCases } from "./print.js";
+import { briefRequirements, outlined, requirementAddress, unknownRequirementMessage, unknownRequirements } from "./requirements.js";
+import { spanReader, type SpanOf } from "../../core/pack/requirement.js";
 import { locateServicePaths } from "../../core/repo/service-target.js";
 import { droppedRows, reviewSlice, type SliceReview } from "./slice.js";
 import type { Review } from "../../core/projection/review.js";
@@ -31,6 +30,8 @@ interface DeltaOptions {
   json?: boolean;
   diff?: boolean;
   intentRef?: boolean;
+  outline?: boolean;
+  requirement?: string[];
 }
 
 export function registerDelta(program: Command): void {
@@ -45,7 +46,12 @@ export function registerDelta(program: Command): void {
     .option("--diff", "say what each requirement, operation and message does to the living documents: new, quote, edit or remove, with the lines an edit changes")
     // A size lens, off by default for the same reason: without it the brief is
     // byte-identical (core/document/intent/reference.ts says what it carries).
-    .option("--intent-ref", "carry the intent by reference — path, sha256, size, outline and the open questions naming this service — instead of verbatim")
+    .option("--intent-ref", "carry the intent by reference — path, sha256, size, outline and the lines of the open questions naming this service — instead of verbatim")
+    // The requirement lenses, off by default for the same reason: an outline of
+    // every requirement, and the one or few to read in full
+    // (core/pack/requirement.ts and ./requirements.ts say what each carries).
+    .option("--outline", "carry every requirement as an outline — id, name, joins, scenario names and digests, and the path and lines it sits at — instead of verbatim")
+    .option("--requirement <id>", "carry only this requirement, verbatim — its Requirement-ID, or its heading when it has none (repeatable)", (value: string, previous: string[]) => [...previous, value], [] as string[])
     .action(async (featureId: string, opts: DeltaOptions) => {
       const json = opts.json === true;
       const config = await configOrRefuse(json);
@@ -154,12 +160,25 @@ export function registerDelta(program: Command): void {
       // stays one task — the arch requirements are the integration/ops half the
       // business ones never mention.
       const specPaths = featureSpecPaths(feature.dir, service);
-      const reqs = existsSync(specPaths.spec)
-        ? parseRequirements(await readFile(specPaths.spec, "utf8"))
-        : [];
-      const archReqs = existsSync(specPaths.archSpec)
-        ? parseRequirements(await readFile(specPaths.archSpec, "utf8"))
-        : [];
+      const specText = existsSync(specPaths.spec) ? await readFile(specPaths.spec, "utf8") : null;
+      const archText = existsSync(specPaths.archSpec) ? await readFile(specPaths.archSpec, "utf8") : null;
+      const reqs = specText === null ? [] : parseRequirements(specText);
+      const archReqs = archText === null ? [] : parseRequirements(archText);
+
+      // `--requirement` names what to read; a name nothing answers to is refused
+      // here, before anything else is projected, rather than answered with an
+      // empty list — the shape a finished service has.
+      const wanted = opts.requirement ?? [];
+      const unknown = unknownRequirements(wanted, [reqs, archReqs]);
+      if (unknown.length > 0) {
+        fail(json, "unknown-target", unknownRequirementMessage(unknown, [reqs, archReqs], `${id}'s delta for ${service}`));
+        return;
+      }
+      const picked = wanted.length === 0 ? null : new Set(wanted);
+      const keep = (r: (typeof reqs)[number]): boolean => picked === null || picked.has(requirementAddress(r));
+      const outline = opts.outline === true;
+      const spanOf = (text: string | null, path: string): SpanOf | null =>
+        outline && text !== null ? spanReader(text, repoPath(config.docsDir, path)) : null;
 
       // The contract axis. Until now no command surfaced it at all: the feature's
       // openapi.yaml was read by validate and by archive, and the one command
@@ -247,50 +266,6 @@ export function registerDelta(program: Command): void {
         review === null || r === undefined ? {} : { change: r.change, ...(r.diff === undefined ? {} : { diff: r.diff }) };
 
       if (json) {
-        // `axis` is a parameter and `service` stays in the closure, because the
-        // scenario digest is salted by BOTH and only one of them varies per
-        // call — the same Given/When/Then under `spec.md` and under
-        // `arch.spec.md` are two different claims, and one hash for both would
-        // let a green business run answer an integration test nobody wrote
-        // (core/gherkin/digest.ts owns that reasoning and the recipe).
-        const reqJson = (r: Requirement, axis: ScenarioAxis): Record<string, unknown> => ({
-          kind: r.kind,
-          id: r.id,
-          // Where the requirement sits in the document it was parsed from, so a
-          // consumer can send an author to the line rather than to the file.
-          line: r.line,
-          basedOn: r.basedOn,
-          name: r.name,
-          text: r.text.join("\n").trim(),
-          operations: r.operations,
-          covers: r.covers,
-          // The five joins this projection used to drop on the floor. Every one
-          // of them is already written on the requirement and every one names
-          // work: which permission gates it, which capability it belongs to,
-          // which named promise it realizes, and which messages it produces and
-          // consumes. An implementer handed "add the endpoint" and none of this
-          // has to go read the markdown the payload claims to have projected.
-          requires: r.requires,
-          capabilities: r.capabilities,
-          realizes: r.realizes,
-          publishes: r.publishes,
-          consumes: r.consumes,
-          // Scenarios go out verbatim: they are the acceptance criteria and the
-          // source for the tests whoever picks this up is expected to write.
-          //
-          // `digest` is the EXACT join key the rest of the toolchain uses —
-          // `loam gherkin` stamps it on the generated scenario as
-          // `@loam-digest-<16hex>` (core/gherkin/stamp.ts) and `loam verify`
-          // matches a cucumber report's scenarios on it. Without it a consumer
-          // of this brief could name the acceptance criteria but not the test
-          // that answers them, and had to regenerate the suite to find out.
-          scenarios: r.scenarios.map((s) => ({
-            name: s.name,
-            lines: s.lines,
-            line: s.line,
-            digest: scenarioDigest(service, s.lines, axis),
-          })),
-        });
         const brief = {
           command: "delta",
           feature: id,
@@ -299,12 +274,12 @@ export function registerDelta(program: Command): void {
           path: repoPath(config.docsDir, feature.dir),
           intent,
           openQuestions: questions,
-          requirements: reqs.map((r, i) => ({ ...reqJson(r, "business"), ...seen(review?.business[i]) })),
+          requirements: briefRequirements({ reqs, axis: "business", spanOf: spanOf(specText, specPaths.spec) }, service, picked, (i) => seen(review?.business[i])),
           // Same shape, separate section: an arch requirement's scenarios are
           // integration/ops tests, and a consumer must not have to parse prose
           // to tell the two apart. The axis is passed rather than inferred
-          // because it is a digest SALT, not a label — see `reqJson` above.
-          archRequirements: archReqs.map((r, i) => ({ ...reqJson(r, "arch"), ...seen(review?.arch[i]) })),
+          // because it is a digest SALT, not a label (./requirements.ts).
+          archRequirements: briefRequirements({ reqs: archReqs, axis: "arch", spanOf: spanOf(archText, specPaths.archSpec) }, service, picked, (i) => seen(review?.arch[i])),
           api: api.changes.map((op) => ({ ...op, ...seen(review?.operations.get(`${op.method} ${op.path}`)) })),
           // `api` stays exactly the operations array it has always been — a
           // consumer indexing it must not have to learn a new shape — so the
@@ -364,9 +339,17 @@ export function registerDelta(program: Command): void {
       console.log(`${id} · ${service}\n`);
       if (opts.intentRef === true) printIntentRef(intentRef, service);
       else printIntent(intent, questions, service);
-      if (existsSync(specPaths.spec)) printRequirements(reqs, "Requirements", review?.business);
+      // The two lenses read as they do in the JSON — `outlined` decides for both:
+      // a named requirement in full, otherwise an outline under `--outline`,
+      // otherwise everything verbatim, the review's tag and diff in every form.
+      const section = (parsed: typeof reqs, spans: SpanOf | null, label: string, reviews?: readonly Review[]): void => {
+        const kept = parsed.flatMap((r, i) => (keep(r) ? [i] : []));
+        if (outlined(spans, picked)) printOutline({ reqs: parsed, spanOf: spans, label }, reviews);
+        else printRequirements(kept.map((i) => parsed[i]!), label, reviews === undefined ? undefined : kept.map((i) => reviews[i]!));
+      };
+      if (specText !== null) section(reqs, spanOf(specText, specPaths.spec), "Requirements", review?.business);
       else console.log("Requirements: (none for this service)\n");
-      if (existsSync(specPaths.archSpec)) printRequirements(archReqs, "Arch requirements", review?.arch);
+      if (archText !== null) section(archReqs, spanOf(archText, specPaths.archSpec), "Arch requirements", review?.arch);
       if (existsSync(specPaths.openapi)) printApi(api, review?.operations);
       if (existsSync(specPaths.asyncapi)) printEvents(events, review?.messages);
       if (existsSync(paths.delta)) printArchSlice(arch, service);

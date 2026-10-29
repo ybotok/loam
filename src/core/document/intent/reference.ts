@@ -21,6 +21,12 @@
  * brief is about — the only part of the intent that is somebody's work item,
  * and the part `loam delta` already counted for the same reason.
  *
+ * The questions go BY LINE, not verbatim. They were verbatim at first, and on
+ * the same pilot one service was named by 47 of 173 rows — 34 KB that `loam
+ * tasks --next` handed the worker again after every recording, beside a unit
+ * of 300 bytes: the waste the reference exists to end, moved one key down.
+ * The worker reads the file once anyway, and a line is where it reads them.
+ *
  * Pure on purpose: the callers read the file's bytes and pass its repo-relative
  * path, so this module needs neither the repository layout nor the envelope, and
  * `core/document/` stays below both.
@@ -29,7 +35,7 @@ import { createHash } from "node:crypto";
 import { decodeDocument } from "../../kernel/document-bytes.js";
 import { fenceTracker } from "../../kernel/fences.js";
 import { rawBody } from "../frontmatter.js";
-import { openQuestions, questionsNaming } from "./questions.js";
+import { openQuestionRows, questionsNaming } from "./questions.js";
 
 /** One heading of the outline: where it starts and how much text sits under it. */
 export interface IntentSection {
@@ -51,12 +57,19 @@ export interface IntentRef {
   bytes: number;
   sections: IntentSection[];
   /**
-   * `total` is every open question the intent holds; `naming` is the rows that
-   * name one of the brief's services by id, verbatim. A question that names no
-   * service is in `total` and not in `naming`, so a reader who sees the two
-   * differ knows there is more to read under `## Open questions`.
+   * `total` is every open question the intent holds; `naming` is where the
+   * rows that name one of the brief's services by id sit — each one's 1-based
+   * line in the FILE, frontmatter included, the line an editor or `sed -n`
+   * opens. A question that names no service is in `total` and not in
+   * `naming`, so a reader who sees the two differ knows there is more to read
+   * under `## Open questions`.
    */
-  questions: { total: number; naming: string[] };
+  questions: { total: number; naming: QuestionRef[] };
+}
+
+/** Where one open question sits. An object rather than a bare number, so it can grow a key without a new shape. */
+export interface QuestionRef {
+  line: number;
 }
 
 /** An ATX heading of level 1 to 3, closing hashes and trailing spaces trimmed. */
@@ -75,10 +88,11 @@ const HEADING = /^(#{1,3})[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$/;
  */
 export function intentReference(bytes: Buffer, path: string, services: readonly string[]): IntentRef {
   const text = decodeDocument(bytes, path);
-  const asked = openQuestions(text);
+  const rows = openQuestionRows(text);
+  const asked = rows.map((row) => row.text);
   // In document order, each row once, whichever of the services it names.
   const named = new Set(services.flatMap((service) => questionsNaming(asked, service)));
-  const naming = asked.filter((question) => named.has(question));
+  const naming = rows.filter((row) => named.has(row.text)).map((row) => ({ line: row.line }));
   return {
     path,
     sha256: createHash("sha256").update(bytes).digest("hex"),

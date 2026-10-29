@@ -33,7 +33,8 @@ import {
   toolReply,
 } from "../../core/mcp/protocol.js";
 import type { RouteOutcome, ToolRunOutcome } from "../../core/mcp/protocol.js";
-import { MCP_TOOLS, type McpTool } from "../../core/mcp/tools.js";
+import { MCP_TOOLS } from "../../core/mcp/tools.js";
+import type { McpTool } from "../../core/mcp/argv.js";
 
 export interface ServeIo {
   readonly input: Readable;

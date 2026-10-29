@@ -12,7 +12,8 @@
 import type { Command } from "commander";
 import { toolRunner } from "./dispatch.js";
 import { serve, type ServeIo } from "./serve.js";
-import { MCP_TOOLS, type McpTool } from "../../core/mcp/tools.js";
+import { MCP_TOOLS } from "../../core/mcp/tools.js";
+import type { McpTool } from "../../core/mcp/argv.js";
 import { MCP_AUTHOR_TOOLS } from "../../core/mcp/author-tools.js";
 
 interface McpOptions {

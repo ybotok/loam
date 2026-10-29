@@ -77,11 +77,22 @@ interface Ref {
   sha256: string;
   bytes: number;
   sections: Array<{ level: number; heading: string; line: number; bytes: number }>;
-  questions: { total: number; naming: string[] };
+  questions: { total: number; naming: Array<{ line: number }> };
 }
 
+/**
+ * The ids of the rows the reference points at, read off the FILE at each line —
+ * which is the whole claim a question reference makes: open the file there and
+ * the question is what you find.
+ */
 function questionIds(ref: Ref): string[] {
-  return ref.questions.naming.map((row) => /^\|\s*(Q\d+)/.exec(row)?.[1] ?? row);
+  const lines = largeIntent().split("\n");
+  return ref.questions.naming.map(({ line }) => /^\|\s*(Q\d+)/.exec(lines[line - 1] ?? "")?.[1] ?? `line ${line}`);
+}
+
+/** The 1-based file line of open question `id` in `largeIntent`. */
+function lineOf(id: string): number {
+  return largeIntent().split("\n").findIndex((row) => row.startsWith(`| ${id} |`)) + 1;
 }
 
 describe("loam tasks --intent-ref", () => {
@@ -187,8 +198,10 @@ describe("loam delta --intent-ref", () => {
     expect(res.stdout).toContain(INTENT_PATH);
     // The decisions are headings in the file; inlined, every one of them printed.
     expect(res.stdout).not.toContain("decision 25");
-    // The rows naming this service are the part of the intent that is its work.
-    expect(res.stdout).toContain("| Q7 |");
+    // The rows naming this service are the part of the intent that is its work,
+    // and the view says where they are rather than reprinting them.
+    expect(res.stdout).not.toContain("| Q7 |");
+    expect(res.stdout).toContain(`at lines ${lineOf("Q7")}, ${lineOf("Q14")}`);
     expect(res.stdout.length).toBeLessThan(20_000);
   });
 });
@@ -255,7 +268,7 @@ describe("intentReference — the outline", () => {
     // A level-1 section runs to the end; the Why runs to the next level-2 heading, its ### detail included.
     expect(ref.sections[0]!.bytes).toBe(Buffer.byteLength(text.split("\n").slice(4).join("\n")));
     expect(ref.sections[1]!.bytes).toBe(Buffer.byteLength(text.split("\n").slice(6, 12).join("\n") + "\n"));
-    expect(ref.questions).toEqual({ total: 1, naming: ["- does payment-service round?"] });
+    expect(ref.questions).toEqual({ total: 1, naming: [{ line: 14 }] });
     expect(ref.bytes).toBe(Buffer.byteLength(text));
   });
 
@@ -266,5 +279,31 @@ describe("intentReference — the outline", () => {
       ["Title", 4],
       ["Why", 5],
     ]);
+  });
+
+  it("points each question at its own line, even below a comment that spans lines", () => {
+    // The comments are cut before the rows are read, and a cut that forgot the
+    // lines it took would send every question below it up by that many.
+    const text = [
+      "## Open questions", // 1
+      "<!-- the scaffold's hint,", // 2
+      "     over two lines -->", // 3
+      "| ID | Question |", // 4
+      "|---|---|", // 5
+      "| Q1 | does payment-service round? |", // 6
+      "| Q2 | does the ledger? |", // 7
+      "| Q3 | <!-- inline --> payment-service retries? |", // 8
+      "",
+    ].join("\r\n");
+    const ref = intentReference(Buffer.from(text, "utf8"), INTENT_PATH, ["payment-service"]);
+    expect(ref.questions).toEqual({ total: 3, naming: [{ line: 6 }, { line: 8 }] });
+  });
+
+  it("points a question that follows a comment on the comment's last line at that line", () => {
+    // Cut, the comment leaves the question on a result line that BEGINS on the
+    // comment's first line; the question itself is where its first character is.
+    const text = ["## Open questions", "<!-- the scaffold's hint,", "over two lines -->- does payment-service retry?", ""].join("\n");
+    const ref = intentReference(Buffer.from(text, "utf8"), INTENT_PATH, ["payment-service"]);
+    expect(ref.questions).toEqual({ total: 1, naming: [{ line: 3 }] });
   });
 });
