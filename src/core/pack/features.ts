@@ -37,7 +37,7 @@ import { eventChanges, type EventSlice } from "../projection/events.js";
 import { archSlice, touchedServices, type ArchSlice } from "../projection/arch-slice.js";
 import { compareIds, type FeatureEntry, type ServiceEntry } from "../repo/entries.js";
 import { featurePaths, featureSpecPaths } from "../repo/paths.js";
-import { packRequirement, type PackRequirement } from "./living.js";
+import { packRequirement, type PackRequirement } from "./requirement.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 
 /**

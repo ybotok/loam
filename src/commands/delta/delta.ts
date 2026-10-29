@@ -8,9 +8,6 @@ import { compareIds, nearestIds } from "../../core/repo/entries.js";
 import { featurePaths, featureSpecPaths } from "../../core/repo/paths.js";
 import { missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
 import { parseRequirements } from "../../core/document/parse.js";
-import { type Requirement } from "../../core/document/spec.js";
-import { type ScenarioAxis } from "../../core/gherkin/digest.js";
-import { scenarioDigest } from "../../core/gherkin/stamp.js";
 import { stripFrontmatter } from "../../core/document/frontmatter.js";
 import { apiChanges } from "../../core/projection/api.js";
 import { eventChanges } from "../../core/projection/events.js";
@@ -19,6 +16,7 @@ import { deltaUseCases, useCasesJson } from "./usecases.js";
 import { featureCapabilityDeltas } from "../../core/capabilities/delta/tree.js";
 import { capabilityDeltaSummaries } from "../../core/capabilities/delta/summary.js";
 import { printApi, printArchSlice, printCapabilities, printDropped, printEvents, printIntent, printIntentRef, printRequirements, printUseCases } from "./print.js";
+import { requirementJson } from "./requirements.js";
 import { locateServicePaths } from "../../core/repo/service-target.js";
 import { droppedRows, reviewSlice, type SliceReview } from "./slice.js";
 import type { Review } from "../../core/projection/review.js";
@@ -247,50 +245,6 @@ export function registerDelta(program: Command): void {
         review === null || r === undefined ? {} : { change: r.change, ...(r.diff === undefined ? {} : { diff: r.diff }) };
 
       if (json) {
-        // `axis` is a parameter and `service` stays in the closure, because the
-        // scenario digest is salted by BOTH and only one of them varies per
-        // call — the same Given/When/Then under `spec.md` and under
-        // `arch.spec.md` are two different claims, and one hash for both would
-        // let a green business run answer an integration test nobody wrote
-        // (core/gherkin/digest.ts owns that reasoning and the recipe).
-        const reqJson = (r: Requirement, axis: ScenarioAxis): Record<string, unknown> => ({
-          kind: r.kind,
-          id: r.id,
-          // Where the requirement sits in the document it was parsed from, so a
-          // consumer can send an author to the line rather than to the file.
-          line: r.line,
-          basedOn: r.basedOn,
-          name: r.name,
-          text: r.text.join("\n").trim(),
-          operations: r.operations,
-          covers: r.covers,
-          // The five joins this projection used to drop on the floor. Every one
-          // of them is already written on the requirement and every one names
-          // work: which permission gates it, which capability it belongs to,
-          // which named promise it realizes, and which messages it produces and
-          // consumes. An implementer handed "add the endpoint" and none of this
-          // has to go read the markdown the payload claims to have projected.
-          requires: r.requires,
-          capabilities: r.capabilities,
-          realizes: r.realizes,
-          publishes: r.publishes,
-          consumes: r.consumes,
-          // Scenarios go out verbatim: they are the acceptance criteria and the
-          // source for the tests whoever picks this up is expected to write.
-          //
-          // `digest` is the EXACT join key the rest of the toolchain uses —
-          // `loam gherkin` stamps it on the generated scenario as
-          // `@loam-digest-<16hex>` (core/gherkin/stamp.ts) and `loam verify`
-          // matches a cucumber report's scenarios on it. Without it a consumer
-          // of this brief could name the acceptance criteria but not the test
-          // that answers them, and had to regenerate the suite to find out.
-          scenarios: r.scenarios.map((s) => ({
-            name: s.name,
-            lines: s.lines,
-            line: s.line,
-            digest: scenarioDigest(service, s.lines, axis),
-          })),
-        });
         const brief = {
           command: "delta",
           feature: id,
@@ -299,12 +253,12 @@ export function registerDelta(program: Command): void {
           path: repoPath(config.docsDir, feature.dir),
           intent,
           openQuestions: questions,
-          requirements: reqs.map((r, i) => ({ ...reqJson(r, "business"), ...seen(review?.business[i]) })),
+          requirements: reqs.map((r, i) => ({ ...requirementJson(r, "business", service), ...seen(review?.business[i]) })),
           // Same shape, separate section: an arch requirement's scenarios are
           // integration/ops tests, and a consumer must not have to parse prose
           // to tell the two apart. The axis is passed rather than inferred
-          // because it is a digest SALT, not a label — see `reqJson` above.
-          archRequirements: archReqs.map((r, i) => ({ ...reqJson(r, "arch"), ...seen(review?.arch[i]) })),
+          // because it is a digest SALT, not a label (./requirements.ts).
+          archRequirements: archReqs.map((r, i) => ({ ...requirementJson(r, "arch", service), ...seen(review?.arch[i]) })),
           api: api.changes.map((op) => ({ ...op, ...seen(review?.operations.get(`${op.method} ${op.path}`)) })),
           // `api` stays exactly the operations array it has always been — a
           // consumer indexing it must not have to learn a new shape — so the

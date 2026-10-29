@@ -12,7 +12,7 @@
  * one level deeper, because each sits under its feature's own `###` heading.
  */
 import { type ContextPack, type IntroducedPack } from "../../core/pack/pack.js";
-import { type PackRequirement } from "../../core/pack/living.js";
+import { type PackRequirement } from "../../core/pack/requirement.js";
 import { type PackFeature } from "../../core/pack/features.js";
 
 export function printPack(pack: ContextPack | IntroducedPack): void {
