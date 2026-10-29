@@ -101,12 +101,90 @@ The strongest foundations to preserve are:
 
 ## Now
 
-Nothing is queued behind code. Every integrity, enforcement and lifecycle item that preceded this
-has landed (see [Recently landed](#recently-landed)) — the authored business axis, the use-case
-axis, and as of 2026-09-02 the deployment axis, which is the first item this file ever wrote
+One item is queued behind code: [the platform picture](#the-platform-picture--the-two-altitudes-above-a-subsystem),
+decided on 2026-10-29 from pilot evidence. Every integrity, enforcement and lifecycle item that
+preceded it has landed (see [Recently landed](#recently-landed)) — the authored business axis, the
+use-case axis, and as of 2026-09-02 the deployment axis, which is the first item this file ever wrote
 directly into this section rather than promoting from [Later](#later--promote-only-from-evidence).
 The last one through this section was [the hop join](#the-hop-join--what-a-fleet-flows-step-is-inside-its-service),
 promoted from pilot evidence and landed on 2026-10-27.
+
+### The platform picture — the two altitudes above a subsystem
+
+Decided by the fleet owner on 2026-10-29, and none of it is written yet. It is recorded here before
+any of it is, the way the hop join was.
+
+**The evidence.** A reader of a fleet starts at the top: the platform among the people and systems
+around it, then the platform's inside — its subsystems and the people who use them, with no stores
+and no topics — then one subsystem, then one service. loam generates the bottom two
+(`architecture/subsystems.likec4`, `architecture/services.likec4`) and nothing above them. The pilot
+fleet's map already holds every fact the top two need: one root group, its subsystem groups nested
+the way its `services/` tree nests, and every service inside its group, so LikeC4 lifts each
+service-to-service call to the boxes on its own. What it cannot lift is an event. The spine draws a
+message producer → topic → consumer, and LikeC4 never draws an edge through an element a view
+leaves out: on a three-subsystem probe (likec4 1.59.2) a view of the subsystem boxes with the topic
+left out kept the lifted synchronous call and showed the subsystem that only consumes as unconnected.
+A hand-drawn inside view therefore hides exactly the coupling it is drawn to show.
+
+**The decision.** loam generates the two missing altitudes into one new document,
+`architecture/platform.likec4`, under the ownership mark the other generated documents carry.
+
+- **Context** — `view <root>_context`: the root element as one box, every person and system with an
+  edge into or out of it, and no infrastructure (the kinds `database`, `queue`, `topic`, `cache`,
+  `bucket`). Wherever WAF, proxies and network belong in that picture, it is the deployment model,
+  whose slot already exists (the deployment axis); `loam-drawing` teaches it. Drawn on the logical
+  map, a WAF is a service with no directory or an external system, and a user's call lands on it
+  instead of on the service its `op` names.
+- **Inside** — `view <root> of <root>`: the root's children (its subsystem groups and its unfiled
+  services) and the people who reach them, no infrastructure. `of` makes the root's box click through
+  to it from every other view, the context view included (measured on the probe).
+- **The root** is each top-level map element that stands for no service and contains one — read by
+  the same walk every service check uses. A map with no such element gets neither view, and the
+  command says why: a fact, never a finding, because presence is never owed (DESIGN rule 26).
+- **The async edges of the inside view** are derived from what the spine already reads, never from
+  prose. A producer and a consumer of the same message — an edge's `publishes` and `consumes` keys,
+  or the two sides of one `topic` element — whose inside-view boxes differ give one edge between
+  those boxes, one per ordered pair, titled with the sorted message or topic names and drawn
+  `style { line dotted }`. On the probe such an edge, in its own document with no kind or tag
+  declared, parses, shows on the inside view, stays inside the box on the context view, and appears
+  in no service view.
+- **It is the first model content loam generates**, and that is the line this item draws for it: the
+  derived edges live in the generated document alone; loam's own reads never load that document, as
+  they already never load the other two, so no check grades an edge loam wrote and only the renderer
+  sees them; `subsystem.views-stale` reports it stale, reused as it was for the per-service views.
+- **One verb writes every generated document**: `loam views [--dry-run] [--json]` writes
+  `architecture/platform.likec4`, `architecture/subsystems.likec4` and `architecture/services.likec4`.
+  `loam subsystem sync` keeps its contract and writes the same set, and `loam archive` regenerates
+  them inside its commit as it does now. This is not the Later "Rendering" row: loam writes view
+  sources, and LikeC4 keeps the drawing.
+
+**What it cannot see**, said in the command's output rather than guessed around: coupling drawn
+only as an edge to a broker element, with no message key and no topic element. A broker in the
+middle says that two services share infrastructure, not that one depends on the other. The pilot
+draws most of its events that way — 4 of its 876 map edges carry a message key — so its inside
+view shows few async edges until its map names its messages or draws its topics.
+
+**Rejected, each with its reason.**
+
+- Drawing each event producer → consumer by hand, both keys on one edge (legal today): the edge
+  count becomes producers times consumers, and the topic leaves the service picture.
+- An inside view of synchronous calls only, with events on a view of their own: it is the picture
+  that shows a consuming subsystem as unconnected.
+- Edges derived per service rather than per box: they would surface in every authored view that
+  includes services, where the box-level edge stays where it was asked for.
+
+**The evidence bar.** This is one operator's evidence. The two-operator criterion governs
+promotions from Later, and this item extends the generated-views axis that landed in 0.2.0-alpha.7
+on the same owner's word; it adds no grammar and no finding code, and deleting one generated file
+undoes it. The criterion survives: it guards against a need nobody has, and this one is the owner's
+request with the defect it answers measured above.
+
+**Acceptance criterion, declared before the prototype.** On the map-heavy fixture (one root, 18
+nested subsystem groups, 78 services) with planted message keys and topics: `likec4 validate` passes
+on the written document; in `likec4 export json` the inside view carries exactly the planted
+cross-box pairs as edges and no service view gains one; `loam validate --all --json` is
+byte-identical with and without the document present; a second `loam views` writes nothing; and a
+flat map with no root gets neither view and a sentence saying why.
 
 ### Release evidence — one job left
 
