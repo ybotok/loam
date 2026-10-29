@@ -73,6 +73,7 @@ export const LOAM_ALLOWED_VERBS = [
   "unarchive",
   "validate",
   "verify",
+  "views",
 ] as const;
 
 /**

@@ -183,7 +183,7 @@ export async function fleetProjectFindings(check: FleetProjectCheck): Promise<Fl
       message:
         `fleet project: ${file ?? "the merged project"}: ${errorText(err)} — each document reads clean where ` +
         "loam grades it, but the renderer merges every `.likec4` the root project reads except the generated " +
-        "subsystems.likec4 and services.likec4 — the map, every extending model and every `.likec4` beside one — into ONE project, " +
+        "subsystems.likec4, services.likec4 and platform.likec4 — the map, every extending model and every `.likec4` beside one — into ONE project, " +
         `and that project does not parse. ${remedy(err.message)}`,
     });
   }

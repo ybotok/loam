@@ -10,6 +10,51 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Added — the platform picture: `architecture/platform.likec4` and `loam views`
+
+- A third generated document, `architecture/platform.likec4`, holds the two views above a
+  subsystem for each ROOT — a top-level map element that holds services without standing for one,
+  and that no generated subsystem view is drawn `of`:
+  `view platform_<root>_context` (the root as one box, every person and system an edge joins to
+  it) and `view platform_<root> of <root>` (the root's boxes and the people who reach them). Both
+  leave out the infrastructure kinds (`database`, `queue`, `topic`, `cache`, `bucket`). A map with
+  no root gets no file.
+- The inside view's event edges are derived from the spine — a `publishes` and a `consumes` key
+  naming one message, or the two sides of one `topic` or `queue` element — as one relationship
+  per pair of subsystem GROUPS, titled `async: <names>`. It is the first model content loam
+  generates. It lives in that document alone, which no loam read loads, so no check grades it.
+  No edge is derived at a box that is itself a service; the file says how many pairs it left out.
+- `loam views [--json]` writes every generated document — `platform.likec4`, `subsystems.likec4`,
+  `services.likec4` — and is the same run as `loam subsystem sync`, which writes the same set. Its
+  `--json` envelope says `command: "views"`. Both payloads gain the additive key `platformViews`:
+  `path`, `action` (the `serviceViews` values) and `roots[]`. The text report names the file when
+  it changed, and says when a map has no root.
+- `loam archive` regenerates `platform.likec4` inside its commit, as it does the other two, and
+  `loam seed` writes it with them. `loam subsystem new`, `rm`, `move` and `rename` regenerate it
+  in their commits too, because a directory that comes to own a top-level group takes that group
+  out of the platform views; their `--json` gains the additive key `platformViews` (an action,
+  beside `views` and `serviceViews`), and they refuse whole with `already-exists` over an authored
+  file at the reserved path, as they do for the other two.
+- `subsystem.views-stale` covers the new file, with `loam views` named as its repair. So the first
+  `loam validate --all` after upgrading reports it once for every fleet whose map draws a root,
+  until `loam views` (or `loam subsystem sync`) runs — and on every run for a fleet holding its own
+  `architecture/platform.likec4` (next bullet). `subsystem.view-id-collision` covers the ids
+  beginning `platform_`. `staleViews` in `loam archive --json` and `loam unarchive --json` can
+  name the new file.
+- **`architecture/platform.likec4` is now a name loam reserves.** A repository that already kept
+  its own document at that path — a diagram, or a `deployment/platform.likec4` an earlier archive
+  copied there — has it skipped by every loam read: what it declares is no longer on the map loam
+  grades, and a parse error in it is no longer reported, though the renderer still loads it.
+  `loam validate --all` reports `subsystem.views-stale` for it on every run, whether or not the
+  map draws a root. `loam subsystem sync` and `loam views` leave it alone, answer `refused` on
+  `platformViews.action` and exit 1. `loam seed` refuses whole with `already-exists`, and
+  `deployment.doc-reserved` now refuses a feature deployment document named `platform.likec4`.
+  `loam unarchive` of a feature archived before this release with such a document no longer
+  refuses `snapshot-stale` when the file was edited since: it leaves the file as it is and names
+  it. Rename the file to a name loam does not reserve, or delete it, then re-run.
+- `views` joins the agent hosts' approvable verbs, so a regenerated command wrapper or permission
+  list names it.
+
 ### Added — `--intent-ref`: the briefs carry the intent by reference
 
 - `loam tasks`, `loam delta` and `loam context` take `--intent-ref`, and the MCP tools `loam_tasks`,

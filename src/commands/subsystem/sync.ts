@@ -15,6 +15,13 @@
  *    resolves to a map element, exactly as the subsystem file is removed when
  *    the tree has no subsystems. `serviceViews` is its `action`; `action` still
  *    means the subsystem file alone.
+ *  - `architecture/platform.likec4`, the THIRD generated file: the context and
+ *    inside views of each element that holds the fleet's services without
+ *    standing for one, with the inside view's derived async edges
+ *    (`core/repo/tree/render/platform/`). Same rules again: a function of the
+ *    map and of which elements the subsystem views are drawn `of`.
+ *    `platformViews` is its `action`. `loam views` is this run under the name
+ *    of what it writes (`SyncVerb` below).
  *  - `services/<…>/<id>/likec4.config.json`, one LikeC4 project file beside
  *    every model that STANDS ALONE. Never compared, never rewritten. Created
  *    where a standalone model has none, and DELETED where an extending model has
@@ -121,7 +128,7 @@ import { readGeneratedFile } from "../../core/repo/tree/render/service/header.js
 import { NO_EXCLUDE, planExclude } from "./txn/exclude.js";
 import { type ProjectsReport, reportSync, type SyncAction } from "./txn/report.js";
 import { expectedViews } from "./txn/views.js";
-import { type ExpectedFile, planGenerated } from "../../core/repo/tree/render/views.js";
+import { type ExpectedFile, planGenerated } from "../../core/repo/tree/render/stale.js";
 
 /**
  * The per-service project half of one sync, before the write: what the
@@ -147,7 +154,15 @@ interface ProjectPlan {
   models: SurveyedModel<WalkedService>[];
 }
 
-export async function runSync(docsDir: DocsDir, json: boolean): Promise<void> {
+/**
+ * Which verb the person typed. `loam views` is this same run under the name a
+ * person looks for when what they want is the generated pictures; the envelope's
+ * `command` and the rerun line say the verb that was typed, and nothing else
+ * differs — one writer, so the two can never disagree about a file.
+ */
+export type SyncVerb = "subsystem" | "views";
+
+export async function runSync(docsDir: DocsDir, json: boolean, verb: SyncVerb = "subsystem"): Promise<void> {
   // A predecessor's journal is recovered (or refused) before the tree is
   // read: the views file itself may be the half-written one.
   const opened = await openCommitWindow(docsDir, LOCK_WAIT_MS);
@@ -164,6 +179,9 @@ export async function runSync(docsDir: DocsDir, json: boolean): Promise<void> {
     const expected = await expectedViews(docsDir, tree);
     const views = await planFile(expected.subsystems, expected.known);
     const services = await planFile(expected.services, expected.known);
+    // The third generated file, under the same two vetoes and the same compare —
+    // the one every writer of the other two makes for it as well.
+    const platform = await planFile(expected.platform, expected.known);
     // ONE read of every model's bytes for the whole run, and the same scan the
     // grader uses: it decides which directories are owed a project file AND
     // which the root project must exclude, and those are opposite answers for
@@ -197,8 +215,14 @@ export async function runSync(docsDir: DocsDir, json: boolean): Promise<void> {
     // one moved — the only thing either sentence has to say.
     const say = (): void => {
       reportSync(json, {
+        command: verb,
         action: views.action,
         serviceViews: services.action,
+        platformViews: platform.action,
+        platformRoots: expected.platformRoots,
+        // The per-service file is rendered exactly when the map draws a service,
+        // which is when "no root" is worth a sentence at all.
+        mapDrawsServices: expected.services.content !== null,
         subsystems: tree.subsystems.length,
         recovered,
         projects: projects(),
@@ -213,9 +237,9 @@ export async function runSync(docsDir: DocsDir, json: boolean): Promise<void> {
       // otherwise be told nothing, forever, about a file it can never repair —
       // and `loam validate --all` would go on reporting `subsystem.views-stale`
       // for that path with this very command named as the fix.
-      if (views.action === "refused" || services.action === "refused") process.exitCode = 1;
+      if ([views, services, platform].some((file) => file.action === "refused")) process.exitCode = 1;
     };
-    const generated = [views.write, services.write].filter((write) => write !== null);
+    const generated = [views.write, services.write, platform.write].filter((write) => write !== null);
     if (generated.length === 0 && plan.gaps.length === 0 && plan.strays.length === 0 && exclude.write === null) {
       say();
       return;
@@ -244,7 +268,7 @@ export async function runSync(docsDir: DocsDir, json: boolean): Promise<void> {
     // half-state no later run could tell from a team's deliberate deletion.
     const staged = await stageWrites(writes);
     const committed = await commitStaged(
-      { root: docsDir, command: "subsystem", rerun: "loam subsystem sync", target: "subsystems" },
+      { root: docsDir, command: verb, rerun: verb === "views" ? "loam views" : "loam subsystem sync", target: "subsystems" },
       staged,
       "synced",
     );
@@ -265,7 +289,7 @@ export async function runSync(docsDir: DocsDir, json: boolean): Promise<void> {
  * ONE function for both generated files, because the rule is one rule and a
  * second spelling of it would be a second chance for `subsystems.likec4` and
  * `services.likec4` to answer differently about the same map. Past the two
- * vetoes below, the compare is `planGenerated` (`core/repo/tree/render/views.ts`),
+ * vetoes below, the compare is `planGenerated` (`core/repo/tree/render/stale.ts`),
  * the one the tree-changing verbs and the archive make too, which says why it
  * is over CONTENT, not bytes.
  *

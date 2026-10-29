@@ -10,9 +10,10 @@ checks it is given.
 
 No — but the tree does not show you why, and that gap is the real finding.
 
-- `src/cli.ts` is registration and nothing else. It makes 29 `register*` calls, which produce **30**
+- `src/cli.ts` is registration and nothing else. It makes 29 `register*` calls, which produce **31**
   commands — `migrate-openspec/migrate-openspec.ts` declares two (`audit-openspec` and
-  `migrate-openspec`), which is why `test/agents.test.ts` compares against
+  `migrate-openspec`), and `subsystem/subsystem.ts` two (`subsystem` and `views`, one writer under
+  two names), which is why `test/agents.test.ts` compares against
   `buildProgram().commands.length` rather than counting registrations. (Both numbers are pinned live
   by `test/docs-facts.test.ts`, so this sentence moves when the CLI does. It said 27 and 28 for as
   long as the pin existed, because the pin required a literal space before `commands` and this line
@@ -46,7 +47,7 @@ compiler does not check.
 | Layer | Modules | Job |
 |---|---|---|
 | Entry | `src/cli.ts` | Register commands; decide the process exit |
-| Command | `src/commands/` — 29 command modules, 30 commands | Parse flags, refuse, print, set `process.exitCode` |
+| Command | `src/commands/` — 29 command modules, 31 commands | Parse flags, refuse, print, set `process.exitCode` |
 | Shared command policy | `commands/policy/` — `format.ts`, `gate.ts` | Wording and gating shared by 10 and 14 commands |
 | Core | `src/core/` | Compute and return. Never print, never exit |
 
@@ -116,7 +117,7 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/agent/` | the generated AGENTS.md, the slash commands, the tool registry | envelope, kernel |
 | `core/document/` | `frontmatter` `spec` `parse` `apply` `scenarios` | kernel, vocabulary |
 | `core/staging/` | the write path; `staging/recovery/` is the crash half, `staging/snapshot/` the undo snapshot (taking one in `snapshot.ts`, its layout in `manifest.ts`, which a read-only command may import) | envelope, kernel |
-| `core/repo/` | `entries` `paths` `state` `repo` `service-target` | c4, document, kernel, provenance |
+| `core/repo/` | `entries` `paths` `state` `repo` `service-target` | c4, document, kernel, provenance, vocabulary |
 | `core/c4/` | `likec4` `arch` `source-mask` `source-scan`, with `parsed/` `project/` `resolve/` `locate/` beneath | envelope, kernel, repo, vocabulary |
 | `core/c4/splice/` | `contract` `landscape-merge` `authored-source` `placement` | c4 |
 | `core/c4/seed/` | `loam seed`'s file grammar and templater: `fleet-file` (`items` reads one node) `template` `stamp` | c4, kernel |

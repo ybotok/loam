@@ -56,9 +56,36 @@ import { type LoadedDoc } from "../c4/likec4.js";
 import type { ExtendingModel } from "../c4/splice/contract.js";
 import { relativeDocuments } from "../c4/project/documents.js";
 import { featureDeploymentDir } from "../repo/authored/paths.js";
-import { reservedArchitectureName } from "../repo/paths.js";
+import { GENERATED_ARCHITECTURE_FILES, LANDSCAPE_FILE } from "../repo/paths.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 import { type Issue } from "../vocabulary/issue.js";
+
+/**
+ * Names inside `architecture/` that LOAM owns, and what goes wrong if a
+ * feature's own document claims one. `features/<FEAT>/deployment/<name>.likec4`
+ * merges as a whole-file COPY straight into `architecture/` — unlike a flow,
+ * which lands under `usecases/` — so its `<name>` is free to be any of them. A
+ * generated name fails silently both ways (`GENERATED_ARCHITECTURE_FILES` says how); a copy over
+ * `landscape.likec4` would discard the living map the archive SPLICES; and
+ * `usecases/` is the flow tree the scan walks, where a deployment document parses
+ * and is then looked for by a reader asking another question. Returns the reason,
+ * or null when the name is the author's — over the rel a walk produced, never argv.
+ */
+function reservedArchitectureName(rel: string): string | null {
+  const parts = rel.split("/");
+  if (parts[0] === USECASE_DIR) {
+    return `\`${USECASE_DIR}/\` is the use-case tree — a flow belongs in \`features/<FEAT>/usecases/\`, which merges there`;
+  }
+  // Own key only: a bare lookup answers `constructor` with something inherited.
+  if (Object.hasOwn(GENERATED_ARCHITECTURE_FILES, rel)) return GENERATED_ARCHITECTURE_FILES[rel]!;
+  if (rel === LANDSCAPE_FILE) {
+    return "`landscape.likec4` is the living fleet map, which the archive SPLICES into rather than replaces";
+  }
+  return null;
+}
+
+/** The flow tree's directory — spelled once, read by the reservation. The map's file name is `LANDSCAPE_FILE`. */
+const USECASE_DIR = "usecases";
 
 /** One topology document a feature carries. */
 export interface FeatureDeployment {
@@ -109,7 +136,7 @@ export function livingDeploymentPath(docsDir: DocsDir, rel: string): string {
  * `deployment.doc-reserved` — the name is one loam owns inside `architecture/`.
  * The merge writes straight into that directory, unlike a flow, which lands
  * under `usecases/`, so `<name>` is free to collide with the living map, either
- * of the two GENERATED views files (`subsystems.likec4` and `services.likec4`),
+ * of the GENERATED views files (`subsystems.likec4`, `services.likec4`, `platform.likec4`),
  * or the flow tree. `reservedArchitectureName` carries which and why. It is
  * asked FIRST and WITHOUT an existence test, because three of the four fail
  * silently when the target does not exist yet.
@@ -135,8 +162,8 @@ export async function deploymentDeltaIssues(docsDir: DocsDir, featureDir: Featur
   const issues: Issue[] = [];
   // The reservation runs FIRST and independently of existence, because three of
   // the four names it refuses need not exist for the merge to be wrong. A
-  // topology copied over either GENERATED file — `subsystems.likec4` or
-  // `services.likec4` — is destroyed by the next `loam subsystem sync` and is
+  // topology copied over a GENERATED file — `subsystems.likec4`,
+  // `services.likec4` or `platform.likec4` — is destroyed by the next `loam subsystem sync` and is
   // invisible to every project load until then: the merge would report
   // `created architecture/subsystems.likec4` and nothing downstream would ever
   // say another word about it.

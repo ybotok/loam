@@ -120,6 +120,8 @@ export async function runNew(
             path: repoPath(docsDir, dir),
             views: views.subsystems,
             serviceViews: views.services,
+
+            platformViews: views.platform,
             ...(recovered === null ? {} : { recovered }),
           });
           return;
@@ -209,6 +211,8 @@ export async function runRm(docsDir: DocsDir, name: string, json: boolean): Prom
             directoryRemoved,
             views: views.subsystems,
             serviceViews: views.services,
+
+            platformViews: views.platform,
             ...(recovered === null ? {} : { recovered }),
           });
           return;

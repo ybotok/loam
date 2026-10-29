@@ -25,10 +25,11 @@ export const SUBSYSTEM_COMMANDS = `- \`loam subsystem <verb>\` manages the group
   additive keys \`services[].subsystem\`, \`subsystems[]\` and
   \`unfiledServices\`); \`history <name>\` asks git how a service or subsystem
   moved and answers nothing — exit 0, no finding — when git will not say;
-  \`sync\` regenerates BOTH generated views files —
-  \`architecture/subsystems.likec4\` (one view per subsystem) and
+  \`sync\` — or \`loam views\`, the same run — regenerates EVERY generated views file —
+  \`architecture/subsystems.likec4\` (one view per subsystem),
   \`architecture/services.likec4\` (one overview view per service the fleet map
-  draws) — the one repair for \`subsystem.views-stale\`, which grades each file
+  draws) and \`architecture/platform.likec4\` (the platform's context and inside
+  views) — the one repair for \`subsystem.views-stale\`, which grades each file
   separately and names the one that drifted. It also maintains the RENDERER's
   wiring for the service models. Which wiring a model needs is decided by the file's own
   grammar, never by a config key: a model that declares its own
@@ -62,8 +63,8 @@ export const SUBSYSTEM_COMMANDS = `- \`loam subsystem <verb>\` manages the group
   (\`build\` and \`export\` take every project). A view id claimed twice inside one
   project — the landscape and an extending model both minting it, or either
   claiming a generated one — is
-  \`subsystem.view-id-collision\` — ids beginning \`subsystem_\` or \`service_\` are
-  loam's to mint. Each generated view is titled by its PATH —
+  \`subsystem.view-id-collision\` — ids beginning \`subsystem_\`, \`service_\` or
+  \`platform_\` are loam's to mint. Each generated view is titled by its PATH —
   every marked ancestor's label and its own, which the renderer reads as
   folders — where a label is the marker's \`title\` or the directory name; the
   marker's \`description\` rides along. A per-service view is titled

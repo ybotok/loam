@@ -134,6 +134,7 @@ const INVOCATIONS: Record<string, Invocation> = {
   unarchive: { run: [["archive", FEATURE, "--approve"], ["unarchive", FEATURE, "--json"]] },
   validate: { run: [["validate", "--json"]] },
   verify: { run: [["verify", FEATURE, "--json"]] },
+  views: { run: [["views", "--json"]] },
   vouch: { run: [["vouch", "--pack", "--json"]] },
 };
 

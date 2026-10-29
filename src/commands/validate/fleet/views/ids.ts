@@ -63,8 +63,18 @@
  */
 import type { ViewIdClaim } from "../../../../core/c4/parsed/view-ids.js";
 import { renderContext } from "../../../../core/repo/tree/render/body.js";
+import {
+  PLATFORM_VIEW_PREFIX,
+  platformContextViewId,
+  platformViewId,
+} from "../../../../core/repo/tree/render/platform/views.js";
 import { SERVICE_VIEW_PREFIX, serviceViewId } from "../../../../core/repo/tree/render/service/view-id.js";
-import { type MapFacts, SUBSYSTEM_VIEW_PREFIX, subsystemViewId } from "../../../../core/repo/tree/render/views.js";
+import {
+  type MapFacts,
+  renderPlatformOverview,
+  SUBSYSTEM_VIEW_PREFIX,
+  subsystemViewId,
+} from "../../../../core/repo/tree/render/views.js";
 import type { FleetTree } from "../../../../core/repo/tree/walk.js";
 import type { Finding } from "../../../../core/vocabulary/report.js";
 
@@ -80,9 +90,17 @@ export function viewIdFindings(authored: ViewIdClaim[] | undefined, tree: FleetT
   const generated = new Map<string, Minted>(
     tree.subsystems.map((sub) => [
       subsystemViewId(sub),
-      { owner: sub.path.join("/"), file: "architecture/subsystems.likec4", prefix: SUBSYSTEM_VIEW_PREFIX },
+      { subject: `services/${sub.path.join("/")}/`, file: "architecture/subsystems.likec4", prefix: SUBSYSTEM_VIEW_PREFIX },
     ]),
   );
+  // The platform ids, two per root, and only for a root the render actually
+  // draws — asked of the generator itself, for the reason the per-service ids
+  // below are.
+  for (const root of renderPlatformOverview(tree, map).roots) {
+    const mint = { subject: `the map's root element \`${root}\``, file: "architecture/platform.likec4", prefix: PLATFORM_VIEW_PREFIX };
+    generated.set(platformContextViewId(root), mint);
+    generated.set(platformViewId(root), mint);
+  }
   // The per-service ids, and ONLY for a service the map actually resolves —
   // which is why the map comes in at all. `architecture/services.likec4` draws a
   // view for a service exactly when the element→service join answers, so a
@@ -98,7 +116,7 @@ export function viewIdFindings(authored: ViewIdClaim[] | undefined, tree: FleetT
   for (const service of tree.services) {
     if (!drawn.elementOf.has(service.id)) continue;
     generated.set(serviceViewId(service.id), {
-      owner: [...service.subsystem, service.id].join("/"),
+      subject: `services/${[...service.subsystem, service.id].join("/")}/`,
       file: "architecture/services.likec4",
       prefix: SERVICE_VIEW_PREFIX,
     });
@@ -125,7 +143,7 @@ export function viewIdFindings(authored: ViewIdClaim[] | undefined, tree: FleetT
       locations: [{ path: file, role: "primary" as const }],
       message:
         `subsystems: ${file} declares \`view ${id}\`, which is the id loam generates ` +
-        `into ${mint.file} for services/${mint.owner}/ — LikeC4 merges both files into one project, ` +
+        `into ${mint.file} for ${mint.subject} — LikeC4 merges both files into one project, ` +
         // The ROOT project, not `architecture/`: the claimant may be a model's
         // own view now (an extending model is a document of the root project),
         // and telling that author the `architecture/` project is refused sends
@@ -149,8 +167,8 @@ export function viewIdFindings(authored: ViewIdClaim[] | undefined, tree: FleetT
  * name has nothing to do with.
  */
 interface Minted {
-  /** The tree path of the subsystem or service the id belongs to, under `services/`. */
-  owner: string;
+  /** What the id is minted for, as the message spells it: a `services/…/` path, or a root element. */
+  subject: string;
   /** The generated document loam writes that id into, docs-relative. */
   file: string;
   /** The reserved prefix the author is told not to mint under. */

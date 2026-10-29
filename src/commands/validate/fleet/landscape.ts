@@ -253,8 +253,8 @@ export async function validateLandscape(
   // The generated views files, graded only now that the landscape has parsed:
   // the expected bytes are a function of (tree, landscape elements, the global
   // style ids the map declares) — the whole doc goes across so the grader and
-  // `sync` read one record. There are TWO generated files now
-  // (`subsystems.likec4` and `services.likec4`) and this pushes ONE error PER
+  // `sync` read one record. There are THREE generated files now
+  // (`subsystems.likec4`, `services.likec4`, `platform.likec4`) and this pushes ONE error PER
   // STALE FILE, each naming its own file; `views/stale.ts` says why a content
   // compare, and why two files share one code but never one finding.
   findings.push(...(await viewsStaleFindings(docsDir, tree, land)));

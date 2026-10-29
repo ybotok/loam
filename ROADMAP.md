@@ -18,11 +18,11 @@ acceptance tests, and implementation evidence remain ordinary files in repositor
 state inside a service. The CLI is small enough to audit, and every writer — not only archive — now
 commits through a locked, journaled transaction that a crash cannot leave half-applied.
 
-The tree contains **562 TypeScript modules in 179 source packages**, with an acyclic package graph
+The tree contains **565 TypeScript modules in 180 source packages**, with an acyclic package graph
 checked by
 [scripts/package-graph.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-graph.mjs). The
-CLI exposes **30 commands** from [src/cli.ts](https://github.com/ybotok/loam/blob/main/src/cli.ts),
-and the suite stands at **220 test files**. Those four counts are deliberately stated OUTSIDE the
+CLI exposes **31 commands** from [src/cli.ts](https://github.com/ybotok/loam/blob/main/src/cli.ts),
+and the suite stands at **221 test files**. Those four counts are deliberately stated OUTSIDE the
 dated snapshot below: each derives from the tree in one readdir, so
 [test/docs-facts.test.ts](https://github.com/ybotok/loam/blob/main/test/docs-facts.test.ts) grades
 them live and this paragraph cannot quietly trail the code the way its predecessor did.
@@ -111,8 +111,9 @@ promoted from pilot evidence and landed on 2026-10-27.
 
 ### The platform picture — the two altitudes above a subsystem
 
-Decided by the fleet owner on 2026-10-29, and none of it is written yet. It is recorded here before
-any of it is, the way the hop join was.
+Decided by the fleet owner on 2026-10-29 and recorded before any of it was written, the way the hop
+join was (`8a089fc`). The prototype is on `claude/platform-picture`, measured below; nothing is
+merged.
 
 **The evidence.** A reader of a fleet starts at the top: the platform among the people and systems
 around it, then the platform's inside — its subsystems and the people who use them, with no stores
@@ -129,36 +130,39 @@ A hand-drawn inside view therefore hides exactly the coupling it is drawn to sho
 **The decision.** loam generates the two missing altitudes into one new document,
 `architecture/platform.likec4`, under the ownership mark the other generated documents carry.
 
-- **Context** — `view <root>_context`: the root element as one box, every person and system with an
+- **Context** — `view platform_<root>_context`: the root element as one box, every person and system with an
   edge into or out of it, and no infrastructure (the kinds `database`, `queue`, `topic`, `cache`,
   `bucket`). Wherever WAF, proxies and network belong in that picture, it is the deployment model,
   whose slot already exists (the deployment axis); `loam-drawing` teaches it. Drawn on the logical
   map, a WAF is a service with no directory or an external system, and a user's call lands on it
   instead of on the service its `op` names.
-- **Inside** — `view <root> of <root>`: the root's children (its subsystem groups and its unfiled
+- **Inside** — `view platform_<root> of <root>`: the root's children (its subsystem groups and its unfiled
   services) and the people who reach them, no infrastructure. `of` makes the root's box click through
   to it from every other view, the context view included (measured on the probe).
-- **The root** is each top-level map element that stands for no service and contains one — read by
+- **The root** is each top-level map element that stands for no service and no subsystem (no generated
+  subsystem view is drawn `of` it — the prototype measured why) and contains a service — read by
   the same walk every service check uses. A map with no such element gets neither view, and the
   command says why: a fact, never a finding, because presence is never owed (DESIGN rule 26).
 - **The async edges of the inside view** are derived from what the spine already reads, never from
   prose. A producer and a consumer of the same message — an edge's `publishes` and `consumes` keys,
-  or the two sides of one `topic` element — whose inside-view boxes differ give one edge between
-  those boxes, one per ordered pair, titled with the sorted message or topic names and drawn
-  `style { line dotted }`. On the probe such an edge, in its own document with no kind or tag
-  declared, parses, shows on the inside view, stays inside the box on the context view, and appears
-  in no service view.
+  or the two sides of one `topic` or `queue` element — whose inside-view boxes differ give one edge
+  between those boxes, one per ordered pair, titled `async:` and the sorted message or topic names.
+  Only between two subsystem GROUPS, never at a box that is itself a service: a relationship is drawn
+  in every view naming both its ends, and between two services that is every per-service overview
+  and every hand-drawn view (the prototype measured it, below). On the probe such an edge, in its own
+  document with no kind or tag declared, parses, shows on the inside view, and stays inside the box
+  on the context view.
 - **It is the first model content loam generates**, and that is the line this item draws for it: the
   derived edges live in the generated document alone; loam's own reads never load that document, as
   they already never load the other two, so no check grades an edge loam wrote and only the renderer
   sees them; `subsystem.views-stale` reports it stale, reused as it was for the per-service views.
-- **One verb writes every generated document**: `loam views [--dry-run] [--json]` writes
+- **One verb writes every generated document**: `loam views [--json]` writes
   `architecture/platform.likec4`, `architecture/subsystems.likec4` and `architecture/services.likec4`.
   `loam subsystem sync` keeps its contract and writes the same set, and `loam archive` regenerates
   them inside its commit as it does now. This is not the Later "Rendering" row: loam writes view
   sources, and LikeC4 keeps the drawing.
 
-**What it cannot see**, said in the command's output rather than guessed around: coupling drawn
+**What it cannot see**, said in the generated file's header rather than guessed around: coupling drawn
 only as an edge to a broker element, with no message key and no topic element. A broker in the
 middle says that two services share infrastructure, not that one depends on the other. The pilot
 draws most of its events that way — 4 of its 876 map edges carry a message key — so its inside
@@ -185,6 +189,25 @@ on the written document; in `likec4 export json` the inside view carries exactly
 cross-box pairs as edges and no service view gains one; `loam validate --all --json` is
 byte-identical with and without the document present; a second `loam views` writes nothing; and a
 flat map with no root gets neither view and a sentence saying why.
+
+**Measured against it, 2026-10-29**, on a branch, before anything merged. The fixture has six
+top-level domain groups rather than one root, so the measurement wrapped them in one, as the pilot
+draws its map, and planted four event pairs through topics on a broker outside it: one keyless
+across two domains, one keyed with agreeing keys across two others, one with disagreeing keys, one
+within a single domain. `loam views` derived exactly the first two, `likec4 validate` passed, and of
+the export's 269 views only the inside view draws either derived relationship. A second run wrote
+nothing. The byte-identity half cannot hold as worded, because the document's absence is itself a
+finding (`subsystem.views-stale`); measured instead, `validate --all --json` reported 150 graded
+findings without the document and 149 with it, and the one difference is that finding. Two parts of
+the decision changed on the way, each on a measurement: the derived edges carry no line style,
+because LikeC4 draws every relationship between the same two boxes as one edge titled `[...]` and a
+dotted style on the derived one drew that merged edge dotted, a synchronous call included; and they
+join two groups only, because on `examples/docs`, whose services sit directly in its root, three
+service-level edges surfaced in a per-service view, a subsystem view and an authored view. There the
+file says how many pairs it left out and why. The full suite then found a third: on a map whose
+top-level groups are its subsystems' own boxes, each group was taken for a root, and its
+`view platform_<group> of <group>` — in a file that sorts before `subsystems.likec4` — took the
+group's click from the subsystem view. An element a generated subsystem view is drawn `of` is no root.
 
 ### Release evidence — one job left
 
