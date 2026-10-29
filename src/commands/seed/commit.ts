@@ -62,7 +62,7 @@ export type SeedCommit =
         | "merge-failed"
         | "rollback-incomplete"
         | "seed-landscape-edited"
-        /** A hand-authored document standing at one of the two generated views paths — see the refusal in `commitSeed`. */
+        /** A hand-authored document standing at one of the generated views paths — see the refusal in `commitSeed`. */
         | "already-exists";
       message: string;
     }
@@ -98,8 +98,9 @@ export async function commitSeed(req: SeedCommitRequest): Promise<SeedCommit> {
     // THE OTHER never-overwrite promise, and the third refusal this window owns.
     //
     // `classifyLandscape` above keeps it for `architecture/landscape.likec4`;
-    // this keeps it for the two files seed does not share with the team at all —
-    // `architecture/subsystems.likec4` and `architecture/services.likec4` are
+    // this keeps it for the files seed does not share with the team at all —
+    // `architecture/subsystems.likec4`, `architecture/services.likec4` and
+    // `architecture/platform.likec4` are
     // filenames loam RESERVES inside a directory the team owns, and seed writes
     // them whole. Until this line existed a `loam seed` into a repository that
     // kept a hand-authored diagram at one of those paths destroyed it in

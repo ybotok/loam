@@ -279,6 +279,9 @@ describe("examples/docs vs loam archive FEAT-101 --dry-run", () => {
       // commit (src/commands/archive/views.ts) — so `validate --all` is not
       // left red behind a `loam subsystem sync` nobody was told to run.
       { path: "architecture/services.likec4", action: "update" },
+      // And the platform's inside view gains the new service's box, from the
+      // same merged map (CHANGELOG: the platform picture).
+      { path: "architecture/platform.likec4", action: "update" },
       {
         path: "features/FEAT-101-payment-splitting",
         action: "move",

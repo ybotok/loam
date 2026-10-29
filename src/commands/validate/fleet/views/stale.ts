@@ -1,9 +1,11 @@
 /**
  * Staleness of the GENERATED documents under `architecture/` against the tree
  * and the map: ONE error per stale file, naming that file, repaired by exactly
- * one command (`loam subsystem sync`).
+ * one run (`loam subsystem sync`, or `loam views`, which writes the same set).
  *
- * TWO FILES, ONE CODE, and that is a decision rather than an omission.
+ * THREE FILES, ONE CODE, and that is a decision rather than an omission. The
+ * third, `platform.likec4`, joined on the same reasoning as the second; the two
+ * below are the ones the reasoning was first written for.
  * `subsystems.likec4` (one view per subsystem) and `services.likec4` (one
  * overview view per service the map draws) are written by the same command in
  * the same commit, drift for overlapping reasons — a `subsystem move` restales
@@ -49,8 +51,13 @@
  * the next `sync` writes the line.
  */
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
-import { serviceViewsPath, subsystemViewsPath } from "../../../../core/repo/paths.js";
-import { serviceViewsState, viewsState, type ViewsState } from "../../../../core/repo/tree/render/stale.js";
+import { platformViewsPath, serviceViewsPath, subsystemViewsPath } from "../../../../core/repo/paths.js";
+import {
+  platformViewsState,
+  serviceViewsState,
+  viewsState,
+  type ViewsState,
+} from "../../../../core/repo/tree/render/stale.js";
 import type { MapFacts } from "../../../../core/repo/tree/render/views.js";
 import type { FleetTree } from "../../../../core/repo/tree/walk.js";
 import type { Finding } from "../../../../core/vocabulary/report.js";
@@ -58,12 +65,14 @@ import type { Finding } from "../../../../core/vocabulary/report.js";
 export async function viewsStaleFindings(docsDir: DocsDir, tree: FleetTree, map: MapFacts): Promise<Finding[]> {
   const subsystems = await viewsState(subsystemViewsPath(docsDir), tree, map);
   const services = await serviceViewsState(serviceViewsPath(docsDir), tree, map);
+  const platform = await platformViewsState(platformViewsPath(docsDir), tree, map);
   return [
     ...staleFinding(subsystems, {
       file: "architecture/subsystems.likec4",
       absent: "does not exist, but the tree has subsystems to mirror",
       leftover: "exists, but the tree has no subsystems — the generated file must be absent",
       what: "one view per subsystem, and every derived scope drawn from it is wrong until it agrees",
+      repair: "loam subsystem sync",
     }),
     ...staleFinding(services, {
       file: "architecture/services.likec4",
@@ -73,6 +82,19 @@ export async function viewsStaleFindings(docsDir: DocsDir, tree: FleetTree, map:
       what:
         "one overview view per service the map draws, and every drill-down into a service goes through it, so a " +
         "reader following the map lands on a picture that is wrong until it agrees",
+      repair: "loam subsystem sync",
+    }),
+    // The third file names `loam views`, the verb that exists for the generated
+    // files as a whole; `subsystem sync` is the same run.
+    ...staleFinding(platform, {
+      file: "architecture/platform.likec4",
+      absent: "does not exist, but the fleet map draws a platform around its services",
+      leftover:
+        "exists, but no element on the fleet map holds the services without being a service's or a subsystem's own box — the generated file must be absent",
+      what:
+        "the platform's context and inside views, the two pictures above a subsystem, whose async edges are " +
+        "derived from the event spine, so a reader opening the platform sees the wrong coupling until it agrees",
+      repair: "loam views",
     }),
   ];
 }
@@ -87,6 +109,8 @@ interface StaleFile {
   leftover: string;
   /** What the file holds, and what is wrong while it disagrees. */
   what: string;
+  /** The command that regenerates it. */
+  repair: string;
 }
 
 /**
@@ -120,7 +144,7 @@ function staleFinding(state: ViewsState, file: StaleFile): Finding[] {
         : [{ path: file.file, role: "primary" as const }],
       message:
         `subsystems: ${file.file} ${said} — it is generated, ${file.what}. ` +
-        "Run `loam subsystem sync` to regenerate it; never edit it by hand.",
+        `Run \`${file.repair}\` to regenerate it; never edit it by hand.`,
     },
   ];
 }

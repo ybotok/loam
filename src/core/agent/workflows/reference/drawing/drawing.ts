@@ -297,6 +297,17 @@ from an overview that drew the whole fleet and so showed nothing:
   boxes, not services: the generated \`architecture/subsystems.likec4\` and
   \`architecture/services.likec4\` views are the drill-down. Aim for at most
   about 20 nodes and 25 drawn lines.
+- **The two altitudes above a subsystem are generated too.** Draw the fleet's
+  subsystem groups inside ONE boundary element, and \`loam views\` writes
+  \`architecture/platform.likec4\`: the platform as one box among the people and
+  systems around it, and its inside, subsystem by subsystem, with an
+  \`async:\` edge wherever an event joins two of them through a topic. Name
+  the message on each event edge (\`publishes\` / \`consumes\`) or draw its
+  topic, or the inside view cannot show that coupling.
+- **WAF, proxies, load balancers and the network are deployment, not this
+  map.** Draw them in the deployment model. On the logical map a WAF is a
+  service with no directory or an external system, and a user's call lands on
+  it instead of on the service its \`op\` names.
 - **Filter by ONE kind, and say it positively.** A view above service altitude
   merges every relationship between two boxes into one drawn line. When those
   relationships are of different kinds, LikeC4 falls back to the default gray
@@ -326,7 +337,8 @@ from an overview that drew the whole fleet and so showed nothing:
 - **Titles make folders.** LikeC4 splits a title on \`/\` into browser folders
   and lists sub-folders before views, so number the views you want read in
   order: \`title 'Fleet / 1 · Who publishes'\`.
-- **Never author \`view … of\` a subsystem or service element.** The generated
+- **Never author \`view … of\` a subsystem, a service or the platform's
+  boundary element.** The generated
   views own that drill-down, and an authored one in a file that sorts before
   them — \`landscape.likec4\` does — takes the click from every other view that
   draws the element.

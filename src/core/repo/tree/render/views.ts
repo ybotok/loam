@@ -52,6 +52,7 @@
  */
 import { type LoadedDoc } from "../../../c4/likec4.js";
 import { renderContext, viewBody } from "./body.js";
+import { type PlatformRender, renderPlatformViews } from "./platform/views.js";
 import { GENERATED_MARK } from "./service/header.js";
 import { escapeViewIdSegment } from "./service/view-id.js";
 import {
@@ -59,7 +60,7 @@ import {
   SERVICE_STYLE_GROUP,
   type ServiceViewSubject,
 } from "./service/views.js";
-import { likec4String, viewTitle } from "./text.js";
+import { likec4String, titleSegment, viewTitle } from "./text.js";
 import type { FleetTree, SubsystemEntry } from "../walk.js";
 
 /**
@@ -232,6 +233,31 @@ export function renderServiceOverviews(tree: FleetTree, map: MapFacts): string |
     elements: map.elements.map((e) => e.id),
     styled: declared.includes(SERVICE_STYLE_GROUP),
     disclosure: stylesDisclosure(declared, SERVICE_STYLE_GROUP),
+  });
+}
+
+/**
+ * The GENERATED platform views — `architecture/platform.likec4`, a context view
+ * and an inside view for each map element that holds the fleet's services
+ * without being a service's or a subsystem's own box. `content` is null when the map has no such element,
+ * so the file is then absent exactly as the other two are when there is nothing
+ * to mirror. `./platform/` owns the shape and its measurements; the element→
+ * service join and the two escapers are resolved here, for the reason
+ * `renderServiceOverviews` gives above.
+ */
+export function renderPlatformOverview(tree: FleetTree, map: MapFacts): PlatformRender {
+  const ctx = renderContext(tree, map.elements);
+  // The elements the subsystem file draws its views `of`, read off the SAME
+  // body that file is rendered from, so the two files cannot disagree about
+  // which box is a subsystem's.
+  const subsystems = new Set(tree.subsystems.map((sub) => viewBody(ctx, sub).of).filter((of) => of !== null));
+  return renderPlatformViews({
+    elements: map.elements,
+    relationships: map.relationships,
+    services: new Set(ctx.elementOf.values()),
+    subsystems,
+    quote: likec4String,
+    segment: titleSegment,
   });
 }
 

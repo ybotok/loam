@@ -715,6 +715,7 @@ model {
   loam.core.repo -> loam.core.document
   loam.core.repo -> loam.core.kernel
   loam.core.repo -> loam.core.provenance
+  loam.core.repo -> loam.core.vocabulary
 
   loam.core.results -> loam.core.gherkin
   loam.core.results -> loam.core.kernel

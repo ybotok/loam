@@ -34,9 +34,15 @@ import { excludingPath, readRootExclude } from "../root-project/exclude.js";
 import { architectureDocuments, likec4DocumentsUnder } from "./documents.js";
 import { asLoadedDoc, loadProject } from "./load.js";
 import type { DocsDir } from "../../kernel/ids/dirs.js";
-import { GENERATED_ARCHITECTURE_FILES, landscapePath, serviceViewsPath, subsystemViewsPath } from "../../repo/paths.js";
+import {
+  GENERATED_ARCHITECTURE_FILES,
+  landscapePath,
+  platformViewsPath,
+  serviceViewsPath,
+  subsystemViewsPath,
+} from "../../repo/paths.js";
 import { listFleetTree } from "../../repo/repo.js";
-import { serviceViewsState, viewsState } from "../../repo/tree/render/stale.js";
+import { platformViewsState, serviceViewsState, viewsState } from "../../repo/tree/render/stale.js";
 import type { MapFacts } from "../../repo/tree/render/views.js";
 import type { FleetTree } from "../../repo/tree/walk.js";
 
@@ -50,9 +56,9 @@ export function architectureDir(docsDir: DocsDir): string {
  * answer four project reads have to agree on, and the reason it is a SET rather
  * than the single path it used to be.
  *
- * There are two generated files now (`subsystems.likec4` and `services.likec4`,
- * both written by `loam subsystem sync`), and every one of these readers must
- * drop BOTH: this module's own project list, the merge-preview staging beside it
+ * There are three generated files now (`subsystems.likec4`, `services.likec4`
+ * and `platform.likec4`, all written by `loam subsystem sync` / `loam views`),
+ * and every one of these readers must drop ALL of them: this module's own project list, the merge-preview staging beside it
  * (`./staged.ts`), and the renderer's-eye load `c4.fleet-project-invalid` builds
  * (`rootProjectDocuments` below). A views-only document
  * does not parse standalone — its `include` lines name elements the landscape
@@ -338,13 +344,15 @@ export async function staleGeneratedViews(docsDir: DocsDir): Promise<string[]> {
  * The generated documents on disk that do not match what this tree and this
  * map would generate — the compare itself, for a map and a tree the caller
  * already holds: the living ones above, or the ones an archive would leave
- * (`./staged.ts`). BOTH files, because a map change moves the per-service
+ * (`./staged.ts`). EVERY file, because a map change moves the per-service
  * overviews in a way it does not move the subsystem views: one edge changes
- * one service's peer set, and one newly bound element adds a whole view.
+ * one service's peer set, and one newly bound element adds a whole view — and
+ * the platform views move with any of it.
  */
 export async function staleAgainst(docsDir: DocsDir, map: MapFacts, tree: FleetTree): Promise<string[]> {
   const stale: string[] = [];
   if (!(await viewsState(subsystemViewsPath(docsDir), tree, map)).agrees) stale.push("architecture/subsystems.likec4");
   if (!(await serviceViewsState(serviceViewsPath(docsDir), tree, map)).agrees) stale.push("architecture/services.likec4");
+  if (!(await platformViewsState(platformViewsPath(docsDir), tree, map)).agrees) stale.push("architecture/platform.likec4");
   return stale.sort();
 }

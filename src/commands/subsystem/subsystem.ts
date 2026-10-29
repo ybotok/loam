@@ -117,4 +117,41 @@ export function registerSubsystem(program: Command): void {
         reportDocsRepoError(json, err);
       }
     });
+  // The second command this module declares, registered from here so the CLI
+  // module makes one call per command module (docs/DESIGN.md counts them).
+  registerViews(program);
+}
+
+/**
+ * `loam views` — every generated document under `architecture/`, written by the
+ * one run that already writes them (`./sync.ts`). Registered HERE, beside the
+ * verb it shares a writer with, because a command module may not import another
+ * command's (docs/DESIGN.md rule 5) and a second writer of the same files is the
+ * disagreement the generated files' contract exists to refuse. Same gate, same
+ * report, same exit codes; only the envelope's `command` and the rerun line say
+ * `views`.
+ */
+function registerViews(program: Command): void {
+  program
+    .command("views")
+    .description(
+      "Write the generated views — the platform's context and inside views, one per subsystem, one per service — " +
+        "and the LikeC4 project wiring for the service models, as `loam subsystem sync` does",
+    )
+    .option("--json", "emit the machine contract instead of the human view")
+    .action(async (opts: { json?: boolean }) => {
+      const json = opts.json === true;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
+      const { docsDir } = config;
+      // "services", as `subsystem sync` gates: the files mirror the tree and the
+      // map, and a docsDir with no services/ has neither to mirror.
+      if (!docsRepoReady(json, docsDir, "services")) return;
+      try {
+        await runSync(docsDir, json, "views");
+      } catch (err) {
+        if (!(err instanceof DocsRepoUnavailableError)) throw err;
+        reportDocsRepoError(json, err);
+      }
+    });
 }

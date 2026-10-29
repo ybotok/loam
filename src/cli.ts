@@ -146,7 +146,7 @@ const HELP_GROUPS: Record<string, string> = {
   explain: "Read the fleet", instructions: "Read the fleet", steps: "Read the fleet",
   adopt: "Adopt what exists", vouch: "Adopt what exists",
   new: "Change it", delta: "Change it", tasks: "Change it", gherkin: "Change it", rebase: "Change it",
-  subsystem: "Change it",
+  subsystem: "Change it", views: "Change it",
   validate: "Check it", diff: "Check it", verify: "Check it", gate: "Check it",
   archive: "Ship it", unarchive: "Ship it",
   "audit-openspec": "Migrate", "migrate-openspec": "Migrate",

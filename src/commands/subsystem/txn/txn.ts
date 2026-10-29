@@ -69,6 +69,12 @@ export interface ViewsActions {
   subsystems: ViewsAction;
   /** `architecture/services.likec4` — the per-service overviews, one per service the map draws. */
   services: ViewsAction;
+  /**
+   * `architecture/platform.likec4`. A verb moves it too: no root may be an
+   * element a subsystem view is drawn `of`, so a directory that comes to own a
+   * top-level group takes that group out of the platform views.
+   */
+  platform: ViewsAction;
 }
 
 /** The text tail a verb's success line carries about the generated files — one clause per file that moved. */
@@ -77,6 +83,7 @@ export function reportViews(views: ViewsActions): string {
     [
       ["architecture/subsystems.likec4", views.subsystems] as const,
       ["architecture/services.likec4", views.services] as const,
+      ["architecture/platform.likec4", views.platform] as const,
     ]
       // `current` says nothing: the tail hangs off a success line, and a verb
       // that renamed one directory must not print two clauses about files that
@@ -160,7 +167,7 @@ export async function commitWindow(
     // verb-specific refusals (`unknown-target`, `subsystem-not-empty`,
     // `move-uncommitted`): a caller whose name is wrong AND whose tree holds an
     // authored views file is better told about the name.
-    const authored = await authoredGeneratedPaths([expected.subsystems.path, expected.services.path]);
+    const authored = await authoredGeneratedPaths([expected.subsystems.path, expected.services.path, expected.platform.path]);
     if (authored.length > 0) {
       fail(
         json,
@@ -197,6 +204,8 @@ export async function commitWindow(
       // CAN render (the tolerant arm this window has always taken), and the
       // person is told by the note at the foot of this function.
       services: await stageGenerated(expected.services, writes, !expected.known),
+      // Protected for the same reason: the map can empty it too.
+      platform: await stageGenerated(expected.platform, writes, !expected.known),
     };
     const staged = await stageWrites(writes);
     const committed = await commitStaged(

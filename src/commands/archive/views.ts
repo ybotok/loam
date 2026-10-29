@@ -1,8 +1,8 @@
 /**
  * The generated views files as THIS archive's commit leaves them — planned
- * beside the merges, so `architecture/subsystems.likec4` and
- * `architecture/services.likec4` land in the same journaled commit as the map
- * and the tree they are rendered from.
+ * beside the merges, so `architecture/subsystems.likec4`,
+ * `architecture/services.likec4` and `architecture/platform.likec4` land in the
+ * same journaled commit as the map and the tree they are rendered from.
  *
  * THE DEFECT THIS CLOSES. Archive used to leave both files alone and print a
  * ⚠ naming `loam subsystem sync`: a feature that added one service and one edge
@@ -61,12 +61,12 @@ import { rawServiceId } from "../../core/kernel/ids/service.js";
 import { isPathInside } from "../../core/kernel/path-safety.js";
 import { repoPath } from "../../core/envelope/json.js";
 import type { FleetContext } from "../../core/fleet-context.js";
-import { serviceViewsPath, servicesDir, subsystemViewsPath } from "../../core/repo/paths.js";
+import { platformViewsPath, serviceViewsPath, servicesDir, subsystemViewsPath } from "../../core/repo/paths.js";
 import { listFleetTree } from "../../core/repo/repo.js";
 import { docsRepoState } from "../../core/repo/state.js";
 import { readGeneratedFile } from "../../core/repo/tree/render/service/header.js";
 import { planGenerated } from "../../core/repo/tree/render/stale.js";
-import { renderServiceOverviews, renderSubsystemViews } from "../../core/repo/tree/render/views.js";
+import { renderPlatformOverview, renderServiceOverviews, renderSubsystemViews } from "../../core/repo/tree/render/views.js";
 import type { FleetTree } from "../../core/repo/tree/walk.js";
 import { planWrite, type PlannedWrite } from "../../core/staging/writes.js";
 
@@ -127,6 +127,7 @@ export async function planGeneratedViews(
     for (const file of [
       { path: subsystemViewsPath(docsDir), content: renderSubsystemViews(after, map) },
       { path: serviceViewsPath(docsDir), content: renderServiceOverviews(after, map) },
+      { path: platformViewsPath(docsDir), content: renderPlatformOverview(after, map).content },
     ]) {
       const { text, authored } = await readGeneratedFile(file.path);
       // Somebody's own document at a path loam reserves: never written over,

@@ -23,9 +23,14 @@ import { relative, resolve, sep } from "node:path";
 import { loadFile } from "../../../core/c4/likec4.js";
 import { architectureProjectDocuments, loadArchitecture } from "../../../core/c4/project/architecture.js";
 import { serviceDirOf, type DocsDir } from "../../../core/kernel/ids/dirs.js";
-import { landscapePath, serviceViewsPath, subsystemViewsPath } from "../../../core/repo/paths.js";
+import { landscapePath, platformViewsPath, serviceViewsPath, subsystemViewsPath } from "../../../core/repo/paths.js";
 import type { ExpectedFile } from "../../../core/repo/tree/render/stale.js";
-import { type MapFacts, renderServiceOverviews, renderSubsystemViews } from "../../../core/repo/tree/render/views.js";
+import {
+  type MapFacts,
+  renderPlatformOverview,
+  renderServiceOverviews,
+  renderSubsystemViews,
+} from "../../../core/repo/tree/render/views.js";
 import type { FleetTree } from "../../../core/repo/tree/walk.js";
 
 /** What one read of the map yielded, and whether it came from the whole project. */
@@ -207,6 +212,14 @@ export interface ExpectedViews {
   subsystems: ExpectedFile;
   /** `architecture/services.likec4` — one overview view per service the map draws. */
   services: ExpectedFile;
+  /**
+   * `architecture/platform.likec4` — the context and inside views of each root.
+   * Like the service file, the map can empty it, and `known` is what tells
+   * "must be absent" from "could not read the map".
+   */
+  platform: ExpectedFile;
+  /** The roots the platform file was drawn for — empty when it must be absent. */
+  platformRoots: string[];
 }
 
 export async function expectedViews(docsDir: DocsDir, tree: FleetTree): Promise<ExpectedViews> {
@@ -220,10 +233,13 @@ export async function expectedViews(docsDir: DocsDir, tree: FleetTree): Promise<
   // place an empty answer is the TRUE one — loam could not read the map at
   // all — and it says so rather than leaving the field off.
   const map = read.facts ?? { elements: [], relationships: [] };
+  const platform = renderPlatformOverview(tree, map);
   return {
     known: read.known,
     subsystems: { path: subsystemViewsPath(docsDir), content: renderSubsystemViews(tree, map) },
     services: { path: serviceViewsPath(docsDir), content: renderServiceOverviews(tree, map) },
+    platform: { path: platformViewsPath(docsDir), content: platform.content },
+    platformRoots: platform.roots,
   };
 }
 

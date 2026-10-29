@@ -19,7 +19,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import type { FleetTree } from "../walk.js";
 import type { PlannedWrite } from "../../../staging/writes.js";
-import { type MapFacts, renderServiceOverviews, renderSubsystemViews } from "./views.js";
+import { type MapFacts, renderPlatformOverview, renderServiceOverviews, renderSubsystemViews } from "./views.js";
 
 /**
  * The three states, kept apart: absent, must-be-absent, and
@@ -52,6 +52,11 @@ export async function viewsState(path: string, tree: FleetTree, map: MapFacts): 
  */
 export async function serviceViewsState(path: string, tree: FleetTree, map: MapFacts): Promise<ViewsState> {
   return stateOf(path, renderServiceOverviews(tree, map));
+}
+
+/** The same question about the third generated file, `architecture/platform.likec4`, for the same reason. */
+export async function platformViewsState(path: string, tree: FleetTree, map: MapFacts): Promise<ViewsState> {
+  return stateOf(path, renderPlatformOverview(tree, map).content);
 }
 
 /** Read the file, or record its absence, and compare — the half both askers share. */

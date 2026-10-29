@@ -33,8 +33,9 @@ import { LANDSCAPE_UNREADABLE_NOTE } from "./views.js";
  */
 export type SyncAction = "current" | "created" | "updated" | "removed" | "blocked" | "refused";
 
-/** The second generated file's name, spelled once here so the key and the sentence cannot drift. */
+/** The second and third generated files' names, spelled once here so the keys and the sentences cannot drift. */
 const SERVICE_VIEWS = "architecture/services.likec4";
+const PLATFORM_VIEWS = "architecture/platform.likec4";
 
 /** Why a run answered `blocked`. One reason today; a key rather than a bare string so a second one is additive. */
 interface SyncBlocked {
@@ -63,6 +64,8 @@ export interface ProjectsReport {
 
 /** Everything one run has to say, as the caller knows it. */
 export interface SyncReport {
+  /** The verb that was typed — the envelope's `command`: `subsystem` for `loam subsystem sync`, `views` for `loam views`. */
+  command: "subsystem" | "views";
   /** `architecture/subsystems.likec4` — and nothing else; the `--json` `action` key is exactly this. */
   action: SyncAction;
   /**
@@ -76,6 +79,12 @@ export interface SyncReport {
    * so the tolerant render is the empty file rather than a poorer one.
    */
   serviceViews: SyncAction;
+  /** `architecture/platform.likec4`, a key of its own for `serviceViews`' reason. */
+  platformViews: SyncAction;
+  /** The root elements the platform file draws, sorted — empty when it must be absent. */
+  platformRoots: string[];
+  /** The map draws at least one service — a map that draws none is owed no sentence about a platform. */
+  mapDrawsServices: boolean;
   subsystems: number;
   recovered: CommitRecovery | null;
   projects: ProjectsReport;
@@ -90,7 +99,9 @@ export function reportSync(json: boolean, out: SyncReport): void {
   const blocked: SyncBlocked | null = out.action === "blocked" ? { reason: "landscape-invalid" } : null;
   if (json) {
     emitJson({
-      command: "subsystem",
+      // The verb that was typed, spelled as literals so the envelope census
+      // (test/envelope-identity.test.ts) reads both names off this module.
+      ...(out.command === "views" ? { command: "views" } : { command: "subsystem" }),
       path: "architecture/subsystems.likec4",
       action: out.action,
       subsystems: out.subsystems,
@@ -100,6 +111,8 @@ export function reportSync(json: boolean, out: SyncReport): void {
       // `action` keep their frozen meaning — the subsystem file — so nothing
       // reading them sees a new one.
       serviceViews: { path: SERVICE_VIEWS, action: out.serviceViews },
+      // Additive on the same terms: every run, untouched ones included.
+      platformViews: { path: PLATFORM_VIEWS, action: out.platformViews, roots: out.platformRoots },
       ...(blocked === null ? {} : { blocked }),
       ...(out.recovered === null ? {} : { recovered: out.recovered }),
       projects: {
@@ -134,6 +147,7 @@ export function reportSync(json: boolean, out: SyncReport): void {
   }
   console.log(views(out));
   serviceViews(out.serviceViews);
+  platformViews(out);
   // Owed on BOTH arms: the run that declined to rewrite an existing file, and
   // the run that wrote the tolerant shape because there was none to protect.
   if (out.mapUnreadable) console.log(LANDSCAPE_UNREADABLE_NOTE);
@@ -144,14 +158,15 @@ export function reportSync(json: boolean, out: SyncReport): void {
 /** The one line about the generated views file. */
 function views(out: SyncReport): string {
   // "nothing to write" is a claim about the WHOLE run, and it is false the moment
-  // any of this verb's FOUR writers landed something beside a current subsystem
-  // views file: the per-service views file, a project file created, one removed,
-  // or the root `exclude` rewritten. The exclude arm was missed when it was
+  // any of this verb's FIVE writers landed something beside a current subsystem
+  // views file: the per-service views file, the platform views file, a project
+  // file created, one removed, or the root `exclude` rewritten. The exclude arm was missed when it was
   // added, so the tail contradicted the very next line of output (verification
   // 2026-09-04, review C) — and the per-service file is the same trap one file
   // over, which is why it is in the same expression rather than a second one.
   const quiet =
     out.serviceViews === "current" &&
+    out.platformViews === "current" &&
     out.projects.created.length === 0 &&
     out.projects.removed.length === 0 &&
     !out.projects.exclude.updated;
@@ -209,6 +224,42 @@ function serviceViews(action: SyncAction): void {
       `${SERVICE_VIEWS} left as it is — architecture/ does not parse as one project, so no service resolves to a ` +
       "map element and the render would have emptied the file rather than improved it.",
     refused: authoredRefusal(SERVICE_VIEWS),
+  };
+  console.log(sentence[action]);
+}
+
+/**
+ * The one line about `architecture/platform.likec4`: silent when current, as the
+ * service file's line is — except over a map with NO root, where the file is
+ * absent and must stay so. That is the subsystem file's "is not generated"
+ * case, and it is owed the same sentence, because the views it would hold are
+ * the two a reader looks for first and their absence has a reason the map can
+ * change.
+ */
+function platformViews(out: SyncReport): void {
+  const action = out.platformViews;
+  const roots = out.platformRoots;
+  if (action === "current") {
+    // Over an unreadable map no element resolves, so "no root" would be a guess:
+    // the unreadable-map note below is the true sentence.
+    if (roots.length === 0 && !out.mapUnreadable && out.mapDrawsServices) {
+      console.log(
+        `no element on the fleet map holds the services without being a service's or a subsystem's own box, so ` +
+          `${PLATFORM_VIEWS} is not generated — draw them inside one boundary element to get the platform's ` +
+          "context and inside views.",
+      );
+    }
+    return;
+  }
+  const drawn = `the context and inside views of ${roots.join(", ")}`;
+  const sentence: Record<Exclude<SyncAction, "current">, string> = {
+    created: `wrote ${PLATFORM_VIEWS} — ${drawn}.`,
+    updated: `updated ${PLATFORM_VIEWS} — ${drawn}.`,
+    removed: `removed ${PLATFORM_VIEWS} — no element on the fleet map holds the services any more, so the generated file must be absent.`,
+    blocked:
+      `${PLATFORM_VIEWS} left as it is — architecture/ does not parse as one project, so no service resolves to a ` +
+      "map element and the render would have emptied the file rather than improved it.",
+    refused: authoredRefusal(PLATFORM_VIEWS),
   };
   console.log(sentence[action]);
 }

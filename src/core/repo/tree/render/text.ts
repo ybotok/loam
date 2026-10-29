@@ -72,9 +72,18 @@ export function likec4String(text: string): string {
  * contain `/`, so the fallback never needs it.
  */
 export function subsystemLabel(sub: SubsystemEntry): string {
-  const segment = (text: string): string => likec4String(text).split("/").join("∕");
-  const authored = segment(sub.meta.title ?? "");
-  return authored === "" ? segment(sub.name) : authored;
+  const authored = titleSegment(sub.meta.title ?? "");
+  return authored === "" ? titleSegment(sub.name) : authored;
+}
+
+/**
+ * One segment of a view title: somebody's words, quoted, with every `/` turned
+ * into `∕` so the renderer cannot read it as a folder level — the rule
+ * `subsystemLabel` above records. Exported for the platform views, whose titles
+ * are a map element's title rather than a subsystem's.
+ */
+export function titleSegment(text: string): string {
+  return likec4String(text).split("/").join("∕");
 }
 
 /**

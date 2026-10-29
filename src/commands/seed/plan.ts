@@ -18,6 +18,7 @@ import { serviceDirOf, type DocsDir } from "../../core/kernel/ids/dirs.js";
 import {
   landscapePath,
   servicePathsUnder,
+  platformViewsPath,
   servicesDir,
   serviceViewsPath,
   subsystemPathUnder,
@@ -27,7 +28,12 @@ import {
 import { SUBSYSTEM_MARKER } from "../../core/repo/tree/marker.js";
 import { readGeneratedFile } from "../../core/repo/tree/render/service/header.js";
 import { viewsAgree } from "../../core/repo/tree/render/stale.js";
-import { type MapFacts, renderServiceOverviews, renderSubsystemViews } from "../../core/repo/tree/render/views.js";
+import {
+  type MapFacts,
+  renderPlatformOverview,
+  renderServiceOverviews,
+  renderSubsystemViews,
+} from "../../core/repo/tree/render/views.js";
 import type { FleetTree, SubsystemEntry, WalkedService } from "../../core/repo/tree/walk.js";
 import { TEMP_FILE_RE } from "../../core/staging/commit.js";
 import { planWrite, type PlannedWrite } from "../../core/staging/writes.js";
@@ -285,6 +291,7 @@ export async function planSeedWrites(req: SeedPlanInput, tree: FleetTree): Promi
   const authored = [
     await stageGenerated(writes, subsystemViewsPath(docsDir), renderSubsystemViews(plannedTree, facts)),
     await stageGenerated(writes, serviceViewsPath(docsDir), renderServiceOverviews(plannedTree, facts)),
+    await stageGenerated(writes, platformViewsPath(docsDir), renderPlatformOverview(plannedTree, facts).content),
   ].filter((path): path is string => path !== null);
 
   return {

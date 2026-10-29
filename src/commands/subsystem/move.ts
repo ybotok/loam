@@ -24,7 +24,13 @@ import { isRecord } from "../../core/kernel/records.js";
 import { emitJson, fail, repoPath } from "../../core/envelope/json.js";
 import { gitDirtyPaths, gitStageRenames } from "../../core/provenance/gitq/moves.js";
 import type { FeatureEntry } from "../../core/repo/entries.js";
-import { servicesDir, serviceViewsPath, subsystemPathUnder, subsystemViewsPath } from "../../core/repo/paths.js";
+import {
+  platformViewsPath,
+  servicesDir,
+  serviceViewsPath,
+  subsystemPathUnder,
+  subsystemViewsPath,
+} from "../../core/repo/paths.js";
 import { listFeatures } from "../../core/repo/repo.js";
 import { closeNamesHint, findInTree, treeNames, withinSubsystem } from "../../core/repo/tree/find.js";
 import type { FleetTree } from "../../core/repo/tree/walk.js";
@@ -127,6 +133,8 @@ export async function runMove(docsDir: DocsDir, names: string[], into: string, j
             moved: rows,
             views: views.subsystems,
             serviceViews: views.services,
+
+            platformViews: views.platform,
             relinked,
             ...(notices.length === 0 ? {} : { warnings: notices }),
             ...(recovered === null ? {} : { recovered }),
@@ -197,6 +205,8 @@ export async function runRename(docsDir: DocsDir, names: [string, string], json:
             path: repoPath(docsDir, rename.to),
             views: views.subsystems,
             serviceViews: views.services,
+
+            platformViews: views.platform,
             relinked,
             ...(notices.length === 0 ? {} : { warnings: notices }),
             ...(recovered === null ? {} : { recovered }),
@@ -310,6 +320,7 @@ async function stageInGit(
   const generated = [
     [subsystemViewsPath(docsDir), views.subsystems] as const,
     [serviceViewsPath(docsDir), views.services] as const,
+    [platformViewsPath(docsDir), views.platform] as const,
   ];
   await gitStageRenames(
     docsDir,

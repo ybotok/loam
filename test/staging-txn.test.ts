@@ -541,6 +541,9 @@ describe("every writer's stored rerun is a command loam has", () => {
       // Every `loam subsystem` writer — sync, new, rm, move, rename — stores
       // the one repair spelling: sync recovers the journal and re-renders.
       "loam subsystem sync",
+      // The same writer under the name it was typed as: a journal `loam views`
+      // left is re-run as `loam views` (CHANGELOG: the platform picture).
+      "loam views",
       "loam vouch --service ${req.service} --yes",
     ]);
 
