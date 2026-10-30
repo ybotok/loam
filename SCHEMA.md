@@ -1386,7 +1386,13 @@ two checked files:
   read them; `loam validate`, run in that repo, recomputes it and reports `sources.current`,
   `sources.stale` (the code moved since anyone looked), or `sources.unvouched` (`sources` with no
   digest — nobody has ever stamped it). All warnings: staleness is a signal, and only a person can
-  say whether the doc is still right.
+  say whether the doc is still right. A service whose spec.md and model.likec4 are written and that
+  carries no stamp is owed its FIRST vouch, and every fleet readout says so: `loam list` grades it
+  below `vouched` and `--needs-work` names `loam vouch --service <id>`, and `loam status` emits one
+  `next.vouch` per such service — a human review, never a runnable step, whose sentence names a
+  missing `sources:` list first because `loam vouch` refuses without one — instead of
+  `next.fleet-clean`. A service still owed `next.adopt` or `next.complete-service` is not asked for
+  a vouch yet.
 - `content_digest` — written by `loam vouch`, never by hand, like its siblings: a hash of the
   document's OWN body, so the stamp covers the words as well as the code. Editing a spec after it
   was vouched used to leave `status: verified` standing over prose nobody read — the exact forgery
@@ -4176,9 +4182,12 @@ repairing anything:
   about code or evidence, and an archived feature is `done` whatever its record says — so the human
   view prints the stage as a sentence with the claims counted, and the payload carries
   `feature.title` (intent.md's title) and `checklist.claims` (what the checklist asks now; null once
-  archived). The fleet form lists every feature in flight before any service's adoption rung — and
-  carries every rung uncapped in `serviceSteps[]` (`{code, services, command}` per code), which the
-  human view folds into one counted line per code. After the rungs comes one `next.archived` per
+  archived). The fleet form lists every feature in flight before any service's adoption rung —
+  `next.adopt`, `next.complete-service`, `next.vouch`, `next.revouch`, one rung per service at a
+  time — and carries every rung uncapped in `serviceSteps[]` (`{code, services, command}` per code),
+  which the human view folds into one counted line per code. The two vouch rungs are a person's:
+  their `execution` is a human review in the service's own repository, and either one turns
+  `next.fleet-clean` into `next.fleet-gate`, because a vouch owed is something owed. After the rungs comes one `next.archived` per
   archived feature whose verification verdict is not `verified`, all of them also listed uncapped in
   `unverifiedArchived[]` (`{id, title, dirName, path, services, verification}`): open claims do not
   disappear at archive. The record is frozen — `loam verify` refuses an archived feature — so that

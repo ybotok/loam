@@ -20,6 +20,7 @@ const NAMED = 6;
 const SAY: Record<string, string> = {
   "next.adopt": "with no spec.md, or one that is adoption: partial — not adopted yet; adopt each",
   "next.complete-service": "with a spec.md and no model.likec4 — the fleet gate reports each incomplete until something models it",
+  "next.vouch": "documented and never vouched — a person reads each against its code and vouches it from its own repository",
   "next.revouch": "whose documents changed after the vouch — a person re-reads each and re-vouches it from its own repository",
 };
 

@@ -124,7 +124,9 @@ describe("the fleet worklist leads with the features", () => {
       expect(next[0]!.statement).toBe("FEAT-1 (Split payments): docs ready — nothing verified yet (no verification record).");
       // Still capped, and the elided line counts what it left out by kind.
       const elided = next.find((s) => s.code === "next.elided")!;
-      expect(elided.statement).toMatch(/^\d+ more step\(s\) were left out \(\d+ next\.adopt\)/);
+      // coherentFixture's payment-service is documented and carries no vouch
+      // stamp, so its first vouch is owed behind the adoption rungs.
+      expect(elided.statement).toMatch(/^\d+ more step\(s\) were left out \(\d+ next\.adopt, 1 next\.vouch\)/);
       // Every rung, uncapped, beside the list.
       expect(payload.serviceSteps).toEqual([
         {
@@ -132,6 +134,7 @@ describe("the fleet worklist leads with the features", () => {
           services: Array.from({ length: debt }, (_, i) => svc(i + 1)),
           command: `loam adopt --service ${svc(1)} --json`,
         },
+        { code: "next.vouch", services: ["payment-service"], command: "loam vouch --service payment-service" },
       ]);
       expect(payload.features[0].title).toBe("Split payments");
     } finally {

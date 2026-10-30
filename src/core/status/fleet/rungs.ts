@@ -63,6 +63,33 @@ export function perServiceSteps(services: ServiceEntry[], adoptedBinding: string
     });
   }
 
+  // The first vouch, owed by every service whose documents are complete enough
+  // to read and that nobody has stood behind yet. Before this rung the walk had
+  // a step for a vouch going STALE and none for a vouch never given, so a fleet
+  // of five draft services got `next.fleet-clean` — "nothing is owed" — while
+  // `loam list --needs-work` on the same tree said five of five owed exactly
+  // this (`maturityGaps`). One rung at a time, as that ladder says: a service
+  // still owed `next.adopt` or `next.complete-service` is not asked for a vouch
+  // yet. It is a person's act, so the execution contract is a human review
+  // (`../actions/execution.ts`) — and it does turn the closing entry into
+  // `next.fleet-gate`, as `next.revouch` does, because unlike an archived
+  // record a person CAN discharge it. A spec naming no `sources:` cannot be
+  // vouched yet (`loam vouch` refuses `sources-absent`), so its sentence names
+  // that first.
+  for (const s of services.filter((x) => !undocumented(x) && x.adoption === null && x.has.model && !vouched(x))) {
+    const spec = `${serviceTreePath(s)}/spec.md`;
+    perService.push({
+      code: "next.vouch",
+      statement: s.sources.declared
+        ? `${spec} has no vouch behind it — nobody has read it against ${s.id}'s code and said it holds. ` +
+          `A person does (\`loam vouch --pack --service ${s.id}\` prepares the reading list) and vouches from ${s.id}'s own repository.`
+        : `${spec} has no vouch behind it, and names no \`sources:\` for one to stamp — list the code it describes in its ` +
+          `frontmatter first (\`loam vouch\` refuses without them), then a person reads it against that code and vouches from ${s.id}'s own repository.`,
+      command: `loam vouch --service ${s.id}`,
+      service: s.id,
+    });
+  }
+
   // A vouch the document has moved out from under. `content.stale` needs
   // nothing but the document, so unlike `sources.stale` this form CAN see it —
   // and before it looked, a fleet whose specs were edited after the person read

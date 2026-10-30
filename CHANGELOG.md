@@ -10,6 +10,24 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Fixed — `loam status` asks for the first vouch
+
+- **A fleet of draft services no longer reads as clean.** With every service written down and
+  nobody's vouch behind any of them, `loam status` ended on `next.fleet-clean` — "Nothing is in
+  flight and every service is written down" — while `loam list --needs-work` on the same tree said
+  every service still owed `loam vouch --service <id>`. The fleet form now emits a new step,
+  **`next.vouch`**, for each service whose spec.md and model.likec4 are written (and not
+  `adoption: partial`) and that carries no vouch stamp. Like `next.revouch`, its `execution` is
+  `kind: "human-review"`, `runnable: false`, `cwd: "service-repo"`: an agent prepares
+  `loam vouch --pack --service <id>` and a person vouches. A spec naming no `sources:` says so in the
+  step's sentence, since `loam vouch` refuses without them. The steps ride in `serviceSteps[]` like
+  every other rung, and the human view folds many into one counted line
+  (`next.vouch ×N: N services documented and never vouched`).
+- **What moves after upgrading.** A fleet with any unvouched, complete service now ends its
+  `next[]` on `next.fleet-gate` instead of `next.fleet-clean`, exactly as one with a stale vouch
+  already did — a script that waited for `next.fleet-clean` before starting a feature waits for the
+  vouches too. `loam explain next.vouch` answers. No flag, exit code or payload key changed.
+
 ## [0.2.0-alpha.18] - 2026-10-30
 
 Everything on `main` since `0.2.0-alpha.17`. Still a prerelease on the `alpha` line.

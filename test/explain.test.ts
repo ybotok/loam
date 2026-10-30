@@ -556,13 +556,15 @@ describe("the family registry answers what no fix table reaches, and only that",
     // `doctor.agents-md-shadowed` (a CLAUDE.md that keeps Claude Code from
     // reading AGENTS.md), to 69 in all. `next.` grew by one more the same day:
     // `next.redraw-flows` (a service's living flows a feature makes untrue),
-    // to 70 in all.
+    // to 70 in all. And one more on 2026-10-30: `next.vouch` (the first vouch
+    // a documented service is owed, which the fleet form never asked for),
+    // to 71 in all.
     const byFamily = (prefix: string): string[] => registry.filter((code) => code.startsWith(prefix));
     expect(byFamily("doctor.")).toHaveLength(22);
-    expect(byFamily("next.")).toHaveLength(28);
+    expect(byFamily("next.")).toHaveLength(29);
     expect(byFamily("diff.")).toHaveLength(16);
     expect(byFamily("gate.")).toHaveLength(4);
-    expect(registry).toHaveLength(70);
+    expect(registry).toHaveLength(71);
     for (const code of registry) {
       const entry = familyFinding(code)!;
       expect(entry.scope.startsWith("loam "), `${code}'s scope must name the invocation that emits it`).toBe(true);

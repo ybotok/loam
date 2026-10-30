@@ -209,7 +209,9 @@ or delete it by hand: removing it turns a partial read into a full one on every
 surface at once, which is the one forgery this field exists to make impossible.
 
 Write \`sources\` for anything you author from reading code, and leave \`status: draft\`
-until a human has read it. Promoting draft to verified is their call, not yours, and
+until a human has read it. Promoting draft to verified is their call, not yours —
+\`loam status\` names each service still owed one as \`next.vouch\`, a step for a
+person exactly like \`next.revouch\` — and
 it has its own command — \`loam vouch --service <id>\`, run inside that service's repo,
 which stamps the status, the date, the identity (\`vouched_by\`, from git), both digests
 and the per-file index

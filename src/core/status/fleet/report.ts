@@ -37,7 +37,11 @@ export interface FleetStatusReport {
     total: number;
     /** No `spec.md` — nothing about this service is written down. */
     undocumented: number;
-    /** Documented, with no vouch stamp behind it. */
+    /**
+     * Documented, with no vouch stamp behind it. Each one whose model and
+     * baseline are complete is a `next.vouch` step below; the rest owe the
+     * earlier rung first.
+     */
     draft: number;
     /** `status: verified` with a `sources_digest` — a person stood behind it. */
     vouched: number;
@@ -76,7 +80,8 @@ export interface FleetStatusReport {
   next: NextStep[];
   /**
    * Every per-service rung (`next.adopt`, `next.complete-service`,
-   * `next.revouch`), UNCAPPED and grouped by code, services in `next[]` order.
+   * `next.vouch`, `next.revouch`), UNCAPPED and grouped by code, services in
+   * `next[]` order.
    * Additive. `next[]` stops at ten, so mid-adoption it cannot say how much
    * adoption work there is; this can, and the human view folds it into one
    * counted line under the features.

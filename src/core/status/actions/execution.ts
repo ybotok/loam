@@ -71,6 +71,16 @@ function execution(step: NextStep): NextExecution {
       needs: ["a person who re-reads the moved document and vouches for it from the service's own repository"],
     };
   }
+  // The first vouch, for the same reason: the stamp is a person's word that
+  // the documents hold of the code, and an agent running it would forge that.
+  if (step.code === "next.vouch") {
+    return {
+      kind: "human-review",
+      runnable: false,
+      cwd: "service-repo",
+      needs: ["a person who reads the service's documents against its code and vouches for them from the service's own repository"],
+    };
+  }
   const needs = placeholders(step.command);
   const serviceRepo = SERVICE_REPO_STEPS.has(step.code);
   return {
