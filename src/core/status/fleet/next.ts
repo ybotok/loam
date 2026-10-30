@@ -6,14 +6,13 @@
  * than inventory.
  */
 import type { DependencyGraph } from "../../dependencies/facts.js";
-import { serviceTreePath } from "../../kernel/ids/dirs.js";
 import { compareIds, type ServiceEntry } from "../../repo/entries.js";
 import { recoverStep } from "../interrupted.js";
 import { featureLabel, fleetStageWords } from "../feature/words.js";
 import { archivedStep } from "../feature/next.js";
 import { type ArtifactStatus, type InterruptedCommit, type NextStep } from "../report.js";
 import type { ArchivedFeatureState, FleetFeatureState } from "./report.js";
-import { undocumented, vouched } from "./rungs.js";
+import { perServiceSteps } from "./rungs.js";
 
 /** How urgent a stage is at fleet level. See {@link fleetNext}. */
 const STAGE_RANK: Record<ArtifactStatus, number> = {
@@ -313,87 +312,4 @@ export function fleetNext(fleet: Fleet, binding: Binding | null): NextStep[] {
         },
   );
   return out;
-}
-
-/**
- * Every per-service rung, in the order the list prints them: the bound
- * service's own first, then the rest alphabetically. Exported because the
- * same list, uncapped and grouped (`groupServiceSteps`), rides beside `next[]`
- * as `serviceSteps` — one derivation, so the two can never disagree about
- * what a service owes.
- */
-export function perServiceSteps(services: ServiceEntry[], adoptedBinding: string | null): NextStep[] {
-  // The per-service rungs are collected as one list because the partition
-  // below acts on them as a group — and only on them. Where the list goes is
-  // the caller's: `fleetNext` puts it after every feature, and nothing here may
-  // float above `next.adopt-bound` or the first-hour ladder, both of which are
-  // about the repository rather than about any one service in the fleet.
-  const perService: NextStep[] = [];
-  // `adoption: partial` is one feature's slice archived into a service never
-  // adopted (SCHEMA.md); the file's presence used to discharge this rung.
-  for (const s of services.filter((x) => undocumented(x) || x.adoption !== null)) {
-    perService.push({
-      code: "next.adopt",
-      statement: undocumented(s)
-        ? `${serviceTreePath(s)}/ has no spec.md — nothing about ${s.id} is written down, so no feature can be graded against it.`
-        : `${serviceTreePath(s)}/spec.md is adoption: partial — it holds what an archived feature added, nothing of what ${s.id} already did.`,
-      command: `loam adopt --service ${s.id} --json`,
-      service: s.id,
-    });
-  }
-
-  // Adoption does not end at spec.md. A service with a living spec and no
-  // model.likec4 is the state archive itself warns about (`service.no-model`)
-  // and the fleet gate reports — invisible here until now, because this form
-  // looked at exactly one bit of each service's artifact set.
-  for (const s of services.filter((x) => !undocumented(x) && x.adoption === null && !x.has.model)) {
-    perService.push({
-      code: "next.complete-service",
-      statement: `${serviceTreePath(s)}/ has a spec.md but no model.likec4 — the fleet gate reports the service incomplete until something models it.`,
-      command: `loam validate --service ${s.id} --json`,
-      service: s.id,
-    });
-  }
-
-  // A vouch the document has moved out from under. `content.stale` needs
-  // nothing but the document, so unlike `sources.stale` this form CAN see it —
-  // and before it looked, a fleet whose specs were edited after the person read
-  // them got `next.fleet-clean`: "nothing is owed" over words nobody had
-  // re-read, while `loam validate` warned about each one. The re-vouch is a
-  // person's act from that service's own repository (`loam vouch` restamps the
-  // code side too), so the step names the documents and that repository, and
-  // its execution contract is a human review rather than a command to run.
-  for (const s of services.filter((x) => vouched(x) && x.contentStale.length > 0)) {
-    const files = s.contentStale.map((file) => `${serviceTreePath(s)}/${file}`);
-    perService.push({
-      code: "next.revouch",
-      statement:
-        `${files.join(" and ")} changed since ${s.id} was vouched — \`status: verified\` stands over words nobody has re-read (content.stale). ` +
-        `A person re-reads what moved (\`loam vouch --pack --service ${s.id}\` lists it) and re-vouches from ${s.id}'s own repository.`,
-      command: `loam vouch --service ${s.id}`,
-      service: s.id,
-    });
-  }
-
-  // The boundary this repository IS comes first among the boundaries it merely
-  // shares a fleet with. A stable PARTITION and deliberately not a sort: the
-  // bound service's rungs move to the front and every other service keeps the
-  // alphabetical order it already had, so the list an unbound reader sees — a
-  // docs repo, CI, `loam validate --all`'s scorecard — is byte-for-byte the one
-  // it saw before.
-  //
-  // The cap is why this is ordering and not cosmetics. Ten steps print, and in
-  // the ten-repo case WORKFLOW.md describes every developer's `loam status`
-  // listed nine other services' adoption work ahead of their own; past ten
-  // services the one rung this developer can actually act on was elided
-  // entirely, leaving a list of nothing but other people's boundaries under
-  // the heading "next". No new code is emitted for any of this — `next[]` has
-  // always been documented as most-unblocking first, and this is the line that
-  // makes the claim true from where the reader is standing.
-  return adoptedBinding === null
-    ? perService
-    : [
-        ...perService.filter((s) => s.service === adoptedBinding),
-        ...perService.filter((s) => s.service !== adoptedBinding),
-      ];
 }

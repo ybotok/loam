@@ -27,10 +27,10 @@ import { contractEvidence, contractOwners, contractsHeldElsewhere, owesContract 
 import { readInterruptedCommit } from "../interrupted.js";
 import { type ArtifactStatus, type InterruptedCommit, type NextStep } from "../report.js";
 import type { ArchivedFeatureState, FleetFeatureState, FleetStatusReport } from "./report.js";
-import { undocumented, vouched } from "./rungs.js";
+import { perServiceSteps, undocumented, vouched } from "./rungs.js";
 import { scanDeltas } from "../scan.js";
 import { fullyVerified, verificationState } from "../verification.js";
-import { fleetNext, perServiceSteps, type Binding } from "./next.js";
+import { fleetNext, type Binding } from "./next.js";
 import type { DocsDir } from "../../kernel/ids/dirs.js";
 
 /**
