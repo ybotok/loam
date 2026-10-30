@@ -214,9 +214,10 @@ group's click from the subsystem view. An element a generated subsystem view is 
 What is left is the one thing this file cannot close by writing code, and it stays where it is
 rather than being promoted for the shape of it. The installed-package half closed on 2026-09-03:
 the `package` job ran green on a pushed commit across three runner/Node combinations, and the whole
-publication path ran green on tag `v0.2.0-alpha.4`. The CI `stability` job has still to be OBSERVED
-green — it is skipped on a push and runs on the weekly schedule — so it is still release evidence to
-collect, not an improvement to make. `workflow_dispatch` is the way to collect it deliberately
+publication path ran green on tag `v0.2.0-alpha.4`. The CI `stability` job was observed green once,
+on the scheduled run of 2026-09-21 (run 35557927865, both legs), and has to be observed green again
+at the new budget below — it is skipped on a push and runs on the weekly schedule — so it is still
+release evidence to collect, not an improvement to make. `workflow_dispatch` is the way to collect it deliberately
 rather than waiting for Monday. Until 2026-10-28 no run could have collected it: the job's own
 45-minute limit cancelled its Node 24 coverage leg on every scheduled run from 2026-10-05 on, before
 its three coverage runs could finish, and a cancelled job is not a verdict. The job now budgets
@@ -863,8 +864,9 @@ all: the first is a fail-open defect and the second is a grammar entry, and neit
 - The domain glossary, and the link check that makes it exact — `bc1b936`…`44a5386`.
 - Architectural obligations: the ADR, the `#obl-` tag and the living `Covers:` index — `0b5fc24`.
 
-Honest leftovers. One remains, and it lives outside this repository: the CI `stability` job has
-still to be observed green, which needs a push and then a `workflow_dispatch`.
+Honest leftovers. One remains, and it lives outside this repository: the CI `stability` job, green
+once on 2026-09-21, has still to be observed green at its 2026-10-28 budget, which needs a push and
+then a `workflow_dispatch`.
 
 The two merge holes recorded here are closed, and they were not the same defect. On the OpenAPI axis
 the capability existed and was merely unreachable: the merge tested `paths` for absence and answered

@@ -17,10 +17,36 @@ function printFindings(findings: Finding[]): void {
   }
 }
 
+/**
+ * A feature row's count clause. A feature with no record, or one that cannot
+ * be read, has no claims to count — "0/0 confirmed" read as a record that
+ * answered nothing, when no record was there to ask.
+ */
+function countClause(f: GateReport["features"][number]): string {
+  if (f.state === "absent") return "no verification record";
+  if (f.state === "unreadable") return "verification record unreadable";
+  const attested = f.attested > 0 ? `, ${f.attested} on an agent's word` : "";
+  return `${f.state}; ${f.confirmed}/${f.claims} confirmed${attested}`;
+}
+
+/**
+ * The tail of the verdict line. `--strict` never moves the verdict (gate.ts),
+ * so a passing run with warnings exits 1 under it — and a deploy log that
+ * ends "verdict: pass" on a red step reads as a broken gate. The line says
+ * which of the two this run is.
+ */
+function verdictTail(verdict: GateVerdict, warnings: number, strict: boolean): string {
+  if (verdict !== "pass" || warnings === 0) return "";
+  return strict
+    ? " — exit 1: `--strict` fails on warnings"
+    : " (advisory — `--strict` turns warnings into exit 1)";
+}
+
 export function printGate(
   report: GateReport,
   verdict: GateVerdict,
   summary: { errors: number; warnings: number },
+  strict: boolean,
 ): void {
   console.log(`gate — ${report.service} (a query over recorded evidence; it executes nothing)`);
 
@@ -47,9 +73,8 @@ export function printGate(
   const since = report.since;
   console.log(since === null ? "\nverification" : `\nverification — in flight, and archived since ${since.ref}`);
   for (const f of report.features) {
-    const attested = f.attested > 0 ? `, ${f.attested} on an agent's word` : "";
     const shipped = f.archived === true ? " · archived" : "";
-    console.log(`  ${f.id} · ${f.verdict} (${f.state}; ${f.confirmed}/${f.claims} confirmed${attested})${shipped}`);
+    console.log(`  ${f.id} · ${f.verdict} (${countClause(f)})${shipped}`);
     // A record read as frozen history because its archive captured no
     // checklist (`checklistAtArchive: null`) was not held to the feature that
     // shipped; a deploy log must not read that row as one that was.
@@ -75,8 +100,6 @@ export function printGate(
 
   console.log(
     `\nverdict: ${verdict} — ${plural(summary.errors, "error")}, ${plural(summary.warnings, "warning")}` +
-      (verdict === "pass" && summary.warnings > 0
-        ? " (advisory — `--strict` turns warnings into exit 1)"
-        : ""),
+      verdictTail(verdict, summary.warnings, strict),
   );
 }

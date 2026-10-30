@@ -174,7 +174,7 @@ export function registerGate(program: Command): void {
             summary,
           });
         } else {
-          printGate(report, verdict, summary);
+          printGate(report, verdict, summary, opts.strict === true);
         }
         // --strict moves only the exit code, never the verdict or the payload
         // — validate's exact stance, documented on its own strict block: two

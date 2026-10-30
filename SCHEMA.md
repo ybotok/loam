@@ -4458,9 +4458,9 @@ component-surface pins), `verify`,
 transactional `archive` / `unarchive`, `vouch`, and the OpenSpec audit/migration on-ramp are
 implemented, each with a `--json` contract.
 
-Known and unclosed, so nobody has to discover them: the scheduled CI `stability` job has still to be
-observed green, even though behavior, coverage, the installed-package smoke and the local stress
-runner all pass. Both contract axes now merge a components-only delta: a feature
+Known and unclosed, so nobody has to discover them: the scheduled CI `stability` job ran green once
+(2026-09-21) and has yet to be observed green at the budget it was given on 2026-10-28, even though
+behavior, coverage, the installed-package smoke and the local stress runner all pass. Both contract axes now merge a components-only delta: a feature
 asyncapi.yaml declaring no channel/operation/message slot (`components.schemas`-only, say) merges
 the component surfaces it declares, pinned by the root `x-loam-baselines` record, and they enter the
 ref sweep like anything else the merge wrote — so a `$ref` whose target the delta itself defines

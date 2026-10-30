@@ -51,7 +51,7 @@ export function buildProgram(): Command {
 
   program
     .name("loam")
-    .description("Architecture-first semantic integrity and change governance for evolving software systems")
+    .description("One docs repo for a system of many services: C4, contracts and requirements as plain files, checked to still agree")
     .version(LOAM_VERSION)
     // The blank line is part of the attachment, not part of the text: commander
     // writes this straight under the `Commands:` block, and two sentences flush

@@ -706,7 +706,7 @@ rows for the one target that is the whole system's shared map: `UNDRAWN` while n
 resolves to this boundary, and `EDGELESS` while an element does and no edge touches it. The map owes
 an element in the first state and edges in the second, and `landscape.instruction` says which.
 `--targets` drops the half that is identical for every service — the code walk,
-the frontmatter rules, the 52 named checks and the seventeen statements of what nothing checks — and
+the frontmatter rules, the 53 named checks and the seventeen statements of what nothing checks — and
 replaces it with a `full` field naming the one run that carries them, which is 54,833 bytes down to
 20,062 on the example fleet (measured 2026-09-04).
 

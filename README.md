@@ -7,7 +7,7 @@ plain files, checked by a CLI to still agree. Your agent writes them; loam check
 
 ![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![node: >=22.22.3](https://img.shields.io/badge/node-%3E%3D22.22.3-brightgreen.svg)
-[![CI](https://github.com/ybotok/loam/actions/workflows/ci.yml/badge.svg)](https://github.com/ybotok/loam/actions/workflows/ci.yml)
+[![CI](https://github.com/ybotok/loam/actions/workflows/ci.yml/badge.svg?branch=main&event=push)](https://github.com/ybotok/loam/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@ybotok/loam/alpha.svg?label=npm%20alpha)](https://www.npmjs.com/package/@ybotok/loam)
 
 With coding agents writing the code, the bottleneck has moved to context. A change that crosses
@@ -90,6 +90,7 @@ that declares the kinds:
 ```likec4
 specification {
   element softwareSystem
+  element container
   element component
 }
 
@@ -99,9 +100,11 @@ model {
       service 'commerce-app'
     }
 
-    orders = component 'Orders module'
-    billing = component 'Billing module'
-    orders -> billing 'Reserves credit'
+    app = container 'Commerce application' {
+      orders = component 'Orders module'
+      billing = component 'Billing module'
+      orders -> billing 'Reserves credit'
+    }
   }
 }
 ```
@@ -113,7 +116,7 @@ that shape, the older one that parses alone, and the rule that picks between the
 
 An internal edge normally carries no `metadata { op }`: that key specifically joins a call to the
 governed boundary's OpenAPI contract. An architecture requirement can instead say
-`Covers: commerce.orders -> commerce.billing`. Fleet-level maturity, dependency and scorecard views
+`Covers: commerce.app.orders -> commerce.app.billing`. Fleet-level maturity, dependency and scorecard views
 still aggregate at the bound `service`; nested elements get architecture coverage and feature
 lifecycle, not a separate deployment status invented for each module.
 
@@ -154,7 +157,8 @@ Neither gates the archive. The claim loam makes for its evidence is persistence 
 provenance — not that every recorded judgement is true.
 
 Files stay the source of truth. Delete `loam` and every artifact remains as Markdown, LikeC4 DSL,
-Gherkin and YAML — no server, no database, no state file, three runtime dependencies. The two flows
+Gherkin and YAML — no server, no database, no state file, three direct runtime dependencies (LikeC4,
+which parses the model in process, brings its own tree: an install is about 140 MB). The two flows
 this implies, what gates and what only advises, are in [WORKFLOW.md](WORKFLOW.md).
 
 ## Install
@@ -573,7 +577,7 @@ cannot hold.
 | `loam show <service\|FEAT>` | `--type <kind>` | Everything loam knows about one service or feature. A feature's JSON includes a semantic `review` pack: intent, exact architecture objects, API/event slices, dependencies, artifacts, verification, blockers and next actions. `--type` forces an ambiguous reading |
 | `loam subsystem <verb> [names...]` | `--into <name>` `--under <name>` `--title <text>` `--description <text>` `--owner <name>` | Manage the grouping tree under `services/` — a navigable tree no identity depends on. `new`/`rm`, `move … --into`, `rename`, `list`, `history`, `sync` |
 | `loam views` | | Write the generated views under `architecture/`: the platform's context and inside views (`platform.likec4`, with the inside view's event edges derived from the spine), one view per subsystem and one overview per service. The same run as `loam subsystem sync`, under the name of what it writes |
-| `loam adopt` | `--service <id>` `--subsystem <name>` `--targets` | Brief an agent to write this service's baseline into the docs repo as `draft`: the target paths, the grammar of each, what the landscape already says — and, for an element no edge touches, the edges the service's own model.likec4 attests — and the checks that follow. Writes nothing. `--targets` narrows it to what varies by service — the walk, the 52 checks and the seventeen statements of what nothing checks are the same bytes everywhere, so a `full` field names the one run that carries them. Both sizes, for the example fleet's payment-service, are in the payload table of [docs/BENCHMARKS.md](https://github.com/ybotok/loam/blob/main/docs/BENCHMARKS.md#what-an-agent-is-handed--payload-sizes), which a test regenerates from the tree |
+| `loam adopt` | `--service <id>` `--subsystem <name>` `--targets` | Brief an agent to write this service's baseline into the docs repo as `draft`: the target paths, the grammar of each, what the landscape already says — and, for an element no edge touches, the edges the service's own model.likec4 attests — and the checks that follow. Writes nothing. `--targets` narrows it to what varies by service — the walk, the 53 checks and the seventeen statements of what nothing checks are the same bytes everywhere, so a `full` field names the one run that carries them. Both sizes, for the example fleet's payment-service, are in the payload table of [docs/BENCHMARKS.md](https://github.com/ybotok/loam/blob/main/docs/BENCHMARKS.md#what-an-agent-is-handed--payload-sizes), which a test regenerates from the tree |
 | `loam delta <FEAT>` | `--service <id>` `--diff` `--intent-ref` `--outline` `--requirement <id>` | Project a feature onto one service: the intent, its requirement deltas with every body and Given/When/Then line verbatim, the endpoints it adds or retires, and the edges around it. Doubles as a coding-agent task. `--diff` is the review view: each requirement, operation and message says whether it is new, a quote of the living text, an edit or a removal, and an edit or removal comes with its changed lines. `--intent-ref` carries the intent by reference — path, sha256, size, outline and the lines of the open questions naming the service — for an agent whose context the whole `intent.md` would not fit. `--outline` does the same for the requirements — each one's id, joins, scenario names and digests, and the path and lines it sits at — and `--requirement <id>` (repeatable) carries only the named ones, verbatim |
 | `loam tasks <FEAT>` | `--service <id>` `--next` `--intent-ref` | The same checklist `loam verify` grades, read forwards: one work unit per promise the feature makes, each carrying the step it waits on (`describe`, `generate`, `implement`, `attested`) and the fact that closes it — only a confirmed claim in a non-stale verification record retires one, and an attested scenario stays visible. Derived every run and writes nothing. `--service` is a pure lens that adds what this service is waiting on elsewhere, and in a service repository it defaults to that service when the feature touches it; the frontier orders providers before consumers as advice, never a lock. The per-unit work packet, and `--next` is the single leaf packet an orchestrator hands a coding agent. `--intent-ref` carries the feature's `intent.md` by reference instead of verbatim, so the leaf is the size of the unit rather than of the intent |
 | `loam gherkin [<FEAT>]` | `--service <id>` `--dry-run` | Emit spec scenarios as digest-stamped Gherkin `.feature` files into the service repo's `<gherkinDir>/loam/` |
@@ -754,7 +758,9 @@ authored-capability axes with the `Realizes:` join, use cases graded as `dynamic
 `glossary/<term>.md` domain vocabulary checked through the links that cite it, and the
 `architecture/obligations.yaml` architectural obligations checked through `#obl-` tags and
 `Covers:`. Known limits, each with its owner in [ROADMAP.md](ROADMAP.md): the scheduled CI
-`stability` job has still to be observed green. Speculative `render`, health composition and UI
+`stability` job ran green once (2026-09-21) and was then cancelled by its own time limit on every
+weekly run from 2026-10-05, so it has yet to be observed green at the budget it was given on
+2026-10-28. Speculative `render`, health composition and UI
 generation come later. Behind that status stand **223 test files** (counted 2026-10-30): the count is graded
 against a live readdir by `test/docs-facts.test.ts`, so this sentence fails the suite the moment it
 trails the tree.

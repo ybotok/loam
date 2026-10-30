@@ -18,8 +18,10 @@ jobs:
   release-gate:
     runs-on: ubuntu-latest
     # The same budget as ci.yml's test job. Coverage alone took 25 minutes for
-    # 0.2.0-alpha.16, and 0.2.0-alpha.15's gate was cancelled mid-coverage at 30.
-    timeout-minutes: 45
+    # 0.2.0-alpha.16, 0.2.0-alpha.15's gate was cancelled mid-coverage at 30, and
+    # ci.yml's coverage leg passed 45 on alpha.17's cut (ci.yml says by how much
+    # the runner alone moves it).
+    timeout-minutes: 75
     permissions:
       contents: read
     steps:

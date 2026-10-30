@@ -1,7 +1,8 @@
 {
   "name": "@ybotok/loam",
   "version": "0.2.0-alpha.17",
-  "description": "Architecture-first semantic integrity and change governance for evolving software systems: connect C4, requirements, contracts, and verification evidence.",
+  "description": "One docs repo for a system of many services: C4 architecture (LikeC4), OpenAPI/AsyncAPI contracts and requirements as plain files, checked by a CLI to still agree.",
+  "mcpName": "io.github.ybotok/loam",
   "author": "spentsov",
   "repository": {
     "type": "git",
@@ -13,12 +14,19 @@
   },
   "keywords": [
     "architecture",
+    "architecture-as-code",
     "architecture-governance",
+    "asyncapi",
     "c4",
+    "c4-model",
     "distributed-systems",
+    "docs-as-code",
     "gherkin",
+    "likec4",
+    "mcp",
     "microservices",
     "modular-monolith",
+    "openapi",
     "semantic-integrity",
     "spec-driven-development"
   ],

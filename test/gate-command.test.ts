@@ -824,7 +824,16 @@ describe("the human view", () => {
     expect(res.stdout).toContain("no interrupted commit");
     const verdictLine = res.stdout.trimEnd().split("\n").at(-1)!;
     expect(verdictLine).toContain("verdict: pass — 0 errors, 2 warnings");
-    expect(verdictLine).toContain("--strict");
+    expect(verdictLine).toContain("(advisory — `--strict` turns warnings into exit 1)");
+  });
+
+  it("under --strict the verdict line says the run exits 1 — never a bare 'pass' on a red step", async () => {
+    const p = await project(gateFixture(), { service: "payment-service" });
+    const res = await runLoam(p.workDir, "gate", "--strict");
+    expect(res.code).toBe(1);
+    const verdictLine = res.stdout.trimEnd().split("\n").at(-1)!;
+    expect(verdictLine).toBe("verdict: pass — 0 errors, 2 warnings — exit 1: `--strict` fails on warnings");
+    expect(verdictLine).not.toContain("advisory");
   });
 
   it("a failing gate says so in text with the error mark and exit 1 — both modes, same facts", async () => {
@@ -945,7 +954,9 @@ describe("gate --since: a feature archived after the ref is still graded", () =>
     // The human view names the bound and marks the shipped row.
     const text = await runLoam(fleet, "gate", "--service", "order-service", "--since", "main");
     expect(text.stdout).toContain("verification — in flight, and archived since main");
-    expect(text.stdout).toContain("FEAT-112 · unverified (absent; 0/0 confirmed) · archived");
+    // No record is not a record that confirmed nothing: no "0/0" count.
+    expect(text.stdout).toContain("FEAT-112 · unverified (no verification record) · archived");
+    expect(text.stdout).not.toContain("0/0 confirmed");
   });
 
   it("a contract-only feature shipped on a VOUCHED service is graded too — freshness cannot see it", async () => {

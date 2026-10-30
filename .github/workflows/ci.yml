@@ -28,7 +28,13 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # The Node 24 leg runs the coverage suite, and its wall time on a hosted
+    # runner swings with the runner, not the change: 22.5, 25.0, 31.7, 33.5 and
+    # 42.6 minutes on the five green runs before 0.2.0-alpha.17, while the
+    # 22.22.3 leg held at 23-25. alpha.17's cut (run 40902107156) was cancelled
+    # mid-coverage at 45 with every test that had run green. release.yml's gate
+    # runs the same step and takes the same budget.
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:

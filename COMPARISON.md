@@ -80,7 +80,8 @@ the authored system model and the rest of its semantic record coherent.
 These are the tools a team evaluating loam usually holds it against, and unlike the neighbours
 above they overlap its job: each turns an intended change into specs an agent implements. They
 release about weekly, so this section is dated — checked 2026-10-09 against each project's
-releases, documentation and issue tracker — and each claim links its source. It records what each
+releases, documentation and issue tracker, with the two multi-repository issues re-checked on
+2026-10-30 — and each claim links its source. It records what each
 offers for a change that crosses repositories or services, what is still open upstream, and where
 loam differs. It does not rank them.
 
@@ -118,9 +119,9 @@ loam differs. It does not rank them.
   for them.
 - 1.1.1 added an experimental MCP server, and 1.1.2 MCP tools that list a project's artifacts
   ([releases](https://github.com/github/spec-kit/releases)).
-- Open: [#4583](https://github.com/github/spec-kit/issues/4583), multi-repository microservices,
-  open since 2026-09-14 and labelled triage-can-wait. The maintainer linked the contract-driven
-  guide and asked whether it is enough to close it.
+- Closed: [#4583](https://github.com/github/spec-kit/issues/4583), multi-repository microservices,
+  opened 2026-09-14 and closed as completed on 2026-10-20 after the maintainer linked the
+  contract-driven guide above — guidance by convention, not an automated check between repositories.
 
 **Kiro** (IDE 1.2, CLI 2.28)
 
@@ -154,10 +155,11 @@ loam differs. It does not rank them.
   `content.stale` when vouched words move, and a digest on every generated scenario. The checks run
   in each repository's CI and store nothing elsewhere. There is no dashboard, and nothing opens a
   corrective pull request.
-- Two gaps against these tools are open. loam has no per-requirement diff of a change against the
-  living spec like `openspec show --diff`: `loam delta` prints whole requirements, and
-  `loam archive --dry-run` says only which contract slots the merge quotes unchanged and which it
-  overwrites. And it has no analysis pass before code like Kiro's Analyze Requirements.
+- One gap against these tools is open: loam has no analysis pass before code like Kiro's Analyze
+  Requirements. The per-requirement diff that `openspec show --diff` gives closed in
+  0.2.0-alpha.16 as `loam delta <FEAT> --diff`: each requirement, operation and message of the
+  service's slice says whether it is new, a quote of the living text, an edit or a removal, and an
+  edit or a removal carries its changed lines.
 
 ## The boundary
 

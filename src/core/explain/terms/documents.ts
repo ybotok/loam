@@ -127,8 +127,10 @@ export const DOCUMENT_TERMS: TermGroup = {
         "and the stamp records the date, who vouched (from git), and digests of both the source files and the document body — " +
         "which is what lets a later `loam validate` report `sources.stale` and `content.stale` when the code or the words move. " +
         "**`loam vouch` is not yours to run**, and it is built so that it cannot be. It refuses unattended runs (`vouch-unattended`), " +
-        "records a no as `vouch-declined`, and refuses to stamp when git can name nobody (`vouch-unattributable`); " +
-        "when your work leaves a document ready, hand back and say a vouch is owed.",
+        "records a no as `vouch-declined`, and refuses to stamp when git can name nobody (`vouch-unattributable`). " +
+        "`--yes` skips the question for a person's own scripted run, and the stamp carries no mark that it did, " +
+        "so typing it on someone's behalf is writing their name. " +
+        "When your work leaves a document ready, hand back and say a vouch is owed.",
       pins: [
         // Both phrases left AGENTS.md with the frontmatter teaching and are now
         // in `loam instructions loam-authoring`. Repaired by following the text,

@@ -21,6 +21,7 @@ import { join } from "node:path";
 import { buildProgram } from "../src/cli.js";
 import { readVocabulary } from "../src/core/permissions/permissions.js";
 import { CLAIM_KINDS } from "../src/core/verify/claims/identity.js";
+import { VALIDATE_CHECKS } from "../src/core/brief/checks/checks.js";
 import { listCodes } from "../src/core/explain/lookup.js";
 import { PACKAGED_MARKDOWN } from "../scripts/package-docs.mjs";
 import { committedBlock, defaultCalls, measurePayloads, payloadBlock, type Payloads } from "../scripts/payload-sizes.js";
@@ -229,6 +230,22 @@ describe("counted facts are live or dated", () => {
     const design = flat(await read("docs/DESIGN.md"));
     const live = `makes ${await commandModuleCount()} \`register*\` calls, which produce **${commandNames().length}** commands`;
     expect(design, `docs/DESIGN.md must carry the live "${live}" sentence`).toContain(live);
+  });
+
+  it("the adopt brief's check count is live where README and WORKFLOW name it", async () => {
+    // Both pages said "52" against a brief of 53 — a count nothing derived,
+    // in the one sentence that tells an evaluator what --targets leaves out.
+    // toHaveLength first, so a reworded sentence fails here instead of
+    // passing by not matching.
+    const pages = ["README.md", "WORKFLOW.md"];
+    const found: string[] = [];
+    for (const page of pages) {
+      for (const m of flat(await read(page)).matchAll(/the (\d+) (?:named )?checks and the seventeen statements/g)) {
+        found.push(`${page}: ${m[1]}`);
+      }
+    }
+    expect(found, "README and WORKFLOW must each name the brief's check count once").toHaveLength(pages.length);
+    expect(found).toEqual(pages.map((page) => `${page}: ${VALIDATE_CHECKS.length}`));
   });
 
   it("DESIGN's rule-23 hub tally is present and live — its four counts are derivable, so they must derive", async () => {
@@ -484,12 +501,12 @@ describe("known gaps carry owners", () => {
   const KNOWN_GAPS: { doc: string; gap: string; owner: string }[] = [
     {
       doc: "README.md",
-      gap: "the scheduled CI `stability` job has still to be observed green",
+      gap: "has yet to be observed green at the budget it was given on 2026-10-28",
       owner: "still release evidence to collect",
     },
     {
       doc: "SCHEMA.md",
-      gap: "the scheduled CI `stability` job has still to be observed green",
+      gap: "has yet to be observed green at the budget it was given on 2026-10-28",
       owner: "still release evidence to collect",
     },
     {

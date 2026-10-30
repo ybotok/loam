@@ -70,6 +70,29 @@ filed by the feature gate) and `usecase.obligation-misplaced`. No flag and no pa
   same two elements, both tagged with one obligation, were two identical findings, though a
   `Covers:` edge line names endpoints only and one line covers both. They are now one.
 
+### Fixed — `loam gate`'s text view says what `--strict` does to the exit
+
+No code, flag or payload key was added, and `--json` is unchanged.
+
+- **Under `--strict`, a passing gate with warnings no longer ends on an advisory line while exiting
+  1.** The verdict stays `pass`, as before, and the line now ends
+  `` — exit 1: `--strict` fails on warnings ``; without `--strict` it still ends
+  `` (advisory — `--strict` turns warnings into exit 1) ``.
+- **A feature with no verification record no longer reads `0/0 confirmed`.** Its row says
+  `(no verification record)`, and one whose record cannot be read says
+  `(verification record unreadable)`, where both used to print the state and a zero count.
+
+### Changed — one description everywhere
+
+- `loam --help` opens with the README's own line — one docs repo for a system of many services, C4,
+  contracts and requirements as plain files, checked to still agree — and the npm package's
+  description says the same. The package also gains the `likec4`, `openapi`, `asyncapi`, `c4-model`,
+  `architecture-as-code`, `docs-as-code` and `mcp` keywords and an `mcpName`
+  (`io.github.ybotok/loam`), the field the MCP registry reads to tie a server to its npm package.
+- `loam explain vouch` now says what `--yes` does: it skips the question for a person's own
+  scripted run and leaves no mark on the stamp, so typing it on someone's behalf is writing their
+  name.
+
 ### Fixed — Copilot's instructions file stays out of the docs repo itself
 
 No code, flag or payload key was added.
