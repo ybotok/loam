@@ -14,11 +14,6 @@ seller is paid by a separate transfer run reconciled by hand at the end of the d
 where every payout dispute this quarter came from: the customer's payment and the sellers'
 shares are two records nothing joins.
 
-This file is where the "why" lives, and the archive gate holds it to that: the delta says what
-changed, and nothing else says what for. A feature whose `intent.md` is missing, or says nothing
-outside the scaffold's own comments, is refused by `intent.empty` — a warning that gates, so a
-change cannot fold into the living docs with its reason unwritten.
-
 ## Business acceptance
 - A customer can split a payment across 2+ payees before confirming.
 - Each payee receives their share; the shares sum to the total.

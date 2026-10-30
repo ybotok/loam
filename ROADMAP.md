@@ -1144,7 +1144,8 @@ What the axis found about the PRODUCT, which is what it was built to buy:
   lines resolve and says nothing about what is left over. `obligation.uncovered` is the shape that
   would answer this over a living map; this tree declares no obligations yet.
 - **The fleet scorecard counts service-LEVEL elements**, so a 70-box model reports
-  `c4: {elements: 1, covered: 0}` — correct by its own definition and badly misleading here.
+  `c4: {elements: 1, covered: 1}` — correct by its own definition, and silent about the 70. (It read
+  `covered: 0` until the census counted a system's own `Covers:` on its interior and edges.)
 - **`services/core/` + `services/commands/` is unspellable, not merely unwise**: the one flat
   namespace for subsystem names and service ids collides on eleven leaf names. Nesting inside one
   bound system is what keeps `landscape.service-undocumented` correctly quiet, but it means the

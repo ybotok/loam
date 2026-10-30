@@ -29,7 +29,7 @@ import { featurePaths, SPEC_AXES } from "../repo/paths.js";
 import type { FleetContext } from "../fleet-context.js";
 import { locateServicePaths } from "../repo/service-target.js";
 import { readVouchScope } from "./sample/scope.js";
-import { sourceFindings } from "./sources.js";
+import { sourceFindings, walkFindings } from "./sources.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
 /** Fields every artifact is expected to carry, beyond its identity and status. */
@@ -43,9 +43,10 @@ export interface ProvenanceOptions {
    */
   repoDir?: string;
   /**
-   * Repo-relative files loam itself owns in `repoDir` — loam.json and the agent
-   * files it records (`loamOwnedFiles`). Only the walk check reads them, to
-   * leave them out of `sources.unwalked`'s denominator; absent means none.
+   * Repo-relative paths loam itself owns in `repoDir` — loam.json, the agent
+   * files it records, and its owned subtrees with a trailing `/`
+   * (`loamOwnedFiles`). Only the walk check reads them, to leave them out of
+   * `sources.unwalked`'s denominator; absent means none.
    */
   loamOwned?: readonly string[];
   /** The invocation's read index, when the caller holds one — resolves the service's directory without a second walk. */
@@ -61,6 +62,8 @@ export async function serviceProvenance(
   const repo = opts.repoDir === undefined ? undefined : { dir: opts.repoDir, loamOwned: opts.loamOwned ?? [] };
   const findings: Finding[] = [];
   const owners: { file: string; owner: string }[] = [];
+  // What each document's `sources` reached, pooled for the one walk below.
+  const walk = { files: [] as string[], docs: [] as string[], unresolved: false };
   // Both requirement-carrying specs get the same pass: arch.spec.md follows
   // spec.md's frontmatter conventions exactly, so the checks are one loop —
   // only the label tells a reader which file moved. The pair comes from
@@ -84,7 +87,13 @@ export async function serviceProvenance(
     // `sources.absent` against a header nobody can read is the same false
     // advice as the field cascade, so frontmatter.malformed stands alone.
     if (fm.present && !fm.malformed) {
-      findings.push(...(await sourceFindings(fm, service, label, repo)));
+      const sources = await sourceFindings(fm, service, label, repo);
+      findings.push(...sources.findings);
+      if (sources.walked === "unresolved") walk.unresolved = true;
+      else if (sources.walked !== undefined) {
+        walk.files.push(...sources.walked);
+        walk.docs.push(file);
+      }
       findings.push(...contentFindings(fm, raw, service, label));
       findings.push(...scopeFindings(fm, service, label));
       // Trimmed and non-empty, so `owner: ""` stays the absence it means
@@ -92,6 +101,13 @@ export async function serviceProvenance(
       const owner = stringField(fm, "owner")?.trim();
       if (owner !== undefined && owner.length > 0) owners.push({ file, owner });
     }
+  }
+  // The walk asks whether the SERVICE was read, so it is graded once, over
+  // every document's reading together (see walkFindings). Not while any list
+  // names paths that do not resolve: that list's error already gates, and a
+  // pooled reading missing it would name paths the author may well have read.
+  if (repo !== undefined && !walk.unresolved && walk.docs.length > 0) {
+    findings.push(...(await walkFindings(repo, walk.files, `${service}: ${walk.docs.join(" + ")}`)));
   }
   findings.push(...ownerFindings(service, owners));
   return findings;

@@ -310,6 +310,59 @@ describe("validate --all --json: the scorecard payload key", () => {
     });
   });
 
+  /** provider's arch.spec.md with one requirement covering `covers`. */
+  const providerArch = (covers: string): string => `---
+service: provider
+status: draft
+---
+
+# provider — architecture
+
+## Requirements
+
+### Requirement: Calls are answered within budget
+
+The service SHALL answer every call within its latency budget.
+
+Covers: ${covers}
+
+#### Scenario: A call is answered
+- **Given** a request
+- **When** it is served
+- **Then** it is answered within budget
+`;
+
+  it("counts a system covered by its own requirement on an element inside it", async () => {
+    // SCHEMA and the example write `Covers:` against a service's interior —
+    // a container, a module — and a requirement on `provider.api` is a
+    // requirement on provider in any reader's sense. Counting only entries
+    // that named the system itself read 0 covered on every fleet written that
+    // way, the packaged example included.
+    const files = gapFleet();
+    files["services/provider/arch.spec.md"] = providerArch("payments.provider.api");
+    await withProject(files, async (p) => {
+      const payload = JSON.parse((await runLoam(p.workDir, "validate", "--all", "--json")).stdout);
+      const codes = payload.targets.flatMap((t: { findings: { code: string }[] }) => t.findings.map((f) => f.code));
+      expect(codes).not.toContain("covers.unknown");
+      expect(payload.scorecard.c4).toEqual({ elements: 2, covered: 1 });
+    });
+  });
+
+  it("counts an edge for the system whose own spec covers it — never for the other end", async () => {
+    // provider's requirement on the consumer -> provider call covers provider.
+    // It says nothing about consumer: under "any edge touching it", one
+    // service's spec would mark its caller covered by a requirement that
+    // caller never wrote.
+    const files = gapFleet();
+    files["services/provider/arch.spec.md"] = providerArch("consumer -> provider");
+    await withProject(files, async (p) => {
+      const payload = JSON.parse((await runLoam(p.workDir, "validate", "--all", "--json")).stdout);
+      const codes = payload.targets.flatMap((t: { findings: { code: string }[] }) => t.findings.map((f) => f.code));
+      expect(codes).not.toContain("covers.unknown");
+      expect(payload.scorecard.c4).toEqual({ elements: 2, covered: 1 });
+    });
+  });
+
   it("files a wholly agent-answered record under agent — no runner ran, so no claim is a runner's", async () => {
     await withProject(coherentFixture(), async (p) => {
       // Record FEAT-1 the way list.test.ts does: derive the checklist, confirm

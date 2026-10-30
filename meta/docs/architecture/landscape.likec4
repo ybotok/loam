@@ -320,6 +320,7 @@ model {
   loam.commands.init -> loam.core.envelope
   loam.commands.init -> loam.core.kernel
   loam.commands.init -> loam.core.repo
+  loam.commands.init -> loam.core.scaffold
   loam.commands.init -> loam.core.staging
 
   loam.commands.instructions -> loam.core.agent

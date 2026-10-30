@@ -17,13 +17,18 @@
  * (this directory is about to become a loam workspace) and shares nothing else
  * with it — no repository is bound, no agent files are scaffolded, no
  * `docsDir` is recorded. A second verb would have re-litigated all of that.
+ * (The docs repo's own `AGENTS.md` is not an agent file in that sense: it is
+ * part of what makes the copy a docs repo at all — see `planCopy`.)
  */
 import { existsSync, statSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { AGENTS_MD } from "../../core/agent/agents-md.js";
 import { emitJson, fail } from "../../core/envelope/json.js";
 import { inOrder } from "../../core/kernel/concurrency.js";
+import { AGENTS_FILENAME } from "../../core/repo/paths.js";
+import { README_FILENAME } from "../../core/scaffold/readme.js";
 import { stageWrites } from "../../core/staging/commit.js";
 import { commitStaged } from "../../core/staging/txn/transaction.js";
 import { planWrite, type PlannedWrite } from "../../core/staging/writes.js";
@@ -43,6 +48,15 @@ import { planWrite, type PlannedWrite } from "../../core/staging/writes.js";
  * release preflight blocking.
  */
 const EXAMPLE_TREE = resolve(fileURLToPath(new URL("../../../examples/docs/", import.meta.url)));
+
+/**
+ * The page that explains the example — what each service is there to show and
+ * why every one of its warnings is deliberate. It sits BESIDE the tree rather
+ * than in it, so the copy carries it as the docs repo's `README.md`: without it
+ * that explanation lived only on GitHub, and a user who asked for a working
+ * fleet got ten warnings and no word on which of them were the lesson.
+ */
+const EXAMPLE_GUIDE = resolve(fileURLToPath(new URL("../../../examples/README.md", import.meta.url)));
 
 /**
  * The three commands the copy exists to make runnable, each with what it
@@ -175,7 +189,19 @@ async function occupancy(target: string): Promise<string | null> {
   return (await readdir(target)).length > 0 ? "already exists and is not empty" : null;
 }
 
-/** Every file of the packaged tree, planned as an exclusive create under `target`. */
+/**
+ * Every file of the packaged tree, planned as an exclusive create under
+ * `target` — and the two files a docs repo has that the committed tree cannot.
+ *
+ * `AGENTS.md` is written here, at copy time, by the binary doing the copying.
+ * The committed tree leaves it out because a generated one carries its
+ * writer's version stamp and would read `agents.stale` the release after it
+ * was committed; but `services/` plus `AGENTS.md` is what makes a directory a
+ * docs repo (`isDocsRepo`), so a copy without one was a fleet no service repo
+ * could join — `loam init --docs <copy> --service <id>` refused it as "not a
+ * docs repo". Written now, it is current by construction. The guide beside the
+ * tree lands as `README.md`, the slot `loam init --create` fills with its own.
+ */
 async function planCopy(target: string): Promise<PlannedWrite[]> {
   const paths = await treePaths(EXAMPLE_TREE);
   // BYTES, never text: `readFile` without an encoding, straight into the
@@ -183,9 +209,14 @@ async function planCopy(target: string): Promise<PlannedWrite[]> {
   // every byte loam does not understand (core/staging/writes.ts records the
   // defect), and the contract this command is tested against is that the copy
   // is byte-identical to the tree that shipped.
-  return inOrder(paths, async (rel) =>
+  const tree = await inOrder(paths, async (rel) =>
     planWrite(join(target, ...rel.split("/")), await readFile(join(EXAMPLE_TREE, ...rel.split("/")))),
   );
+  return [
+    planWrite(join(target, README_FILENAME), await readFile(EXAMPLE_GUIDE)),
+    planWrite(join(target, AGENTS_FILENAME), AGENTS_MD),
+    ...tree,
+  ];
 }
 
 /**
@@ -225,8 +256,9 @@ function report(req: ExampleRequest, target: string, writes: PlannedWrite[]): vo
   console.log("Example fleet copied.");
   console.log(`  from:  ${EXAMPLE_TREE}`);
   console.log(`  to:    ${target}`);
-  console.log(`  files: ${created.length} — five services, four features, and its own loam.json`);
+  console.log(`  files: ${created.length} — five services, four features, its own loam.json and AGENTS.md`);
   console.log("         the tree governs itself, so every command below resolves to this fleet");
+  console.log("         README.md says what each service, feature and warning is there to show");
 
   // The first line carries the `cd` because the tree governs itself: these
   // commands answer about THIS fleet only when they are run from inside it.

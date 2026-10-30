@@ -4144,7 +4144,9 @@ through the forge, not through loam features:
 
 `loam validate --all --json` carries an additive `scorecard` key: ceiling-vs-actual pairs per axis —
 operations defined → governed (plus deprecated, and deprecated operations something still joins to),
-messages defined → linked, drawn C4 systems → covered by an arch requirement, the maturity rollup,
+messages defined → linked, drawn C4 systems → covered by an arch requirement (a `Covers:` entry in
+the system's own `arch.spec.md` on the system, an element nested in it or an edge with an endpoint
+in it; one in another service's spec only when it names the system itself), the maturity rollup,
 verification verdicts with the confirmed claims split by who answered them (`claims.answered` under
 the verification aggregate: runner · external-runner · agent, off each answer's own `answered_by`),
 and each active feature's stage. The `--all` text report prints the same table after its summary

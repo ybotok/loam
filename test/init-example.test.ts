@@ -10,7 +10,9 @@
  *   - the copy is BYTE-IDENTICAL to the shipped tree, directories included.
  *     Anything less and the example a user runs is not the example
  *     test/examples.test.ts pins, and the two can disagree without either
- *     going red.
+ *     going red. Two files are added and nothing else: the guide beside the
+ *     tree as `README.md`, and an `AGENTS.md` this binary generates — the one
+ *     marker of a docs repo the committed tree cannot carry current.
  *   - the copy is RUNNABLE where it lands — `loam status` and
  *     `loam validate --all` from inside it, with no loam.json written by hand
  *     and none anywhere above it. That is the whole point: the shipped tree
@@ -28,14 +30,17 @@
  *     instead of a second command hiding inside `init`.
  */
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Command } from "commander";
 import { buildProgram } from "../src/cli.js";
+import { AGENTS_MD } from "../src/core/agent/agents-md.js";
 import { makeTmpDir, runLoam, treeHashes } from "./helpers/harness.js";
 
 const SHIPPED = fileURLToPath(new URL("../examples/docs", import.meta.url));
+const GUIDE = fileURLToPath(new URL("../examples/README.md", import.meta.url));
 
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
@@ -95,7 +100,7 @@ const CONTRADICTIONS: Array<[flag: string, args: string[]]> = [
 ];
 
 describe("init --example: the copy", () => {
-  it("is byte-identical to the shipped example tree", async () => {
+  it("is byte-identical to the shipped example tree, plus the guide and a current AGENTS.md", async () => {
     // treeHashes keys directories too, so a directory the copy failed to make
     // is as visible as a changed byte. Byte-for-byte and not "parses the
     // same": the tree ships with whatever line endings the clone has, and a
@@ -104,7 +109,45 @@ describe("init --example: the copy", () => {
     const dir = await throwawayDir();
     const res = await runLoam(dir, "init", "--example", "./demo");
     expect(res.code).toBe(0);
-    expect(await treeHashes(join(dir, "demo"))).toEqual(await treeHashes(SHIPPED));
+    const { "README.md": readme, "AGENTS.md": agents, ...tree } = await treeHashes(join(dir, "demo"));
+    expect(tree).toEqual(await treeHashes(SHIPPED));
+    // The two files a docs repo has that the committed tree cannot: the page
+    // beside the tree, byte-for-byte, and the AGENTS.md this binary generates —
+    // the same bytes `init --create` writes, so its stamp is current.
+    expect(readme).toBe(createHash("sha256").update(await readFile(GUIDE)).digest("hex"));
+    expect(agents).toBe(createHash("sha256").update(AGENTS_MD).digest("hex"));
+    expect(await readFile(join(dir, "demo", "AGENTS.md"), "utf8")).toBe(AGENTS_MD);
+  });
+
+  it("is a docs repo a service repository can join — `init --docs <copy> --service` binds to it", async () => {
+    // Before, the copy had `services/` and no `AGENTS.md`, so it was not a docs
+    // repo by `isDocsRepo`'s two markers, and a service repo pointed at it was
+    // refused with "not a docs repo" — the example could be read but never
+    // used for the first thing a team does next.
+    const dir = await throwawayDir();
+    await runLoam(dir, "init", "--example", "./demo");
+    const svc = join(dir, "payment-service");
+    await mkdir(svc, { recursive: true });
+    const res = await runLoam(
+      svc, "init", "--docs", "../demo", "--service", "payment-service", "--agent-profile", "service", "--json",
+    );
+    expect(res.code, res.out).toBe(0);
+    const config = JSON.parse(await readFile(join(svc, "loam.json"), "utf8"));
+    expect(config).toMatchObject({ docsDir: "../demo", service: "payment-service" });
+  });
+
+  it("hands a builder the feature's reasons, not the tour's narration", async () => {
+    // `loam delta` prints the whole intent as the feature's Why. FEAT-101's
+    // used to carry a paragraph teaching the intent.empty gate, which every
+    // brief for the feature then presented as the business reason for
+    // splitting payments. The teaching lives in README.md now.
+    const dir = await throwawayDir();
+    await runLoam(dir, "init", "--example", "./demo");
+    const delta = await runLoam(join(dir, "demo"), "delta", "FEAT-101", "--service", "payment-split-service");
+    expect(delta.code).toBe(0);
+    expect(delta.out).toContain("Marketplaces need to split one customer payment");
+    expect(delta.out).not.toContain("intent.empty");
+    expect(await readFile(join(dir, "demo", "README.md"), "utf8")).toContain("intent.empty");
   });
 
   it("leaves no transaction journal behind — the copy is a committed transaction, not a cp", async () => {
@@ -246,7 +289,8 @@ describe("init --example: the refusals", () => {
     const dir = await throwawayDir();
     const res = await runLoam(dir, "init", "--example", "./demo", "--no-commands", "--no-skills", "--force");
     expect(res.code).toBe(0);
-    expect(await treeHashes(join(dir, "demo"))).toEqual(await treeHashes(SHIPPED));
+    const { "README.md": _guide, "AGENTS.md": _agents, ...tree } = await treeHashes(join(dir, "demo"));
+    expect(tree).toEqual(await treeHashes(SHIPPED));
   });
 });
 
@@ -260,10 +304,12 @@ describe("init --example: the machine contract", () => {
     expect(payload.command).toBe("init");
     expect(payload.example.source).toBe(SHIPPED);
     expect(payload.example.dir).toBe(join(dir, "demo"));
-    // Every file of the shipped tree, and nothing else. Directory keys are
-    // dropped: `created` is a list of writes.
+    // Every file of the shipped tree, the guide and AGENTS.md, and nothing
+    // else. Directory keys are dropped: `created` is a list of writes.
     const expected = Object.keys(await treeHashes(SHIPPED)).filter((p) => !p.endsWith("/"));
-    expect((payload.created as string[]).length).toBe(expected.length);
+    expect((payload.created as string[]).length).toBe(expected.length + 2);
     expect(payload.created).toContain(join(dir, "demo", "loam.json"));
+    expect(payload.created).toContain(join(dir, "demo", "README.md"));
+    expect(payload.created).toContain(join(dir, "demo", "AGENTS.md"));
   });
 });

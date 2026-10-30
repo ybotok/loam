@@ -1,15 +1,16 @@
 # The example fleet
 
 `docs/` is a complete, runnable loam docs repo. It is small enough to read in one sitting and large
-enough that every row of [SCHEMA.md](../SCHEMA.md)'s canonical-joins table is exercised by something
+enough that every row of [SCHEMA.md](https://github.com/ybotok/loam/blob/main/SCHEMA.md)'s canonical-joins table is exercised by something
 — including the joins that only appear once a fleet has more than two services in it.
 
-Run it from a clone. `docs/loam.json` is committed and says `"docsDir": "."`, so the tree governs
-itself: every command below resolves to this fleet because it is run from inside it. There is
-nothing to write first and nothing to delete afterwards.
+Run it from a clone, or from the copy `loam init --example <dir>` makes — where this page is the
+copy's own `README.md` and `<dir>` is what this page calls `docs/`. `docs/loam.json` is committed
+and says `"docsDir": "."`, so the tree governs itself: every command below resolves to this fleet
+because it is run from inside it. There is nothing to write first and nothing to delete afterwards.
 
 ```bash
-cd examples/docs
+cd examples/docs                   # in a copy: cd <dir>
 loam list                          # the fleet and its maturity ladder
 loam status                        # what to do next, derived from the files
 loam validate --all                # the gate CI runs
@@ -139,6 +140,13 @@ for.
   `loam rebase`-written `x-loam-based-on` pins and adds one new producer side, so the archive merges
   the new slots and leaves every pinned quote to the living contract's own copy. The restatement is
   there to demonstrate the pin; a real delta holds only the slots it adds, changes or removes.
+
+  Its `intent.md` is where the "why" lives, and the archive gate holds it to that: the delta says
+  what changed, and nothing else says what for. A feature whose `intent.md` is missing, or says
+  nothing outside the scaffold's own comments, is refused by `intent.empty` — a warning that gates,
+  so a change cannot fold into the living docs with its reason unwritten. This paragraph used to sit
+  in that `## Why`, and `loam delta` and `loam context` — which print the whole intent to whoever
+  builds the feature — handed it over as the business reason for splitting payments.
 - **`features/FEAT-112-retire-order-v1/`** — in flight, and the smallest legal shape: no
   `delta.likec4` at all, because retiring an operation moves no boxes. It carries the two halves
   loam requires together for a removal — a `REMOVED` requirement and an `x-loam-remove: true` marker
@@ -210,7 +218,10 @@ is what closes it.
 - **`AGENTS.md`.** A real docs repo has one, written by `loam init --docs . --create`. It is left
   out here because a generated `AGENTS.md` carries the version stamp of the binary that wrote it,
   and this tree is committed while the binary keeps moving — a stamped copy in the repository would
-  be stale by the next release and would say so to every reader of the example.
+  be stale by the next release and would say so to every reader of the example. The copy
+  `loam init --example <dir>` makes DOES carry one, written at copy time by the binary making it,
+  together with this page as its `README.md`: without it the copy was no docs repo a service
+  repository could join, and `loam init --docs <dir> --service <id>` refused it.
 
   **`loam.json` used to be left out with it**, on the same "keep the tree a pure set of documents"
   reasoning, and that trade was wrong: without it the example could not be RUN. `loam status` here
