@@ -498,6 +498,7 @@ model {
 
   loam.commands.verify -> loam.commands.policy
   loam.commands.verify -> loam.core.envelope
+  loam.commands.verify -> loam.core.fleet_context
   loam.commands.verify -> loam.core.kernel
   loam.commands.verify -> loam.core.provenance
   loam.commands.verify -> loam.core.repo
@@ -666,6 +667,7 @@ model {
   loam.core.gate -> loam.core.status
   loam.core.gate -> loam.core.vocabulary
 
+  loam.core.gherkin -> loam.core.envelope
   loam.core.gherkin -> loam.core.kernel
   loam.core.gherkin -> loam.core.repo
   loam.core.gherkin -> loam.core.vocabulary

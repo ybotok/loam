@@ -111,22 +111,33 @@ outside it, and loam never touches a byte outside \`loam/\`.
 One file per requirement (\`Feature:\` is the requirement name). Bullet lines
 opening with Given/When/Then/And/But — the \`- **WHEN** ...\` convention
 included — become steps; every other body line is kept as scenario
-description. A valid Markdown table AT THE MARGIN becomes the \`Examples:\` of
-a \`Scenario Outline\`; a malformed table stays in the description and is
-reported, because it will run once rather than once per row.
+description. The keywords must be those English five; the step text after
+them may be in any language. A bullet opening with another language's keyword
+(\`- **Дано** …\`) is prose, and a scenario of nothing else is
+\`requirements.stepless-scenario\`. A valid Markdown table AT THE MARGIN becomes
+the \`Examples:\` of a \`Scenario Outline\`; a malformed table stays in the
+description and is reported, because it will run once rather than once per
+row. A table needs its \`|---|\` delimiter row under the header — the
+\`.feature\` habit of leaving it out is not a table to Markdown, so loam does
+not read it as one — and no \`Examples:\` line: the margin table IS the
+Examples. \`loam validate\` reports such a scenario as
+\`requirements.examples-malformed\` (warn), before anything is generated.
 
 A step takes an ARGUMENT by carrying it INDENTED underneath: an indented table
 becomes that step's data table (the rows an outbox or a DB table must hold after
 the pass), a fenced block becomes its docstring, indentation intact (the request
 payload). Indented under a step means this step's rows; at the margin means the
 scenario's cases. A block no step precedes stays description and is reported as
-\`strandedBlocks\` — the document reads, and the TEST lost its argument. Each scenario is
+\`strandedBlocks\` (\`requirements.argument-stranded\` in \`loam validate\`) — the
+document reads, and the TEST lost its argument. Each scenario is
 tagged \`@loam-digest-<16hex>\`: the same body
 hash \`loam verify\` folds into its claim ids, riding into cucumber's JSON
 report as a tag, so the suite, the claim and the report cannot quietly
 disagree about what a scenario says. \`loam validate
 --service <id>\`, run in the service repo, grades the suite by those digests
-(\`gherkin.missing\` / \`gherkin.stale\` / \`gherkin.orphaned\`, all warn) — the
+(\`gherkin.missing\` / \`gherkin.stale\` / \`gherkin.orphaned\`, all warn), and
+re-emits each file to compare its text: one edited by hand is \`gherkin.edited\`
+(warn), and \`loam verify --results\` will not confirm its edited scenarios. The
 fix is always regeneration, never editing a generated file.
 
 The flow, closed end to end: \`loam gherkin FEAT-101\` → \`loam steps --service

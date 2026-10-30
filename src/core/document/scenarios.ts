@@ -85,10 +85,17 @@ export function steplessFindings(label: string, subject: string, reqs: Requireme
       severity: "error",
       code: "requirements.stepless-scenario",
       subject,
+      // The keyword sentence is here because the commonest way to land in this
+      // finding is not a prose body at all: it is `- **Дано** …` / `- **Когда** …`,
+      // a perfectly structured scenario in another language's keywords, which
+      // read "no recognizable steps" as a different problem from the one it
+      // had. Step TEXT in any language already works; only the five keywords
+      // are fixed, because they are what the emitted file's runner parses.
       message:
         `${label}: ${bare.length} scenario(s) have a heading and no recognizable steps — ` +
         `they satisfy the coverage rule and test nothing. Cucumber runs a stepless scenario vacuously green and ` +
-        `\`loam verify --results\` can never confirm it. Write the body as \`- **Given/When/Then**\` bullets.`,
+        `\`loam verify --results\` can never confirm it. Write the body as \`- **Given/When/Then**\` bullets. ` +
+        `The keywords must be the English GIVEN, WHEN, THEN, AND or BUT; the step text after them may be in any language.`,
       details: bare.map((s) => `${s.requirement} — ${s.scenario}`),
       text: { detailPrefix: "- " },
     },
@@ -202,8 +209,17 @@ export function examplesMismatches(reqs: Requirement[]): ExamplesMismatch[] {
  * severities, because a machine cannot branch on a severity that depends on the
  * case, and the fixes differ: one adds a column, the other removes one or
  * restores the reference that used to use it.
+ *
+ * Followed by the tables and blocks the emitter could not read at all
+ * ({@link unreadFindings}), because they are the same question one step
+ * earlier: before a header can disagree with its placeholders, the table has
+ * to have been read as one.
  */
 export function examplesFindings(label: string, subject: string, reqs: Requirement[]): Finding[] {
+  return [...mismatchFindings(label, subject, reqs), ...unreadFindings(label, subject, reqs)];
+}
+
+function mismatchFindings(label: string, subject: string, reqs: Requirement[]): Finding[] {
   const all = examplesMismatches(reqs);
   const findings: Finding[] = [];
   const unbound = all.filter((m) => m.unbound.length > 0);
@@ -231,6 +247,65 @@ export function examplesFindings(label: string, subject: string, reqs: Requireme
         `usually the fossil of a rename, and the outline then runs its rows as identical passes that read as cases. ` +
         `Reference the column from a step, or drop it.`,
       details: dead.map((m) => `${m.requirement} — ${m.scenario}: ${m.unreferenced.join(", ")}`),
+      text: { detailPrefix: "- " },
+    });
+  }
+  return findings;
+}
+
+/**
+ * Scenarios whose table or block `loam gherkin` could not read — the two flags
+ * `scenarioGherkin` sets, as findings, so the gate says what the emission says.
+ *
+ * Before this, only `loam gherkin` printed them, and only to whoever ran it in
+ * the service repo; the document that carried the table graded green in
+ * `validate --feature` and `--service` alike. The cost of that silence was the
+ * worst kind: a twenty-row outline written in Gherkin's own table style (no
+ * `|---|` row) emitted as ONE plain scenario with literal `<placeholders>`,
+ * and a lenient step definition then passed it — one green run answering for
+ * twenty cases nobody ran. Warnings, never gates: the document is legal, and
+ * what it loses is the test's shape, which `--strict` is for.
+ *
+ * Two codes because the emitter keeps two flags, for the reason it gives:
+ * one fix is "make the table readable", the other "move the block under its
+ * step", and a machine must not have to guess which was meant.
+ */
+function unreadFindings(label: string, subject: string, reqs: Requirement[]): Finding[] {
+  const malformed: string[] = [];
+  const stranded: string[] = [];
+  for (const r of reqs) {
+    if (r.kind === "REMOVED") continue;
+    for (const s of r.scenarios) {
+      const { malformedExamples, strandedBlocks } = scenarioGherkin(s.lines);
+      if (malformedExamples) malformed.push(`${r.name} — ${s.name}`);
+      if (strandedBlocks) stranded.push(`${r.name} — ${s.name}`);
+    }
+  }
+  const findings: Finding[] = [];
+  if (malformed.length > 0) {
+    findings.push({
+      severity: "warn",
+      code: "requirements.examples-malformed",
+      subject,
+      message:
+        `${label}: ${malformed.length} scenario(s) have a table at the margin that cannot be read as \`Examples\` — ` +
+        `so it stays description and the scenario runs ONCE, not once per row, with any \`<placeholder>\` reaching the step as literal text. ` +
+        `A table needs its \`|---|\` delimiter row under the header (the \`.feature\` habit of leaving it out does not render as a table in Markdown), ` +
+        `every row the header's column count, and at least one row; write no \`Examples:\` line — the table at the margin IS the Examples.`,
+      details: malformed,
+      text: { detailPrefix: "- " },
+    });
+  }
+  if (stranded.length > 0) {
+    findings.push({
+      severity: "warn",
+      code: "requirements.argument-stranded",
+      subject,
+      message:
+        `${label}: ${stranded.length} scenario(s) have a fenced block or an indented table that cannot become a step's argument — ` +
+        `written before the first step, or an indented table loam cannot read — so it stays description and the step definition receives no payload and no data table. ` +
+        `Indent it under the step it belongs to, and give an indented table its \`|---|\` delimiter row and equal columns.`,
+      details: stranded,
       text: { detailPrefix: "- " },
     });
   }

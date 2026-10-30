@@ -164,8 +164,11 @@ repository, which needs its own committed ./loam.json — if there is none,
    \`.feature\` file per changed requirement lands under \`<gherkinDir>/loam/\`
    (default \`features/loam/\`), scenarios digest-stamped, arch requirements tagged
    \`@architecture\`. Those files ARE the acceptance criteria. Never edit them:
-   regeneration rewrites the directory, and \`loam validate\` reports the suite stale
-   by digest, not by your intentions. Generating is the WHOLE action for a unit at
+   regeneration rewrites the directory, \`loam validate\` reports the suite stale
+   by digest, not by your intentions, and a file whose text differs from what loam
+   emits is \`gherkin.edited\` — \`loam verify --results\` will not confirm a scenario
+   of it, however green the run. Your step definitions are the one part loam does
+   not compare: make each one check everything its step says. Generating is the WHOLE action for a unit at
    \`generate\`: go back to step 3, where the same unit now reads \`implement\`.
 5. \`at: "implement"\` — step definitions FIRST, outside \`loam/\`, then the code.
    Do not paraphrase a scenario into something easier to pass; it is the acceptance

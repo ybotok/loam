@@ -68,4 +68,5 @@ Gemini spells them `/loam:adopt`, Amazon Q `@loam-adopt`, a skills-only host `$l
 | `sources.path-missing` | error: a listed source no longer exists | the code moved: re-read it, update the doc |
 | `content.stale` | warn: the spec's words changed after the vouch | `loam vouch --pack`, read, re-vouch |
 | `gherkin.stale`, `gherkin.missing` | warn: the generated suite is behind the scenarios | `loam gherkin --service <id>`; never hand-edit it |
+| `gherkin.edited` | warn: a generated file was edited by hand — `verify --results` will not confirm its edited scenarios | regenerate; to change what is tested, change the spec |
 | `gate.feature-unverified` | warn: a feature touching you has nothing confirmed | `/loam-verify <FEAT>` |
