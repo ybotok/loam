@@ -10,6 +10,66 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Added — a fleet flow keeps an architectural obligation: `#obl-<id>` on a `dynamic view`
+
+One code was added, `usecase.obligation-misplaced`, and three `IssueCode` members:
+`obligation.unknown`, `obligation.uncovered` (both already emitted by `validate --all`, now also
+filed by the feature gate) and `usecase.obligation-misplaced`. No flag and no payload key was added.
+
+- **A `dynamic view` tagged `#obl-<id>` is a use case**, the fourth reserved prefix beside `cap-`,
+  `req-` and `suite-`, so its hops are graded (`usecase.step-unbacked`, `step-contested`,
+  `step-unlinked`) and every reader that lists use cases — `loam delta`, `loam status`, the
+  context and explore packs, `loam list suites`' `ungrouped[]`, `loam diff`'s and the archive's
+  removed-operation victims (in `details[]` only: the backing edge is already a victim) — sees it,
+  its `tags` carrying `obl-<id>`. Use it for a cross-service sequence no customer sees — a
+  projection reaching its consumers, a dictionary refresh, an outbox relay — instead of a
+  `#cap-`/`#req-` pair it does not keep. A view that already carried `#cap-`, `#req-` or `#suite-`
+  is unaffected. One that carried `#obl-` before this release was ungraded and can now earn
+  findings: `loam validate --all` and `loam validate --feature` exit 1 on a hop nothing backs
+  (`usecase.step-unbacked`) or, where `architecture/obligations.yaml` exists, on a tag it does not
+  declare (`obligation.unknown`), and under `--strict` on any of the new warnings, until the flow is
+  redrawn or the tag dropped.
+- **The use-case byte scan reads a document's tags only when it could declare a `dynamic view`** —
+  when the word `dynamic` appears in it anywhere. `obl-` is the first reserved prefix normally
+  written on the map's elements and edges rather than on a view, and without this every fleet that
+  tags an edge `#obl-` would load the LikeC4 project in every reader that lists use cases. The
+  narrowing holds for every prefix and is sound, because a view carries a tag only through a
+  reference written in the document that declares it. What a user can notice: where `architecture/`
+  does not parse and its only reserved tag reference sits in a document that declares no dynamic
+  view, `useCases.unreadable` in `loam status --json`, `loam delta --json` and
+  `loam list capabilities --json` (and `useCaseScan.unreadable` in `loam context --json`) is now
+  `false` with no use cases, where it was `true`, and `loam list suites --json` reports
+  `useCases.state: "absent"` rather than `"unreadable"`; `validate --all` still reports the map as
+  `landscape.invalid`. Beside a service's model, a sibling `.likec4` that does not parse and
+  declares no dynamic view is no longer loaded for use cases, so a tag reference in it no longer
+  turns its parse error into `usecase.flow-invalid`.
+- **The feature gate grades a feature's own `features/<FEAT>/usecases/` flows the same way**, over
+  the map its merge would leave: `obligation.unknown` against the living vocabulary is an error, so
+  `loam archive` refuses (`--approve` overrides); `obligation.uncovered` is a warning that never
+  gates, read against every service's living `spec.md` and `arch.spec.md` with the feature's own
+  deltas folded in, so an `ADDED` arch requirement in `specs/<svc>/arch.spec.md` answers a hop in
+  the same change. Its `Covers:` line is spelled by service name where an end is a service. Both
+  appear in `loam validate --feature`, `loam status <FEAT>` and the archive plan. An `#obl-` tag on
+  an edge of `delta.likec4` is still graded only once living.
+- **`usecase.obligation-misplaced` (error)**: an `#obl-` tag on a flow inside a service's own
+  project — beside `model.likec4`, or a feature's `specs/<svc>/usecases/` flow, where it gates the
+  archive and `--approve` overrides it. The obligation is met there by the arch requirement whose
+  `Covers:` names it, and the flow keeps that requirement with `#req-`. The view stays a use case
+  and its hops are graded. A fleet with such a flow exits 1 after upgrading until the tag is
+  dropped.
+
+### Fixed — `obligation.uncovered` on an edge names the team that owes it
+
+- The `subject` of `obligation.uncovered` for a tagged EDGE was the edge's raw target id — the
+  element id of a service (`paymentService` rather than `payment-service`), a container, or the
+  topic a publish edge points at — so the "worklist per team" named no team. It is now the service
+  the edge points into, or the one it leaves when the target is no service, and absent when neither
+  end is one, the message then naming no `arch.spec.md`. Elements and deployment objects are
+  unchanged.
+- One `obligation.uncovered` per obligation and endpoint pair: two edges the map draws between the
+  same two elements, both tagged with one obligation, were two identical findings, though a
+  `Covers:` edge line names endpoints only and one line covers both. They are now one.
+
 ### Fixed — Copilot's instructions file stays out of the docs repo itself
 
 No code, flag or payload key was added.

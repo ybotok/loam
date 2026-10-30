@@ -127,7 +127,13 @@ export const LOAM_FEATURE: CommandContent = {
      those into the living docs. A word the feature brings goes in
      \`glossary/<term>.md\` and a decision in \`adrs/\`, both inside the feature,
      and a cross-service flow in \`usecases/<name>.likec4\`, tagged with a
-     \`#cap-\` that resolves. \`loam instructions loam-authoring\`, "Writing
+     \`#cap-\` that resolves — or, for a sequence no customer sees (a
+     projection, a refresh, an outbox relay), with the \`#obl-<id>\` of an
+     obligation \`architecture/obligations.yaml\` declares, never with a
+     business promise it does not keep. That tag applies the obligation to
+     every hop the flow draws: each owes a \`Covers:\` line in the arch.spec.md
+     of the service that answers for it, and \`obligation.uncovered\` names the
+     ones still owed. \`loam instructions loam-authoring\`, "Writing
      for a person", has the shapes
    - \`specs/<svc>/openapi.yaml\` — define every operationId the edges reference.
      A self-contained document holding ONLY the operations this feature adds,

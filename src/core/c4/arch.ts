@@ -105,6 +105,21 @@ export function parseCoversEntry(raw: string): CoversEntry {
   return { form: "element", id: raw, raw };
 }
 
+/**
+ * The parsed `Covers:` entries of every requirement that will live — REMOVED
+ * covers nothing.
+ *
+ * One spelling of that rule for every index loam builds out of `Covers:`
+ * lines: the service target's, the feature's `c4.uncovered`, the scorecard's
+ * and the obligation axis's. It used to live in the validate command and the
+ * obligation axis restated it in core, which is how two indexes start counting
+ * different requirements. Typed by the two fields it reads, so `c4/` needs no
+ * edge to `document/` to hold it.
+ */
+export function coversEntries(reqs: readonly { kind: string; covers: readonly string[] }[]): CoversEntry[] {
+  return reqs.filter((r) => r.kind !== "REMOVED").flatMap((r) => r.covers.map(parseCoversEntry));
+}
+
 /** The id behind a `node:` prefix, or nothing when the entry does not carry one. */
 function nodeId(text: string): string | undefined {
   const m = /^node:\s*(.+)$/.exec(text);

@@ -314,6 +314,14 @@ change belongs in \`intent.md\`, which stays with the feature.
   \`#req-<Requirement-ID>\`, naming the promise it keeps. A promise the feature's
   own capability delta adds resolves too. \`usecase.capability-unresolved\` and
   \`usecase.requirement-unresolved\` grade both tags before the archive.
+- A flow that keeps an architectural DECISION across services — a sequence no
+  customer sees, such as a projection reaching its consumers or an outbox
+  relay — is the same document tagged \`#obl-<id>\` with an obligation
+  \`architecture/obligations.yaml\` declares, and no \`#cap-\`/\`#req-\` it does not
+  keep. Draw it to the decision's extent: the tag applies the obligation to every
+  hop, and each hop owes a \`Covers:\` line in the arch.spec.md of the service
+  that answers for it (\`obligation.uncovered\`; \`obligation.unknown\` for an
+  undeclared id).
 - A flow INSIDE one service is \`features/<FEAT>/specs/<svc>/usecases/<name>.likec4\`,
   beside that service's other deltas: a \`dynamic view\` over its containers
   tagged \`#req-<Requirement-ID>\` with one of its own requirements, which the

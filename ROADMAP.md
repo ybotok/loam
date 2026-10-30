@@ -18,11 +18,11 @@ acceptance tests, and implementation evidence remain ordinary files in repositor
 state inside a service. The CLI is small enough to audit, and every writer — not only archive — now
 commits through a locked, journaled transaction that a crash cannot leave half-applied.
 
-The tree contains **569 TypeScript modules in 182 source packages**, with an acyclic package graph
+The tree contains **574 TypeScript modules in 183 source packages**, with an acyclic package graph
 checked by
 [scripts/package-graph.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-graph.mjs). The
 CLI exposes **31 commands** from [src/cli.ts](https://github.com/ybotok/loam/blob/main/src/cli.ts),
-and the suite stands at **222 test files**. Those four counts are deliberately stated OUTSIDE the
+and the suite stands at **223 test files**. Those four counts are deliberately stated OUTSIDE the
 dated snapshot below: each derives from the tree in one readdir, so
 [test/docs-facts.test.ts](https://github.com/ybotok/loam/blob/main/test/docs-facts.test.ts) grades
 them live and this paragraph cannot quietly trail the code the way its predecessor did.
@@ -238,6 +238,43 @@ and the report ordinal, the pair opening the 2026-09-04 group — landed togethe
 change built as four disjoint workstreams and gated as one; the three before them — the edgeless
 brief, the intra-service use case, and the styling paragraph under the generated views — landed
 together in `0eaa101` the same way.
+
+#### A fleet flow keeps an architectural obligation — `#obl-<id>` on a `dynamic view`
+
+**Decided by the fleet owner on 2026-10-30 and landed the same day.** **The evidence.** A fleet
+flow could keep only a business promise: `#cap-` and `#req-` resolve into the capability tree, and
+an architectural requirement exists only inside one service's `arch.spec.md`, where no fleet flow
+can name it. Every fleet flow of a pilot feature was therefore tagged with a business promise,
+including the ones that are pure mechanism — a dictionary refresh reaching its consumer, a state
+change becoming runtime configuration — and the feature's other technical sequences stayed
+pictures nothing graded. Two consequences followed from the same tag: `keptBy` counted those flows
+as keeping a customer-facing promise, and a reworded promise would have earned
+`usecase.requirement-modified` on flows its meaning never touched.
+
+**The options weighed.** A convention alone — draw such flows `#suite-` and put the reasoning in an
+ADR — grades the hops and claims nothing, so "which flows carry this decision" has no answer. A
+fleet-level architecture spec with its own requirements and scenarios would be the symmetric axis,
+and a new lifecycle (archive route, pins, delta) whose scenarios no service could run. Admitting
+technical capabilities into `capabilities/` breaks the rule that a capability requirement is
+observable outside the fleet. The obligation vocabulary already declares architectural decisions by
+name, with the ADR behind each, and says where they apply; a flow is one more way to say where.
+
+**What landed.** `#obl-<id>` on a `dynamic view` is the fourth prefix that opts a view in as a use
+case, and it APPLIES the obligation to the relationship backing every hop the view draws, exactly as
+if each edge were tagged. `validate --all` grades it with the axis's existing codes —
+`obligation.unknown` for a flow tag the vocabulary does not declare, a flow counting as an
+application for `obligation.unapplied`, and `obligation.uncovered` per hop relationship no living
+`Covers:` line covers. The feature gate grades a feature's own `usecases/` flows the same way over
+the map its merge would leave, with the `Covers:` lines its own deltas add counting, so the teams on
+the path see what they owe before the archive. Beside a service's model the tag is refused, as
+`#cap-` is there, with the one new code, `usecase.obligation-misplaced`: an obligation is met by the
+arch requirement that covers it, and a service flow keeps that requirement with `#req-`.
+
+**Left open, on purpose.** An `#obl-` tag on an edge of a feature's `delta.likec4` is still graded
+only once living; the flow slot is graded at feature scope because a flow is the shape an architect
+answers a feature with, and widening it to the delta's edges is the same code path when a fleet asks
+for it. No listing answers "which flows carry obligation X" yet — the flows' `tags` reach every brief
+and pack, and `loam list obligations` waits for a reader who needs the inverse.
 
 #### The hop join — what a fleet flow's step is inside its service
 

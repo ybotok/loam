@@ -326,6 +326,13 @@ export type IssueCode =
   | "usecase.flow-exists"
   /** a `features/<FEAT>/specs/<svc>/usecases/<name>.likec4` holding no LikeC4 statement — the marker that RETIRES the living flow at that path — where the service holds no such flow: the archive would remove nothing while reporting a retirement. A misnamed document, or one whose flow another change already took away; `--approve` cannot make something exist to retire */
   | "usecase.flow-unknown"
+  /** an `#obl-` tag on a flow inside one service's own project — beside its model, or in a feature's `specs/<svc>/usecases/` — where no obligation can be carried: a flow's obligation tag applies to every hop of a FLEET flow, and inside a service the obligation is met by the arch requirement whose `Covers:` names it, which that flow keeps with `#req-`. validate's service-scope error, graded in feature scope; the twin of `usecase.capability-unresolved`'s placement arm */
+  | "usecase.obligation-misplaced"
+  /* --- the obligation axis: a feature's own flows carrying `#obl-` --- */
+  /** an `#obl-` tag on a feature's own `usecases/` flow that `architecture/obligations.yaml` does not declare — validate's fleet-scope error, graded in feature scope against the LIVING vocabulary (it is edited directly, never through a feature). An error, so it gates, and `--approve` overrides it as it does `capability.unknown` */
+  | "obligation.unknown"
+  /** a relationship a hop of a feature's own `#obl-` flow rides that no `Covers:` line the merge would leave covers — every service's living requirements with this feature's deltas folded in. validate's fleet-scope warning, predicted before the merge; it never gates */
+  | "obligation.uncovered"
   /* --- the deployment axis: the topology a feature introduces --- */
   /** a `features/<FEAT>/deployment/<name>.likec4` whose file the living `architecture/` already holds — the merge is a whole-file copy, so it would replace an authored topology wholesale. An error with no legal reading, which is why `--approve` changes nothing about it: a feature-local deployment document INTRODUCES topology, and rewriting one belongs in a pull request where git produces the conflict. The same act, and the same severity, as `usecase.flow-exists` one axis over */
   | "deployment.doc-exists"

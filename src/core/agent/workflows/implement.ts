@@ -95,7 +95,11 @@ repository, which needs its own committed ./loam.json — if there is none,
    - \`useCases\` — where this service sits in the business flows: \`flows\` (living)
      and \`featureFlows\` (this feature's), each hop with its operation or message
      and, where the service answers it, \`inside\` — the service's own flows that
-     unfold that hop, which is the sequence to implement against. \`redraw\`
+     unfold that hop, which is the sequence to implement against. A flow whose
+     \`tags\` carry \`obl-<id>\` is an architectural decision rather than a
+     business journey — \`architecture/obligations.yaml\` names its ADR — and
+     every hop of it this service answers is held to an \`archRequirements[]\`
+     entry covering it. \`redraw\`
      names this service's flows the change makes untrue; they are the docs
      repo's to redraw, not yours to build from
    Exit 1 with \`ok: true\` means one of the two authored documents behind this brief

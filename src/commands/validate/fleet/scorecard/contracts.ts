@@ -12,7 +12,7 @@ import { type FleetContext } from "../../../../core/fleet-context.js";
 import { readOpenapi } from "../../../../core/openapi/doc.js";
 import { type ServiceEntry } from "../../../../core/repo/entries.js";
 import { servicePathsAt } from "../../../../core/repo/paths.js";
-import { coversEntries } from "../../checks/requirements.js";
+import { coversEntries } from "../../../../core/c4/arch.js";
 import { type AdoptionAxis } from "./adoption.js";
 
 /**

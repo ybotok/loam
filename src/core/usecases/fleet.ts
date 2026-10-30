@@ -14,7 +14,7 @@
  *
  * THE CHEAP GATE IS A BYTE SCAN, and it is sound rather than heuristic. A view
  * is a use case only if it carries a reserved tag — `#cap-<slug>`,
- * `#req-<slug>` or `#suite-<name>`, `isUseCase` below is the whole test — and
+ * `#req-<slug>`, `#suite-<name>` or `#obl-<id>`, `isUseCase` below is the whole test — and
  * a view carries a tag only through a REFERENCE written in the document that
  * declares the view. LikeC4's grammar spells every tag reference `HashId`: the
  * `#` terminal, then the name. Measured at the 1.59.2 pin, the `#` is
@@ -54,7 +54,11 @@
  * the project — the widening below would have fixed nothing without this one.
  * The suite prefix joined for the same reason the day a `#suite-`-only view
  * became a use case: both now read one list, `USE_CASE_TAG_PREFIXES`, so a
- * fourth prefix cannot be added to one and not the other.
+ * fourth prefix cannot be added to one and not the other — and `obl-`, the
+ * fourth, was added to the list and nowhere else. It is also the first prefix
+ * normally written on the map rather than on a view, which is why a document
+ * must be able to declare a `dynamic view` before its tags are scanned
+ * (`declaresDynamicView`).
  *
  * The gate FAILS CLOSED. A document this module cannot open is treated as one
  * that might mention the prefix, so the project load happens and reports the
@@ -71,6 +75,7 @@ import { errorText, type LoadedDoc } from "../c4/likec4.js";
 import { serviceResolver } from "../c4/resolve/service.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 import { SUITE_TAG_PREFIX } from "./suites/suites.js";
+import { OBLIGATION_TAG_PREFIX } from "../obligations/obligations.js";
 
 /**
  * Every reserved prefix that opts a view in — the one list both the byte gate
@@ -78,9 +83,13 @@ import { SUITE_TAG_PREFIX } from "./suites/suites.js";
  * case. `cap-` and `req-` are spelled by the capability join that resolves
  * them; `suite-` by `./suites/suites.ts`, which groups by it and resolves
  * nothing, because a suite name is checked by LikeC4's own undeclared-tag
- * refusal rather than by a vocabulary.
+ * refusal rather than by a vocabulary. `obl-` by the obligation axis, whose
+ * vocabulary it resolves against and whose obligation it applies to every hop
+ * the view draws (`./obligations/flows.ts`): a flow that carries one has to be
+ * held to the model hop by hop, or the hops it applies the obligation to are
+ * hops nobody checked exist.
  */
-const USE_CASE_TAG_PREFIXES: readonly string[] = [CAP_TAG_PREFIX, REQ_TAG_PREFIX, SUITE_TAG_PREFIX];
+const USE_CASE_TAG_PREFIXES: readonly string[] = [CAP_TAG_PREFIX, REQ_TAG_PREFIX, SUITE_TAG_PREFIX, OBLIGATION_TAG_PREFIX];
 
 /**
  * What the fleet's use cases are, or the honest refusal to say.
@@ -147,7 +156,8 @@ export interface UseCaseRequest {
 
 /**
  * Does any document in the set reference a reserved tag — a `#`, then only
- * LikeC4's hidden tokens, then `cap-`, `req-` or `suite-`?
+ * LikeC4's hidden tokens, then a prefix of `USE_CASE_TAG_PREFIXES` — in a
+ * document that could declare a use case at all (`declaresDynamicView`)?
  *
  * Sequential and short-circuiting ON PURPOSE — the usual "no await in a loop"
  * rule is about independent work that all has to finish, and this loop exists
@@ -172,8 +182,8 @@ export interface UseCaseRequest {
 export async function mentionsTagPrefix(paths: readonly string[]): Promise<boolean> {
   for (const path of paths) {
     try {
-      const bytes = await readFile(path);
-      if (referencesReservedTag(bytes.toString("latin1"))) return true;
+      const text = (await readFile(path)).toString("latin1");
+      if (declaresDynamicView(text) && referencesReservedTag(text)) return true;
     } catch {
       // Unreadable is not "no tag": the project load below owns that failure and
       // will report it as a hole naming the document. Answering `false` here
@@ -182,6 +192,28 @@ export async function mentionsTagPrefix(paths: readonly string[]): Promise<boole
     }
   }
   return false;
+}
+
+/**
+ * Could this document declare a use case? A use case is a `dynamic view`, and a
+ * view carries a tag only through a reference written in the document that
+ * declares it (the header's measured premise) — so a document in which the
+ * keyword `dynamic` appears nowhere declares no use case, whatever tags its
+ * elements and edges carry.
+ *
+ * It matters since `obl-` joined the prefixes. The other three are written on
+ * views and nowhere else, while an obligation tag is mostly written on the
+ * MAP's elements and edges, in `architecture/landscape.likec4` itself — so
+ * without this every fleet that tags an edge `#obl-outbox` would load the
+ * project in every reader that asks for use cases, and a sibling of a service
+ * model that tags an element would turn a parse error into
+ * `usecase.flow-invalid` over a diagram that opted nothing in: the defect the
+ * header records fixing once already. A `dynamic` in a comment or a title
+ * still opens the gate, which errs the way the scan is allowed to — toward a
+ * load, never toward a missed use case.
+ */
+function declaresDynamicView(text: string): boolean {
+  return text.includes("dynamic");
 }
 
 /**
@@ -278,7 +310,9 @@ function hiddenRunEnds(text: string): Int32Array {
  * `#suite-<name>` claims no capability and no requirement and is still a use
  * case — the owner's call, recorded in SCHEMA.md: putting a journey in a suite
  * is asking for it to be run, and a journey a test stand is provisioned from
- * must be held to the model hop by hop like any other.
+ * must be held to the model hop by hop like any other. A view carrying only
+ * `#obl-<id>` claims no capability either, and keeps an architectural
+ * obligation instead (the owner's call of 2026-10-30, ROADMAP).
  *
  * It is exported because it was the asymmetry, not the rule, that was the
  * defect. `validate --all` widened here and the readers did not, so a

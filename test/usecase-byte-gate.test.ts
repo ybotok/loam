@@ -11,9 +11,12 @@
  * that a crafted document cannot make the gate quadratic.
  */
 import { describe, expect, it } from "vitest";
-import { referencesReservedTag } from "../src/core/usecases/fleet.js";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { mentionsTagPrefix, referencesReservedTag } from "../src/core/usecases/fleet.js";
 
-const PREFIXES = ["cap-", "req-", "suite-"];
+const PREFIXES = ["cap-", "req-", "suite-", "obl-"];
 
 /**
  * The walk the first version made from each `#`, kept here verbatim as the
@@ -61,6 +64,7 @@ describe("what the gate answers", () => {
   it("opens on a reserved prefix after a `#` and LikeC4's hidden tokens, and on nothing else", () => {
     const opens = [
       "#suite-smoke",
+      "#obl-outbox",
       "tags # cap-checkout",
       "#\n\treq-PAY-AUTH",
       "#\r\nsuite-smoke",
@@ -96,7 +100,7 @@ describe("what the gate answers", () => {
     // — so every boundary the table has to get right (an opener at the very
     // end, a closer overlapping its opener, a line comment ending in `\r`)
     // turns up many times over.
-    const pieces = ["#", "/", "*", " ", "\t", "\n", "\r", "//", "/*", "*/", "x", "suite-", "cap-", "req-"];
+    const pieces = ["#", "/", "*", " ", "\t", "\n", "\r", "//", "/*", "*/", "x", "suite-", "cap-", "req-", "obl-"];
     const next = seeded(0x10a3);
     let opened = 0;
     for (let n = 0; n < 20_000; n += 1) {
@@ -110,6 +114,31 @@ describe("what the gate answers", () => {
     // Both answers turn up often enough to mean something.
     expect(opened).toBeGreaterThan(1_000);
     expect(opened).toBeLessThan(19_000);
+  });
+});
+
+describe("which documents the gate reads tags in", () => {
+  // `obl-` is the one prefix normally written on the MAP — on elements and
+  // edges — rather than on a view. A document that declares no `dynamic view`
+  // declares no use case whatever it tags, so a fleet tagging its edges
+  // `#obl-` must not load the project for use cases it cannot have.
+  async function opens(text: string): Promise<boolean> {
+    const dir = await mkdtemp(join(tmpdir(), "loam-gate-"));
+    try {
+      const path = join(dir, "landscape.likec4");
+      await writeFile(path, text);
+      return await mentionsTagPrefix([path]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("stays shut on a map that tags an edge `#obl-` and declares no dynamic view", async () => {
+    expect(await opens("model {\n  a -> b 'calls' {\n    #obl-outbox\n  }\n}\n")).toBe(false);
+  });
+
+  it("opens on a dynamic view tagged `#obl-`", async () => {
+    expect(await opens("views {\n  dynamic view uc_relay {\n    #obl-outbox\n    a -> b\n  }\n}\n")).toBe(true);
   });
 });
 

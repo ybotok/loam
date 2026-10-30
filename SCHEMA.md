@@ -159,8 +159,8 @@ what it is RUN WITH, and membership is **many-to-many** — one view may carry s
 and a suite holds as many views as carry its tag, which is why it is a tag and not a directory.
 
 **Tagging is the opt-in, and it grades.** A view carrying only `#suite-` tags — no `#cap-`, no
-`#req-` — IS a use case: every reader takes it (the predicate and the byte gate below now read three
-prefixes), and `loam validate --all` grades its hops like any other's (`usecase.step-unbacked`,
+`#req-` — IS a use case: every reader takes it (the predicate and the byte gate below read every
+reserved prefix), and `loam validate --all` grades its hops like any other's (`usecase.step-unbacked`,
 `usecase.step-contested`, `usecase.step-unlinked`). A journey a test stand is provisioned from must
 be held to the model it is drawn over. The suite tag claims no capability and no requirement, so it
 earns nothing from the capability axis. An UNTAGGED view stays ungraded, exactly as before.
@@ -864,6 +864,7 @@ committing. Archive snapshots survive any of this: a keyed (version 3 or 4) snap
 | Asynchronous message | LikeC4 edge `publishes` / `consumes` | requirement `Publishes:` / `Consumes:` and AsyncAPI 3 operation/message | exact message id |
 | Architecture coverage | arch requirement `Covers:` | C4 element/edge or `health.yaml` signal | element/edge id, `alert:<id>`, `sli:<id>` |
 | Authorization | requirement `Requires:` | `architecture/permissions.yaml` | `<subject>/<permission>` |
+| Architectural obligation | `#obl-<id>` on a fleet-map element, edge or deployment object, or on a fleet `dynamic view` (applied to the relationship behind each of its hops) | `architecture/obligations.yaml`; met by an arch requirement's `Covers:` | the declared obligation id, verbatim — letters, digits, `_` and `-` only |
 | Capability | requirement `Capability:` (list; also `Capabilities:`) | `architecture/capabilities.yaml` OR `capabilities/<cap>/spec.md` | declared capability id, `/` allowed for nesting |
 | Capability requirement | requirement `Realizes:` (list) | a requirement in `capabilities/<cap>/spec.md` | `<capability-id>#<Requirement-ID>`, split at the LAST `#`, with an optional `@<digest>` pin |
 | Capability requirement (flow) | a `dynamic view` tag `#req-<slug>` | a requirement of the capability the view's `#cap-` tag names | the `Requirement-ID` with every character outside `[A-Za-z0-9_-]` flattened to `-` |
@@ -1150,6 +1151,38 @@ finding per tagged object, `subject` = the service that owns it, so a fleet-wide
 worklist per team. Only a tag that RESOLVES is asked about coverage: an undeclared one has earned
 its error already, and "no requirement covers `#obl-typo`" would be the same breach restated as a
 request to write a requirement for a rule that does not exist.
+
+**A fleet flow can carry an obligation too: `#obl-<id>` on a `dynamic view`.** A use case could keep
+only a business promise (`#cap-` + `#req-`), so a cross-service flow that no customer sees — a
+projection reaching its consumers, a dictionary refresh, an outbox relay — was either tagged with a
+business promise it does not keep, which `keptBy` then counted and a reworded promise then flagged,
+or left as a picture nothing graded. Tagged `#obl-<id>`, the view is a use case (the prefix is the
+fourth that opts one in, beside `cap-`, `req-` and `suite-`), so its hops are graded like any
+other's and every reader sees it, and the tag **applies the obligation to every hop it draws**: the
+relationship backing each hop — the one `attributeStep` attributes it to, a reply hop's being its
+call — is treated exactly as an edge tagged `#obl-<id>` on the map. That is what makes the claim
+checkable rather than a label: one tag on the sequence instead of one per edge, and each team on the
+path owes an arch requirement covering its hop. A hop nothing backs earns `usecase.step-unbacked` and
+no coverage question. Draw the flow to the obligation's extent — a hop in it is a hop the obligation
+governs — and keep a business journey that happens to cross it as a flow of its own.
+
+- `validate --all` reads every `architecture/usecases/` flow carrying the tag: `obligation.unknown`
+  names the flow when the vocabulary declares no such id, a flow counts as an application for
+  `obligation.unapplied`, and `obligation.uncovered` names each hop relationship no living `Covers:`
+  line covers — once per obligation and relationship, whether the edge is tagged on the map, drawn by
+  one flow or by three.
+- The feature gate grades a feature's own `usecases/` flows the same way, over the map its merge
+  would leave: `obligation.unknown` (**error**, gates, `--approve` overrides) against the living
+  vocabulary, which is edited directly rather than through a feature, and `obligation.uncovered`
+  (**warning**, never gates) against the `Covers:` lines the merge would leave — every service's living
+  `spec.md` and `arch.spec.md` with this feature's deltas folded in, so a hop is answered in the same
+  change by an ADDED arch requirement in `specs/<svc>/arch.spec.md`. An `#obl-` tag on an edge of the
+  feature's `delta.likec4` is still graded only once living.
+- **Inside a service's own project the tag is refused** — `usecase.obligation-misplaced` (**error**),
+  for a living flow beside the model and a feature's `specs/<svc>/usecases/` flow alike. An
+  obligation is applied on the fleet map and met by the arch requirement whose `Covers:` names it;
+  the flow beside the model that shows how keeps that requirement with `#req-<Requirement-ID>`.
+  The view stays a use case and its hops are graded.
 
 **The fleet's domain vocabulary lives in `glossary/<term>.md`** — one FILE per term, nesting allowed
 (`glossary/payments/authorization.md` is the term `payments/authorization`), and no `glossary.yaml`
@@ -2638,13 +2671,17 @@ refusing it, which is why the flattening is a whitelist and not a list of substi
 
 **Any reserved prefix opts a view in.** A view carrying `#req-` and no `#cap-` is an author who
 asked to be graded and forgot half the claim; it earns the `unscoped` message rather than silence.
-A view carrying only `#suite-<name>` is a use case too (see the layout section above). That opt-in
+A view carrying only `#suite-<name>` is a use case too (see the layout section above), and so is one
+carrying only `#obl-<id>` (the obligation axis, above). That opt-in
 is **one predicate**, and every reader takes it: `loam validate`, `loam diff`, `loam delta`,
 `loam status`, the context and explore packs, `loam list capabilities` and `loam list suites` all
 decide "is this a use case" the same way, so a flow one of them can see is a flow all of them can
 see. The byte scan that lets a fleet with no use cases skip the LikeC4 load looks for every prefix
-— `cap-`, `req-` and `suite-` — for the same reason: a gate narrower than the predicate is silence,
-not a smaller answer. It looks for each written as a tag REFERENCE: a `#`, then only what LikeC4
+— `cap-`, `req-`, `suite-` and `obl-` — for the same reason: a gate narrower than the predicate is silence,
+not a smaller answer. It reads tags only in a document that could declare a use case at all, one in
+which the word `dynamic` appears: a view carries a tag only through a reference written in the
+document that declares it, and `obl-`, unlike the other three, is mostly written on the map's
+elements and edges, where opening the gate would load the project for use cases that cannot exist. It looks for each written as a tag REFERENCE: a `#`, then only what LikeC4
 skips between the `#` and a tag's name (whitespace, line breaks, comments), then the prefix — the
 only way a view carries a tag. A prefix in prose, a title or a `tag cap-…` declaration does not open
 it, so a hand-drawn `.likec4` beside a service's model that names `suite-` in its title, carries no
@@ -2686,7 +2723,8 @@ resolving once, and `many` when the two documents declare ids that flatten alike
 Requirement-ID is unique inside ONE document and a flow beside the model has two.
 `usecase.requirement-unresolved` there has four arms: no document at all, no identified requirement,
 none flattening to the slug (close ids offered), or two that do. No `#cap-` tag belongs there
-(`usecase.capability-unresolved` says so, vocabulary or not); `usecase.step-unlinked` never fires
+(`usecase.capability-unresolved` says so, vocabulary or not), and no `#obl-` tag either
+(`usecase.obligation-misplaced`); `usecase.step-unlinked` never fires
 on a hop whose caller and provider resolve to the same service — a service owes no operationId to
 itself — and still fires on a hop from such a flow into another service's element (a stand-in the
 model declares for a sibling, with no `metadata { op }`), exactly as on the fleet map; and a
@@ -2707,7 +2745,8 @@ hand-copied at archive time.
 
 - **Graded where the feature is graded** — `validate --feature`, `status`, the archive gate — by the
   grader `validate --service` runs (`usecase.step-unbacked`, `step-contested`, `step-unlinked`,
-  `usecase.requirement-unresolved`, and `usecase.capability-unresolved`'s placement arm), against
+  `usecase.requirement-unresolved`, `usecase.capability-unresolved`'s placement arm and
+  `usecase.obligation-misplaced`), against
   what the archive leaves: the project that service will read, staged from the merge preview's
   MODEL half — for an extending model the `architecture/` project with the merged map, the model
   with this feature's delta interior routed into it, and its living flows; for a service this

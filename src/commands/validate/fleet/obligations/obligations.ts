@@ -18,6 +18,15 @@
  * (`obligation.adr-missing`): the team's work being outstanding is normal, and
  * a pointer at a decision nobody can read is not.
  *
+ * A FLOW IS A FOURTH KIND OF TAGGED OBJECT, beside an element, an edge and a
+ * deployment object. `#obl-<id>` on a `dynamic view` in `architecture/usecases/`
+ * resolves against the vocabulary like any tag (`obligation.unknown` names the
+ * flow) and counts as an application (`obligation.unapplied` goes quiet), and
+ * it applies the obligation to the relationship behind every hop the flow
+ * draws — `core/usecases/obligations/flows.ts` says why that and not a label. Those
+ * relationships then take the coverage question exactly as a tagged edge does,
+ * once per obligation and relationship however many flows and tags reach it.
+ *
  * `obligation.uncovered` IS THE PREREQUISITE THE ROADMAP NAMED. `c4.uncovered`
  * has always been able to say "this architecture object owes a requirement",
  * but only about a NEW tagged element in a feature's `delta.likec4` — never
@@ -27,25 +36,21 @@
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { type Elem, type LoadedDoc, type Rel } from "../../../../core/c4/likec4.js";
+import { type LoadedDoc } from "../../../../core/c4/likec4.js";
 import {
   closeIds,
   coversDeployEdge,
   coversDeployNode,
   coversEdge,
   coversElement,
-  type CoversEntry,
 } from "../../../../core/c4/arch.js";
-import { NO_DEPLOYMENT } from "../../../../core/c4/parsed/deployment.js";
-import { taggedDeployment, type TaggedDeployment } from "../../../../core/deployment/objects.js";
-import { elementService } from "../../../../core/c4/resolve/service.js";
 import { OBLIGATION_TAG_PREFIX, type ObligationVocabulary } from "../../../../core/obligations/obligations.js";
-import { servicePathsAt } from "../../../../core/repo/paths.js";
+import { coversIndex } from "../../../../core/usecases/obligations/covers.js";
 import { type ServiceEntry } from "../../../../core/repo/entries.js";
 import { type Finding } from "../../../../core/vocabulary/report.js";
 import { FleetContext } from "../../../../core/fleet-context.js";
-import { coversEntries } from "../../checks/requirements.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
+import { coverageObjects, taggedObjects, type Covered } from "./applied.js";
 
 export interface ObligationCheck {
   docsDir: DocsDir;
@@ -114,6 +119,8 @@ export async function obligationFindings(check: ObligationCheck): Promise<Findin
   // message would name one service and the coverage check count another.
   const known = new Set(check.services.map((s) => s.id));
   const tagged = taggedObjects(check.land, known);
+  // A flow's tag is an application in its own right: it says where the
+  // obligation applies, hop by hop, as surely as a tag on each edge would.
   const applied = new Set(tagged.map((t) => t.obligation));
 
   for (const id of [...applied].sort()) {
@@ -151,106 +158,42 @@ export async function obligationFindings(check: ObligationCheck): Promise<Findin
   // words that ask the reader to write a requirement for a rule that does not
   // exist. The use-case axis draws this line in the same place: only a resolved
   // `#cap-` claim keeps a promise.
-  findings.push(...(await uncoveredFindings(check, tagged.filter((t) => vocabulary.byId.has(t.obligation)))));
+  findings.push(...(await uncoveredFindings(check, coverageObjects(check.land, known, tagged.filter((t) => vocabulary.byId.has(t.obligation))))));
   return findings;
-}
-
-/** One place an obligation is applied: which obligation, on what, and how a message names it. */
-interface TaggedObject {
-  obligation: string;
-  /** The element, the edge, or the deployment object — exactly one is set. */
-  element?: Elem;
-  edge?: Rel;
-  deployed?: TaggedDeployment;
-  /**
-   * How the finding spells this object, and how a `Covers:` line has to: an
-   * element id, `source -> target`, or the `node:` forms.
-   */
-  where: string;
-  /**
-   * What the finding is filed under — the service that owns it, where one
-   * does. ABSENT for a region, a datacenter or a cluster: nobody-s service
-   * runs one, and naming a team that did not ask for the work is worse than
-   * leaving the sentence general.
-   */
-  subject?: string;
-}
-
-/**
- * Every `#obl-` tag on the living map, one entry per (obligation, object) pair.
- *
- * A bare `#obl-` slugs to the empty string and is kept as an application on
- * purpose, exactly as a bare `#cap-` is kept as a claim: the prefix is the
- * author's opt-in however little follows it, and dropping it as unreserved
- * would leave an object that asked to be graded silently ungraded. It then
- * resolves to `obligation.unknown` in every fleet that did not declare an empty
- * id, which is the honest answer.
- */
-function taggedObjects(land: LoadedDoc, known: ReadonlySet<string>): TaggedObject[] {
-  const out: TaggedObject[] = [];
-  for (const element of land.elements) {
-    for (const tag of element.tags.filter((t) => t.startsWith(OBLIGATION_TAG_PREFIX))) {
-      out.push({
-        obligation: tag.slice(OBLIGATION_TAG_PREFIX.length),
-        element,
-        where: element.id,
-        subject: elementService(element),
-      });
-    }
-  }
-  for (const edge of land.relationships) {
-    for (const tag of edge.tags.filter((t) => t.startsWith(OBLIGATION_TAG_PREFIX))) {
-      out.push({
-        obligation: tag.slice(OBLIGATION_TAG_PREFIX.length),
-        edge,
-        where: `${edge.source} -> ${edge.target}`,
-        subject: edge.target,
-      });
-    }
-  }
-  // The topology, walked by the same rule and for the reason the rule exists: a
-  // tag is a claim about the object it sits on, and which MODEL that object
-  // lives in is not something a reader of the tag can see. Until this walk the
-  // same undeclared tag was an error on a container and silence on a
-  // datacenter — fail-open, and the case FEAT-1's ARCH-LOAM-DEPLOY-TAGGED was
-  // written about. A fleet that draws no topology contributes nothing here.
-  for (const d of taggedDeployment(land.deployment ?? NO_DEPLOYMENT, land.elements, known, OBLIGATION_TAG_PREFIX)) {
-    out.push({
-      obligation: d.obligation,
-      deployed: d,
-      where: d.where,
-      ...(d.service === undefined ? {} : { subject: d.service }),
-    });
-  }
-  return out;
 }
 
 /**
  * `obligation.uncovered` — a tagged object no living arch requirement covers.
  *
- * The index is the union of EVERY service's living `arch.spec.md` `Covers:`
- * lines, because an obligation is placed by the architect on the map and met by
- * whichever team owns the thing it sits on — and a per-service index would
- * report an edge as uncovered because the requirement that covers it lives in
- * the service at the other end. `coversEntries` already drops REMOVED
- * requirements: a retired requirement covers nothing.
+ * The index is the union of EVERY service's living `arch.spec.md` and
+ * `spec.md` `Covers:` lines (`coversIndex`, which says why fleet-wide and why
+ * both documents). It already drops REMOVED requirements: a retired
+ * requirement covers nothing.
  *
  * ONE FINDING PER TAGGED OBJECT, subject = the service that owns it, so a
  * fleet-wide report reads as a worklist per team rather than as one line naming
  * forty edges.
  */
-async function uncoveredFindings(check: ObligationCheck, tagged: TaggedObject[]): Promise<Finding[]> {
+async function uncoveredFindings(check: ObligationCheck, tagged: Covered[]): Promise<Finding[]> {
   if (tagged.length === 0) return [];
-  const covers = await livingCovers(check);
+  // The LIVING index: the feature gate asks the same question of the index its
+  // merge would leave (`core/usecases/obligations/covers.ts`).
+  const covers = await coversIndex({ services: check.services, read: (path) => check.fleet.readRequirements(path) });
   const elements = check.land.elements;
   const known = new Set(check.services.map((s) => s.id));
-  const covered = (t: TaggedObject): boolean => {
-    if (t.element !== undefined) return covers.some((c) => coversElement(c, t.element!));
-    if (t.edge !== undefined) return covers.some((c) => coversEdge(c, t.edge!, elements, known));
-    const d = t.deployed!;
-    return d.edge === undefined
-      ? covers.some((c) => coversDeployNode(c, d.id!))
-      : covers.some((c) => coversDeployEdge(c, d.edge!.source, d.edge!.target));
+  const covered = (t: Covered): boolean => {
+    switch (t.kind) {
+      case "element":
+        return covers.some((c) => coversElement(c, t.element));
+      case "edge":
+        return covers.some((c) => coversEdge(c, t.edge, elements, known));
+      case "deployed": {
+        const d = t.deployed;
+        return d.edge === undefined
+          ? covers.some((c) => coversDeployNode(c, d.id!))
+          : covers.some((c) => coversDeployEdge(c, d.edge!.source, d.edge!.target));
+      }
+    }
   };
   return tagged
     .filter((t) => !covered(t))
@@ -259,39 +202,20 @@ async function uncoveredFindings(check: ObligationCheck, tagged: TaggedObject[])
       code: "obligation.uncovered",
       ...(t.subject === undefined ? {} : { subject: t.subject }),
       message:
-        `${t.where} carries #${OBLIGATION_TAG_PREFIX}${t.obligation} and no living arch requirement covers it — ` +
+        `${t.where} carries #${OBLIGATION_TAG_PREFIX}${t.obligation}` +
+        // An edge nobody tagged is asked about because a flow rides it, and the
+        // sentence has to say so or the reader goes looking for a tag that is
+        // not on the map.
+        (t.kind !== "edge" || t.via === undefined ? "" : ` — ${t.via} rides it, and a flow's tag applies to every hop it draws —`) +
+        ` and no living arch requirement covers it — ` +
         `the obligation is placed and nothing says it is met. Write the requirement in ` +
-        // A region, a datacenter or a cluster is owned by no service, so the
+        // A region, a datacenter or a cluster is owned by no service, and
+        // neither is an edge between two things that are not ours, so the
         // sentence stays general rather than naming a team at random. Every
         // other object here has a real owner and keeps the actionable form.
-        `${t.subject === undefined ? "the arch.spec.md of whichever service answers for this topology" : `${t.subject}'s arch.spec.md`}` +
+        `${t.subject === undefined ? `the arch.spec.md of whichever service answers for this ${t.kind === "deployed" ? "topology" : "edge"}` : `${t.subject}'s arch.spec.md`}` +
         ` with \`Covers: ${t.where}\` and a scenario that proves it, or drop the tag if the decision no longer applies here.`,
     }));
-}
-
-/**
- * Every `Covers:` entry the LIVING fleet writes, across both requirement
- * documents of every service.
- *
- * Existence is checked for both files and for the same reason
- * `permissionFindings` checks it: `arch.spec.md` is optional and most of a
- * legacy fleet has none, while `spec.md` is missing on a half-adopted service —
- * and `FleetContext.readRequirements` throws ENOENT, which surfaces as
- * `repository-unavailable` and takes the whole `--all` run down. Both axes are
- * read, not only the architecture one: `Covers:` is parsed everywhere for one
- * grammar's sake, and a fleet that wrote its outbox requirement in `spec.md`
- * has said the thing loam is asking about.
- */
-async function livingCovers(check: ObligationCheck): Promise<CoversEntry[]> {
-  const entries: CoversEntry[] = [];
-  for (const service of check.services) {
-    const paths = servicePathsAt(service.dir);
-    for (const path of [paths.spec, paths.archSpec]) {
-      if (!existsSync(path)) continue;
-      entries.push(...coversEntries(await check.fleet.readRequirements(path)));
-    }
-  }
-  return entries;
 }
 
 /**

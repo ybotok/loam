@@ -26,8 +26,9 @@
  * the reader's gate (`core/usecases/service/flows.ts`): an untagged sibling is
  * not even loaded while no view in the project opts in and no sibling mentions
  * a reserved prefix anywhere in its bytes — but once a view in
- * model.likec4 itself opts in, or a sibling mentions `req-`, `cap-` or `suite-`
- * in a comment or a title, every sibling is staged, and a project that does not
+ * model.likec4 itself opts in, or a sibling that could declare a `dynamic view`
+ * mentions a reserved prefix as a tag reference (`#req-`, `#cap-`, `#suite-`,
+ * `#obl-`) in a comment or a title, every sibling is staged, and a project that does not
  * read is one `usecase.flow-invalid` whether or not any view in it opted in.
  *
  * A SIBLING THAT BREAKS THE PROJECT is ONE `usecase.flow-invalid` — reused,
@@ -52,6 +53,7 @@ import type { ServiceFlowScan } from "./flows.js";
 import type { Finding } from "../../vocabulary/report.js";
 import { errorText } from "../../c4/likec4.js";
 import { CAP_TAG_PREFIX, REQ_TAG_PREFIX } from "../../capabilities/usecase-join.js";
+import { OBLIGATION_TAG_PREFIX } from "../../obligations/obligations.js";
 import { stepFindings, type StepGrading } from "../grade/steps.js";
 import { serviceTagFindings, type ServiceTagScope } from "./tags.js";
 
@@ -158,6 +160,21 @@ export function tagHint(errors: readonly LikeC4Error[], declare: (name: string) 
           `\`tag ${name}\` makes the file parse and earns \`usecase.capability-unresolved\` on the next run: ` +
           `drop the tag, and tag the flow \`#${REQ_TAG_PREFIX}<Requirement-ID>\` instead, or draw it in ` +
           "`architecture/usecases/` where a capability tag belongs",
+      ];
+    }
+    // `obl-` is refused by placement exactly as `cap-` is, and for the same
+    // two-step reason: declared, the file parses and the next run says
+    // `usecase.obligation-misplaced` (`./tags.ts`). Worded for any object the
+    // tag sits on, not a flow alone: the byte gate opens on an element's
+    // `#obl-` too, and loam reads obligation tags on the fleet map only, so
+    // inside this project the tag applies to nothing wherever it is written.
+    if (name.startsWith(OBLIGATION_TAG_PREFIX)) {
+      return [
+        `\`#${name}\` is an obligation tag, and loam reads obligation tags on the FLEET map only — its elements, ` +
+          "edges and flows; inside this service's own project it applies to nothing, and the obligation is met by " +
+          `the arch requirement that covers it. Declaring \`tag ${name}\` makes the file parse, and on a flow earns ` +
+          `\`usecase.obligation-misplaced\`: drop the tag — a flow here keeps that requirement with ` +
+          `\`#${REQ_TAG_PREFIX}<Requirement-ID>\``,
       ];
     }
     if (!name.startsWith(REQ_TAG_PREFIX)) continue;

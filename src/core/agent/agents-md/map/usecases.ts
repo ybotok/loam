@@ -3,7 +3,7 @@
  * `./subsystem.ts`'s exact reason: command-map.ts sat against the file-line
  * limit and the agents-md package against the five-file cap, so a family added
  * to the `validate --all` cross-check documents itself one package down and is
- * concatenated after the map. The four `usecase.*` codes are what
+ * concatenated after the map. The `usecase.*` codes are what
  * test/codes-drift.test.ts finds here.
  *
  * They are LISTED and not glossed: their fix rows live in the /loam-check
@@ -33,7 +33,8 @@ export const USECASE_VIEWS = `- Business use cases are \`dynamic view\`s, and \`
   declares them (below). ANY reserved prefix
   opts a view in — a view carrying only \`#req-<requirement>\` is graded too, and
   earns \`usecase.requirement-unresolved\` for the \`#cap-\` tag it is missing
-  rather than silence; so is a view carrying only \`#suite-<name>\` (below). An
+  rather than silence; so is a view carrying only \`#suite-<name>\` or only
+  \`#obl-<id>\` (both below). An
   UNTAGGED dynamic view is somebody's hand-drawn diagram
   and is never graded — that opt-in is what lets a fleet full of existing
   diagrams upgrade without turning red, and \`loam validate\`, \`loam diff\`,
@@ -67,6 +68,21 @@ export const USECASE_VIEWS = `- Business use cases are \`dynamic view\`s, and \`
   \`error\`; \`suites\`/\`ungrouped\` are then absent, not empty). An unknown suite
   name refuses \`unknown-target\` with close names. Only the fleet map's flows
   are listed.
+- A fleet flow that keeps an ARCHITECTURAL decision rather than a business
+  promise — a projection reaching its consumers, a dictionary refresh, an outbox
+  relay, anything no customer sees — is tagged \`#obl-<id>\` with an obligation
+  \`architecture/obligations.yaml\` declares (the ADR behind it is that entry's
+  \`adr:\`), never with a \`#cap-\`/\`#req-\` it does not keep. The tag opts the view
+  in, and it APPLIES the obligation to the relationship behind every hop the
+  flow draws, exactly as tagging each edge would: \`loam validate --all\` reports
+  \`obligation.unknown\` for an undeclared id (naming the flow), counts the flow
+  against \`obligation.unapplied\`, and reports \`obligation.uncovered\` once per
+  hop relationship no living \`Covers:\` line covers, filed under the service that
+  owes it. So draw the flow to the obligation's extent — every hop in it is a hop
+  the decision governs. A feature's own \`usecases/\` flow gets the same two codes
+  from the feature gate (\`obligation.unknown\` an error that gates; \`obligation.uncovered\`
+  a warning), with the \`Covers:\` lines the feature's own \`specs/<svc>/arch.spec.md\`
+  ADDS counting — the teams on the path answer their hops in the same change.
 - A flow behind ONE service's own requirement — the hop sequence over its
   containers that an arch.spec.md \`Covers:\` names — lives in that service's own
   LikeC4 project: any \`.likec4\` beside \`services/<…>/<svc>/model.likec4\`
@@ -95,7 +111,9 @@ export const USECASE_VIEWS = `- Business use cases are \`dynamic view\`s, and \`
   service's element (a stand-in the model declares for a sibling, with no
   \`metadata { op }\`) still warns, exactly as on the fleet map. A \`#cap-\` tag on
   such a flow is \`usecase.capability-unresolved\`: a capability is claimed on the
-  fleet map, never inside one service. A resolved service-local \`#req-\` keeps its
+  fleet map, never inside one service; an \`#obl-\` tag is \`usecase.obligation-misplaced\`
+  for the same reason — the obligation is met by the arch requirement this flow
+  keeps with \`#req-\`. A resolved service-local \`#req-\` keeps its
   own grade and nothing else — it is not \`keptBy\` and not \`Covers:\`. A feature
   carries one at \`features/<FEAT>/specs/<svc>/usecases/<name>.likec4\` (below).
 - A feature that MODIFIES a requirement a LIVING flow claims — an \`architecture/\`

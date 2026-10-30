@@ -24,11 +24,11 @@ import { locateServicePaths } from "../../core/repo/service-target.js";
 import { enumeratedServiceIds } from "../../core/repo/service-target.js";
 import { type Finding } from "../../core/vocabulary/report.js";
 import { type Requirement } from "../../core/document/spec.js";
-import { coversEdge, coversElement, type CoverageScope } from "../../core/c4/arch.js";
+import { coversEdge, coversElement, coversEntries, type CoverageScope } from "../../core/c4/arch.js";
 import { readHealth } from "../../core/vocabulary/health.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { ACTOR_KINDS, EXTERNAL_TAG } from "../../core/vocabulary/maturity.js";
-import { coversEntries, coversUnknownFindings } from "./checks/requirements.js";
+import { coversUnknownFindings } from "./checks/requirements.js";
 import { deltaSpelledCovers, mergedMapOf, survivingEdgeCover, survivingElementCover } from "./coverage/covers-after.js";
 import type { DocsDir, FeatureDir } from "../../core/kernel/ids/dirs.js";
 

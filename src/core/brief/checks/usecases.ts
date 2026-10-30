@@ -1,9 +1,9 @@
 /**
  * The brief's check rows for a service's OWN use cases — the flows beside its
  * model — concatenated into `VALIDATE_CHECKS` at the place they always stood
- * (`./checks.ts`). Their own module because the table stood one row under its
- * file limit with a placement row still to add, and these rows are the one
- * block of it with a subject of their own.
+ * (`./checks.ts`). Their own module because the table outgrew its file limit
+ * the day a fourth reserved prefix gave them a fourth placement row, and these
+ * rows are the one block of it with a subject of their own.
  */
 import { VIA_SERVICE, type BriefCheck } from "./check.js";
 
@@ -50,6 +50,12 @@ export const SERVICE_USECASE_CHECKS: BriefCheck[] = [
     severity: "error",
     via: VIA_SERVICE,
     what: "a `#cap-` tag on a flow inside this service's own project — a capability is claimed on the fleet map, never inside one service; drop the tag and keep the `#req-` one",
+  },
+  {
+    code: "usecase.obligation-misplaced",
+    severity: "error",
+    via: VIA_SERVICE,
+    what: "an `#obl-` tag on a flow inside this service's own project — a flow's obligation tag applies to the hops of a FLEET flow, and inside one service the obligation is met by the arch requirement whose `Covers:` names it; drop the tag and keep that requirement's `#req-`",
   },
   {
     code: "usecase.flow-invalid",

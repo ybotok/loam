@@ -186,7 +186,9 @@ thin baseline that validates is thin, not done.
    \`usecase.requirement-unresolved\` a \`#req-\` tag naming no
    \`Requirement-ID:\` of this service's spec.md or arch.spec.md,
    \`usecase.capability-unresolved\` a \`#cap-\` tag beside a model (drop it — a
-   capability is claimed on the fleet map, never inside one service), and
+   capability is claimed on the fleet map, never inside one service),
+   \`usecase.obligation-misplaced\` an \`#obl-\` tag beside a model (drop it and keep
+   the \`#req-\` of the arch requirement that covers the obligation), and
    \`usecase.flow-invalid\` a file beside the model that does not read — the flows
    were not graded, the model still was. \`usecase.step-unlinked\` never fires on a hop
    whose caller and provider resolve to the same service — a service owes no

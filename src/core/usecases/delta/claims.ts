@@ -48,6 +48,7 @@ import { compareIds } from "../../repo/entries.js";
 import type { Issue } from "../../vocabulary/issue.js";
 import type { UseCaseScan } from "../fleet.js";
 import { featureFlowIssues } from "../grade/feature.js";
+import { featureObligationIssues, type FeatureObligationInputs } from "./obligations.js";
 import { readFeatureFlows } from "./overlay.js";
 
 /** One promise this feature's flows keep, with the flows that keep it. */
@@ -186,6 +187,14 @@ export interface FlowCoverageRequest {
    * why the preview is wrong without them and why it arrives as a function.
    */
   models?: () => Promise<readonly ExtendingModel[]>;
+  /**
+   * What the flows' `#obl-` tags are graded against (`./obligations.ts`).
+   * Required, unlike `models`: leaving it out would skip `obligation.unknown`,
+   * an error that gates the archive, without a word — a check that lets
+   * everything through when a caller forgets it. Both inputs are thunks, so a
+   * caller whose flows carry no `#obl-` pays nothing for them.
+   */
+  obligations: FeatureObligationInputs;
 }
 
 /**
@@ -259,6 +268,11 @@ export async function flowCoverage(req: FlowCoverageRequest): Promise<{ promises
   }
   return {
     promises,
-    issues: featureFlowIssues({ docsDir: req.docsDir, scan, capabilities: declared, requirementsOf: (capability) => after.get(capability) }),
+    issues: [
+      ...featureFlowIssues({ docsDir: req.docsDir, scan, capabilities: declared, requirementsOf: (capability) => after.get(capability) }),
+      // The same flows' architectural claims, over the same staged parse — one
+      // Langium workspace for every question asked of them.
+      ...(await featureObligationIssues(scan, req.docsDir, req.obligations)),
+    ],
   };
 }

@@ -27,15 +27,9 @@ import {
   entryResolves,
   parseCoversEntry,
   type CoverageScope,
-  type CoversEntry,
 } from "../../../core/c4/arch.js";
 import { type Vocabulary } from "../../../core/permissions/permissions.js";
 import { type Operation } from "../../../core/openapi/doc.js";
-
-/** The parsed Covers entries of every requirement that will live (REMOVED covers nothing). */
-export function coversEntries(reqs: Requirement[]): CoversEntry[] {
-  return reqs.filter((r) => r.kind !== "REMOVED").flatMap((r) => r.covers.map(parseCoversEntry));
-}
 
 /**
  * `spec.duplicate-requirement` — two `### Requirement:` blocks with one name in

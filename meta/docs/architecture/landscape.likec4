@@ -595,6 +595,11 @@ model {
   // the walk that loads a service model: which living flow claims a requirement the
   // feature MODIFIES or REMOVES (core/usecases/delta/modified.ts takes the model reader injected).
   loam.core.delta -> loam.core.fleet_context
+  // The LIVING obligation vocabulary a feature's own flows' `#obl-` tags are
+  // graded against (core/delta/flows/coverage.ts) — read by the walk for the
+  // capability vocabulary's reason: it holds the invocation's reads, and the
+  // vocabulary is never part of a feature.
+  loam.core.delta -> loam.core.obligations
   loam.core.delta -> loam.core.repo
   loam.core.delta -> loam.core.usecases
 
@@ -753,6 +758,11 @@ model {
   loam.core.usecases -> loam.core.capabilities
   loam.core.usecases -> loam.core.document
   loam.core.usecases -> loam.core.kernel
+  // The `obl-` prefix, the fourth that opts a view in as a use case, and the
+  // vocabulary type a flow's obligation is resolved against. The vocabulary
+  // stays a leaf: what a flow carries and which edges its hops ride live here,
+  // in usecases/obligations/, rather than pulling c4 into obligations/.
+  loam.core.usecases -> loam.core.obligations
   loam.core.usecases -> loam.core.repo
   loam.core.usecases -> loam.core.vocabulary
 

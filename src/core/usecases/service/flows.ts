@@ -56,8 +56,9 @@
  *     their docs-relative path, so the file is spelled here, where it is known,
  *     for both: `model.likec4`;
  *  2. siblings, no tagged view in the model, and no reserved tag REFERENCED in
- *     any document — a `#` then `cap-`, `req-` or `suite-` (`mentionsTagPrefix`,
- *     the fleet's own byte gate) → nothing opted in, no workspace. An untagged
+ *     any document that could declare a `dynamic view` — a `#` then any prefix
+ *     of `USE_CASE_TAG_PREFIXES` (`mentionsTagPrefix`, the fleet's own byte
+ *     gate) → nothing opted in, no workspace. An untagged
  *     `views.likec4` is somebody's hand-drawn diagram, never graded, exactly as
  *     an untagged fleet view is — and its parse errors are the renderer's
  *     business until a view opts the project in. That includes one whose prose

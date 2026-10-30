@@ -5,7 +5,7 @@
  * A `#obl-` tag is a claim about the object it sits on, and the object's model
  * is not a property any reader can see. Before this module the same undeclared
  * tag was `obligation.unknown` on a container and SILENCE on a datacenter,
- * because `validate/fleet/obligations.ts` walked the logical model only — the
+ * because the fleet grader (`validate/fleet/obligations/`) walked the logical model only — the
  * fail-open case where a rule an architect placed does not exist for any check,
  * and a reviewer has no way to tell that from a rule that passed. This is the
  * derivation that closes it (FEAT-1's ARCH-LOAM-DEPLOY-TAGGED).

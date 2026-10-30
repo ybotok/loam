@@ -57,6 +57,9 @@ const AS_ISSUE: Readonly<Record<string, IssueCode>> = {
   "usecase.step-unbacked": "usecase.step-unbacked",
   "usecase.step-contested": "usecase.step-contested",
   "usecase.step-unlinked": "usecase.step-unlinked",
+  // The service grader's placement refusal for an `#obl-` tag; the fleet
+  // grader never writes it (`../service/tags.ts`).
+  "usecase.obligation-misplaced": "usecase.obligation-misplaced",
 };
 
 /**
@@ -74,8 +77,8 @@ function featurePlace(docsDir: DocsDir): (view: ParsedView) => string {
  * One grader finding as the archive gate files it. Exported for the gate's
  * second use-case reader, a feature's service-local flows
  * (`../delta/service/grade.ts`), whose grader is the service target's and
- * writes the same five codes — one table, so neither scope can drop a code the
- * other files. `locations` travels: both graders name the file a hop is in
+ * writes the same five codes plus `usecase.obligation-misplaced` — one table, so
+ * neither scope can drop a code the other files. `locations` travels: both graders name the file a hop is in
  * (`useCaseFindings` through the scope's `file`, the service grader through
  * `atView`), and an agent reading `--json` should not have to parse the prose
  * for it.

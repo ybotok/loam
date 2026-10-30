@@ -21,7 +21,7 @@ import { type PathableService } from "../../../core/kernel/ids/service.js";
 import { type ServicePaths } from "../../../core/repo/paths.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
 import { type Requirement } from "../../../core/document/spec.js";
-import { type CoverageScope } from "../../../core/c4/arch.js";
+import { coversEntries, type CoverageScope } from "../../../core/c4/arch.js";
 import { hasDeployment, type DeploymentModel } from "../../../core/c4/parsed/deployment.js";
 import { type DocsDir } from "../../../core/kernel/ids/dirs.js";
 import { repoPath } from "../../../core/envelope/json.js";
@@ -31,7 +31,6 @@ import { FleetContext } from "../../../core/fleet-context.js";
 import { healthDependencyFindings } from "../checks/health-deps.js";
 import {
   coverageFinding,
-  coversEntries,
   coversUnknownFindings,
   duplicateRequirementFindings,
   repeatedListLineFindings,

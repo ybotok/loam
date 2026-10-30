@@ -27,6 +27,17 @@
  * `architecture/capabilities.yaml` exists: the reason is where the tag sits,
  * not what the vocabulary says. The view stays opted in and its steps are
  * graded — either prefix is the opt-in, exactly as at fleet altitude.
+ *
+ * `#obl-` IS REFUSED THE SAME WAY, for the same pair of reasons, and with a code
+ * of its own (`usecase.obligation-misplaced`) because the repair is different.
+ * A flow's obligation tag applies the obligation to every hop it draws, which
+ * is a statement about the fleet map, read where the map's coverage question is
+ * asked (`../obligations/flows.ts`). Ignored here it would claim to keep an
+ * obligation nothing checks; resolved here it would be a second, service-sized
+ * reading of a fleet rule. Inside a service the obligation is already met the
+ * way it is meant to be — by the arch requirement whose `Covers:` names it —
+ * and the flow beside the model that shows how keeps THAT requirement with
+ * `#req-`, which is what the message says to write instead.
  */
 import {
   CAP_TAG_PREFIX,
@@ -37,6 +48,7 @@ import {
 } from "../../capabilities/usecase-join.js";
 import type { ParsedView } from "../../c4/parsed/dynamic-views.js";
 import { compareIds } from "../../repo/entries.js";
+import { OBLIGATION_TAG_PREFIX } from "../../obligations/obligations.js";
 import type { Finding } from "../../vocabulary/report.js";
 
 /** What the tag grades resolve against: the service, and its own identified requirements. */
@@ -139,7 +151,23 @@ function capabilityFindings(view: ParsedView, place: string): Finding[] {
   }));
 }
 
+/** One finding per `#obl-` tag the view carries — the placement refusal, sorted and de-duplicated as the capability one is. */
+function obligationFindings(view: ParsedView, place: string): Finding[] {
+  const claimed = [...new Set(view.tags.filter((tag) => tag.startsWith(OBLIGATION_TAG_PREFIX)))].sort(compareIds);
+  return claimed.map((tag) => ({
+    severity: "error",
+    code: "usecase.obligation-misplaced",
+    subject: view.id,
+    message:
+      `${place} is tagged #${tag} inside this service's own project, where no obligation can be carried: a flow's ` +
+      "obligation tag applies the obligation to every hop of a FLEET flow, in architecture/usecases/, and inside one " +
+      "service the obligation is met by the arch requirement whose `Covers:` names it. Drop the tag, and tag this " +
+      `flow #req-<Requirement-ID> with that requirement of arch.spec.md instead — or draw the sequence in ` +
+      "architecture/usecases/ if it crosses services.",
+  }));
+}
+
 /** Every tag finding one service-local view earns: the placement refusals first, then the requirement claims. */
 export function serviceTagFindings(view: ParsedView, scope: ServiceTagScope, place: string): Finding[] {
-  return [...capabilityFindings(view, place), ...requirementFindings(view, scope, place)];
+  return [...capabilityFindings(view, place), ...obligationFindings(view, place), ...requirementFindings(view, scope, place)];
 }

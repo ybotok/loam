@@ -17,11 +17,14 @@
  * is somebody's hand-drawn sequence — drawn to explain something to a person,
  * not to be joined to a model — and grading it would turn every existing docs
  * repo red on upgrade over documents nobody promised anything about. A `#cap-`,
- * `#req-` or `#suite-` tag is the author saying "this is a use case; hold it to
- * the model", and nothing else says it: a view with no tags and a view whose
- * tags are all somebody's own vocabulary are the same thing here. A
+ * `#req-`, `#suite-` or `#obl-` tag is the author saying "this is a use case;
+ * hold it to the model", and nothing else says it: a view with no tags and a
+ * view whose tags are all somebody's own vocabulary are the same thing here. A
  * `#suite-`-only view resolves nothing below — it carries no claim — and its
- * hops are graded like any other's.
+ * hops are graded like any other's. An `#obl-` tag is a claim, but not one this
+ * loop resolves: the obligation axis grades it where its vocabulary and its
+ * `Covers:` index are read (`commands/validate/fleet/obligations/` for the
+ * living fleet, `../delta/obligations.ts` for a feature's own flows).
  *
  * THE TAG OPTS A VIEW IN WHETHER OR NOT IT RESOLVES. A `#cap-` slug that names
  * no declared capability is a broken claim about the vocabulary, not a withdrawn
