@@ -240,14 +240,14 @@ loam `0.2.0-alpha.18` · fleet `examples/docs` · service `payment-service` · b
 | an adopt session before it reads code | the `loam-adopt` page + the full brief | 81,186 | ~20,297 |
 | one code, median of 366 | `loam explain <code> --json` | 616 | ~154 |
 | one code, smallest / largest | `loam explain <code> --json` | 272 / 4,182 | ~68 / ~1,046 |
-| the whole code vocabulary | `loam explain --codes --json` | 262,944 | ~65,736 |
+| the whole code vocabulary | `loam explain --codes --json` | 263,114 | ~65,779 |
 
 | page | invocation | bytes | ~tokens | with `--no-fix-tables` | with `--fix-tables` |
 |---|---|---|---|---|---|
 | `loam-adopt` | `loam instructions loam-adopt payment-service` | 20,289 | ~5,072 | same bytes | same bytes |
 | `loam-feature` | `loam instructions loam-feature FEAT-101 "Split payments"` | 15,963 | ~3,991 | same bytes | same bytes |
 | `loam-implement` | `loam instructions loam-implement FEAT-101 payment-service` | 13,619 | ~3,405 | same bytes | same bytes |
-| `loam-check` | `loam instructions loam-check FEAT-101` | 3,884 | ~971 | same bytes | 141,326 (~35,332) |
+| `loam-check` | `loam instructions loam-check FEAT-101` | 3,884 | ~971 | same bytes | 141,496 (~35,374) |
 | `loam-verify` | `loam instructions loam-verify FEAT-101` | 13,594 | ~3,399 | 9,771 (~2,443) | same bytes |
 | `loam-ship` | `loam instructions loam-ship FEAT-101` | 10,290 | ~2,573 | same bytes | same bytes |
 | `loam-report` | `loam instructions loam-report` | 7,870 | ~1,968 | same bytes | same bytes |
@@ -259,10 +259,10 @@ loam `0.2.0-alpha.18` · fleet `examples/docs` · service `payment-service` · b
 
 | brief | invocation | bytes | ~tokens | with `--intent-ref` |
 |---|---|---|---|---|
-| `tasks` | `loam tasks FEAT-101 --service payment-service --next --json` | 4,488 | ~1,122 | 3,130 (~783) |
-| `tasks` | `loam tasks FEAT-101 --json` | 22,278 | ~5,570 | 20,920 (~5,230) |
-| `delta` | `loam delta FEAT-101 --service payment-service --json` | 6,631 | ~1,658 | 5,273 (~1,318) |
-| `context` | `loam context payment-service --feature FEAT-101 --json` | 19,306 | ~4,827 | 18,108 (~4,527) |
+| `tasks` | `loam tasks FEAT-101 --service payment-service --next --json` | 4,124 | ~1,031 | 3,130 (~783) |
+| `tasks` | `loam tasks FEAT-101 --json` | 21,914 | ~5,479 | 20,920 (~5,230) |
+| `delta` | `loam delta FEAT-101 --service payment-service --json` | 6,267 | ~1,567 | 5,273 (~1,318) |
+| `context` | `loam context payment-service --feature FEAT-101 --json` | 18,942 | ~4,736 | 18,108 (~4,527) |
 
 <!-- payload-sizes:end -->
 
