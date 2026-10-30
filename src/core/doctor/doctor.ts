@@ -15,7 +15,7 @@ import { LOAM_VERSION } from "../envelope/version.js";
 import { landscapePath, LIKEC4_PROJECT_FILENAME } from "../repo/paths.js";
 import { docsRepoState } from "../repo/state.js";
 import { listFeatures, listServices } from "../repo/repo.js";
-import { introducingFeatures } from "../projection/introduced.js";
+import { introducedClause, introducingFeatures } from "../projection/introduced.js";
 import { LIKEC4_PROJECT_CONFIG } from "../docs.js";
 import { gherkinRoot } from "../gherkin/stamp.js";
 import { UnsafePathError } from "../kernel/path-safety.js";
@@ -266,7 +266,6 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
     // so a check that reads the living docs for it has nothing to read, which
     // is worth knowing before trusting one. Only the advice was wrong.
     const several = others.length > 0;
-    const alsoBy = several ? ` (so does ${others.join(", ")})` : "";
     const until = several ? "one of them" : lead;
     const documents = several
       ? `the specs/${configuredService}/ of ${introducedBy.join(", ")} are`
@@ -275,9 +274,8 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
     findings.push({
       severity: "warning",
       code: "doctor.service-unknown",
-      message:
-        `Configured service '${configuredService}' is not under services/ yet: ${lead} introduces it${alsoBy}, `
-        + `and it is not in the living docs until ${until} archives.`,
+      // The clause `loam gate` refuses the same service with (introduced.ts).
+      message: `Configured service '${configuredService}' is not under services/ yet: ${introducedClause(introducedBy)}.`,
       fix:
         `Nothing to adopt — until ${until} archives, ${documents} this service's documents, and that archive `
         + `is what clears this warning. Run \`loam status ${lead}\`${likewise} to see what this repository owes `

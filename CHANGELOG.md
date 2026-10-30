@@ -56,6 +56,18 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   scenarios still validates clean, by design — SCHEMA's "What a replacement takes away is named, not
   just counted": the archive plan and `loam delta` name the drop, and nothing gates it.
 
+### Fixed — `loam gate` no longer tells a feature's new service to adopt itself
+
+- **In the repository of a service an in-flight feature introduces, `loam gate` now says what that
+  service is.** It still refuses with `unknown-service` and exit 1 — nothing living records the
+  service until the feature archives, so no recorded evidence answers the deploy question — but
+  the message no longer calls it "a service nobody adopted" and no longer says to run
+  `loam adopt`, which wrote a baseline that collided with the feature's own archive. It names the
+  feature that introduces the service, says there is nothing to adopt and that the feature's
+  `specs/<id>/` are its documents, and points at `loam status <FEAT>` — the clause `loam doctor`
+  gives in the same repository, now from one source. No code, flag, exit code or payload key
+  changed.
+
 ## [0.2.0-alpha.18] - 2026-10-30
 
 Everything on `main` since `0.2.0-alpha.17`. Still a prerelease on the `alpha` line.

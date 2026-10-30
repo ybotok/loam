@@ -30,6 +30,7 @@ import { listBaseSubdirs, subdirsChangedSince } from "../../core/diff/base-git.j
 import { gateReport } from "../../core/gate/checks.js";
 import { gateSummary, gateVerdict, type GateSince } from "../../core/gate/report.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
+import { introducedClause, introducingFeatures } from "../../core/projection/introduced.js";
 import { nearestIds } from "../../core/repo/entries.js";
 import { archiveDir } from "../../core/repo/paths.js";
 import { enumeratedServiceIds, resolveServiceTarget } from "../../core/repo/service-target.js";
@@ -132,6 +133,28 @@ export function registerGate(program: Command): void {
           // Grammar-legal but unenumerated: a question recorded evidence
           // cannot answer — Pact's gate answers unknown participants with a
           // refusal, not a pass (status's `unknown-service` precedent).
+          //
+          // Unless a feature in flight INTRODUCES it: then the service is not
+          // unknown, it is not living YET, and "run `loam adopt`" was wrong
+          // advice — there is no code to describe, and a baseline written now
+          // would make the service living ahead of the very archive that is to
+          // create it. The refusal stands (code and exit unchanged: nothing
+          // living records the service, so no evidence answers the deploy
+          // question), and it says what doctor says, in doctor's words.
+          const introducedBy = (await introducingFeatures(docsDir, resolved.id, fleet)).map((f) => f.id);
+          const lead = introducedBy[0];
+          if (lead !== undefined) {
+            const documents =
+              introducedBy.length > 1 ? `the specs/${resolved.id}/ of ${introducedBy.join(", ")} are` : `${lead}'s specs/${resolved.id}/ are`;
+            fail(
+              json,
+              "unknown-service",
+              `'${resolved.id}' is not under ${docsDir}/services/ yet: ${introducedClause(introducedBy)}. ` +
+                "Until then no living document records it, so no recorded evidence can answer the deploy question — " +
+                `and there is nothing to adopt: ${documents} this service's documents. \`loam status ${lead}\` says what this repository owes it.`,
+            );
+            return;
+          }
           const near = nearestIds(resolved.id, await enumeratedServiceIds(docsDir, fleet));
           fail(
             json,

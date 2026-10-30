@@ -304,6 +304,7 @@ model {
   loam.commands.gate -> loam.core.envelope
   loam.commands.gate -> loam.core.fleet_context
   loam.commands.gate -> loam.core.gate
+  loam.commands.gate -> loam.core.projection
   loam.commands.gate -> loam.core.repo
   loam.commands.gate -> loam.core.vocabulary
 

@@ -204,6 +204,35 @@ describe("what gate refuses", () => {
     expect(res.payload.error.message).toContain("payment-service");
   });
 
+  // The first deploy of every service a feature introduces runs `loam gate` in
+  // a repository bound to a service the living docs do not have yet. It was
+  // told "a service nobody adopted … Run `loam adopt`", while `loam doctor` in
+  // the same repository said there was nothing to adopt — and following the
+  // gate's advice wrote a baseline that would collide with the feature's own
+  // archive (study 2026-10-30, I20). The refusal and its exit stand; the words
+  // are doctor's.
+  it("a service a feature in flight introduces: unknown-service in doctor's words, and never adopt", async () => {
+    const p = await project(gateFixture(), { service: "payment-split-service" });
+    const res = await gate(p);
+    expect(res.code).toBe(1);
+    expect(res.payload.error.code).toBe("unknown-service");
+    const message = res.payload.error.message as string;
+    expect(message).toContain("FEAT-1 introduces it, and it is not in the living docs until FEAT-1 archives");
+    expect(message).toContain("nothing to adopt: FEAT-1's specs/payment-split-service/ are this service's documents");
+    expect(message).toContain("`loam status FEAT-1`");
+    expect(message).not.toContain("loam adopt");
+    expect(message).not.toContain("nobody adopted");
+    // One clause, two commands: doctor in the same repository says the same.
+    const doctor = JSON.parse((await runLoam(p.workDir, "doctor", "--json")).stdout) as {
+      findings: Array<{ code: string; message: string }>;
+    };
+    const unknown = doctor.findings.find((f) => f.code === "doctor.service-unknown")!;
+    expect(unknown.message).toContain("FEAT-1 introduces it, and it is not in the living docs until FEAT-1 archives");
+    // The service nobody introduces keeps the adopt advice — the case above is the control.
+    const typo = await gate(p, "--service", "payment-servce");
+    expect(typo.payload.error.message).toContain("loam adopt --service payment-servce");
+  });
+
   it("an id the grammar refuses: invalid-option, before any path is built", async () => {
     const p = await project(gateFixture());
     const res = await gate(p, "--service", "../outside");
