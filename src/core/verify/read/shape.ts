@@ -103,6 +103,10 @@ export function asVerification(doc: unknown): Verification | null {
       if (typeof a["service"] !== "string" || typeof a["commit"] !== "string" || typeof a["recorded"] !== "string") return null;
       if (!/^[0-9a-f]{40,64}$/i.test(a["commit"])) return null;
       if (!Array.isArray(a["claims"]) || a["claims"].some((id) => typeof id !== "string")) return null;
+      // Absent fine, present whole: `gate` and `status` print the flag, so a
+      // `dirty: "yes"` must not read as a clean attestation.
+      if (a["dirty"] !== undefined && typeof a["dirty"] !== "boolean") return null;
+      if (a["uncommitted"] !== undefined && (!Array.isArray(a["uncommitted"]) || a["uncommitted"].some((p) => typeof p !== "string"))) return null;
       if (!isConsumedReport(a["report"])) return null;
       if (!isConsumedContractReport(a["contractReport"])) return null;
     }

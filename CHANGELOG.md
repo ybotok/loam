@@ -28,6 +28,31 @@ digest recipes say how.
   and one made raw on a CRLF checkout still reads current there. A real edit still reads stale, and
   `sources.stale` still names only the files that moved.
 
+### Fixed — `loam verify --service` says when it attests a commit that is not the tested code
+
+One code was added, `verify.uncommitted-changes` (warn) — 367, counted with
+`loam explain --codes --json` — and two keys on a federated record's attestation, `dirty` and
+`uncommitted`, which also ride `verify --json`'s `attestations`; `loam gate --json`'s `features[]`
+rows and `loam status --json`'s `verification` gain `uncommitted`. No flag was added, and nothing
+that recorded before refuses now.
+
+- **An attestation recorded over uncommitted changes says so.** `loam verify <FEAT> --service <id>`
+  with `--results` or `--record` named the repository's HEAD as "attested at git commit …" even when
+  the suite had run against modified files and untracked directories — a commit that need not hold
+  one line of the tested code — and recorded `verified` without a word. Recording now asks
+  `git status --porcelain` under the directory `loam.json` sits in, leaving out what loam writes or
+  carries there (`loam.json` and its agent files, the generated suite under `<gherkinDir>/loam/`, an
+  in-repo docs dir, the reports the run read and the answers file). Anything else marks the
+  attestation `dirty: true` with the paths in `uncommitted`, and the run warns
+  `verify.uncommitted-changes` and prints `attested at git commit <sha> + uncommitted changes`.
+- **The read view, `loam gate` and `loam status` carry it beside the verdict** —
+  `+ uncommitted changes (<services>)` on the gate's feature row and on `loam status <FEAT>`'s
+  verification line (and its headline, once the feature reads verified), `+ uncommitted changes` on
+  `loam verify`'s "Attested by" line, and the same notice in `loam verify --json`'s `notices[]`. A
+  clean re-record replaces the flagged attestation and clears it.
+- Commit the tested code first: the `loam-verify` protocol now says so at its recording step. Nothing
+  refuses on a dirty tree yet.
+
 ## [0.2.0-alpha.18] - 2026-10-30
 
 Everything on `main` since `0.2.0-alpha.17`. Still a prerelease on the `alpha` line.

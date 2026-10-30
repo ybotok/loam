@@ -3767,6 +3767,18 @@ the verdict and the counts are computed from the union at read time — exactly 
 since nothing ever trusted a stored `summary`. Each file's own `summary` counts the whole checklist,
 with the claims other services own honestly `unanswered` in it.
 
+**The commit names the tested code only when the tree is clean.** An attestation names `HEAD`, but
+a suite runs against the working tree. So recording also asks `git status --porcelain` under the
+directory `loam.json` sits in — untracked files included, `.gitignore`d ones not — leaving out what
+loam itself writes or carries there: `loam.json` and the agent files it records, the generated suite
+under `<gherkinDir>/loam/`, a docs repo that lives inside the service repo, the reports the run read
+and its answers file. Anything else marks the attestation `dirty: true`, with the paths git reported
+in `uncommitted` (absent when git could not list them — a check that could not run is not read as
+clean). The run warns `verify.uncommitted-changes`; `loam verify`'s read view, `loam gate` (a
+`features[]` row's `uncommitted`, naming the services) and `loam status` (`verification.uncommitted`)
+all print "+ uncommitted changes" beside the verdict. Nothing refuses on it yet: commit the tested
+code and record again, and the clean re-record replaces the flagged attestation.
+
 **Why one file per service.** The record used to be ONE `verification.yaml` for every service, and
 every attestation rewrote its `summary`, its `recorded` date and its checklist-ordered `claims`. Two
 teams recording two different services on two docs-repo branches therefore always conflicted when

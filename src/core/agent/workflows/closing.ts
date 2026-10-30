@@ -108,7 +108,12 @@ reads the service, so a verdict is worth exactly what its evidence is worth.
    same-model agents is correlated, so it ranks review; it never upgrades
    \`attested\` to \`verified\`. Record only the answer set you stand behind, in
    a separate run.
-6. Record, **in each affected service's own repository**, one service at a time:
+6. Record, **in each affected service's own repository**, one service at a time —
+   and **commit the code the suite ran against first**. The attestation names
+   that repository's HEAD; recorded over uncommitted changes it names a commit
+   that need not contain the tested code, so the record says \`dirty: true\`
+   with the paths, the run warns \`verify.uncommitted-changes\`, and \`loam gate\`
+   and \`loam status\` show "+ uncommitted changes" until a clean re-record:
 
    \`\`\`sh
    loam verify $1 --service <id> --results report.json [--contract-results contract.json] --record answers.json --json
@@ -180,6 +185,7 @@ gathered from the steps above; branch on the code, never the prose:
 | \`verify.operation-contested\` (warn) | two services on the checklist expose the same operationId, so a contract report — which names no service — cannot say whose suite exercised it; those claims stay unconfirmed | each service records its own with \`--service <id>\`, passing its own contract report |
 | \`verify.checklist-forked\` (warn) | one or more services answered a DIFFERENT version of the feature's question set than the one it now asks — each attestation carries the \`checklist\` digest it answered, and the notice names the ones that do not match the current checklist. Measured against the present, not pairwise: services that all attested against a since-rewritten delta agree with each other perfectly and are all stale. Normal mid-rollout, since services attest as they finish. Attestations written before the field existed carry no digest and are never called stale. In a per-service record the answers of the services named do not count until they record again | re-record the services on the older version from their own repositories (\`loam verify <FEAT> --service <id> --record\`) — nothing gates on it |
 | \`verify.record-miscounted\` (error) | a record file whose \`summary\` block contradicts its own \`claims[]\` — neither half can be believed, so the record is refused as unreadable rather than trusted in either direction | a service's own \`verification/<id>.yaml\`: delete it and re-record from that service's repo; the one-file \`verification.yaml\`: restore it from version control, then re-record — never delete it, and never edit the counts by hand |
+| \`verify.uncommitted-changes\` (warn) | an attestation was recorded while its repository had uncommitted changes — git status, minus what loam writes or carries there (the generated suite, the reports, the answers file, loam.json, an in-repo docs dir) — so the commit it names need not contain the code the tests ran against; the attestation carries \`dirty: true\` and the paths, and gate and status show "+ uncommitted changes" | commit the tested code in that repository, then record again from there; the clean record replaces the flagged one — nothing gates on it |
 | \`verify.evidence-token-missing\` (warn) | a just-confirmed citation's file at the attested commit does not contain the claim's own token (the operationId, message name or edge op) — the evidence may not show what the answer says | re-read that evidence while the answer can still be corrected; verdict-neutral, it gates nothing |
 | \`cross.agree-confirmed\` / \`cross.agree-unconfirmed\` (ok) | a \`--diff-answers\` row where both blind answer sets reach the same verdict — the cheap-to-skip review queue, though same-model agreement is correlated and proves nothing | nothing on its own; record only the answer set you stand behind, in a separate run |
 | \`cross.disagree\` (the rows a human reads first) | a \`--diff-answers\` row where the two blind answer sets contradict each other — one of them is wrong about the code | read both cited evidences and decide; the diff writes nothing and never moves a verdict |

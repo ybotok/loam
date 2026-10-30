@@ -498,6 +498,7 @@ model {
 
   loam.commands.verify -> loam.commands.policy
   loam.commands.verify -> loam.core.envelope
+  loam.commands.verify -> loam.core.gherkin
   loam.commands.verify -> loam.core.kernel
   loam.commands.verify -> loam.core.provenance
   loam.commands.verify -> loam.core.repo

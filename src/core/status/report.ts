@@ -210,6 +210,13 @@ export interface VerificationState {
    * agent's word about a permission or an edge.
    */
   answered: Record<AnsweredBy, number>;
+  /**
+   * The services whose attestation in this record was made over uncommitted
+   * changes (`dirty: true`): the commit it names need not contain the code its
+   * tests ran against. Present only when there is one, so the payload over a
+   * record made from committed code is byte for byte what it was.
+   */
+  uncommitted?: string[];
 }
 
 /**

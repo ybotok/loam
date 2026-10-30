@@ -135,6 +135,16 @@ export interface ServiceAttestation {
    * a git checkout, and a missing pin is not a defect.
    */
   docsCommit?: string;
+  /**
+   * True when the working tree was not shown clean as this was recorded — git
+   * reported uncommitted changes under the service root (listed in
+   * `uncommitted`), or could not say. `commit` then names HEAD, which need not
+   * hold the code the evidence was read from. Absent on a clean tree, so a
+   * record made from committed code reads exactly as it always has.
+   */
+  dirty?: boolean;
+  /** The paths git reported, repo-relative; absent when git could not list them. */
+  uncommitted?: string[];
   /** The report that answered this service's scenario claims, when `--results` did. */
   report?: ConsumedReport;
   /** The report that answered this service's api.exposes claims, when `--contract-results` did. */
@@ -156,6 +166,11 @@ export interface Verification {
   /** The all-at-once form's consumed contract report — filed per attestation when federated. */
   contractReport?: ConsumedContractReport;
   attestations?: ServiceAttestation[];
+}
+
+/** The attestations recorded over uncommitted changes — what `verify`, `gate` and `status` flag. */
+export function uncommittedAttestations(v: Verification): ServiceAttestation[] {
+  return (v.attestations ?? []).filter((a) => a.dirty === true);
 }
 
 /**

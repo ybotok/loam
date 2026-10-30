@@ -31,6 +31,8 @@ import {
   noticesFor,
   recordedPayload,
   reportLine,
+  uncommittedMark,
+  uncommittedNotice,
 } from "./frozen.js";
 
 export interface ClaimStatus {
@@ -130,11 +132,13 @@ export function report(
   // The open-claims honesty line only where a record EXISTS: with none, the
   // surface already says "Not verified", and not-started is not partial.
   const open = recorded === null ? null : openClaimsNotice(tally, checklist.feature);
+  const dirty = uncommittedNotice(recorded);
   const notices = [
     ...noticesFor(claims, checklist.feature),
     ...(open === null ? [] : [open]),
     ...contestedNotices(checklist.claims),
     ...forkedChecklistNotices(recorded, checklist.digest),
+    ...(dirty === null ? [] : [dirty]),
   ];
 
   if (json) {
@@ -192,7 +196,7 @@ export function report(
     }
     for (const attestation of recorded.attestations ?? []) {
       console.log(
-        `  Attested by ${attestation.service} at ${attestation.commit.slice(0, 12)} (${attestation.recorded}, ${plural(attestation.claims.length, "claim")}).`,
+        `  Attested by ${attestation.service} at ${attestation.commit.slice(0, 12)}${uncommittedMark(attestation)} (${attestation.recorded}, ${plural(attestation.claims.length, "claim")}).`,
       );
       if (attestation.report !== undefined) console.log(`      from ${reportLine(attestation.report)}`);
       if (attestation.contractReport !== undefined) {

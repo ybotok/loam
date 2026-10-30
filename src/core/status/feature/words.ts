@@ -65,12 +65,17 @@ export function stageWords(f: StageFacts): string {
       return `the docs need fixing — ${f.blocking ?? "some"} finding(s) stop it`;
     case "ready":
       return `docs ready — ${openVerification(f.verification, f.asked)}`;
-    case "done":
+    case "done": {
       // The fleet form grades nothing, so it cannot say archive will take it —
-      // only that the record is verified. The feature's own status can.
+      // only that the record is verified. The feature's own status can. A
+      // record made over uncommitted changes is still `verified` (nothing
+      // gates on it), but the headline must not read as a clean one.
+      const { uncommitted } = f.verification;
+      const verified = uncommitted === undefined ? "verified" : `verified + uncommitted changes (${uncommitted.join(", ")})`;
       return f.blocking === null
-        ? "verified — every claim confirmed by evidence; its own status says whether archive will take it"
-        : "verified — every claim confirmed by evidence; ready to archive";
+        ? `${verified} — every claim confirmed by evidence; its own status says whether archive will take it`
+        : `${verified} — every claim confirmed by evidence; ready to archive`;
+    }
   }
 }
 

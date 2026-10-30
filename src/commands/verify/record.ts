@@ -39,7 +39,10 @@ import {
   forkedChecklistNotices,
   noticesFor,
   reportLine,
+  uncommittedMark,
+  uncommittedNotice,
 } from "./frozen.js";
+import { uncommittedPaths } from "./evidence/worktree.js";
 import { type VerifyTarget } from "./report.js";
 
 /** The flags `loam verify --record` reads. */
@@ -78,6 +81,8 @@ export interface Attestor {
    * from a subdirectory, "this repo" quietly became that subdirectory.
    */
   repoDir: string;
+  /** What loam writes or carries in `repoDir` — left out of the uncommitted-changes check (`loamCarried`). */
+  carried: readonly string[];
   /**
    * The existing record as ONE read — the union the refusals consult and the
    * files it was added up from, each with the exact bytes it was parsed from —
@@ -207,12 +212,15 @@ export async function record(
   if (!checked.ok) return fail(json, checked.code, checked.message);
 
   let serviceCommit: string | undefined;
+  let uncommitted: string[] | null = [];
   let answers = [...fromRunner, ...fromContract, ...checked.answers];
   let pinNotice: VerifyNotice | null = null;
   if (service !== undefined) {
     const commit = await repositoryCommit(repoDir);
     if (!commit.ok) return fail(json, "repository-unavailable", commit.message);
     serviceCommit = commit.commit;
+    // The tree the suite ran against, against the commit about to be named.
+    uncommitted = await uncommittedPaths(repoDir, attestor.carried, { reports, answers: opts.record });
     // All halves, one validator. The runner's evidence used to skip it
     // entirely: `--results` minted confirmations whose evidence strings nothing
     // ever checked, in the one mode that promises every answer is bound to this
@@ -272,6 +280,7 @@ export async function record(
         commit: serviceCommit!,
         reports,
         ...(docsHead.ok ? { docsCommit: docsHead.commit } : {}),
+        uncommitted,
       },
       answers,
       { legacy: files.legacy?.verification ?? null, own: own?.verification ?? null, filed: new Set(files.services.keys()) },
@@ -314,6 +323,7 @@ export async function record(
   const tally = tallyRecord(verification);
   const verdict = verificationVerdict(tally);
   const verified = verdict === "verified";
+  const dirty = uncommittedNotice(verification);
   const notices = [
     ...noticesFor(verification.claims, verification.feature),
     // The read view's notice, on the write that makes it true: a service
@@ -323,6 +333,7 @@ export async function record(
     ...contestedNotices(runnerClaims),
     ...contestedOperationNotices(contractClaims),
     ...(pinNotice === null ? [] : [pinNotice]),
+    ...(dirty === null ? [] : [dirty]),
   ];
 
   if (json) {
@@ -364,7 +375,7 @@ export async function record(
   if (service !== undefined) {
     const attestation = verification.attestations?.find((item) => item.service === service);
     if (attestation !== undefined) {
-      console.log(`  ${service} attested at git commit ${attestation.commit}.`);
+      console.log(`  ${service} attested at git commit ${attestation.commit}${uncommittedMark(attestation)}.`);
     }
   }
   for (const c of unconfirmed) {
