@@ -1,6 +1,6 @@
 {
   "name": "@ybotok/loam",
-  "version": "0.2.0-alpha.17",
+  "version": "0.2.0-alpha.18",
   "description": "One docs repo for a system of many services: C4 architecture (LikeC4), OpenAPI/AsyncAPI contracts and requirements as plain files, checked by a CLI to still agree.",
   "mcpName": "io.github.ybotok/loam",
   "author": "spentsov",

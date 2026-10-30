@@ -10,6 +10,35 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+## [0.2.0-alpha.18] - 2026-10-30
+
+Everything on `main` since `0.2.0-alpha.17`. Still a prerelease on the `alpha` line.
+0.2.0-alpha.17 was cut (`d29989c`) and never tagged — its CI run was cancelled at the test job's
+time limit — so it never reached npm. When this version was cut, `alpha` named `0.2.0-alpha.16`
+and `latest` named `0.2.0-alpha.14`, so a repository upgrading from alpha.16 takes alpha.17's
+section as well as this one, and one on `latest` takes alpha.15's, alpha.16's and alpha.17's too.
+`npm view @ybotok/loam dist-tags` is the record of what installs.
+
+A fleet flow can now keep an architectural obligation: a `dynamic view` tagged `#obl-<id>` is a use
+case, and the obligation applies to the relationship behind every hop it draws. Beside it, the
+release is about what a reader sees first: `main` is green again, `loam gate`'s text view says
+what `--strict` does to the exit, `loam --help` and the npm package carry the README's own
+description, and `loam init` no longer writes Copilot's instructions file into the docs repo
+itself.
+
+Two things move after upgrading. A `dynamic view` that already carried `#obl-` was ungraded and now
+earns findings: `loam validate --all` and `loam validate --feature` exit 1 on a hop nothing backs
+(`usecase.step-unbacked`) or, where `architecture/obligations.yaml` exists, on a tag it does not
+declare (`obligation.unknown`); one inside a service's own project exits 1 with
+`usecase.obligation-misplaced` until the tag is dropped; and under `--strict` the new
+`obligation.uncovered` warnings fail the run too. And `obligation.uncovered` on an edge names the
+service that owes it as its `subject`, where it named the edge's raw target id, with one finding per
+obligation and endpoint pair — a CI step that keys on the subject sees different rows.
+
+One stable code was added, `usecase.obligation-misplaced` — 366, counted with
+`loam explain --codes --json` — and none was renamed or retired; `ErrorCode` is byte-identical to
+alpha.17. No command, flag or payload key was added.
+
 ### Added — a fleet flow keeps an architectural obligation: `#obl-<id>` on a `dynamic view`
 
 One code was added, `usecase.obligation-misplaced`, and three `IssueCode` members:
