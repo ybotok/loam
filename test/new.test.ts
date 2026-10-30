@@ -24,7 +24,7 @@
  *  - --json contract and failure modes
  */
 import { describe, expect, it } from "vitest";
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseRequirements } from "../src/core/document/parse.js";
 import { REQUIREMENT_ID_RE } from "../src/core/document/spec.js";
@@ -778,6 +778,9 @@ describe("a fresh scaffold validates without errors, and cannot archive", () => 
 describe("an untouched requirement delta is not written, and a feature of nothing does not archive", () => {
   const FEAT = "features/FEAT-1-split";
   const WHY = "## Why\n\nPayments arrive as one amount and land on several ledgers.\n";
+  const ADDED_REQUIREMENT =
+    "# svc-a — delta\n\n## ADDED Requirements\n\n### Requirement: Split a payment\nThe service SHALL split a payment across payees.\n\n" +
+    "#### Scenario: Two payees\n- **Given** a payment of 10\n- **When** it is split between two payees\n- **Then** each payee receives 5\n";
 
   /** `loam new FEAT-1 --touches svc-a`, then a real Why — the spec delta stays the template. */
   async function touchedScaffold(p: Project): Promise<void> {
@@ -886,6 +889,48 @@ describe("an untouched requirement delta is not written, and a feature of nothin
       await p.write(`${FEAT}/intent.md`, (await p.read(`${FEAT}/intent.md`)).replace("## Why\n", WHY));
       const blocked = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
       expect(gatingCodes(blocked.stdout + blocked.stderr)).toContain("delta.changes-nothing");
+    });
+  });
+
+  it("marks each document, not each service — an untouched spec.md beside a written arch.spec.md is not written, and owes nothing", async () => {
+    await withProject(livingService("svc-a"), async (p) => {
+      await touchedScaffold(p);
+      await p.write(`${FEAT}/specs/svc-a/arch.spec.md`, ADDED_REQUIREMENT);
+      const own = JSON.parse((await runLoam(p.workDir, "status", "FEAT-1", "--json")).stdout);
+      const rows = own.artifacts as Array<Record<string, unknown>>;
+      // The arch delta carries the change, so spec.md is not owed — but it is still not written.
+      expect(rows.find((a) => a.id === "spec" && a.service === "svc-a")).toMatchObject({ exists: true, empty: true, required: false, status: "done" });
+      expect(rows.find((a) => a.id === "arch-spec" && a.service === "svc-a")!.empty).toBeUndefined();
+      expect(own.feature.stage).not.toBe("missing");
+      expect((await runLoam(p.workDir, "status", "FEAT-1")).stdout).toMatch(/not written\s+spec \(svc-a\)/);
+      // The fleet form agrees: the service's change is written, so nothing is missing.
+      const fleet = JSON.parse((await runLoam(p.workDir, "status", "--json")).stdout);
+      expect(fleet.features[0].missing).toEqual([]);
+    });
+  });
+
+  it("an untouched capability template beside real work reads not written too", async () => {
+    await withProject(livingService("svc-a"), async (p) => {
+      await runLoam(p.workDir, "new", "FEAT-1", "--title", "Split", "--touches", "svc-a", "--capability", "payments");
+      await p.write(`${FEAT}/intent.md`, (await p.read(`${FEAT}/intent.md`)).replace("## Why\n", WHY));
+      await p.write(`${FEAT}/specs/svc-a/spec.md`, ADDED_REQUIREMENT);
+      const own = JSON.parse((await runLoam(p.workDir, "status", "FEAT-1", "--json")).stdout);
+      const row = (own.artifacts as Array<Record<string, unknown>>).find((a) => a.id === "capabilities")!;
+      expect(row).toMatchObject({ capability: "payments", exists: true, empty: true, status: "done" });
+      expect((await runLoam(p.workDir, "status", "FEAT-1")).stdout).toMatch(/not written\s+capabilities/);
+    });
+  });
+
+  it("a delta the archive cannot decode is not called empty — unreadable is not nothing", async () => {
+    // UTF-16 without a BOM: read as 'utf8' it parsed to zero requirements, and
+    // the archive refused a real change as "changes nothing". The strict
+    // decoder refuses it instead, and a refusal reads as "holds something".
+    await withProject(livingService("svc-a"), async (p) => {
+      await touchedScaffold(p);
+      await writeFile(join(p.docsDir, FEAT, "specs/svc-a/spec.md"), Buffer.from(ADDED_REQUIREMENT, "utf16le"));
+      const dry = await runLoam(p.workDir, "archive", "FEAT-1", "--dry-run", "--json");
+      expect(dry.stdout + dry.stderr).not.toContain("delta.changes-nothing");
+      expect(dry.stdout + dry.stderr).not.toContain("delta.no-requirements");
     });
   });
 });

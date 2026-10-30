@@ -29,7 +29,7 @@ export interface DeltaScan {
   /** validate's own label for this axis: `<svc>: requirements` / `<svc>: arch requirements`. */
   label: string;
   bare: Requirement[];
-  /** Every requirement the document holds, of any kind — zero is the scaffold's template and nothing else. */
+  /** Every requirement the document holds, of any kind — zero is typically the scaffold's untouched template. */
   requirements: number;
   scenarios: number;
   /** Operations the non-REMOVED requirements govern. `spec.md` only, like coherence's own `reqOps`. */
@@ -69,6 +69,31 @@ export async function scanDeltas(
     }
   }
   return out;
+}
+
+/**
+ * The requirement documents on disk that hold no requirement, by repo-relative
+ * path — the scan's own (a service's spec.md and arch.spec.md) and the
+ * feature's capability deltas. Per DOCUMENT, never per service: an untouched
+ * spec.md beside a written arch.spec.md is still not written, and the artifact
+ * table must say so of that one file. A capability document that cannot be
+ * read is left out — unreadable is not empty.
+ */
+export async function emptyDocuments(
+  docsDir: DocsDir,
+  scans: readonly DeltaScan[],
+  capabilitySpecs: readonly string[],
+  context: FleetContext,
+): Promise<ReadonlySet<string>> {
+  const empty = new Set(scans.filter((s) => s.requirements === 0).map((s) => s.path));
+  for (const spec of capabilitySpecs) {
+    try {
+      if ((await context.readRequirements(spec)).length === 0) empty.add(repoPath(docsDir, spec));
+    } catch {
+      // Unreadable is not empty: the capability's own findings name the file.
+    }
+  }
+  return empty;
 }
 
 /** Services this feature sends at least one operation to — see contracts.ts's `owesContract`. */

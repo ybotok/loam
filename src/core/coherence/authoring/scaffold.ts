@@ -44,6 +44,7 @@ import {
   SERVICE_DESCRIPTION_SENTINEL,
 } from "./sentinels.js";
 import { OPEN_QUESTIONS_SECTION } from "../../document/intent/questions.js";
+import { decodeDocument } from "../../kernel/document-bytes.js";
 import { emptinessIssues } from "./empty.js";
 
 /** What the placeholder gate reads: the feature's own documents, nothing else. */
@@ -77,7 +78,14 @@ export async function authoringIssues(scope: AuthoringScope): Promise<Issue[]> {
       featureId: scope.featureId,
       svcNames: scope.svcNames,
       drawsArchitecture: scope.drawsArchitecture,
-      read: (path) => requirementsOf(scope, path),
+      // Strictly decoded, unlike `requirementsOf`'s standalone fallback: a
+      // UTF-16 document read as 'utf8' parses to zero requirements, and the
+      // emptiness gate would then call a real change "nothing". The decoder
+      // refuses instead, and empty.ts reads a refusal as "holds something".
+      read: (path) =>
+        scope.context === undefined
+          ? readFile(path).then((bytes) => parseRequirements(decodeDocument(bytes, path)))
+          : scope.context.readRequirements(path),
     })),
   );
 

@@ -1639,6 +1639,10 @@ describe("next.vouch — a draft fleet is owed its first vouch", () => {
     expect(first.command).toBe("loam vouch --service ledger-service");
     expect(first.statement).toContain("services/ledger-service/spec.md has no vouch behind it");
     expect(first.statement).toContain("`loam vouch --pack --service ledger-service`");
+    // Status does not read the fleet map, so it cannot tell whether a service
+    // with no contract owes one: the sentence says so, and only there.
+    expect(first.statement).toContain("It has no openapi.yaml: if anything calls ledger-service, that contract is owed first");
+    expect(payload.next[1]!.statement).not.toContain("openapi.yaml");
     // A person's act, never an agent's: no runnable command is handed over.
     expect(first.execution).toMatchObject({ kind: "human-review", runnable: false, cwd: "service-repo" });
     expect(first.execution.command).toBeUndefined();

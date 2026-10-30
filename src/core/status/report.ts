@@ -136,9 +136,9 @@ export interface ArtifactState {
    */
   required: boolean;
   /**
-   * On a `spec` or `arch-spec` row only, and only when true: the file is there
-   * and holds no requirement — the scaffold's template comment and nothing
-   * else (`delta.no-requirements`). The row then grades as an absent file
+   * On a `spec`, `arch-spec` or `capabilities` row only, and only when true:
+   * the file is there and holds no `### Requirement:` block — typically the
+   * scaffold's untouched template. The row then grades as an absent file
    * would, `missing` where the document is owed, and the human view says "not
    * written" where `exists` alone read as "written". Additive; absent on every
    * other row.

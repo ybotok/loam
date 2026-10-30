@@ -30,7 +30,7 @@ import type { Finding } from "../../vocabulary/report.js";
 import { contractEvidence, contractOwners, contractsHeldElsewhere } from "../contracts.js";
 import { readInterruptedCommit } from "../interrupted.js";
 import type { ArtifactStatus, FeatureStatusReport } from "../report.js";
-import { scanDeltas, type DeltaScan } from "../scan.js";
+import { emptyDocuments, scanDeltas, type DeltaScan } from "../scan.js";
 import { fullyVerified, verificationState } from "../verification.js";
 import { featureArtifacts } from "./artifacts.js";
 import { featureNext, unshippable } from "./next.js";
@@ -101,6 +101,10 @@ export async function featureStatus(
   // moved with it would report a feature `ready` because the one service you
   // asked about happens to be written, while three others have nothing.
   const living = new Map((await enumeratedServices(docsDir, context)).map((s) => [s.id, s]));
+  // Through the context's memo — the same walk `featureFindings` above and
+  // the coherence pass inside it already ran. An archived feature carries no
+  // delta to name, and the walk is one `existsSync` besides.
+  const capabilities = (await context.featureCapabilityDeltas(feature.dir)).docs;
   const graded = featureArtifacts(docsDir, feature, services, {
     blocking,
     verification,
@@ -110,12 +114,10 @@ export async function featureStatus(
     // services/ is broken or missing — an unenumerable fleet is doctor's
     // diagnosis, and here it simply means every service reads as never-adopted.
     living,
-    // Through the context's memo — the same walk `featureFindings` above and
-    // the coherence pass inside it already ran. An archived feature carries no
-    // delta to name, and the walk is one `existsSync` besides.
-    capabilities: (await context.featureCapabilityDeltas(feature.dir)).docs,
-    // A warning, so never in `blocking` — the rows read it from the whole set.
-    unwritten: new Set(findings.filter((f) => f.code === "delta.no-requirements").flatMap((f) => (f.subject === undefined ? [] : [f.subject]))),
+    capabilities,
+    // Off the scan above, per document — the same reads the fleet form makes,
+    // so the two forms cannot disagree about which file is not written.
+    emptyDocs: await emptyDocuments(docsDir, scans, capabilities.map((doc) => doc.spec), context),
   });
   const artifacts =
     narrowed === undefined ? graded : graded.filter((a) => a.service === null || a.service === narrowed);

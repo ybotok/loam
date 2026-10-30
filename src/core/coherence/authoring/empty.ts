@@ -44,12 +44,14 @@ export interface EmptinessScope {
   svcNames: PathableService[];
   /**
    * Whether `delta.likec4` carries anything the landscape merge would splice —
-   * a tagged element or relationship — or could not be read at all. An
-   * unreadable delta proves nothing either way, and `delta.invalid` refuses it
-   * already, so it counts as a change rather than as an absence.
+   * a tagged element or relationship — or is already refused by a finding of
+   * its own: it could not be read (`delta.invalid`), or it declares things and
+   * tags none (`delta.nothing-tagged`). Those prove nothing either way and
+   * already block the archive, so they count as a change rather than as an
+   * absence: one breach, one finding.
    */
   drawsArchitecture: boolean;
-  /** One requirement document's requirements, through the invocation's read index when there is one. */
+  /** One requirement document's requirements, strictly decoded — a throw reads as "holds something". */
   read: (path: string) => Promise<Requirement[]>;
 }
 
@@ -89,7 +91,14 @@ export async function emptinessIssues(scope: EmptinessScope): Promise<Issue[]> {
 /** Does any of these requirement documents hold a requirement — of any kind? */
 async function holdsRequirement(scope: EmptinessScope, paths: string[]): Promise<boolean> {
   for (const path of paths) {
-    if ((await scope.read(path)).length > 0) return true;
+    try {
+      if ((await scope.read(path)).length > 0) return true;
+    } catch {
+      // Undecodable or unreadable is not empty — the same rule as the walk
+      // below. A UTF-16 delta holding a real requirement used to be called
+      // "nothing" here; the archive's own read refuses it by name instead.
+      return true;
+    }
   }
   return false;
 }
@@ -106,8 +115,10 @@ async function holdsRequirement(scope: EmptinessScope, paths: string[]): Promise
  * feature. What it accounts for is the scaffold's own shape: the intent (which
  * says why, and changes nothing), the verification record (which answers
  * claims, and changes nothing), and the requirement documents — a service's
- * spec.md or arch.spec.md, a capability's spec.md — which change something
- * exactly when they hold a requirement.
+ * spec.md or arch.spec.md, a capability's spec.md — which change nothing while
+ * they hold no requirement. (One that holds only BASE requirements changes
+ * nothing either, and counts as holding something here: `delta.no-delta-sections`
+ * already refuses it, and this gate stays on the quiet side of every doubt.)
  */
 async function changesAnything(scope: EmptinessScope): Promise<boolean> {
   const record = recordLocation(scope.featureDir);

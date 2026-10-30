@@ -20,7 +20,9 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   `adoption: partial`) and that carries no vouch stamp. Like `next.revouch`, its `execution` is
   `kind: "human-review"`, `runnable: false`, `cwd: "service-repo"`: an agent prepares
   `loam vouch --pack --service <id>` and a person vouches. A spec naming no `sources:` says so in the
-  step's sentence, since `loam vouch` refuses without them. The steps ride in `serviceSteps[]` like
+  step's sentence, since `loam vouch` refuses without them; so does a service with no openapi.yaml,
+  since status does not read the fleet map that says whether a caller makes the contract owed first
+  (`loam list --needs-work` does). The steps ride in `serviceSteps[]` like
   every other rung, and the human view folds many into one counted line
   (`next.vouch ×N: N services documented and never vouched`).
 - **What moves after upgrading.** A fleet with any unvouched, complete service now ends its
@@ -37,11 +39,14 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   **`delta.no-requirements`** (subject: the service), fires on every service whose requirement
   delta — spec.md, arch.spec.md, or both — holds no `### Requirement:` block and whose delta carries
   no flow: the feature-side twin of `spec.no-requirements`. It never gates.
-- **`loam status` grades such a document as it grades an absent one.** Its artifact row is
-  `status: "missing"` where the spec is owed, keeps `exists: true`, and carries a new key,
-  **`empty: true`** (on `spec` and `arch-spec` rows only); the human table says `not written`, the
-  feature's stage is `missing` and `next.author-spec` is the step. The repository-wide form lists
-  `<svc>/spec` under the feature's `missing` for the same file.
+- **`loam status` grades such a document as it grades an absent one, per document.** Its artifact
+  row is `status: "missing"` where the spec is owed, keeps `exists: true`, and carries a new key,
+  **`empty: true`** (on `spec`, `arch-spec` and `capabilities` rows); the human table says
+  `not written`, the feature's stage is `missing` and `next.author-spec` is the step. An untouched
+  spec.md beside a written arch.spec.md, or an untouched capability template beside real work,
+  reads `not written` and owes nothing. The repository-wide form lists `<svc>/spec` under the
+  feature's `missing` exactly when the feature form owes it. A delta loam cannot decode is never
+  called empty.
 - **`loam archive` refuses a feature that changes nothing.** A new warning that gates,
   **`delta.changes-nothing`**, fires when delta.likec4 tags no element or relationship, no
   requirement delta (a service's or a capability's) holds a requirement, and the feature carries no

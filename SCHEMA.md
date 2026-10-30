@@ -1388,11 +1388,13 @@ two checked files:
   digest — nobody has ever stamped it). All warnings: staleness is a signal, and only a person can
   say whether the doc is still right. A service whose spec.md and model.likec4 are written and that
   carries no stamp is owed its FIRST vouch, and every fleet readout says so: `loam list` grades it
-  below `vouched` and `--needs-work` names `loam vouch --service <id>`, and `loam status` emits one
+  below `vouched` and `--needs-work` names what stands before the stamp, and `loam status` emits one
   `next.vouch` per such service — a human review, never a runnable step, whose sentence names a
   missing `sources:` list first because `loam vouch` refuses without one — instead of
   `next.fleet-clean`. A service still owed `next.adopt` or `next.complete-service` is not asked for
-  a vouch yet.
+  a vouch yet. Whether a service with no `openapi.yaml` owes one turns on who calls it, which only
+  the fleet map says and `loam status` does not parse; its `next.vouch` sentence carries that
+  caveat, and `--needs-work`, which reads the map, names the contract first where it is owed.
 - `content_digest` — written by `loam vouch`, never by hand, like its siblings: a hash of the
   document's OWN body, so the stamp covers the words as well as the code. Editing a spec after it
   was vouched used to leave `status: verified` standing over prose nobody read — the exact forgery
@@ -2492,8 +2494,9 @@ emptiness-by-accident:
   delta's `#external` producer owes no requirement delta, and neither does the stub of a living
   element (whose living tags the merge keeps, so a re-declared `#external` system stays external
   whatever the stub says). The line is drawn at content here too: a `specs/<svc>/spec.md` or
-  `arch.spec.md` holding no `### Requirement:` block — the scaffold's template comment and nothing
-  else — is a delta in name only. It gets `delta.no-requirements`, a warning that never gates (the
+  `arch.spec.md` holding no `### Requirement:` block — typically the scaffold's untouched template
+  comment — is a delta in name only. When neither of a service's documents holds one, it gets
+  `delta.no-requirements`, a warning that never gates (the
   feature-side twin of the living `spec.no-requirements`, and silent where the service's delta
   carries a flow instead), and `loam status` grades the document as it grades an absent one: the
   row is `missing` where the spec is owed, `empty: true` beside `exists: true`, and the human view

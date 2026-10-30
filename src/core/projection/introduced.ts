@@ -26,21 +26,6 @@ import { listFeatures, listServices } from "../repo/repo.js";
  * when the service is living, or when no feature in flight names it. Archived
  * features never count: once one archives, the service is living.
  */
-/**
- * What such a service IS, in one clause — "FEAT-101 introduces it (so does
- * FEAT-102), and it is not in the living docs until one of them archives" —
- * for a non-empty `introducedBy`, lead feature first. `loam doctor` and `loam
- * gate` both say it, through here, because the two disagreed: the first deploy
- * of a feature-introduced service met a gate telling its developer to `loam
- * adopt` code nobody had written yet, while doctor in the same repository said
- * there was nothing to adopt.
- */
-export function introducedClause(introducedBy: readonly string[]): string {
-  const [lead, ...others] = introducedBy;
-  const alsoBy = others.length > 0 ? ` (so does ${others.join(", ")})` : "";
-  return `${lead} introduces it${alsoBy}, and it is not in the living docs until ${others.length > 0 ? "one of them" : lead} archives`;
-}
-
 export async function introducingFeatures(
   docsDir: DocsDir,
   service: string,
@@ -50,4 +35,27 @@ export async function introducingFeatures(
   if (living.some((s) => s.id === service)) return [];
   const active = await listFeatures(docsDir, {}, context);
   return active.filter((f) => f.services.some((s) => s === service));
+}
+
+/** Who introduces a service, lead feature first — never empty, so no sentence below can name nobody. */
+export type IntroducedBy = readonly [string, ...string[]];
+
+/**
+ * What such a service IS, in one clause — "FEAT-101 introduces it (so does
+ * FEAT-102), and it is not in the living docs until one of them archives".
+ * `loam doctor` and `loam gate` both say it, through here, because the two
+ * disagreed: the first deploy of a feature-introduced service met a gate
+ * telling its developer to `loam adopt` code nobody had written yet, while
+ * doctor in the same repository said there was nothing to adopt.
+ */
+export function introducedClause(introducedBy: IntroducedBy): string {
+  const [lead, ...others] = introducedBy;
+  const alsoBy = others.length > 0 ? ` (so does ${others.join(", ")})` : "";
+  return `${lead} introduces it${alsoBy}, and it is not in the living docs until ${others.length > 0 ? "one of them" : lead} archives`;
+}
+
+/** Where its documents are until then, as the subject of "… are this service's documents": `FEAT-101's specs/<id>/ are`. */
+export function introducedDocuments(service: string, introducedBy: IntroducedBy): string {
+  const [lead] = introducedBy;
+  return introducedBy.length > 1 ? `the specs/${service}/ of ${introducedBy.join(", ")} are` : `${lead}'s specs/${service}/ are`;
 }

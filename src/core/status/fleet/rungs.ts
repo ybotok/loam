@@ -70,7 +70,12 @@ export function perServiceSteps(services: ServiceEntry[], adoptedBinding: string
   // `loam list --needs-work` on the same tree said five of five owed exactly
   // this (`maturityGaps`). One rung at a time, as that ladder says: a service
   // still owed `next.adopt` or `next.complete-service` is not asked for a vouch
-  // yet. It is a person's act, so the execution contract is a human review
+  // yet. The ladder's contract rung is the one this form cannot ask — whether
+  // an openapi.yaml is owed turns on who calls the service, which needs the
+  // fleet map this form refuses to parse (fleet.ts's header) — so a service
+  // with no openapi.yaml is asked with that caveat in its sentence rather than
+  // vouched over a contract nobody read: `loam list --needs-work` grades it.
+  // It is a person's act, so the execution contract is a human review
   // (`../actions/execution.ts`) — and it does turn the closing entry into
   // `next.fleet-gate`, as `next.revouch` does, because unlike an archived
   // record a person CAN discharge it. A spec naming no `sources:` cannot be
@@ -78,13 +83,18 @@ export function perServiceSteps(services: ServiceEntry[], adoptedBinding: string
   // that first.
   for (const s of services.filter((x) => !undocumented(x) && x.adoption === null && x.has.model && !vouched(x))) {
     const spec = `${serviceTreePath(s)}/spec.md`;
+    const contract = s.has.openapi
+      ? ""
+      : ` It has no openapi.yaml: if anything calls ${s.id}, that contract is owed first (\`loam list --needs-work\` says whether).`;
     perService.push({
       code: "next.vouch",
-      statement: s.sources.declared
-        ? `${spec} has no vouch behind it — nobody has read it against ${s.id}'s code and said it holds. ` +
-          `A person does (\`loam vouch --pack --service ${s.id}\` prepares the reading list) and vouches from ${s.id}'s own repository.`
-        : `${spec} has no vouch behind it, and names no \`sources:\` for one to stamp — list the code it describes in its ` +
-          `frontmatter first (\`loam vouch\` refuses without them), then a person reads it against that code and vouches from ${s.id}'s own repository.`,
+      statement:
+        (s.sources.declared
+          ? `${spec} has no vouch behind it — nobody has read it against ${s.id}'s code and said it holds. ` +
+            `A person does (\`loam vouch --pack --service ${s.id}\` prepares the reading list) and vouches from ${s.id}'s own repository.`
+          : `${spec} has no vouch behind it, and names no \`sources:\` for one to stamp — list the code it describes in its ` +
+            `frontmatter first (\`loam vouch\` refuses without them), then a person reads it against that code and vouches from ${s.id}'s own repository.`) +
+        contract,
       command: `loam vouch --service ${s.id}`,
       service: s.id,
     });

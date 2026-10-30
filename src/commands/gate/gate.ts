@@ -30,7 +30,7 @@ import { listBaseSubdirs, subdirsChangedSince } from "../../core/diff/base-git.j
 import { gateReport } from "../../core/gate/checks.js";
 import { gateSummary, gateVerdict, type GateSince } from "../../core/gate/report.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
-import { introducedClause, introducingFeatures } from "../../core/projection/introduced.js";
+import { introducedClause, introducedDocuments, introducingFeatures } from "../../core/projection/introduced.js";
 import { nearestIds } from "../../core/repo/entries.js";
 import { archiveDir } from "../../core/repo/paths.js";
 import { enumeratedServiceIds, resolveServiceTarget } from "../../core/repo/service-target.js";
@@ -141,17 +141,15 @@ export function registerGate(program: Command): void {
           // create it. The refusal stands (code and exit unchanged: nothing
           // living records the service, so no evidence answers the deploy
           // question), and it says what doctor says, in doctor's words.
-          const introducedBy = (await introducingFeatures(docsDir, resolved.id, fleet)).map((f) => f.id);
-          const lead = introducedBy[0];
+          const [lead, ...others] = (await introducingFeatures(docsDir, resolved.id, fleet)).map((f) => f.id);
           if (lead !== undefined) {
-            const documents =
-              introducedBy.length > 1 ? `the specs/${resolved.id}/ of ${introducedBy.join(", ")} are` : `${lead}'s specs/${resolved.id}/ are`;
             fail(
               json,
               "unknown-service",
-              `'${resolved.id}' is not under ${docsDir}/services/ yet: ${introducedClause(introducedBy)}. ` +
+              `'${resolved.id}' is not under ${docsDir}/services/ yet: ${introducedClause([lead, ...others])}. ` +
                 "Until then no living document records it, so no recorded evidence can answer the deploy question — " +
-                `and there is nothing to adopt: ${documents} this service's documents. \`loam status ${lead}\` says what this repository owes it.`,
+                `and there is nothing to adopt: ${introducedDocuments(resolved.id, [lead, ...others])} this service's documents. ` +
+                `\`loam status ${lead}\` says what this repository owes it.`,
             );
             return;
           }
