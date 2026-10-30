@@ -36,7 +36,7 @@ import { parseFixRows } from "../src/core/explain/fix-tables.js";
 import { explainSubject, knownSubjects, listCodes, listTerms } from "../src/core/explain/lookup.js";
 import { REFUSAL_MEANINGS } from "../src/core/explain/refusals.js";
 import { PIN_SOURCE_TEXT, TERMS } from "../src/core/explain/terms.js";
-import { VALIDATE_CHECKS } from "../src/core/brief/checks.js";
+import { VALIDATE_CHECKS } from "../src/core/brief/checks/checks.js";
 import { collectEmittedCodes, collectStableCodes } from "./helpers/stable-codes.js";
 import { coherentFixture, makeProject, makeTmpDir, runLoam } from "./helpers/harness.js";
 

@@ -28,7 +28,8 @@
  * about the code as well as a fact about the data.
  */
 import { COMMANDS } from "../agent/protocol.js";
-import { VALIDATE_CHECKS, type BriefCheck } from "../brief/checks.js";
+import { VALIDATE_CHECKS } from "../brief/checks/checks.js";
+import type { BriefCheck } from "../brief/checks/check.js";
 import { familyCodes, familyFinding } from "./families.js";
 import { parseFixRows, type FixRow } from "./fix-tables.js";
 import { REFUSAL_MEANINGS } from "./refusals.js";

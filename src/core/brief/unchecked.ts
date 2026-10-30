@@ -1,7 +1,7 @@
 /**
  * What no check will ever tell you. Read it as the list of ways to be wrong
  * quietly. The checks that do exist — the table an adoption baseline actually
- * meets — live in checks.ts; this module is that table's counterpart, split
+ * meets — live in checks/checks.ts; this module is that table's counterpart, split
  * out so each half can grow without crowding the other.
  *
  * The first two entries are here because they used to be `shape` rules on

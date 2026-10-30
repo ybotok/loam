@@ -27,7 +27,7 @@
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { type Elem, type LoadedDoc, type Rel } from "../../../core/c4/likec4.js";
+import { type Elem, type LoadedDoc, type Rel } from "../../../../core/c4/likec4.js";
 import {
   closeIds,
   coversDeployEdge,
@@ -35,17 +35,17 @@ import {
   coversEdge,
   coversElement,
   type CoversEntry,
-} from "../../../core/c4/arch.js";
-import { NO_DEPLOYMENT } from "../../../core/c4/parsed/deployment.js";
-import { taggedDeployment, type TaggedDeployment } from "../../../core/deployment/objects.js";
-import { elementService } from "../../../core/c4/resolve/service.js";
-import { OBLIGATION_TAG_PREFIX, type ObligationVocabulary } from "../../../core/obligations/obligations.js";
-import { servicePathsAt } from "../../../core/repo/paths.js";
-import { type ServiceEntry } from "../../../core/repo/entries.js";
-import { type Finding } from "../../../core/vocabulary/report.js";
-import { FleetContext } from "../../../core/fleet-context.js";
-import { coversEntries } from "../checks/requirements.js";
-import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
+} from "../../../../core/c4/arch.js";
+import { NO_DEPLOYMENT } from "../../../../core/c4/parsed/deployment.js";
+import { taggedDeployment, type TaggedDeployment } from "../../../../core/deployment/objects.js";
+import { elementService } from "../../../../core/c4/resolve/service.js";
+import { OBLIGATION_TAG_PREFIX, type ObligationVocabulary } from "../../../../core/obligations/obligations.js";
+import { servicePathsAt } from "../../../../core/repo/paths.js";
+import { type ServiceEntry } from "../../../../core/repo/entries.js";
+import { type Finding } from "../../../../core/vocabulary/report.js";
+import { FleetContext } from "../../../../core/fleet-context.js";
+import { coversEntries } from "../../checks/requirements.js";
+import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
 
 export interface ObligationCheck {
   docsDir: DocsDir;

@@ -31,7 +31,7 @@ import { AGENTS_MD } from "../src/core/agent/agents-md.js";
 import { AGENT_COMMANDS, PROTOCOLS } from "../src/core/agent/protocol.js";
 import { CODE_MAP } from "../src/core/agent/agents-md/command-map.js";
 import { intentTemplate, specTemplate } from "../src/commands/new/templates.js";
-import { VALIDATE_CHECKS } from "../src/core/brief/checks.js";
+import { VALIDATE_CHECKS } from "../src/core/brief/checks/checks.js";
 import { UNCHECKED } from "../src/core/brief/unchecked.js";
 import { loadFile } from "../src/core/c4/likec4.js";
 import { explainSubject } from "../src/core/explain/lookup.js";

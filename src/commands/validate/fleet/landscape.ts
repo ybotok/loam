@@ -21,7 +21,7 @@ import { FleetContext } from "../../../core/fleet-context.js";
 import { capabilityFleetFindings, fleetShapeFindings, permissionFindings } from "../checks/fleet-shape.js";
 import { fleetLinkFindings } from "../links/corpus.js";
 import { glossaryFindings } from "../links/glossary.js";
-import { obligationFindings, obligationVocabularyFindings } from "./obligations.js";
+import { obligationFindings, obligationVocabularyFindings } from "./obligations/obligations.js";
 import { readObligations } from "../../../core/obligations/obligations.js";
 import { obligationsPath } from "../../../core/repo/paths.js";
 import { EXTERNAL_TAG } from "../../../core/vocabulary/maturity.js";

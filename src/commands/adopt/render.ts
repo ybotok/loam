@@ -9,7 +9,7 @@
  */
 import { SEVERITY_MARK } from "../../core/vocabulary/report.js";
 import { type Brief } from "../../core/brief/brief.js";
-import { VIA_ALL, type BriefCheck } from "../../core/brief/checks.js";
+import { VIA_ALL, type BriefCheck } from "../../core/brief/checks/check.js";
 import type { BriefTarget } from "../../core/brief/targets.js";
 
 /* ------------------------------------------------------------------ */

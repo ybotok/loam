@@ -25,7 +25,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { validateService } from "../src/commands/validate/service/service.js";
-import { VALIDATE_CHECKS } from "../src/core/brief/checks.js";
+import { VALIDATE_CHECKS } from "../src/core/brief/checks/checks.js";
 import { FleetContext } from "../src/core/fleet-context.js";
 import { rawServiceId } from "../src/core/kernel/ids/service.js";
 import { LANDSCAPE, LIVING_OPENAPI, LIVING_SPEC, makeProject, runLoam, type Project } from "./helpers/harness.js";
