@@ -873,6 +873,11 @@ describe("a table the emitter cannot read is flagged, never silently prose", () 
     const gfm = scenarioGherkin([...STEPS, "", ...GFM]);
     expect(gfm.malformedExamples).toBe(false);
     expect(gfm.examples?.rows).toHaveLength(2);
+    // A pipe line over a readable table does not swallow it: the run stops at
+    // the `|---|` row and hands its header back.
+    const over = scenarioGherkin([...STEPS, "", "| note | here |", ...GFM]);
+    expect(over.examples?.header).toEqual(["situation", "code"]);
+    expect(over.malformedExamples).toBe(false);
   });
 
   it("the gate reports both flags as their own warnings, one detail per scenario", () => {

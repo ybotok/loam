@@ -39,14 +39,18 @@ One finding code was added, `gherkin.edited` (warn). No flag and no payload key 
   compares it with the file on disk**, scenario by scenario. A `Then` weakened or inverted by hand,
   an added step or scenario, or a `Background` above them all is `gherkin.edited`, naming the file
   and, in `details[]`, the scenarios; a suite that used to read `gherkin.current` with such an edit
-  now warns. Only files stamped by the running loam version are compared, a scenario whose spec
-  moved stays `gherkin.stale`'s, and the requirement's prose (the feature description) is compared
-  by structure only, so rewording a requirement body is not an edit. An in-flight file is compared
-  with its feature's delta — the staleness checks still skip it.
+  now warns. Scenarios are matched by digest across the whole emission, so renaming or moving the
+  file does not hide an edit. Only files stamped by the running loam version are compared, and
+  `gherkin.current` counts the ones it skipped; a scenario whose spec moved stays `gherkin.stale`'s;
+  and what no digest covers is not an edit — a scenario retitled in the spec, or a reworded
+  requirement body (the feature description, compared by structure only). An in-flight file is
+  compared with its feature's delta — the staleness checks still skip it.
 - **`loam verify <FEAT> --service <id> --results <report>` withholds a runner confirmation of an
   edited scenario**: the claim is recorded `unconfirmed`, `answered_by: runner`, with a note naming
   the file and its regeneration. A weakened scenario keeps its digest and its step count, so the
-  report alone could not tell. Step definitions are not compared; the finding says so.
+  report alone could not tell. Step definitions are not compared; the finding says so. A living
+  spec or delta that is not UTF-8 refuses the record with `repository-unavailable`, as
+  `loam gherkin` does, rather than answering from a suite nothing could check.
 - The `loam-implement` protocol said `loam validate` reports the suite stale "by digest", which read
   as covering edits; it now names `gherkin.edited` and the step-definition gap.
 

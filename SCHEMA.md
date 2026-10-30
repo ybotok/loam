@@ -2414,11 +2414,13 @@ the same words). Four warnings — never gates, `--strict` is the CI escalation 
 - `gherkin.edited` — a file whose text is not what this loam emits for it: each stamped file is
   re-emitted in memory (the emission is deterministic) and compared scenario by scenario, so a
   weakened or inverted `Then`, an added step or scenario, or a `Background` above them all is named
-  — none of which moves a digest. Only a file stamped by the running version is compared (an older
-  emitter's bytes are not an edit), a scenario whose digest moved is `gherkin.stale`'s rather than an
-  edit, and the requirement's prose — the feature description, in no digest — is compared by
-  structure only, so a reworded requirement body is not one either. An in-flight file is compared
-  with its feature's delta. `loam verify --results` then refuses to confirm the edited scenarios.
+  — none of which moves a digest. Scenarios are matched by digest across the whole emission, so a
+  file renamed or moved by hand, or one whose requirement an in-flight delta renamed, is still
+  compared. Only a file stamped by the running version is compared (an older emitter's bytes are not
+  an edit; `gherkin.current` counts the files it skipped), a scenario whose digest moved is
+  `gherkin.stale`'s rather than an edit, and what no digest covers is not graded as one: a
+  scenario's title, and the requirement's prose — the feature description, compared by structure
+  only. An in-flight file is compared with its feature's delta. `loam verify --results` then refuses to confirm the edited scenarios.
   Step definitions are not compared: they are the team's code, and one that checks less than its
   step says stays invisible to this check.
 

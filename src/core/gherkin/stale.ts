@@ -15,19 +15,16 @@ import { readdir, readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import type { PathableService } from "../kernel/ids/service.js";
 import { isFeatureId } from "../kernel/ids/feature.js";
-import { featureSpecPaths, SPEC_AXES, type SpecAxis } from "../repo/paths.js";
-import { locateServicePaths } from "../repo/service-target.js";
 import { listFeatures } from "../repo/repo.js";
 import type { FeatureEntry } from "../repo/entries.js";
 import { entryIs, markDescended } from "../repo/tree/fs.js";
 import type { FleetContext } from "../fleet-context.js";
-import type { Requirement } from "../document/spec.js";
 import type { Finding } from "../vocabulary/report.js";
 import { UnsafePathError } from "../kernel/path-safety.js";
 import { LOAM_VERSION } from "../envelope/version.js";
 import { gherkinRoot, scenarioDigest } from "./stamp.js";
-import { axisLabel, planEmission } from "./emit.js";
-import { featureSegments, handEdits, parseStampedFeature, type StampedFeature } from "./read.js";
+import { axisLabel, emissionInput, planEmission, type ByAxis } from "./emit.js";
+import { featureSegments, handEdits, parseStampedFeature, type FeatureSegments, type StampedFeature } from "./read.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 
 /** Where a service's generated suite is, and what it answers to. */
@@ -39,9 +36,6 @@ export interface SuiteContext {
   gherkinDir?: string;
   fleet: FleetContext;
 }
-
-/** What an emission plan is made from: the requirements of each spec axis. */
-type ByAxis = Array<{ axis: SpecAxis; reqs: Requirement[] }>;
 
 /** One stamped file of the suite, read once for every check below. */
 interface SuiteFile {
@@ -80,9 +74,10 @@ interface SuiteFile {
  * - `gherkin.orphaned` — a whole file whose requirement no longer exists in
  *   its axis's living spec; reported once per file, because every scenario in
  *   it is moot together.
- * - `gherkin.edited` — a file whose stamps all still name current words, and
- *   whose text is not what this loam writes for them ({@link suiteEdits}). An
- *   in-flight file is graded here too, against its own feature's delta.
+ * - `gherkin.edited` — a file whose text, under a stamp that still names
+ *   current words, is not what this loam writes for those words
+ *   ({@link suiteEdits}). An in-flight file is graded here too, against its own
+ *   feature's delta.
  *
  * Digests are content identity within one service and one axis, deliberately:
  * two identically-worded scenarios of one service's one axis share one digest,
@@ -188,12 +183,14 @@ export async function gherkinFindings(ctx: SuiteContext): Promise<Finding[]> {
       });
     }
   }
-  for (const edit of await suiteEdits(ctx, { suite, living, features })) findings.push(editedFinding(ctx.service, edit));
+  const { edits, uncompared } = await suiteEdits(ctx, { suite, living, features });
+  for (const edit of edits) findings.push(editedFinding(ctx.service, edit));
   if (findings.length === 0) {
+    const older = uncompared === 0 ? "" : `; ${uncompared} stamped by another loam version, not compared for hand edits until regenerated`;
     findings.push({
       severity: "ok",
       code: "gherkin.current",
-      message: `${ctx.service}: generated gherkin current (${suite.length} file(s), ${stampedScenarios} stamped scenario(s) agree with the living specs)`,
+      message: `${ctx.service}: generated gherkin current (${suite.length} file(s), ${stampedScenarios} stamped scenario(s) agree with the living specs${older})`,
     });
   }
   return findings;
@@ -234,54 +231,72 @@ export async function generatedEdits(ctx: SuiteContext): Promise<GeneratedEdit[]
   if (!existsSync(root)) return [];
   const suite = await readSuite(root, ctx.repoDir);
   const living = await emissionInput(ctx);
-  return suiteEdits(ctx, { suite, living, features: await listFeatures(ctx.docsDir, {}, ctx.fleet) });
+  return (await suiteEdits(ctx, { suite, living, features: await listFeatures(ctx.docsDir, {}, ctx.fleet) })).edits;
+}
+
+/** One emission plan, read back the way the files on disk are. */
+interface PlanRead {
+  all: FeatureSegments[];
+  /** By axis and requirement name — the first file the plan writes for it. */
+  requirements: Map<string, FeatureSegments>;
 }
 
 /**
  * Re-emit each stamped file in memory and compare — the check the stamp line
  * has always asked for ("do not hand-edit") and nothing performed. Emission is
  * deterministic to the byte, so what `loam gherkin` would write today IS what
- * the file held when it was written, wherever the spec has not moved since; a
- * scenario whose spec did move is `gherkin.stale`'s, and `./read.ts`'s
- * `handEdits` skips it rather than call it an edit.
+ * the file held when it was written, for every scenario whose digest still
+ * names current words; a scenario whose body moved is `gherkin.stale`'s, and
+ * `./read.ts`'s `handEdits` skips it rather than call it an edit.
  *
  * Only a file stamped by THIS version is compared. An emitter change between
  * releases rewrites bytes nobody touched, and grading an older file against
- * newer output would accuse every file in the suite at once; an older stamp
- * says nothing that regenerating would not, so it is left alone.
+ * newer output would accuse every file in the suite at once. The skip is
+ * counted rather than silent: `gherkin.current` says how many files it did not
+ * compare, because a suite nobody regenerated since the upgrade is a suite this
+ * check is not looking at.
  *
  * The reference follows the staleness half's carve-out: a file tagged with a
  * feature in flight is compared with that feature's delta as `loam gherkin
  * <FEAT>` emits it; any other with the living specs, carrying the feature tag
  * it already has (an archived feature's files keep theirs until regenerated).
- * A file whose name the reference plans for a different requirement is not
- * this check's question — orphan and stale grading own it.
+ * Scenarios are matched across the whole plan, so a file renamed or moved by
+ * hand is still compared; its header is compared with the plan's file for the
+ * same requirement, and only when the plan writes one.
  */
 async function suiteEdits(
   ctx: SuiteContext,
   read: { suite: SuiteFile[]; living: ByAxis; features: FeatureEntry[] },
-): Promise<GeneratedEdit[]> {
-  const plans = new Map<string, Map<string, string>>();
-  const plan = async (owner: FeatureEntry | undefined, tag: string | undefined): Promise<Map<string, string>> => {
+): Promise<{ edits: GeneratedEdit[]; uncompared: number }> {
+  const plans = new Map<string, PlanRead>();
+  const plan = async (owner: FeatureEntry | undefined, tag: string | undefined): Promise<PlanRead> => {
     const key = `${owner?.id ?? ""}|${tag ?? ""}`;
     const known = plans.get(key);
     if (known !== undefined) return known;
     const byAxis = owner === undefined ? read.living : await emissionInput(ctx, owner);
-    const planned = planEmission(byAxis, { service: ctx.service, featureTag: tag, version: LOAM_VERSION });
-    const out = new Map(planned.map((p) => [`${p.fileName}\n${p.requirement.name}`, p.content]));
+    const out: PlanRead = { all: [], requirements: new Map() };
+    for (const p of planEmission(byAxis, { service: ctx.service, featureTag: tag, version: LOAM_VERSION })) {
+      const cut = featureSegments(p.content)!;
+      const req = `${axisLabel(p.axis)}\n${p.requirement.name}`;
+      out.all.push(cut);
+      if (!out.requirements.has(req)) out.requirements.set(req, cut);
+    }
     plans.set(key, out);
     return out;
   };
   const edits: GeneratedEdit[] = [];
-  for (const { rel, name, text, file } of read.suite) {
-    if (file.version !== LOAM_VERSION) continue;
-    const owner = read.features.find((f) => file.tags.includes(f.id));
-    const tag = owner?.id ?? file.tags.find((t) => isFeatureId(t));
-    const emitted = (await plan(owner, tag)).get(`${name}\n${file.featureName ?? ""}`);
+  let uncompared = 0;
+  for (const { rel, text, file } of read.suite) {
     const disk = featureSegments(text);
-    const want = emitted === undefined ? null : featureSegments(emitted);
-    if (disk === null || want === null) continue;
-    const found = handEdits(disk, want);
+    if (disk === null) continue;
+    if (file.version !== LOAM_VERSION) {
+      uncompared += 1;
+      continue;
+    }
+    const owner = read.features.find((f) => file.tags.includes(f.id));
+    const reference = await plan(owner, owner?.id ?? file.tags.find((t) => isFeatureId(t)));
+    const req = `${file.tags.includes("architecture") ? "arch" : "business"}\n${file.featureName ?? ""}`;
+    const found = handEdits(disk, { file: reference.requirements.get(req) ?? null, all: reference.all });
     const touched = disk.scenarios.filter((s) => found.header || found.digests.includes(s.digest));
     if (!found.header && touched.length === 0) continue;
     edits.push({
@@ -292,7 +307,7 @@ async function suiteEdits(
       header: found.header,
     });
   }
-  return edits;
+  return { edits, uncompared };
 }
 
 /**
@@ -317,26 +332,6 @@ function editedFinding(service: PathableService, edit: GeneratedEdit): Finding {
     details: edit.scenarios,
     text: { detailPrefix: "- " },
   };
-}
-
-/**
- * The requirement set per axis exactly as `loam gherkin` takes it — the living
- * specs minus REMOVED, or one feature's ADDED and MODIFIED for this service —
- * so the edit check re-emits from the same input the writer read.
- */
-async function emissionInput(ctx: SuiteContext, feature?: FeatureEntry): Promise<ByAxis> {
-  const paths =
-    feature === undefined
-      ? await locateServicePaths(ctx.docsDir, ctx.service, ctx.fleet)
-      : featureSpecPaths(feature.dir, ctx.service);
-  const keep = (r: Requirement): boolean =>
-    feature === undefined ? r.kind !== "REMOVED" : r.kind === "ADDED" || r.kind === "MODIFIED";
-  const out: ByAxis = [];
-  for (const axis of SPEC_AXES) {
-    const path = paths[axis.key];
-    out.push({ axis, reqs: existsSync(path) ? (await ctx.fleet.readRequirements(path)).filter(keep) : [] });
-  }
-  return out;
 }
 
 /** Every stamped `.feature` under `root`, read and parsed once. Unstamped files are not loam's, and are absent. */

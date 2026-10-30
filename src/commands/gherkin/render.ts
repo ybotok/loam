@@ -50,8 +50,9 @@ const LOSSES = [
     of: (a: ActionRow): string[] => (a.action === "kept" ? [] : a.malformedExamples),
     why:
       "has a table loam could not read as Examples — the header needs its `|---|` delimiter row, every " +
-      "row the header's column count, and at least one row under it; or an `Examples:` line, which " +
-      "the margin table replaces. It stayed in the description, so this scenario runs ONCE, not once per case",
+      "row the header's column count, and at least one row under it — so it stayed in the description and " +
+      "this scenario runs ONCE, not once per case; or an `Examples:` line, which makes cucumber refuse the " +
+      "file: delete it, the margin table IS the Examples",
   },
   {
     of: (a: ActionRow): string[] => (a.action === "kept" ? [] : a.strandedBlocks),

@@ -288,8 +288,9 @@ function unreadFindings(label: string, subject: string, reqs: Requirement[]): Fi
       code: "requirements.examples-malformed",
       subject,
       message:
-        `${label}: ${malformed.length} scenario(s) have a table at the margin that cannot be read as \`Examples\` — ` +
-        `so it stays description and the scenario runs ONCE, not once per row, with any \`<placeholder>\` reaching the step as literal text. ` +
+        `${label}: ${malformed.length} scenario(s) have a table at the margin that cannot be read as \`Examples\`, or an \`Examples:\` line. ` +
+        `An unread table stays description, so the scenario runs ONCE, not once per row, with any \`<placeholder>\` reaching the step as literal text; ` +
+        `an \`Examples:\` line kept as description makes cucumber refuse the whole file. ` +
         `A table needs its \`|---|\` delimiter row under the header (the \`.feature\` habit of leaving it out does not render as a table in Markdown), ` +
         `every row the header's column count, and at least one row; write no \`Examples:\` line — the table at the margin IS the Examples.`,
       details: malformed,

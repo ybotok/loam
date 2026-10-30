@@ -16,8 +16,13 @@
  *
  * Step definitions are outside this by nature: they are the team's code, and
  * loam reads no code.
+ *
+ * A spec the comparison cannot decode is a refusal, not a pass: answering
+ * from a suite nobody could check is the silence this module exists to end,
+ * and `loam gherkin` refuses the same bytes the same way.
  */
-import { generatedEdits, type SuiteContext } from "../../gherkin/stale.js";
+import { NotUtf8DocumentError } from "../../kernel/document-bytes.js";
+import { generatedEdits, type GeneratedEdit, type SuiteContext } from "../../gherkin/stale.js";
 import { scenarioDigestTag } from "../../gherkin/stamp.js";
 import { type Answer } from "../answers.js";
 import { type Claim } from "../checklist.js";
@@ -26,16 +31,22 @@ export async function withdrawEdited(
   answers: Answer[],
   claims: readonly Claim[],
   suite: SuiteContext,
-): Promise<Answer[]> {
-  const edits = await generatedEdits(suite);
-  if (edits.length === 0) return answers;
+): Promise<{ ok: true; answers: Answer[] } | { ok: false; message: string }> {
+  let edits: GeneratedEdit[];
+  try {
+    edits = await generatedEdits(suite);
+  } catch (err) {
+    if (!(err instanceof NotUtf8DocumentError)) throw err;
+    return { ok: false, message: `Cannot check the generated suite for hand edits: ${err.message}` };
+  }
+  if (edits.length === 0) return { ok: true, answers };
   const editedAt = new Map<string, { rel: string; regen: string }>();
   for (const e of edits) {
     const regen = e.owner === null ? `loam gherkin --service ${suite.service}` : `loam gherkin ${e.owner}`;
     for (const d of e.digests) editedAt.set(d, { rel: e.rel, regen });
   }
   const digestOf = new Map(claims.map((c) => [c.id, c.digest]));
-  return answers.map((a) => {
+  const withdrawn = answers.map((a): Answer => {
     const digest = digestOf.get(a.id);
     const edit = digest === undefined ? undefined : editedAt.get(digest);
     if (a.verdict !== "confirmed" || digest === undefined || edit === undefined) return a;
@@ -49,4 +60,5 @@ export async function withdrawEdited(
       answered_by: a.answered_by,
     };
   });
+  return { ok: true, answers: withdrawn };
 }

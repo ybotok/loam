@@ -163,7 +163,9 @@ export async function record(
     // A green run of a hand-edited generated scenario answers nothing — see core/verify/evidence/edited.ts.
     if (service !== undefined) {
       const suite = { docsDir, service, repoDir, gherkinDir: attestor.gherkinDir, fleet: new FleetContext() };
-      fromRunner = await withdrawEdited(fromRunner, runnerClaims, suite);
+      const held = await withdrawEdited(fromRunner, runnerClaims, suite);
+      if (!held.ok) return fail(json, "repository-unavailable", held.message);
+      fromRunner = held.answers;
     }
   }
   if (opts.contractResults !== undefined) {

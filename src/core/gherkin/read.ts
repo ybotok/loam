@@ -154,17 +154,35 @@ export interface HandEdits {
   digests: string[];
 }
 
+/** What a file on disk is compared against: the emission it should be, and everything the same plan emits. */
+export interface EmittedReference {
+  /** The planned file for the same requirement, or null when the plan writes none — its header is then not compared. */
+  file: FeatureSegments | null;
+  /** Every file the plan writes. Scenarios are matched by digest across all of them, wherever they sit. */
+  all: readonly FeatureSegments[];
+}
+
 /**
- * Where a stamped file on disk differs from `emitted`, the bytes this loam
- * writes for the same requirement — compared scenario by scenario, keyed on
- * the digest each segment carries.
+ * Where a stamped file on disk differs from what this loam emits — compared
+ * scenario by scenario, keyed on the digest each segment carries.
  *
- * A scenario whose digest the emission does not hold is NOT an edit and is
- * skipped: that is the spec moving under the file, `gherkin.stale`'s finding,
- * and calling it a hand edit would send the reader looking for a person who
- * never touched it. Within a segment the comparison is exact, apart from
- * trailing whitespace and trailing blank lines — an editor's save, not a
- * different test.
+ * The scenarios are looked up across the WHOLE plan rather than in one planned
+ * file, because a segment renders from its scenario's body alone: a digest is
+ * written the same way in whatever file it lands. Keyed by file, the check
+ * switched itself off for every file whose name the plan no longer spells — one
+ * renamed or moved by hand, one whose requirement an in-flight delta renamed,
+ * one a sibling's reordering renumbered — while neither orphan nor stale
+ * grading said anything about them either.
+ *
+ * A scenario whose digest the plan does not hold is NOT an edit and is skipped:
+ * that is the spec moving under the file, `gherkin.stale`'s finding, and calling
+ * it a hand edit would send the reader looking for a person who never touched
+ * it. Within a segment the comparison is exact, apart from trailing whitespace
+ * and trailing blank lines — an editor's save, not a different test — and apart
+ * from the scenario's own NAME, which, like the requirement's prose, is in no
+ * digest: a scenario retitled in the spec keeps its stamp, and its file is no
+ * more edited than before. An untagged `Scenario:` further down a segment is
+ * compared in full, because that one is a scenario somebody added.
  *
  * The header is the one region compared by SHAPE. Its description is the
  * requirement's own prose, which is in no digest — a spec edit to it moves no
@@ -174,22 +192,27 @@ export interface HandEdits {
  * description (a `Background:`, a `Rule:`, a scenario with no digest), which
  * is how a hand-added Background that seeds every scenario's state is caught.
  */
-export function handEdits(onDisk: FeatureSegments, emitted: FeatureSegments): HandEdits {
-  const pool = new Map<string, string[][]>();
-  for (const s of emitted.scenarios) pool.set(s.digest, [...(pool.get(s.digest) ?? []), significant(s.lines)]);
+export function handEdits(onDisk: FeatureSegments, emitted: EmittedReference): HandEdits {
+  const pool = new Map<string, string[]>();
+  for (const f of emitted.all) for (const s of f.scenarios) if (!pool.has(s.digest)) pool.set(s.digest, comparable(s.lines));
   const digests: string[] = [];
   for (const s of onDisk.scenarios) {
-    const want = pool.get(s.digest)?.shift();
-    if (want === undefined) continue;
-    if (!sameLines(significant(s.lines), want)) digests.push(s.digest);
+    const want = pool.get(s.digest);
+    if (want !== undefined && !sameLines(comparable(s.lines), want)) digests.push(s.digest);
   }
-  return { header: !sameLines(executable(onDisk.header), executable(emitted.header)), digests };
+  const header = emitted.file !== null && !sameLines(executable(onDisk.header), executable(emitted.file.header));
+  return { header, digests };
 }
 
-/** Trailing whitespace off every line, trailing blank lines off the end. */
-function significant(lines: string[]): string[] {
+/**
+ * A segment as it is compared: trailing whitespace off every line, trailing
+ * blank lines off the end, and its own `Scenario:` line cut to the keyword.
+ */
+function comparable(lines: string[]): string[] {
   const out = lines.map((l) => l.trimEnd());
   while (out.length > 0 && out[out.length - 1] === "") out.pop();
+  const heading = out.findIndex((l) => SCENARIO_RE.test(l));
+  if (heading >= 0) out[heading] = /^\s*Scenario(?: Outline)?:/.exec(out[heading]!)![0]!;
   return out;
 }
 

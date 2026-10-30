@@ -274,6 +274,10 @@ function tableAt(lines: string[], i: number): { indent: number; end: number; row
  * habit produces was the one shape nothing reported. Equal widths are the whole
  * test: a header followed by rows of other widths is not recognisably a table,
  * and prose that happens to sit between pipes must stay prose.
+ *
+ * The run stops short of a `|---|` row and gives back the line above it: that
+ * line is the HEADER of a readable table, and swallowing it would turn a
+ * working outline into an unreadable one because a pipe line sat over it.
  */
 function delimiterless(
   lines: string[],
@@ -285,6 +289,10 @@ function delimiterless(
   for (let j = i + 1; j < lines.length; j += 1) {
     const row = cellsOf(lines[j]!);
     if (row === null || row.length !== width) break;
+    if (isSeparator(row)) {
+      end = j - 2;
+      break;
+    }
     end = j;
   }
   return end > i ? { indent, end, rows: null } : null;
