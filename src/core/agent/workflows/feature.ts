@@ -1,4 +1,5 @@
 import type { CommandContent } from "../contract.js";
+import { QUOTED_TEXT_RULE } from "../../envelope/quoted.js";
 
 /** Starting a feature: explore, scaffold, author the three axes, rebase, validate. */
 export const LOAM_FEATURE: CommandContent = {
@@ -37,6 +38,8 @@ export const LOAM_FEATURE: CommandContent = {
   // a check pretending to would be the false green this tool exists to refuse,
   // so the step asks for questions and leaves the answers to a person.
   body: `Start a new feature in the loam docs repo (its path is \`docsDir\` in ./loam.json).
+
+${QUOTED_TEXT_RULE}
 
 0. First decide whether this needs a feature at all. A change that touches no
    requirement, no operation and no fleet edge — a refactor, a dependency bump,

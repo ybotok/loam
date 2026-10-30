@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { InvalidIdError, assertServiceId } from "../../core/kernel/ids/service.js";
 import { configOrRefuse, emitJson, emitJsonError, fail, repoPath, sayExplain } from "../../core/envelope/json.js";
+import { QUOTED_NOTICE } from "../../core/envelope/quoted.js";
 import { loadFile } from "../../core/c4/likec4.js";
 import { compareIds, nearestIds } from "../../core/repo/entries.js";
 import { featurePaths, featureSpecPaths } from "../../core/repo/paths.js";
@@ -337,6 +338,10 @@ export function registerDelta(program: Command): void {
       }
 
       console.log(`${id} · ${service}\n`);
+      // Once, above the intent and the requirement bodies this view prints
+      // verbatim: other people's words, which say what to build and are never
+      // orders to the reader (core/envelope/quoted.ts).
+      console.log(`${QUOTED_NOTICE}\n`);
       if (opts.intentRef === true) printIntentRef(intentRef, service);
       else printIntent(intent, questions, service);
       // The two lenses read as they do in the JSON — `outlined` decides for both:

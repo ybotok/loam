@@ -1,4 +1,5 @@
 import type { CommandContent } from "../contract.js";
+import { QUOTED_TEXT_RULE } from "../../envelope/quoted.js";
 
 /** The adoption protocol: write one service's baseline docs from its code, as draft. */
 export const LOAM_ADOPT: CommandContent = {
@@ -23,6 +24,8 @@ export const LOAM_ADOPT: CommandContent = {
   body: `Write one service's baseline documentation into the loam docs repo (its path is
 \`docsDir\` in ./loam.json). You read the code; loam states the work and checks the
 result. It never reads the service — so anything you cannot show, do not write.
+
+${QUOTED_TEXT_RULE}
 
 **The bar this artifact set aims at is reproducibility**: a reader should be able
 to answer, from these files alone — what this boundary exposes, what it reaches,

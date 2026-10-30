@@ -110,7 +110,7 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/kernel/` | `ids/` (service feature dirs) `path-safety` `records` `document-bytes` `concurrency` | nothing |
 | `core/owners/` | the deliberately small CODEOWNERS subset behind `loam list --owners`: directory-pattern rules, parsed fail-closed, last match winning | nothing |
 | `core/scaffold/` | the CONTENT of the templates a brand-new docs repo is laid down with — the starting `landscape` and `readme` — as against `docs.ts`, which says what a docs repo is made of | nothing |
-| `core/envelope/` | `json` `config` `version` | kernel |
+| `core/envelope/` | `json` `config` `version` `quoted` | kernel |
 | `core/obligations/` | the fleet's architectural-obligation vocabulary, which a `#obl-<name>` tag on the map or on a fleet flow resolves against or is refused by | kernel |
 | `core/permissions/` | the fleet authorization vocabulary joined by `Requires:` | kernel |
 | `core/vocabulary/` | `issue` `report` `health` `steps` `maturity` | kernel |

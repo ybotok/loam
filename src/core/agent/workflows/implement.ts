@@ -1,4 +1,5 @@
 import type { CommandContent } from "../contract.js";
+import { QUOTED_TEXT_RULE } from "../../envelope/quoted.js";
 
 /**
  * Building one service's slice: the delta brief, then a unit at a time —
@@ -41,6 +42,8 @@ export const LOAM_IMPLEMENT: CommandContent = {
 repository, which needs its own committed ./loam.json — if there is none,
 \`loam init --docs <path-to-docs-repo> --service $2 --agent-profile service\` then
 \`loam doctor\` first.
+
+${QUOTED_TEXT_RULE}
 
 0. \`loam status $1 --json\` — where this feature actually is. Run it before
    anything else if you joined halfway or lost the session: it says which

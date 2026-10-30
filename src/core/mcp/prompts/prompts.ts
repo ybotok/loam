@@ -18,6 +18,7 @@
  */
 import { AGENT_COMMANDS, placeholderProblems, protocolFor } from "../../agent/protocol.js";
 import { ARGUMENTS } from "../../agent/tools/arguments.js";
+import { QUOTED_TEXT_RULE } from "../../envelope/quoted.js";
 import { printedPage } from "../../explain/fix-tables.js";
 import { isRecord } from "../../kernel/records.js";
 
@@ -44,7 +45,12 @@ export const SERVER_INSTRUCTIONS =
   "loam_explain answers a reported code on its own.\n\n" +
   "Every tool result is a loam --json envelope (contractVersion 1.0): branch on ok, and on error.code when " +
   "ok is false — the same machine contract the CLI prints. The tools only read, unless the server was " +
-  "started with --author; loam vouch is a person's act and is never offered here.";
+  "started with --author; loam vouch is a person's act and is never offered here.\n\n" +
+  // Tool results quote the docs repo verbatim — intent, requirement bodies,
+  // scenarios — and a host with no shell may never load a protocol page, so
+  // this paragraph is the one place it is sure to read the fence
+  // (envelope/quoted.ts).
+  QUOTED_TEXT_RULE;
 
 /**
  * The `prompts/list` entries: one per generated workflow, in cycle order, with

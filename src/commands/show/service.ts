@@ -10,6 +10,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { FleetContext } from "../../core/fleet-context.js";
 import { emitJson, repoPath } from "../../core/envelope/json.js";
+import { QUOTED_NOTICE } from "../../core/envelope/quoted.js";
 import { listField, readFrontmatter, stringField } from "../../core/document/frontmatter.js";
 import { scopeText } from "../../core/provenance/sample/scope.js";
 import { loadFile, type LoadedDoc } from "../../core/c4/likec4.js";
@@ -183,7 +184,9 @@ export async function showService(
       : `${provenance.status} (${qualifiers.join(", ")})`;
   const badge = [shown, provenance.owner].filter((s) => s !== null).join(" · ");
   console.log(`${id}   ${repoPath(docsDir, paths.dir)}${badge ? `   ${badge}` : ""}\n`);
-  if (description !== null) console.log(`  ${description}\n`);
+  // The model's description is the one stretch of prose this view quotes, so
+  // the fence rides on it rather than on every `show` (core/envelope/quoted.ts).
+  if (description !== null) console.log(`  ${QUOTED_NOTICE}\n\n  ${description}\n`);
   if (shapedBy.length > 0) console.log(`  shaped by  ${shapedBy.join(", ")} (archived)\n`);
 
   if (

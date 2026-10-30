@@ -1,4 +1,5 @@
 import type { CommandContent } from "../contract.js";
+import { QUOTED_TEXT_RULE } from "../../envelope/quoted.js";
 
 /**
  * The two post-build workflows, paired: the done-check (`loam-verify`) and the
@@ -29,6 +30,8 @@ export const LOAM_VERIFY: CommandContent = {
 
 loam derives the questions; the test runner and you answer them. loam never
 reads the service, so a verdict is worth exactly what its evidence is worth.
+
+${QUOTED_TEXT_RULE}
 
 1. \`loam verify $1 --json\`. \`claims[]\` is the checklist, derived from the feature's
    own artifacts — one claim per new service, per operation its openapi delta adds,

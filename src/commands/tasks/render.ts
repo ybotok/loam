@@ -19,6 +19,7 @@
  * `test/agent-commands-runnable.test.ts` is the consumer, and an instruction
  * loam prints that does not parse is a defect rather than a typo.
  */
+import { QUOTED_NOTICE } from "../../core/envelope/quoted.js";
 import type { WorkPacket } from "../../core/tasks/packet.js";
 import type { RecordState } from "../../core/tasks/record.js";
 import type { TaskStep, TaskUnit } from "../../core/tasks/unit.js";
@@ -225,9 +226,13 @@ export function renderNext(packet: WorkPacket, view: TasksView): void {
   const ungraded = ungradedScenario(packet, view, unit);
   if (ungraded !== undefined) console.log(`  ⚠ ${ungraded}`);
   console.log("");
+  const source = unit.source;
+  // Above the unit rather than beside the lines it fences: the scenario is
+  // printed verbatim, and a notice between its steps would read as one of them
+  // (core/envelope/quoted.ts).
+  if (source !== undefined && "lines" in source) console.log(`  ${QUOTED_NOTICE}\n`);
   console.log(`  [${unit.at}] ${unit.kind}  [${unit.subject}]`);
   console.log(`  ${unit.claim}`);
-  const source = unit.source;
   if (source !== undefined) {
     console.log(`  ${source.path}${source.line === undefined ? "" : `:${source.line}`}`);
     // Verbatim, never reflowed: these are the bytes the scenario digest was

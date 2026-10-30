@@ -1,4 +1,5 @@
 import type { CommandContent } from "../contract.js";
+import { QUOTED_TEXT_RULE } from "../../envelope/quoted.js";
 
 /**
  * The fix tables: run loam's checks and repair what they find, code by code.
@@ -37,6 +38,8 @@ export const LOAM_CHECK: CommandContent = {
     "re-run until the grade is the one you meant",
   ],
   body: `Run loam's checks and fix what they find.
+
+${QUOTED_TEXT_RULE}
 
 - whole fleet: \`loam validate --all --json\` (run in the docs repo)
 - one target: \`loam validate <FEAT-id | service-id> --json\` — the feature reading is
