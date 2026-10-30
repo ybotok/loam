@@ -12,7 +12,7 @@
  * statements quote — with the counts that make it true, and the machine value
  * rides in its own row for whoever needs to map the two.
  */
-import { answeredSplit } from "../../core/verify/record.js";
+import { answeredSplit, uncommittedClause } from "../../core/verify/record.js";
 import { SEVERITY_MARK } from "../../core/vocabulary/report.js";
 import { unshippable } from "../../core/status/feature/next.js";
 import { archivedVerification, featureLabel, fleetStageWords, stageWords } from "../../core/status/feature/words.js";
@@ -92,7 +92,7 @@ function verificationLine(v: VerificationState, asked: number | null): string {
   if (v.state === "unreadable") return "unreadable";
   // The flag rides beside the verdict it qualifies: `verified` over a commit
   // that did not hold the tested code is the reading this line must not allow.
-  const dirty = v.uncommitted === undefined ? "" : ` + uncommitted changes (${v.uncommitted.join(", ")})`;
+  const dirty = v.uncommitted === undefined ? "" : uncommittedClause(v.uncommitted);
   return (
     `${v.state} · ${v.verdict}${dirty}  ${v.confirmed}/${v.claims} confirmed` +
     (v.confirmed > 0 ? ` (${answeredSplit(v.answered)})` : "") +

@@ -21,6 +21,7 @@ import {
   type ConsumedReport,
   type ServiceAttestation,
   uncommittedAttestations,
+  uncommittedClause,
   type Verification,
   type VerifyNotice,
   verificationVerdict,
@@ -56,7 +57,10 @@ export function reportFrozen(
   // a partial record must keep saying so after it ships, not only before. No
   // record stays bare — the prose already says nothing was recorded.
   const open = tally === null ? null : openClaimsNotice(tally, featureId);
-  const dirty = uncommittedNotice(v);
+  const dirty = uncommittedNotice(
+    v,
+    `the record is history now: \`loam unarchive ${featureId}\` re-opens the feature if it must be recorded again from committed code`,
+  );
   const notices = [
     ...(v === null ? [] : noticesFor(v.claims, featureId)),
     ...(open === null ? [] : [open]),
@@ -174,6 +178,9 @@ export function noticesFor(claims: readonly AnsweredClaim[], feature: string): V
 /** How many of an attestation's uncommitted paths a notice spells out; the record holds them all. */
 const SHOWN_PATHS = 5;
 
+/** The repair for a live record: what `uncommittedNotice` says where recording is still open. */
+export const RECORD_AGAIN = "commit the tested code in that repository, then record again from there";
+
 /**
  * `verify.uncommitted-changes` — attestations recorded over a working tree
  * that was not the commit they name (`ServiceAttestation.dirty`). Built from
@@ -181,8 +188,12 @@ const SHOWN_PATHS = 5;
  * view and the frozen view say one sentence about the same attestations.
  * A warning that gates nothing, like every notice here: refusing a dirty tree
  * is a decision about the exit-code contract, not this notice's to make.
+ *
+ * The repair is the caller's to give (`fix`), because it differs: a live
+ * record is recorded again (`RECORD_AGAIN`), while an archived one refuses
+ * recording, so the frozen view names `loam unarchive` instead.
  */
-export function uncommittedNotice(v: Verification | null): VerifyNotice | null {
+export function uncommittedNotice(v: Verification | null, fix: string): VerifyNotice | null {
   const dirty = v === null ? [] : uncommittedAttestations(v);
   if (dirty.length === 0) return null;
   const each = dirty.map((a) => {
@@ -196,13 +207,13 @@ export function uncommittedNotice(v: Verification | null): VerifyNotice | null {
     severity: "warn",
     message:
       `Attested over uncommitted changes: ${each.join("; ")}. The commit an attestation names need not contain ` +
-      "the code its tests and evidence were read from — commit the tested code in that repository, then record again from there.",
+      `the code its tests and evidence were read from — ${fix}.`,
   };
 }
 
 /** What an "attested at <commit>" line carries when the tree was not that commit. */
 export function uncommittedMark(a: ServiceAttestation): string {
-  return a.dirty === true ? " + uncommitted changes" : "";
+  return a.dirty === true ? uncommittedClause([]) : "";
 }
 
 /**

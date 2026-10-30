@@ -174,6 +174,16 @@ export function uncommittedAttestations(v: Verification): ServiceAttestation[] {
 }
 
 /**
+ * The words that flag it, beside a verdict or a commit: ` + uncommitted
+ * changes`, naming the services when there are any to name. One spelling for
+ * the gate's row, status's line and headline and verify's attestation line —
+ * each pinned by its own test, so copies would drift apart unnoticed.
+ */
+export function uncommittedClause(services: readonly string[]): string {
+  return services.length === 0 ? " + uncommitted changes" : ` + uncommitted changes (${services.join(", ")})`;
+}
+
+/**
  * Anything carrying an answer, whichever surface holds it: a recorded claim, or
  * the read view's per-claim status. Structural on purpose — the same questions
  * are asked of both, and neither should have to convert into the other to be

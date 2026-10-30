@@ -36,14 +36,6 @@ export interface SourcesDigest extends SourcesExpansion {
   /** The stamp that goes in `sources_digest`. */
   digest: string;
   /**
-   * The same files under the recipe loam stamped before line endings were
-   * normalised — every file's raw bytes. Never written; read only by
-   * `holdsSourcesStamp`, so a stamp made that way on a CRLF checkout still
-   * reads current on the checkout that made it. Equal to `digest` whenever no
-   * hashed file carries a CRLF, which is every stamp an LF checkout ever made.
-   */
-  rawDigest: string;
-  /**
    * Per file, its own short sha — the record `sources_files` carries so a later
    * `sources.stale` can name what moved instead of guessing. Same order as `files`.
    */
@@ -56,8 +48,15 @@ export interface SourceIndexEntry {
   path: string;
   /** sha256 of its bytes (CRLF read as LF in a text file), truncated the way `sources_digest` is. */
   sha: string;
-  /** The raw-bytes sha, only where it differs from `sha` — see `SourcesDigest.rawDigest`. */
-  rawSha?: string;
+  /** The same sha256 in full — what the outer digest is fed. */
+  hex: string;
+  /**
+   * The full sha256 of its RAW bytes, only where that differs from `hex` (a
+   * text file carrying a CRLF): the recipe loam stamped before line endings
+   * were folded. Never written; read by `holdsSourcesStamp` and `sourceDelta`,
+   * so a stamp made that way still reads current where it was made.
+   */
+  rawHex?: string;
 }
 
 /** How far into a file git looks for a NUL before it calls the file binary. */
@@ -92,14 +91,34 @@ export function digestBytes(bytes: Buffer): Buffer {
 
 /**
  * Does this stamped `sources_digest` still describe the files? Either recipe
- * is an answer: the normalised one every vouch now writes, or the raw-bytes
- * one written before — so no stamp loam ever made goes stale by this change,
- * and a stamp made on a CRLF checkout before it reads current where it was
- * made. One spelling for `sources.stale` and the re-vouch pack, which must not
+ * is an answer: the folded one every vouch now writes, or the raw-bytes one
+ * written before — so no stamp loam ever made goes stale by this change, and
+ * a stamp made on a CRLF checkout before it reads current where it was made.
+ * One spelling for `sources.stale` and the re-vouch pack, which must not
  * disagree about whether the sources moved.
+ *
+ * The raw recipe is rebuilt file by file rather than taken whole, because a
+ * raw stamp's files need not all have moved together. One made on an LF
+ * checkout over a file committed CRLF (`*.bat eol=crlf`) and read on an
+ * autocrlf clone has the LF files now CRLF and the CRLF one untouched: every
+ * file is unchanged, yet neither whole recipe reproduces the stamp. So each
+ * file contributes its raw hash — unless the stamp's own `sources_files`
+ * (`recorded`) shows it was stamped as it now folds, which is what an LF file
+ * raw-hashed on an LF checkout looks like from a CRLF one. Still the exact
+ * outer recipe, path and full hash per file: a real edit matches neither.
  */
-export function holdsSourcesStamp(now: Pick<SourcesDigest, "digest" | "rawDigest">, stamped: string): boolean {
-  return stamped === now.digest || stamped === now.rawDigest;
+export function holdsSourcesStamp(
+  now: Pick<SourcesDigest, "digest" | "index">,
+  stamped: string,
+  recorded: StampedIndex,
+): boolean {
+  if (stamped === now.digest) return true;
+  const raw = createHash("sha256");
+  for (const e of now.index) {
+    const folded = e.rawHex === undefined || recorded.entries?.get(e.path) === e.sha;
+    raw.update(`${e.path}\0${folded ? e.hex : e.rawHex}\n`);
+  }
+  return raw.digest("hex").slice(0, DIGEST_LENGTH) === stamped;
 }
 
 /** What a `sources` list covers, and what it does not. */
@@ -141,9 +160,9 @@ export interface SourcesExpansion {
  * the doc would want.
  *
  * Before the normalisation step 2 was raw bytes, and stamps written that way
- * stay readable: `rawDigest` and each entry's `rawSha` are that recipe, and the
- * readers accept either (`holdsSourcesStamp`, `sourceDelta`). They cost no
- * second hash over a file without a CRLF, where both recipes are one value.
+ * stay readable: each entry's `rawHex` is that recipe, and the readers accept
+ * either (`holdsSourcesStamp`, `sourceDelta`). It costs no second hash over a
+ * file without a CRLF, where both recipes are one value.
  *
  * 64 bits is a change detector, not a seal — it answers "did this move?", and
  * an adversary who wants a collision can have one.
@@ -151,7 +170,6 @@ export interface SourcesExpansion {
 export async function sourcesDigest(repoDir: string, sources: string[]): Promise<SourcesDigest> {
   const { found, skipped } = await collectSources(repoDir, sources);
   const outer = createHash("sha256");
-  const rawOuter = createHash("sha256");
   const index: SourceIndexEntry[] = [];
   // Read in fixed batches, hash in array order. `found` is already sorted and
   // every file's own sha depends on nothing but its own bytes, so the sequence
@@ -176,24 +194,18 @@ export async function sourcesDigest(repoDir: string, sources: string[]): Promise
     );
     for (const { rel, content, raw } of hashed) {
       outer.update(`${rel}\0${content}\n`);
-      rawOuter.update(`${rel}\0${raw}\n`);
       index.push({
         path: rel,
         sha: content.slice(0, DIGEST_LENGTH),
-        ...(raw === content ? {} : { rawSha: raw.slice(0, DIGEST_LENGTH) }),
+        hex: content,
+        ...(raw === content ? {} : { rawHex: raw }),
       });
     }
   }
   // `empty` is deliberately not set here: it is a sentence about a named
   // document, and a digest has no name to put in it. Callers that need it say
   // emptySourcesMessage(label, sources) — the same words, from one definition.
-  return {
-    digest: outer.digest("hex").slice(0, DIGEST_LENGTH),
-    rawDigest: rawOuter.digest("hex").slice(0, DIGEST_LENGTH),
-    files: index.map((e) => e.path),
-    index,
-    skipped,
-  };
+  return { digest: outer.digest("hex").slice(0, DIGEST_LENGTH), files: index.map((e) => e.path), index, skipped };
 }
 
 /**
@@ -307,7 +319,10 @@ interface MovedSources {
  * that AGREES with the current tree while the caller's digest comparison said
  * stale — a contradiction (a truncation collision, or a hand-edited header),
  * where an empty delta under a staleness warning would read as proof that
- * nothing moved. Callers that need the counts anyway read `stamp.count`.
+ * nothing moved. (A raw-bytes stamp over files whose line endings moved
+ * unevenly is not a third cause: `holdsSourcesStamp` rebuilds it file by file
+ * from this same index, so an index that agrees reproduces the stamp.)
+ * Callers that need the counts anyway read `stamp.count`.
  *
  * Extracted from `movedSources` (which now consumes it) when the re-vouch
  * reading pack became a second reader: the pack wants the three lists as
@@ -323,9 +338,9 @@ export function sourceDelta(
   const current = new Map(now.map((e) => [e.path, e]));
   for (const [path, entry] of current) {
     const before = stamp.entries.get(path);
-    // Either recipe's sha is the file unchanged — `SourcesDigest.rawDigest`.
+    // Either recipe's sha is the file unchanged — `SourceIndexEntry.rawHex`.
     if (before === undefined) added.push(path);
-    else if (before !== entry.sha && before !== entry.rawSha) changed.push(path);
+    else if (before !== entry.sha && before !== entry.rawHex?.slice(0, DIGEST_LENGTH)) changed.push(path);
   }
   const removed = [...stamp.entries.keys()].filter((path) => !current.has(path));
   if (added.length + changed.length + removed.length === 0) return null;

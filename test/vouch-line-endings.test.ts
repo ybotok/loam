@@ -228,6 +228,91 @@ describe("stamps written before the fold stay readable", () => {
       await p.destroy();
     }
   });
+
+  /** The raw-bytes per-file index the old vouch stamped beside the digest, as `sources_files` spells it. */
+  async function legacyIndex(repoDir: string, rels: string[]): Promise<string> {
+    const lines = await Promise.all(
+      [...rels].sort().map(async (rel) => {
+        const sha = createHash("sha256").update(await readFile(join(repoDir, rel))).digest("hex").slice(0, 16);
+        return `  ${sha}  ${rel}`;
+      }),
+    );
+    return `sources_files: |-\n${lines.join("\n")}`;
+  }
+
+  /** spec.md as the old vouch left it: verified, its sources stamped raw — no content_digest to grade. */
+  async function legacySpec(p: Project, rels: string[]): Promise<void> {
+    const fm = `service: ${SVC}\nstatus: verified\nowner: payments-team\nlast_verified: 2026-10-01\nsources:\n  - src`;
+    const stamp = `sources_digest: "${await legacySourcesDigest(p.workDir, rels)}"\n${await legacyIndex(p.workDir, rels)}`;
+    await p.write(SPEC, `---\n${fm}\n${stamp}\n---\n${BODY}`);
+    await rm(join(p.docsDir, ARCH));
+  }
+
+  it("a raw stamp's per-file index still names only the file that moved", async () => {
+    const p = await project();
+    try {
+      for (const rel of Object.keys(CODE)) await toCrlf(join(p.workDir, rel));
+      await legacySpec(p, Object.keys(CODE));
+      await writeFile(join(p.workDir, "src/payment.ts"), "export const authorize = () => false;\r\n", "utf8");
+      // capture.ts is unchanged and CRLF: its stamped sha is the RAW one, and
+      // reading only the folded one would list it as changed too.
+      const stale = (await findings(p)).find((f) => f.code === "sources.stale");
+      expect(stale?.details).toEqual(["changed  src/payment.ts"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a raw stamp over files whose line endings moved unevenly still reads current", async () => {
+    // Vouched on an LF checkout with one file committed CRLF (`*.bat
+    // eol=crlf`), read on an autocrlf clone: the LF file is now CRLF, the bat
+    // file untouched. Every file is unchanged; neither whole recipe — all
+    // folded, all raw — reproduces the stamp, only the file-by-file one does.
+    const p = await project();
+    try {
+      await writeFile(join(p.workDir, "src/run.bat"), "@echo off\r\nnode app.js\r\n", "utf8");
+      const rels = [...Object.keys(CODE), "src/run.bat"];
+      await legacySpec(p, rels);
+      for (const rel of Object.keys(CODE)) await toCrlf(join(p.workDir, rel));
+      const found = await findings(p);
+      expect(found.map((f) => f.code).filter((c) => STALE.includes(c))).toEqual([]);
+      expect(found.map((f) => f.code)).toContain("sources.current");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("the pack still finds the vouched ancestor of a raw stamp taken over a CRLF working tree", async () => {
+    // The blob is LF (the clean filter), the stamp the raw hash of the CRLF
+    // body the old vouch read: only the pack's CRLF rendering of the blob
+    // reproduces it. Without that, the re-vouch degrades to a full read.
+    const p = await project();
+    const git = (...args: string[]): void => {
+      const res = spawnSync("git", args, { cwd: p.docsDir, encoding: "utf8", timeout: 30_000 });
+      if (res.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${res.stderr}`);
+    };
+    try {
+      expect((await runLoam(p.workDir, "vouch", "--yes")).code).toBe(0);
+      const crlfBody = BODY.replace(/\n/g, "\r\n");
+      const legacy = createHash("sha256").update(crlfBody, "utf8").digest("hex").slice(0, 16);
+      const vouched = (await p.read(SPEC)).replace(/content_digest: "?[0-9a-f]{16}"?/, `content_digest: "${legacy}"`);
+      const head = vouched.slice(0, vouched.indexOf("\n---\n") + 5);
+      await p.write(SPEC, `${head.replace(/\n/g, "\r\n")}${crlfBody}`);
+      git("init", "-q", "-b", "main");
+      git("config", "core.autocrlf", "input");
+      git("add", "-A");
+      git("-c", "user.email=eol@test.invalid", "-c", "user.name=Eol Test", "commit", "-q", "-m", "base");
+      const edited = (await p.read(SPEC)).replace("authorizes payments.", "authorizes card payments.");
+      await p.write(SPEC, edited);
+      const pack = JSON.parse((await runLoam(p.workDir, "vouch", "--pack", "--json")).stdout) as {
+        spec: { body: { kind: string; diff?: string } };
+      };
+      expect(pack.spec.body.kind).toBe("diff");
+      expect(pack.spec.body.diff).toContain("+The service authorizes card payments.");
+    } finally {
+      await p.destroy();
+    }
+  });
 });
 
 describe("the recipe", () => {
@@ -262,8 +347,7 @@ describe("the recipe", () => {
       // And a text file's two recipes agree wherever it carries no CRLF.
       await writeFile(join(dir, "a.ts"), "a\n");
       const text = await sourcesDigest(dir, ["a.ts"]);
-      expect(text.rawDigest).toBe(text.digest);
-      expect(text.index[0]!.rawSha).toBeUndefined();
+      expect(text.index[0]!.rawHex).toBeUndefined();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

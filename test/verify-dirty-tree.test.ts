@@ -25,6 +25,8 @@ import { asVerification } from "../src/core/verify/read/shape.js";
 import type { Verification } from "../src/core/verify/record.js";
 import { loamCarried, uncommittedPaths } from "../src/commands/verify/evidence/worktree.js";
 import { loadConfig } from "../src/core/envelope/config.js";
+import { archivedVerification } from "../src/core/status/feature/words.js";
+import type { VerificationState } from "../src/core/status/report.js";
 import { coherentFixture, makeProject, makeTmpDir, runLoam, FEATURE_SPEC, type Project } from "./helpers/harness.js";
 import { answersFile, FEAT, PAYMENT, serviceClaims, serviceRecord, serviceRepo, SPLIT } from "./helpers/federated.js";
 
@@ -185,6 +187,39 @@ describe("what the check leaves out, and how a record holding the flag is read",
     // untracked directory that holds it, as it does for any untracked tree.
     await writeFile(join(repo, "tests", "unit.ts"), "t\n", "utf8");
     expect(await uncommittedPaths(repo, carried, { reports: {} })).toEqual(["tests/"]);
+  });
+
+  it("an untracked file counts even where git is configured to hide untracked files", async () => {
+    // `status.showUntrackedFiles=no` is a common speed setting in a large
+    // monorepo, and porcelain v1 obeys it: the check read a tree of new,
+    // untracked code as clean — the exact case it exists for.
+    const repo = await makeTmpDir();
+    git(repo, "init", "-q");
+    git(repo, "config", "status.showUntrackedFiles", "no");
+    await writeFile(join(repo, "keep.ts"), "x\n", "utf8");
+    git(repo, "add", "keep.ts");
+    git(repo, "commit", "-qm", "base");
+    await mkdir(join(repo, "src", "split"), { recursive: true });
+    await writeFile(join(repo, "src", "split", "payee.ts"), "export const payee = 1;\n", "utf8");
+    expect(await uncommittedPaths(repo, [], { reports: {} })).toEqual(["src/"]);
+  });
+
+  it("an archived feature's headline keeps the flag the gate's archived row shows", () => {
+    const state: VerificationState = {
+      state: "recorded",
+      recorded: "2026-10-30",
+      verdict: "verified",
+      claims: 3,
+      confirmed: 3,
+      unconfirmed: 0,
+      unanswered: 0,
+      attested: 0,
+      answered: { runner: 1, "external-runner": 0, agent: 2 },
+      uncommitted: [SPLIT],
+    };
+    expect(archivedVerification(state)).toBe(`verified + uncommitted changes (${SPLIT}) (3 of 3 claim(s) confirmed)`);
+    const { uncommitted: _, ...clean } = state;
+    expect(archivedVerification(clean)).toBe("verified (3 of 3 claim(s) confirmed)");
   });
 
   it("a `dirty` that is not a boolean makes the record unreadable rather than clean", async () => {

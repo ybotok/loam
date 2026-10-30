@@ -90,8 +90,10 @@ export interface Attestation {
    * The working tree against `commit`: the uncommitted paths git reported
    * (empty when clean), or null when git could not say. Anything but an empty
    * list marks the attestation `dirty` — see `ServiceAttestation.dirty`.
+   * Required, so a recording path cannot write a clean attestation by never
+   * asking: the compiler holds every caller to an answer.
    */
-  uncommitted?: string[] | null;
+  uncommitted: string[] | null;
 }
 
 /**
@@ -204,7 +206,7 @@ export function buildServiceRecord(
         ...(docsCommit === undefined ? {} : { docsCommit }),
         // Not shown clean is flagged the same as shown dirty: an unanswered
         // check is not a passed one (`validateServiceEvidence`'s doctrine).
-        ...(uncommitted === undefined || uncommitted?.length === 0
+        ...(uncommitted !== null && uncommitted.length === 0
           ? {}
           : { dirty: true, ...(uncommitted === null ? {} : { uncommitted }) }),
         // Each report is one repository's run, filed with that repository's

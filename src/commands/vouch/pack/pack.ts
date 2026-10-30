@@ -237,8 +237,8 @@ function sourcesArm(vetted: Awaited<ReturnType<typeof verifySpec>>, fm: Frontmat
   if (!vetted.ok) return { kind: "unavailable", reason: vetted.message };
   const stamped = stringField(fm, "sources_digest");
   if (stamped === undefined) return { kind: "unvouched" };
-  if (holdsSourcesStamp(vetted, stamped)) return { kind: "unchanged" };
   const index = decodeSourceIndex(stringField(fm, "sources_files"));
+  if (holdsSourcesStamp(vetted, stamped, index)) return { kind: "unchanged" };
   const delta = sourceDelta(index, vetted.index);
   if (delta === null) return { kind: "uncounted", countThen: index.count ?? null, countNow: vetted.index.length };
   return { kind: "delta", ...delta };

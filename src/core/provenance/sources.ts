@@ -121,7 +121,8 @@ export async function sourceFindings(
   }
 
   const since = stringField(fm, "last_verified") ?? "it was stamped";
-  if (holdsSourcesStamp(now, stamped)) {
+  const recorded = decodeSourceIndex(stringField(fm, "sources_files"));
+  if (holdsSourcesStamp(now, stamped, recorded)) {
     return [
       ...findings,
       {
@@ -137,7 +138,7 @@ export async function sourceFindings(
   // before `sources_files` existed — answers a question nobody asked: they wrote
   // that list, and "one of these five directories changed somehow" is where the
   // search starts, not where it ends.
-  const moved = movedSources(decodeSourceIndex(stringField(fm, "sources_files")), index);
+  const moved = movedSources(recorded, index);
   return [
     ...findings,
     {

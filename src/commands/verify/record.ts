@@ -38,6 +38,7 @@ import {
   contractReportLine,
   forkedChecklistNotices,
   noticesFor,
+  RECORD_AGAIN,
   reportLine,
   uncommittedMark,
   uncommittedNotice,
@@ -323,7 +324,7 @@ export async function record(
   const tally = tallyRecord(verification);
   const verdict = verificationVerdict(tally);
   const verified = verdict === "verified";
-  const dirty = uncommittedNotice(verification);
+  const dirty = uncommittedNotice(verification, RECORD_AGAIN);
   const notices = [
     ...noticesFor(verification.claims, verification.feature),
     // The read view's notice, on the write that makes it true: a service

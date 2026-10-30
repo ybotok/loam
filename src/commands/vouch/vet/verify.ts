@@ -25,8 +25,6 @@ export interface VerifiedSpec {
   raw: string;
   sources: string[];
   digest: string;
-  /** The pre-normalisation recipe's digest — read against an old stamp, never written (`SourcesDigest`). */
-  rawDigest: string;
   /** Per-file shas, in digest order — what `sources_files` is stamped from. */
   index: SourceIndexEntry[];
   skipped: SkippedSource[];
@@ -202,7 +200,7 @@ export async function verifySpec(
     };
   }
 
-  const { digest, rawDigest, index, skipped } = await sourcesDigest(req.repoDir, sources);
+  const { digest, index, skipped } = await sourcesDigest(req.repoDir, sources);
   if (index.length === 0) {
     // A directory that exists but holds no files — or only ones the walk leaves
     // out: dot-entries, `node_modules`, anything the repository itself ignores.
@@ -212,5 +210,5 @@ export async function verifySpec(
     // going green on a document this command refuses.
     return { ok: false, code: "sources-absent", message: emptySourcesMessage(label, sources) };
   }
-  return { ok: true, path, file, raw, sources, digest, rawDigest, index, skipped };
+  return { ok: true, path, file, raw, sources, digest, index, skipped };
 }

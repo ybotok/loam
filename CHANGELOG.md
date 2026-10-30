@@ -23,10 +23,13 @@ digest recipes say how.
   `loam vouch --pack` printed "body changed" over an empty diff. A vouch made on Windows never read
   fresh on Linux CI. `loam vouch` now hashes a text file (no NUL in its first 8000 bytes, git's own
   heuristic) and the document body with every CRLF read as LF; a binary file keeps its exact bytes.
-  `loam validate`, `loam gate` and `loam vouch --pack` read a stamp under either recipe, so no
-  existing stamp goes stale by the upgrade: one made on an LF checkout is the same value under both,
-  and one made raw on a CRLF checkout still reads current there. A real edit still reads stale, and
-  `sources.stale` still names only the files that moved.
+  `loam validate`, `loam gate` and `loam vouch --pack` read a stamp under either recipe — the raw
+  one rebuilt file by file from the stamp's own `sources_files`, so a tree whose files' line
+  endings moved unevenly (an LF checkout's stamp over one file committed CRLF, read on an autocrlf
+  clone) still matches — and no existing stamp goes stale by the upgrade: one made raw on a CRLF
+  checkout still reads current there. The exception is a raw stamp past 100 files, which carries no
+  per-file index, over such an uneven tree: it reads `sources.stale` once, until re-vouched. A real
+  edit still reads stale, and `sources.stale` still names only the files that moved.
 
 ### Fixed — `loam verify --service` says when it attests a commit that is not the tested code
 
@@ -47,11 +50,16 @@ that recorded before refuses now.
   `verify.uncommitted-changes` and prints `attested at git commit <sha> + uncommitted changes`.
 - **The read view, `loam gate` and `loam status` carry it beside the verdict** —
   `+ uncommitted changes (<services>)` on the gate's feature row and on `loam status <FEAT>`'s
-  verification line (and its headline, once the feature reads verified), `+ uncommitted changes` on
-  `loam verify`'s "Attested by" line, and the same notice in `loam verify --json`'s `notices[]`. A
-  clean re-record replaces the flagged attestation and clears it.
+  verification line (and its headline, once the feature reads verified, and after it is archived),
+  `+ uncommitted changes` on `loam verify`'s "Attested by" line, and the same notice in
+  `loam verify --json`'s `notices[]`. A clean re-record replaces the flagged attestation and clears
+  it; an archived feature's record keeps the flag, and its notice names `loam unarchive <FEAT>`.
 - Commit the tested code first: the `loam-verify` protocol now says so at its recording step. Nothing
   refuses on a dirty tree yet.
+- **`loam subsystem move` sees untracked files under `status.showUntrackedFiles=no` too.** The
+  uncommitted-work question both commands ask spells `--untracked-files=normal` instead of obeying
+  that setting, under which new untracked files read as no change: `subsystem move` now refuses
+  `move-uncommitted` over them where it used to proceed, and `verify` flags them.
 
 ## [0.2.0-alpha.18] - 2026-10-30
 

@@ -29,6 +29,7 @@ import {
   forkedChecklistNotices,
   MARK,
   noticesFor,
+  RECORD_AGAIN,
   recordedPayload,
   reportLine,
   uncommittedMark,
@@ -132,7 +133,7 @@ export function report(
   // The open-claims honesty line only where a record EXISTS: with none, the
   // surface already says "Not verified", and not-started is not partial.
   const open = recorded === null ? null : openClaimsNotice(tally, checklist.feature);
-  const dirty = uncommittedNotice(recorded);
+  const dirty = uncommittedNotice(recorded, RECORD_AGAIN);
   const notices = [
     ...noticesFor(claims, checklist.feature),
     ...(open === null ? [] : [open]),

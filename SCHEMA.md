@@ -1472,9 +1472,13 @@ it: Git for Windows checks out with `core.autocrlf=true` by default, and so does
 `git checkout <rev> -- <file>` there, so a raw-bytes stamp made on an LF machine read
 `sources.stale` on every Windows clone with nothing changed. Stamps written before the fold —
 raw bytes throughout — stay readable: `loam validate`, `loam gate` and `loam vouch --pack` accept
-a `sources_digest` (and each `sources_files` entry) under either recipe, so no stamp went stale by
-the change, and a stamp an LF checkout wrote, which never carried a CR, is the same value under
-both.
+the folded `sources_digest` or the raw one, and each `sources_files` entry under either recipe, so
+no stamp went stale by the change. The raw digest is rebuilt file by file — each file's raw hash,
+unless the stamp's own `sources_files` shows it was stamped as it now folds — because a raw
+stamp's files need not have moved together: one made on an LF checkout over a file committed CRLF
+(`*.bat eol=crlf`) and read on an autocrlf clone has every LF file rewritten and that one
+untouched. The one stamp this cannot rescue is a raw one past 100 files — no per-file index to
+rebuild from — over such an uneven tree: it reads `sources.stale` once, and the re-vouch folds it.
 
 Two exclusions are part of that expansion, because a digest is a *staleness signal* and both of
 these turned it into noise:
@@ -3769,7 +3773,8 @@ with the claims other services own honestly `unanswered` in it.
 
 **The commit names the tested code only when the tree is clean.** An attestation names `HEAD`, but
 a suite runs against the working tree. So recording also asks `git status --porcelain` under the
-directory `loam.json` sits in — untracked files included, `.gitignore`d ones not — leaving out what
+directory `loam.json` sits in — untracked files included whatever `status.showUntrackedFiles` says,
+`.gitignore`d ones not — leaving out what
 loam itself writes or carries there: `loam.json` and the agent files it records, the generated suite
 under `<gherkinDir>/loam/`, a docs repo that lives inside the service repo, the reports the run read
 and its answers file. Anything else marks the attestation `dirty: true`, with the paths git reported

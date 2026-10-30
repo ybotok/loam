@@ -274,8 +274,9 @@ function bodyHash(body: string): string {
  * Every reader that compares a body against a stamp asks through here.
  */
 export function holdsContentStamp(source: string, stamped: string): boolean {
-  const body = rawBody(source);
-  return bodyHash(body.replace(/\r\n/g, "\n")) === stamped || bodyHash(body) === stamped;
+  // Through the writer itself, so the fold is spelled once: widened in one
+  // place only, every new stamp would read `content.stale`.
+  return contentDigest(source) === stamped || bodyHash(rawBody(source)) === stamped;
 }
 
 /**
