@@ -68,6 +68,9 @@ function artifactWord(a: ArtifactState, v: VerificationState): string {
     if (a.status === "draft") return v.state === "stale" ? "stale" : "unreadable";
     return a.status;
   }
+  // A document holding nothing but the scaffold's comment is not "written",
+  // owed or not — that word over it is how an untouched feature read as ready.
+  if (a.empty === true) return "not written";
   if (a.status === "done") return a.exists ? "written" : "not owed";
   if (a.status === "draft") return "has errors";
   return a.status;

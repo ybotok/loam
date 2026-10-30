@@ -89,7 +89,10 @@ export const LOAM_FEATURE: CommandContent = {
    and a phantom \`services/<typo>/\` directory if it ever archives.
 4. Author what the templates left as TODO. This step is gated, not advisory:
    \`loam archive\` refuses a scaffold nobody edited (\`scaffold.placeholder\`,
-   \`intent.empty\`), so the placeholder text cannot reach the living docs.
+   \`intent.empty\`, and \`delta.changes-nothing\` when nothing at all was written), so
+   the placeholder text cannot reach the living docs. A spec.md still holding only
+   its template comment is \`delta.no-requirements\`, and \`loam status\` calls it
+   \`not written\`.
    - \`intent.md\` — the problem in business terms, in prose; the scaffold's
      comment-only Why/Scope count as unwritten
    - \`delta.likec4\` — new elements and edges, each tagged \`#$1\`; every call edge carries

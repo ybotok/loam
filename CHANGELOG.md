@@ -28,6 +28,34 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   already did — a script that waited for `next.fleet-clean` before starting a feature waits for the
   vouches too. `loam explain next.vouch` answers. No flag, exit code or payload key changed.
 
+### Fixed — an untouched requirement delta is not written, and a feature of nothing does not archive
+
+- **A `specs/<svc>/spec.md` that is still only the scaffold's template comment now says so.** With
+  intent.md written and the spec delta untouched, `loam validate --feature` said the requirements
+  were covered (0 of them) and the axes agreed, `loam status` listed the spec as written and the
+  docs as ready, and `loam archive` merged nothing at exit 0. A new warning,
+  **`delta.no-requirements`** (subject: the service), fires on every service whose requirement
+  delta — spec.md, arch.spec.md, or both — holds no `### Requirement:` block and whose delta carries
+  no flow: the feature-side twin of `spec.no-requirements`. It never gates.
+- **`loam status` grades such a document as it grades an absent one.** Its artifact row is
+  `status: "missing"` where the spec is owed, keeps `exists: true`, and carries a new key,
+  **`empty: true`** (on `spec` and `arch-spec` rows only); the human table says `not written`, the
+  feature's stage is `missing` and `next.author-spec` is the step. The repository-wide form lists
+  `<svc>/spec` under the feature's `missing` for the same file.
+- **`loam archive` refuses a feature that changes nothing.** A new warning that gates,
+  **`delta.changes-nothing`**, fires when delta.likec4 tags no element or relationship, no
+  requirement delta (a service's or a capability's) holds a requirement, and the feature carries no
+  other delta document. `--approve` overrides it, as it does `intent.empty`. Any other file in the
+  feature — a contract, a flow, a glossary term, a deployment document, an ADR — counts as a
+  change; the intent and the verification record do not.
+- **What moves after upgrading.** A feature whose every axis is empty now exits 1 at archive with
+  `not-coherent` where it used to merge nothing at exit 0; one that only carries an untouched
+  template beside real work archives as before, with a warning. A `--strict` validate run over such
+  a feature fails on the new warnings. `loam explain delta.no-requirements` and
+  `loam explain delta.changes-nothing` answer. Not changed: a MODIFIED requirement that drops
+  scenarios still validates clean, by design — SCHEMA's "What a replacement takes away is named, not
+  just counted": the archive plan and `loam delta` name the drop, and nothing gates it.
+
 ## [0.2.0-alpha.18] - 2026-10-30
 
 Everything on `main` since `0.2.0-alpha.17`. Still a prerelease on the `alpha` line.

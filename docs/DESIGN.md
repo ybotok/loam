@@ -101,7 +101,9 @@ edge in `meta/docs/architecture/landscape.likec4`, which `npm run meta:check` fa
 disagree. Before that check existed the column was written by hand and had gone quietly wrong in
 eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` and `kernel`,
 `core/vocabulary/` claimed nothing while importing `kernel`, `core/mcp/` had gained `explain`, and
-`core/coherence/` had never depended on `verify` at all. The nine packages the table had no row for
+`core/coherence/` had never depended on `verify` at all (it has since 2026-10-30, for one address:
+the empty-feature gate asks where the verification record lives, because a record answers claims
+and changes nothing). The nine packages the table had no row for
 (`brief`, `explain`, `glossary`, `links`, `obligations`, `owners`, `provenance`, `scaffold`,
 `usecases`) are the drift the self-hosting axis was written to catch, and are the reason it exists.
 
@@ -138,7 +140,7 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/projection/` | one feature projected onto one service — the API, event and C4 slices `loam delta` and `loam context` share, which feature in flight introduces a service not yet living (`status`, `show`, `context`, `steps`, `doctor`), and what each item does to the living documents (`delta --diff`) | asyncapi, c4, document, kernel, openapi, repo |
 | `core/usecases/` | the fleet's declared use cases and the join from a flow's steps onto the model, with `delta/` beneath for the flows one FEATURE brings (`delta/service/` for the ones it brings, replaces or retires beside a service's model), `service/` beneath for the flows one SERVICE keeps beside its model and their grade, `grade/` beneath for the grades a flow earns (validate's, run over a feature's own flows before the archive too), `suites/` beneath for the journeys grouped by `#suite-` tag and the participant union a test stand is provisioned from (the one subpackage its parent imports, so it imports nothing of the parent's but types), and `join/` beneath for the hop join — which of a service's own flows unfold a fleet flow's hop, through the operation or message both carry, and `obligations/` beneath for a flow carrying `#obl-` — which obligations it applies and which relationships its hops ride — and the `Covers:` index, living or as a feature's merge would leave it, the obligation axis asks coverage of | c4, capabilities, document, kernel, obligations, repo, vocabulary |
 | `core/consumers/` | the one consumer index — who in the living fleet still calls an operation or consumes a message (edges, requirements, use-case hops), over the fleet read in `loam diff`'s `ServiceState` shape | c4, document, envelope, fleet-context, kernel, openapi, repo, usecases |
-| `core/coherence/` | do the three axes agree; `retired/` beneath reads what archived features took out of the living contracts | asyncapi, c4, capabilities, conflict-markers, consumers, delta, deployment, document, envelope, glossary, kernel, openapi, repo, staging, usecases, vocabulary |
+| `core/coherence/` | do the three axes agree; `retired/` beneath reads what archived features took out of the living contracts | asyncapi, c4, capabilities, conflict-markers, consumers, delta, deployment, document, envelope, glossary, kernel, openapi, repo, staging, usecases, verify, vocabulary |
 | `core/dependencies/` | who calls whom, and the fan-in over it | c4, fleet-context, kernel, openapi, repo |
 | `core/diff/` | the base-ref read of the docs repo (git show/ls-tree) and the semantic branch diff `loam diff` reports | asyncapi, c4, consumers, document, envelope, kernel, openapi, provenance, repo |
 | `core/explore/` | the read-only survey `loam explore` prints before a feature exists | c4, capabilities, fleet-context, repo, usecases, vocabulary |

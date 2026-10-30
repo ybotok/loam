@@ -119,6 +119,13 @@ export interface Grading {
    * keeps the rows out of those payloads entirely.
    */
   capabilities: readonly CapabilityDoc[];
+  /**
+   * The services whose requirement deltas are on disk and hold no requirement
+   * at all — the `delta.no-requirements` findings' subjects. Their rows say so
+   * rather than "written": an untouched scaffold is the same nothing as an
+   * absent file, and the row used to be the one place it read as done.
+   */
+  unwritten: ReadonlySet<string>;
 }
 
 export function featureArtifacts(
@@ -127,7 +134,7 @@ export function featureArtifacts(
   services: readonly PathableService[],
   grading: Grading,
 ): ArtifactState[] {
-  const { blocking, verification, contracted, evidence, living, capabilities } = grading;
+  const { blocking, verification, contracted, evidence, living, capabilities, unwritten } = grading;
   const paths = featurePaths(feature.dir);
   const rel = (abs: string): string => repoPath(docsDir, abs);
   const faults = blocking.map((f) => ({ artifact: faultedArtifact(f.code, f.subject), subject: f.subject }));
@@ -183,9 +190,18 @@ export function featureArtifacts(
     // this feature draws for the service (`specs/<svc>/usecases/`, a promise the
     // service already makes, kept by a new drawing) is a delta every gate grades
     // and none asks a requirement of.
-    const owesSpec = !archExists && !carriesServiceFlows(feature.dir, svc);
-    out.push(fileState("spec", { service: svc, path: rel(p.spec), exists: existsSync(p.spec) }, owesSpec, specFault));
-    out.push(fileState("arch-spec", { service: svc, path: rel(p.archSpec), exists: archExists }, false, specFault));
+    //
+    // And neither document counts while it holds no requirement: the scaffold's
+    // template comment is not a delta, so the rows grade as the absent file
+    // grades — owed and `missing` for spec.md — with `empty: true` saying the
+    // file IS there (`exists` stays the disk's answer).
+    const empty = unwritten.has(svc);
+    const owesSpec = (!archExists || empty) && !carriesServiceFlows(feature.dir, svc);
+    const specRow = fileState("spec", { service: svc, path: rel(p.spec), exists: existsSync(p.spec) }, owesSpec, specFault);
+    const archRow = fileState("arch-spec", { service: svc, path: rel(p.archSpec), exists: archExists }, false, specFault);
+    for (const row of [specRow, archRow]) {
+      out.push(empty && row.exists ? { ...row, status: row.required ? "missing" : "done", empty: true } : row);
+    }
     out.push(
       fileState(
         "openapi",
@@ -225,7 +241,8 @@ export function featureArtifacts(
   // spec, openapi, asyncapi` and `next.verify` said there was nothing to derive
   // a checklist from, about a command that derives one — which is the failure
   // `blocked` is supposed to prevent, pointed the wrong way.
-  const feeders = out.filter((a) => a.id !== "intent" && a.id !== "capabilities" && a.exists);
+  // An `empty` document feeds nothing either: zero requirements derive zero claims.
+  const feeders = out.filter((a) => a.id !== "intent" && a.id !== "capabilities" && a.exists && a.empty !== true);
   out.push({
     id: "verification",
     service: null,

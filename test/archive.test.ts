@@ -4842,7 +4842,10 @@ describe("a document outside the feature that links into it still resolves once 
         expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
         if (movesOn === "removed") await rm(join(p.docsDir, "features/FEAT-2-refunds"), { recursive: true });
         else {
-          const other = await runLoam(p.workDir, "archive", "FEAT-2");
+          // FEAT-2 is intent-only — a feature that changes nothing, which the
+          // archive refuses (`delta.changes-nothing`) unless approved. Here it
+          // is only the other change's lifecycle moving on, so it is approved.
+          const other = await runLoam(p.workDir, "archive", "FEAT-2", "--approve");
           expect(other.code, other.out).toBe(0);
         }
         const back = await runLoam(p.workDir, "unarchive", "FEAT-1");

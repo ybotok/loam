@@ -139,7 +139,9 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   \`evidence.record-unreadable\` (warn) here as well. Then the
   architecture spec axis (\`c4.uncovered\`, plus \`covers.unknown\` on the
   feature's arch.spec.md deltas), the delta-shape group:
-  \`delta.unknown-section\`, \`delta.no-delta-sections\`,
+  \`delta.unknown-section\`, \`delta.no-delta-sections\`, \`delta.no-requirements\`
+  (warn: a service's requirement delta that is only the scaffold's comment),
+  \`delta.changes-nothing\` (warn, gates archive: the feature merges nothing at all),
   \`delta.requirement-not-merged\`, \`delta.modified-unknown\`, \`delta.removed-unknown\`,
   \`delta.added-duplicate\`, \`delta.added-near-duplicate\`, \`delta.modified-pending\`,
   \`delta.removed-pending\`, \`delta.added-conflict\`, \`delta.modified-conflict\`,

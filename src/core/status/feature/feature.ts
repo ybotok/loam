@@ -114,6 +114,8 @@ export async function featureStatus(
     // the coherence pass inside it already ran. An archived feature carries no
     // delta to name, and the walk is one `existsSync` besides.
     capabilities: (await context.featureCapabilityDeltas(feature.dir)).docs,
+    // A warning, so never in `blocking` — the rows read it from the whole set.
+    unwritten: new Set(findings.filter((f) => f.code === "delta.no-requirements").flatMap((f) => (f.subject === undefined ? [] : [f.subject]))),
   });
   const artifacts =
     narrowed === undefined ? graded : graded.filter((a) => a.service === null || a.service === narrowed);

@@ -29,6 +29,8 @@ export interface DeltaScan {
   /** validate's own label for this axis: `<svc>: requirements` / `<svc>: arch requirements`. */
   label: string;
   bare: Requirement[];
+  /** Every requirement the document holds, of any kind — zero is the scaffold's template and nothing else. */
+  requirements: number;
   scenarios: number;
   /** Operations the non-REMOVED requirements govern. `spec.md` only, like coherence's own `reqOps`. */
   operations: number;
@@ -57,6 +59,7 @@ export async function scanDeltas(
         path: repoPath(docsDir, file),
         label,
         bare: requirementsMissingScenarios(reqs),
+        requirements: reqs.length,
         scenarios: reqs.reduce((n, r) => n + r.scenarios.length, 0),
         operations:
           file === p.spec

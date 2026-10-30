@@ -44,6 +44,7 @@ import {
   SERVICE_DESCRIPTION_SENTINEL,
 } from "./sentinels.js";
 import { OPEN_QUESTIONS_SECTION } from "../../document/intent/questions.js";
+import { emptinessIssues } from "./empty.js";
 
 /** What the placeholder gate reads: the feature's own documents, nothing else. */
 export interface AuthoringScope {
@@ -59,12 +60,26 @@ export interface AuthoringScope {
    */
   splicedEls: Elem[];
   svcNames: PathableService[];
+  /** See `EmptinessScope.drawsArchitecture` (`./empty.ts`). */
+  drawsArchitecture: boolean;
   context?: FleetContext;
 }
 
 export async function authoringIssues(scope: AuthoringScope): Promise<Issue[]> {
   const issues: Issue[] = [];
   await intentIssue(scope, issues);
+  // The other unwritten shape, one level up from a placeholder: a requirement
+  // delta that is nothing but the template's comment, and a feature that
+  // changes nothing at all (`./empty.ts`).
+  issues.push(
+    ...(await emptinessIssues({
+      featureDir: scope.featureDir,
+      featureId: scope.featureId,
+      svcNames: scope.svcNames,
+      drawsArchitecture: scope.drawsArchitecture,
+      read: (path) => requirementsOf(scope, path),
+    })),
+  );
 
   for (const e of scope.splicedEls) {
     if (e.description !== SERVICE_DESCRIPTION_SENTINEL) continue;

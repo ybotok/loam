@@ -226,7 +226,8 @@ async function fleetFeature(
   // for, and the delta off the parse the dependency graph above already made
   // through this context — so the contract question (owesContract) spins no
   // LikeC4 workspace of its own, which is the cost this form refuses.
-  const evidence = await contractEvidence(docsDir, feature, await scanDeltas(docsDir, feature, feature.services, context), context);
+  const scans = await scanDeltas(docsDir, feature, feature.services, context);
+  const evidence = await contractEvidence(docsDir, feature, scans, context);
   for (const svc of feature.services) {
     const p = featureSpecPaths(feature.dir, svc);
     // EITHER corpus satisfies it. What a service delta owes is a requirement
@@ -240,7 +241,11 @@ async function fleetFeature(
     // `<svc>/spec` when NEITHER exists, because the business delta is the one
     // an author writes by default.
     // A service flow alone is a delta too (`../feature/artifacts.ts` says why).
-    if (!existsSync(p.spec) && !existsSync(p.archSpec) && !carriesServiceFlows(feature.dir, svc)) missing.push(`${svc}/spec`);
+    // And a document holding no requirement is no delta at all — the scaffold's
+    // template comment, which the feature form reports `missing` through
+    // `delta.no-requirements`; read here off the scan, never a coherence run.
+    const written = scans.some((s) => s.service === svc && s.requirements > 0);
+    if (!written && !carriesServiceFlows(feature.dir, svc)) missing.push(`${svc}/spec`);
     // The same question featureArtifacts asks, through the same function: the
     // two forms must never disagree about whether a feature owes a contract.
     if (owesContract(living.get(svc), contracted.has(svc), evidence(svc)) && !existsSync(p.openapi)) {

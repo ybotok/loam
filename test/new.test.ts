@@ -75,6 +75,12 @@ The service SHALL exist.
   };
 }
 
+/** The codes an archive refusal names as gating, in order — what `--approve` would have to override. */
+function gatingCodes(output: string): string[] {
+  const issues = (JSON.parse(output) as { issues?: Array<{ code: string; gates: boolean }> }).issues ?? [];
+  return issues.filter((i) => i.gates).map((i) => i.code);
+}
+
 async function withProject(
   files: Record<string, string>,
   fn: (p: Project) => Promise<void>,
@@ -594,10 +600,12 @@ describe("a fresh scaffold validates without errors, and cannot archive", () => 
    *
    * No service on purpose. A scaffolded service description raises
    * `scaffold.placeholder` and refuses the archive on its own, which is exactly
-   * how the encoding hole below stayed invisible: with the description gone,
-   * the unwritten intent is the only thing standing between the scaffold and
-   * the living docs, so the EXIT CODE discriminates and not merely the issue
-   * list. `--title Split` fixes the directory as features/FEAT-1-split.
+   * how the encoding hole below stayed invisible. With the description gone, two
+   * gates stand between this scaffold and the living docs — the unwritten
+   * intent, and `delta.changes-nothing` (a service-less scaffold merges
+   * nothing) — so the GATING ISSUE LIST discriminates: the control below shows
+   * one sentence of prose leaves only the second. `--title Split` fixes the
+   * directory as features/FEAT-1-split.
    */
   const scaffoldThenRewriteIntent = async (
     p: Project,
@@ -657,16 +665,22 @@ describe("a fresh scaffold validates without errors, and cannot archive", () => 
     });
   });
 
-  it("one line of authored prose clears intent.empty and the same scaffold archives", async () => {
-    // The control the two tests above need: this fixture is one sentence away
-    // from shipping, so their exit 1 is the unwritten intent being refused and
-    // not some unrelated thing the archive dislikes about a service-less feature.
+  it("one line of authored prose clears intent.empty — what still stands is that the scaffold changes nothing", async () => {
+    // The control the two tests above need: one sentence clears the intent
+    // gate, so their `intent.empty` is the unwritten intent being refused and
+    // not some unrelated thing the archive dislikes about a service-less
+    // feature. What remains is the other unwritten shape — a feature with no
+    // service, an untouched delta.likec4 and nothing else merges nothing
+    // (`delta.changes-nothing`) — and `--approve` is the one way past it.
     await withProject({}, async (p) => {
       await scaffoldThenRewriteIntent(p, (text) =>
         text.replace("## Why\n", "## Why\n\nPayments arrive as one amount and land on several ledgers.\n"),
       );
-      const shipped = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
-      expect(shipped.code).toBe(0);
+      const blocked = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(blocked.code).toBe(1);
+      expect(gatingCodes(blocked.stdout + blocked.stderr)).toEqual(["delta.changes-nothing"]);
+      const shipped = await runLoam(p.workDir, "archive", "FEAT-1", "--approve", "--json");
+      expect(shipped.code, shipped.out).toBe(0);
       expect(JSON.parse(shipped.stdout).ok).toBe(true);
       expect(p.exists("features/archive/FEAT-1-split/intent.md")).toBe(true);
     });
@@ -694,7 +708,11 @@ describe("a fresh scaffold validates without errors, and cannot archive", () => 
         path,
         (await p.read(path)).replace("## Why\n", "## Why\n\nPayments arrive as one amount and land on several ledgers.\n"),
       );
-      const shipped = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      // Nothing about the untouched questions section is asked: the one gate
+      // left is that this service-less scaffold changes nothing at all.
+      const after = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(gatingCodes(after.stdout + after.stderr)).toEqual(["delta.changes-nothing"]);
+      const shipped = await runLoam(p.workDir, "archive", "FEAT-1", "--approve", "--json");
       expect(shipped.code, shipped.out).toBe(0);
       expect(await p.read("features/archive/FEAT-1-split/intent.md")).toMatch(/^## Open questions$/m);
     });
@@ -717,8 +735,10 @@ describe("a fresh scaffold validates without errors, and cannot archive", () => 
 
       const path = "features/FEAT-1-split/intent.md";
       await p.write(path, (await p.read(path)).replace("## Scope\n", "## Scope\n\nsvc-a only; payouts stay out.\n"));
-      const shipped = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
-      expect(shipped.code, shipped.out).toBe(0);
+      // The Why clears intent.empty; the service-less scaffold still changes
+      // nothing, which is the one gate left (the control above says why).
+      const after = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(gatingCodes(after.stdout + after.stderr)).toEqual(["delta.changes-nothing"]);
     });
   });
 
@@ -742,6 +762,130 @@ describe("a fresh scaffold validates without errors, and cannot archive", () => 
       // ships no requirement nobody wrote. It used to ship exactly one — a
       // literal `TODO — name the behaviour` that archived into the living spec.
       expect(json.requirements).toHaveLength(0);
+    });
+  });
+});
+
+/**
+ * A requirement delta that is still only the template's comment.
+ *
+ * With intent.md written and specs/<svc>/spec.md untouched, `validate
+ * --feature` said "requirements covered (0 requirements, all with scenarios)"
+ * and "coherence: ✓", `loam status` listed the spec as written and the docs as
+ * ready, and `loam archive` merged nothing at exit 0 — the vacuous green
+ * README's own rule forbids (study 2026-10-30, I16 part b).
+ */
+describe("an untouched requirement delta is not written, and a feature of nothing does not archive", () => {
+  const FEAT = "features/FEAT-1-split";
+  const WHY = "## Why\n\nPayments arrive as one amount and land on several ledgers.\n";
+
+  /** `loam new FEAT-1 --touches svc-a`, then a real Why — the spec delta stays the template. */
+  async function touchedScaffold(p: Project): Promise<void> {
+    await runLoam(p.workDir, "new", "FEAT-1", "--title", "Split", "--touches", "svc-a");
+    await p.write(`${FEAT}/intent.md`, (await p.read(`${FEAT}/intent.md`)).replace("## Why\n", WHY));
+  }
+
+  it("validate --feature warns twice — the service's empty delta, and the feature that changes nothing", async () => {
+    await withProject(livingService("svc-a"), async (p) => {
+      await touchedScaffold(p);
+      const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
+      expect(res.code, res.out).toBe(0);
+      const findings = JSON.parse(res.stdout).targets[0].findings as Array<{ code: string; severity: string; gates?: boolean; subject?: string }>;
+      expect(findings).toContainEqual(
+        expect.objectContaining({ code: "delta.no-requirements", severity: "warn", gates: false, subject: "svc-a" }),
+      );
+      expect(findings).toContainEqual(expect.objectContaining({ code: "delta.changes-nothing", severity: "warn", gates: true }));
+      expect(findings.find((f) => f.code === "delta.no-requirements")!).toMatchObject({
+        message: expect.stringContaining("specs/svc-a/spec.md holds no '### Requirement:' block"),
+      });
+    });
+  });
+
+  it("status calls the spec not written and the feature missing it, in both forms", async () => {
+    await withProject(livingService("svc-a"), async (p) => {
+      await touchedScaffold(p);
+      const own = JSON.parse((await runLoam(p.workDir, "status", "FEAT-1", "--json")).stdout);
+      expect(own.feature.stage).toBe("missing");
+      const spec = (own.artifacts as Array<Record<string, unknown>>).find((a) => a.id === "spec" && a.service === "svc-a");
+      // On disk, owed, and holding nothing — the row grades as the absent file grades.
+      expect(spec).toMatchObject({ exists: true, empty: true, required: true, status: "missing" });
+      expect((own.next as Array<{ code: string }>).map((s) => s.code)).toContain("next.author-spec");
+      const text = (await runLoam(p.workDir, "status", "FEAT-1")).stdout;
+      expect(text).toMatch(/not written\s+spec \(svc-a\)/);
+      expect(text).not.toContain("docs ready");
+      // The fleet form reads the same nothing off its scan, without a coherence run.
+      const fleet = JSON.parse((await runLoam(p.workDir, "status", "--json")).stdout);
+      expect(fleet.features[0]).toMatchObject({ id: "FEAT-1", stage: "missing", missing: ["svc-a/spec"] });
+    });
+  });
+
+  it("archive refuses it, writes nothing, and --approve overrides", async () => {
+    await withProject(livingService("svc-a"), async (p) => {
+      await touchedScaffold(p);
+      const before = await treeHashes(p.docsDir);
+      const blocked = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(blocked.code).toBe(1);
+      const refusal = JSON.parse(blocked.stdout + blocked.stderr) as {
+        error: { code: string };
+        issues: Array<{ code: string; gates: boolean; overridable: boolean }>;
+      };
+      expect(refusal.error.code).toBe("not-coherent");
+      expect(refusal.issues).toContainEqual(expect.objectContaining({ code: "delta.changes-nothing", gates: true, overridable: true }));
+      expect(gatingCodes(blocked.stdout + blocked.stderr)).toEqual(["delta.changes-nothing"]);
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+      const approved = await runLoam(p.workDir, "archive", "FEAT-1", "--approve", "--json");
+      expect(approved.code, approved.out).toBe(0);
+    });
+  });
+
+  it("a verification record changes nothing either — an empty --record does not open the gate", async () => {
+    await withProject(livingService("svc-a"), async (p) => {
+      await touchedScaffold(p);
+      await p.write(`${FEAT}/verification.yaml`, "feature: FEAT-1\nclaims: []\n");
+      const blocked = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(gatingCodes(blocked.stdout + blocked.stderr)).toContain("delta.changes-nothing");
+    });
+  });
+
+  it("one written requirement clears both, and the feature archives", async () => {
+    await withProject(livingService("svc-a"), async (p) => {
+      await touchedScaffold(p);
+      await p.write(
+        `${FEAT}/specs/svc-a/spec.md`,
+        "# svc-a — delta\n\n## ADDED Requirements\n\n### Requirement: Split a payment\nThe service SHALL split a payment across payees.\n\n" +
+          "#### Scenario: Two payees\n- **Given** a payment of 10\n- **When** it is split between two payees\n- **Then** each payee receives 5\n",
+      );
+      const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
+      const codes = (JSON.parse(res.stdout).targets[0].findings as Array<{ code: string }>).map((f) => f.code);
+      expect(codes).not.toContain("delta.no-requirements");
+      expect(codes).not.toContain("delta.changes-nothing");
+      const own = JSON.parse((await runLoam(p.workDir, "status", "FEAT-1", "--json")).stdout);
+      const spec = (own.artifacts as Array<Record<string, unknown>>).find((a) => a.id === "spec" && a.service === "svc-a")!;
+      expect(spec.empty).toBeUndefined();
+      expect(spec.status).toBe("done");
+      const shipped = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(shipped.code, shipped.out).toBe(0);
+    });
+  });
+
+  it("any other delta document counts as a change — the walk never refuses an axis it does not know", async () => {
+    await withProject(livingService("svc-a"), async (p) => {
+      await touchedScaffold(p);
+      await p.write(`${FEAT}/adrs/0001-split.md`, "# Split payments\n\nWe split at capture time.\n");
+      const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
+      const codes = (JSON.parse(res.stdout).targets[0].findings as Array<{ code: string }>).map((f) => f.code);
+      expect(codes).not.toContain("delta.changes-nothing");
+      // The service's own delta is still empty, and still says so.
+      expect(codes).toContain("delta.no-requirements");
+    });
+  });
+
+  it("an untouched capability delta is the same nothing", async () => {
+    await withProject({}, async (p) => {
+      await runLoam(p.workDir, "new", "FEAT-1", "--title", "Split", "--capability", "payments");
+      await p.write(`${FEAT}/intent.md`, (await p.read(`${FEAT}/intent.md`)).replace("## Why\n", WHY));
+      const blocked = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(gatingCodes(blocked.stdout + blocked.stderr)).toContain("delta.changes-nothing");
     });
   });
 });

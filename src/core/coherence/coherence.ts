@@ -186,8 +186,13 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
   // The scaffold gate: placeholder text and an unwritten intent are legal
   // documents whose merge would publish content nobody authored — the exact
   // template strings `loam new` wrote (authoring/scaffold.ts owns the list).
+  // `drawsArchitecture` is the C4 half of "does this feature change anything".
+  // A delta.likec4 that does not parse, or declares things and tags none, is
+  // refused by its own finding already — one breach, one finding.
+  const drawsArchitecture =
+    taggedEls.length + taggedRels.length > 0 || issues.some((i) => i.code === "delta.invalid" || i.code === "delta.nothing-tagged");
   issues.push(
-    ...(await authoringIssues({ featureDir, featureId, splicedEls: elements.filter(ridesWithTag), svcNames, context })),
+    ...(await authoringIssues({ featureDir, featureId, splicedEls: elements.filter(ridesWithTag), svcNames, drawsArchitecture, context })),
   );
   const {
     reqOps, removingOps, featureApiOps, unreadableApis, revivalCandidates, displacedOps,

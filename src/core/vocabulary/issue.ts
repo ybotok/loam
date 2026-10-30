@@ -211,6 +211,10 @@ export type IssueCode =
   | "delta.unknown-section"
   /** a delta file with requirements but no delta section anywhere — the whole file would merge as nothing */
   | "delta.no-delta-sections"
+  /** a service's requirement delta — spec.md, arch.spec.md, or both — holds no `### Requirement:` block at all (the scaffold's template comment and nothing else), and the service carries no flow: every requirement check over it is vacuous, not passing. The feature-side twin of validate's `spec.no-requirements`; a warning that never gates */
+  | "delta.no-requirements"
+  /** the whole feature would merge nothing: delta.likec4 tags nothing, no requirement delta holds a requirement, and no other delta document is there. A warning that GATES — `--approve` overrides, as for `intent.empty` */
+  | "delta.changes-nothing"
   /** a requirement stranded under a prose heading — archive will not merge it */
   | "delta.requirement-not-merged"
   /** a Requirement-ID in a delta violates the stable-id grammar */
