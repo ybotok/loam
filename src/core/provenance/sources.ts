@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { listField, stringField, type Frontmatter } from "../document/frontmatter.js";
 import type { Finding } from "../vocabulary/report.js";
 import { resolveInside } from "../kernel/path-safety.js";
-import { decodeSourceIndex, movedSources, sourcesDigest } from "./stamp.js";
+import { decodeSourceIndex, holdsSourcesStamp, movedSources, sourcesDigest } from "./stamp.js";
 import type { SkippedSource } from "./walk.js";
 import { gitTrackedFiles } from "./git.js";
 
@@ -98,7 +98,8 @@ export async function sourceFindings(
   // a hole in the tie to the code whether or not anybody has vouched yet, and
   // an unvouched service is exactly where a reader is about to decide the
   // sources list is honest.
-  const { digest, files, index, skipped } = await sourcesDigest(repoDir, sources);
+  const now = await sourcesDigest(repoDir, sources);
+  const { files, index, skipped } = now;
   const findings: Finding[] = [
     resolved,
     ...skippedFindings(skipped, label),
@@ -120,13 +121,13 @@ export async function sourceFindings(
   }
 
   const since = stringField(fm, "last_verified") ?? "it was stamped";
-  if (digest === stamped) {
+  if (holdsSourcesStamp(now, stamped)) {
     return [
       ...findings,
       {
         severity: "ok",
         code: "sources.current",
-        message: `${label}: sources unchanged since ${since} (${files.length} file(s), digest ${digest})`,
+        message: `${label}: sources unchanged since ${since} (${files.length} file(s), digest ${stamped})`,
       },
     ];
   }

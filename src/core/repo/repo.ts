@@ -122,7 +122,7 @@ async function archHeader(path: string): Promise<Frontmatter> {
  * second read: the frontmatter read already answered whether there is anything
  * to compare, and on a fleet mid-adoption most headers do not. The body is
  * read exactly as the finding reads it, as UTF-8 text, because the stamp is
- * byte-exact.
+ * exact over everything but line endings.
  */
 async function filesMovedUnderVouch(
   axes: readonly { file: string; path: string; header: Frontmatter }[],

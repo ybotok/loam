@@ -36,6 +36,14 @@ export interface SourcesDigest extends SourcesExpansion {
   /** The stamp that goes in `sources_digest`. */
   digest: string;
   /**
+   * The same files under the recipe loam stamped before line endings were
+   * normalised — every file's raw bytes. Never written; read only by
+   * `holdsSourcesStamp`, so a stamp made that way on a CRLF checkout still
+   * reads current on the checkout that made it. Equal to `digest` whenever no
+   * hashed file carries a CRLF, which is every stamp an LF checkout ever made.
+   */
+  rawDigest: string;
+  /**
    * Per file, its own short sha — the record `sources_files` carries so a later
    * `sources.stale` can name what moved instead of guessing. Same order as `files`.
    */
@@ -46,8 +54,52 @@ export interface SourcesDigest extends SourcesExpansion {
 export interface SourceIndexEntry {
   /** Repo-relative, `/`-separated. */
   path: string;
-  /** sha256 of its bytes, truncated the way `sources_digest` is. */
+  /** sha256 of its bytes (CRLF read as LF in a text file), truncated the way `sources_digest` is. */
   sha: string;
+  /** The raw-bytes sha, only where it differs from `sha` — see `SourcesDigest.rawDigest`. */
+  rawSha?: string;
+}
+
+/** How far into a file git looks for a NUL before it calls the file binary. */
+const TEXT_SNIFF_BYTES = 8000;
+
+const CRLF = Buffer.from("\r\n");
+
+/**
+ * The bytes a digest hashes for one file: a text file with every CRLF read as
+ * LF, anything else exactly as it is. "Text" is git's own heuristic — no NUL
+ * in the first 8000 bytes — because git is what rewrites the line endings:
+ * Git for Windows checks out with `core.autocrlf=true` by default, so the same
+ * commit is LF on the machine that vouched and CRLF on the one that checks,
+ * and a raw-bytes digest read every vouched file as moved with no edit. A
+ * binary file git never converts, so it keeps its bytes and its exact identity.
+ * Only CRLF pairs are folded; a lone CR is content, and git leaves it alone too.
+ */
+export function digestBytes(bytes: Buffer): Buffer {
+  const first = bytes.indexOf(CRLF);
+  if (first === -1 || bytes.subarray(0, TEXT_SNIFF_BYTES).includes(0)) return bytes;
+  // Copy the runs between CRs, keeping each LF: a segment per line ending
+  // rather than a byte loop, since a `sources: [src/]` is thousands of files.
+  const runs: Buffer[] = [];
+  let from = 0;
+  for (let at = first; at !== -1; at = bytes.indexOf(CRLF, from)) {
+    runs.push(bytes.subarray(from, at));
+    from = at + 1;
+  }
+  runs.push(bytes.subarray(from));
+  return Buffer.concat(runs);
+}
+
+/**
+ * Does this stamped `sources_digest` still describe the files? Either recipe
+ * is an answer: the normalised one every vouch now writes, or the raw-bytes
+ * one written before — so no stamp loam ever made goes stale by this change,
+ * and a stamp made on a CRLF checkout before it reads current where it was
+ * made. One spelling for `sources.stale` and the re-vouch pack, which must not
+ * disagree about whether the sources moved.
+ */
+export function holdsSourcesStamp(now: Pick<SourcesDigest, "digest" | "rawDigest">, stamped: string): boolean {
+  return stamped === now.digest || stamped === now.rawDigest;
 }
 
 /** What a `sources` list covers, and what it does not. */
@@ -72,15 +124,26 @@ export interface SourcesExpansion {
  *   1. expand each entry to repo-relative file paths (`/` separators) — a file
  *      is itself, a directory everything beneath it, minus what the repository
  *      does not consider its own (see collectSources) — sorted and de-duplicated;
- *   2. per file, `sha256(bytes)`;
+ *   2. per file, `sha256(bytes)` — with every CRLF read as LF when the file
+ *      is text by git's heuristic (`digestBytes`);
  *   3. feed `<path>\0<hex>\n` for each file, in that order, into an outer
  *      sha256;
  *   4. keep the first 16 hex characters.
  *
  * Content, not mtime: git does not preserve modification times, so after a
  * fresh clone every file looks changed and the check would be false positives
- * end to end. Bytes survive the clone. Hashing the path alongside the content
- * means a rename registers, which is what a reader of the doc would want.
+ * end to end. Content survives the clone; raw BYTES do not — git rewrites a
+ * text file's line endings on checkout under `core.autocrlf`, Git for Windows'
+ * default, and also on a plain `git checkout <rev> -- <file>` over a file an
+ * agent wrote LF. Step 2's normalisation is what makes the stamp mean the
+ * content rather than one checkout's rendering of it. Hashing the path
+ * alongside the content means a rename registers, which is what a reader of
+ * the doc would want.
+ *
+ * Before the normalisation step 2 was raw bytes, and stamps written that way
+ * stay readable: `rawDigest` and each entry's `rawSha` are that recipe, and the
+ * readers accept either (`holdsSourcesStamp`, `sourceDelta`). They cost no
+ * second hash over a file without a CRLF, where both recipes are one value.
  *
  * 64 bits is a change detector, not a seal — it answers "did this move?", and
  * an adversary who wants a collision can have one.
@@ -88,6 +151,7 @@ export interface SourcesExpansion {
 export async function sourcesDigest(repoDir: string, sources: string[]): Promise<SourcesDigest> {
   const { found, skipped } = await collectSources(repoDir, sources);
   const outer = createHash("sha256");
+  const rawOuter = createHash("sha256");
   const index: SourceIndexEntry[] = [];
   // Read in fixed batches, hash in array order. `found` is already sorted and
   // every file's own sha depends on nothing but its own bytes, so the sequence
@@ -99,20 +163,37 @@ export async function sourcesDigest(repoDir: string, sources: string[]): Promise
   // out of file descriptors, which would turn a stamp into an EMFILE.
   for (let start = 0; start < found.length; start += DIGEST_READ_BATCH) {
     const hashed = await Promise.all(
-      found.slice(start, start + DIGEST_READ_BATCH).map(async (file) => ({
-        rel: file.rel,
-        content: createHash("sha256").update(await readFile(file.abs)).digest("hex"),
-      })),
+      found.slice(start, start + DIGEST_READ_BATCH).map(async (file) => {
+        const bytes = await readFile(file.abs);
+        const normal = digestBytes(bytes);
+        const content = createHash("sha256").update(normal).digest("hex");
+        return {
+          rel: file.rel,
+          content,
+          raw: normal === bytes ? content : createHash("sha256").update(bytes).digest("hex"),
+        };
+      }),
     );
-    for (const { rel, content } of hashed) {
+    for (const { rel, content, raw } of hashed) {
       outer.update(`${rel}\0${content}\n`);
-      index.push({ path: rel, sha: content.slice(0, DIGEST_LENGTH) });
+      rawOuter.update(`${rel}\0${raw}\n`);
+      index.push({
+        path: rel,
+        sha: content.slice(0, DIGEST_LENGTH),
+        ...(raw === content ? {} : { rawSha: raw.slice(0, DIGEST_LENGTH) }),
+      });
     }
   }
   // `empty` is deliberately not set here: it is a sentence about a named
   // document, and a digest has no name to put in it. Callers that need it say
   // emptySourcesMessage(label, sources) — the same words, from one definition.
-  return { digest: outer.digest("hex").slice(0, DIGEST_LENGTH), files: index.map((e) => e.path), index, skipped };
+  return {
+    digest: outer.digest("hex").slice(0, DIGEST_LENGTH),
+    rawDigest: rawOuter.digest("hex").slice(0, DIGEST_LENGTH),
+    files: index.map((e) => e.path),
+    index,
+    skipped,
+  };
 }
 
 /**
@@ -239,11 +320,12 @@ export function sourceDelta(
   if (stamp.entries === null) return null;
   const added: string[] = [];
   const changed: string[] = [];
-  const current = new Map(now.map((e) => [e.path, e.sha]));
-  for (const [path, sha] of current) {
+  const current = new Map(now.map((e) => [e.path, e]));
+  for (const [path, entry] of current) {
     const before = stamp.entries.get(path);
+    // Either recipe's sha is the file unchanged — `SourcesDigest.rawDigest`.
     if (before === undefined) added.push(path);
-    else if (before !== sha) changed.push(path);
+    else if (before !== entry.sha && before !== entry.rawSha) changed.push(path);
   }
   const removed = [...stamp.entries.keys()].filter((path) => !current.has(path));
   if (added.length + changed.length + removed.length === 0) return null;

@@ -27,7 +27,7 @@
  * timeout.
  */
 import { declineDetail, gitText, type GitAnswer } from "../git.js";
-import { contentDigest } from "../../document/frontmatter.js";
+import { holdsContentStamp } from "../../document/frontmatter.js";
 
 /**
  * How many commits touching the file the ancestor search will read before
@@ -57,20 +57,19 @@ async function gitPlain(docsDir: string, args: string[]): Promise<GitAnswer> {
 }
 
 /**
- * The bytes this commit's blob would carry on a CRLF checkout. The stamped
- * `content_digest` is byte-exact over the WORKING-TREE file (document/frontmatter.ts), while
- * `git show` hands back the BLOB — and on a Windows checkout with
- * `core.autocrlf=true` the blob is LF where every working-tree byte is CRLF,
- * so the exact digest of the blob would never equal a stamp taken over the
- * same content and every vouched ancestor would be invisible on exactly those
- * machines. Same hazard, same direction as `core/verify/pins/pin.ts`'s
- * `pinnedDigest`, resolved the inverse way because the stamp's recipe is
- * published and cannot be re-normalized after the fact: instead of
- * normalizing both sides, the search hashes each candidate twice — as the
- * blob is, and as its CRLF checkout rendering — and a match on either is a
- * match. Only lone LFs are rewritten, so a blob that already carries CRLFs
- * (committed without the clean filter, hence byte-identical on disk) is
- * covered by the exact hash.
+ * The bytes this commit's blob would carry on a CRLF checkout. `git show`
+ * hands back the BLOB, which is LF on a Windows checkout with
+ * `core.autocrlf=true` where every working-tree byte is CRLF. A stamp vouch
+ * writes now folds line endings (`contentDigest`, document/frontmatter.ts), so
+ * the blob as it is already matches it, from any checkout. This rendering is
+ * for the stamps written BEFORE the fold, byte-exact over a CRLF working tree:
+ * `holdsContentStamp` accepts that recipe, but over the blob it would never
+ * match, and every such vouched ancestor would be invisible on exactly the
+ * machines that made it. So each candidate is asked twice — as the blob is,
+ * and as its CRLF checkout rendering — and a match on either is a match. Only
+ * lone LFs are rewritten, so a blob that already carries CRLFs (committed
+ * without the clean filter, hence byte-identical on disk) is covered by the
+ * first question.
  */
 function checkoutRendering(text: string): string {
   return text.replace(/(?<!\r)\n/g, "\r\n");
@@ -148,10 +147,7 @@ export async function findVouchedAncestor(
     // A real non-zero exit is git ANSWERING — the file is absent at this
     // commit (renamed since, or the commit only deleted it). Skip it.
     if (shown.code !== 0) continue;
-    if (
-      contentDigest(shown.out) === stampedDigest ||
-      contentDigest(checkoutRendering(shown.out)) === stampedDigest
-    ) {
+    if (holdsContentStamp(shown.out, stampedDigest) || holdsContentStamp(checkoutRendering(shown.out), stampedDigest)) {
       return { kind: "found", commit, text: shown.out };
     }
   }

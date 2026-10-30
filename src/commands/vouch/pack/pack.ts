@@ -39,11 +39,11 @@ import { join } from "node:path";
 import { loadFile } from "../../../core/c4/likec4.js";
 import { serviceResolver } from "../../../core/c4/resolve/service.js";
 import { repoPath } from "../../../core/envelope/json.js";
-import { contentDigest, parseFrontmatter, rawBody, stringField, type Frontmatter } from "../../../core/document/frontmatter.js";
+import { holdsContentStamp, parseFrontmatter, rawBody, stringField, type Frontmatter } from "../../../core/document/frontmatter.js";
 import { sectionHeadings } from "../../../core/document/parse.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 import { bodyDiffText, findVouchedAncestor } from "../../../core/provenance/gitq/vouched-ancestor.js";
-import { decodeSourceIndex, sourceDelta } from "../../../core/provenance/stamp.js";
+import { decodeSourceIndex, holdsSourcesStamp, sourceDelta } from "../../../core/provenance/stamp.js";
 import { landscapePath, servicePathsAt, SPEC_AXES, unfiledServicePaths } from "../../../core/repo/paths.js";
 import { enumeratedServices } from "../../../core/repo/service-target.js";
 import { COMMIT_INTENT } from "../../../core/staging/interrupted.js";
@@ -208,10 +208,11 @@ async function bodyArm(
           : "the last vouch predates content_digest, so no vouched body exists to diff from — read the whole file",
     };
   }
-  // The cheap answer first, and without git: the digest recipe is byte-exact
-  // over the working-tree file, so equality here IS "no byte of the body
-  // moved since the stamp".
-  if (contentDigest(doc.raw) === stamped) return { kind: "unchanged" };
+  // The cheap answer first, and without git: the digest is over the
+  // working-tree body with line endings folded, so a match here IS "no word of
+  // the body moved since the stamp" — and a CRLF checkout of an LF-vouched
+  // file is no longer reported as "changed" over a diff git prints empty.
+  if (holdsContentStamp(doc.raw, stamped)) return { kind: "unchanged" };
 
   const ancestor = await findVouchedAncestor(req.docsDir, doc.rel, stamped);
   if (ancestor.kind !== "found") {
@@ -236,7 +237,7 @@ function sourcesArm(vetted: Awaited<ReturnType<typeof verifySpec>>, fm: Frontmat
   if (!vetted.ok) return { kind: "unavailable", reason: vetted.message };
   const stamped = stringField(fm, "sources_digest");
   if (stamped === undefined) return { kind: "unvouched" };
-  if (vetted.digest === stamped) return { kind: "unchanged" };
+  if (holdsSourcesStamp(vetted, stamped)) return { kind: "unchanged" };
   const index = decodeSourceIndex(stringField(fm, "sources_files"));
   const delta = sourceDelta(index, vetted.index);
   if (delta === null) return { kind: "uncounted", countThen: index.count ?? null, countNow: vetted.index.length };

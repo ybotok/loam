@@ -10,6 +10,24 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Fixed — a vouch survives a line-ending rewrite
+
+No code, flag or payload key was added. The stamp recipe changed: SCHEMA.md's sources and body
+digest recipes say how.
+
+- **A spec vouched on one checkout reads fresh on another whose line endings differ.**
+  `sources_digest`, each `sources_files` entry and `content_digest` hashed raw bytes, so a service
+  vouched on an LF machine read `sources.stale` and `content.stale` on every clone made with Git for
+  Windows' default `core.autocrlf=true` — and on any checkout after a plain
+  `git checkout <rev> -- <file>` over a file written LF — with nothing changed, while
+  `loam vouch --pack` printed "body changed" over an empty diff. A vouch made on Windows never read
+  fresh on Linux CI. `loam vouch` now hashes a text file (no NUL in its first 8000 bytes, git's own
+  heuristic) and the document body with every CRLF read as LF; a binary file keeps its exact bytes.
+  `loam validate`, `loam gate` and `loam vouch --pack` read a stamp under either recipe, so no
+  existing stamp goes stale by the upgrade: one made on an LF checkout is the same value under both,
+  and one made raw on a CRLF checkout still reads current there. A real edit still reads stale, and
+  `sources.stale` still names only the files that moved.
+
 ## [0.2.0-alpha.18] - 2026-10-30
 
 Everything on `main` since `0.2.0-alpha.17`. Still a prerelease on the `alpha` line.

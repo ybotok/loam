@@ -1465,6 +1465,16 @@ The digest recipe (stable, and part of the contract): expand `sources` to repo-r
 a file is itself, a directory means everything beneath it, dot-entries are skipped while walking
 (though a path naming one outright is honoured) — sort them, hash each file's bytes with sha256,
 feed `<path>\0<sha256-hex>\n` per file into an outer sha256, and keep the first 16 hex characters.
+A file git would treat as text — no NUL byte in its first 8000 bytes, git's own heuristic — is
+hashed with every CRLF read as LF; any other file is hashed exactly as it is, and a lone CR is
+content. The fold is what makes the stamp mean the code rather than one checkout's rendering of
+it: Git for Windows checks out with `core.autocrlf=true` by default, and so does a plain
+`git checkout <rev> -- <file>` there, so a raw-bytes stamp made on an LF machine read
+`sources.stale` on every Windows clone with nothing changed. Stamps written before the fold —
+raw bytes throughout — stay readable: `loam validate`, `loam gate` and `loam vouch --pack` accept
+a `sources_digest` (and each `sources_files` entry) under either recipe, so no stamp went stale by
+the change, and a stamp an LF checkout wrote, which never carried a CR, is the same value under
+both.
 
 Two exclusions are part of that expansion, because a digest is a *staleness signal* and both of
 these turned it into noise:
@@ -1500,11 +1510,13 @@ signal in both directions. (The literal-path expansion is unchanged from when pa
 documents vouched with literal paths keep their digests.) Content, not mtime: git does not preserve
 modification times, so an mtime check would call every file stale after a fresh clone.
 
-The body digest recipe (`content_digest`, same discipline): sha256 of the artifact's body bytes
+The body digest recipe (`content_digest`, same discipline): sha256 of the artifact's body
 AFTER the frontmatter block — the closing `---` line and its newline belong to the header, every
-byte below them is body — first 16 hex characters kept. Byte-exact, no normalization, and body-only
-on purpose: vouch itself rewrites the frontmatter as it stamps, so a header-only edit (a later
-vouch, a corrected `owner`) must not read as the document moving.
+byte below them is body — with every CRLF read as LF, first 16 hex characters kept. Line endings
+are the one normalization, for the sources recipe's reason (a body is text by definition, so there
+is no binary case), and a stamp written before it, byte-exact, is accepted too. Body-only on
+purpose: vouch itself rewrites the frontmatter as it stamps, so a header-only edit (a later vouch,
+a corrected `owner`) must not read as the document moving.
 
 **Sampling** (`loam vouch --sample <n>`) is the same act over less of the document, recorded
 honestly. Its recipe is part of the contract too, because the value is written into documents and
