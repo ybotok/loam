@@ -140,6 +140,60 @@ that recorded before refuses now.
   that setting, under which new untracked files read as no change: `subsystem move` now refuses
   `move-uncommitted` over them where it used to proceed, and `verify` flags them.
 
+### Fixed — a table `loam gherkin` cannot read is a warning in `loam validate`, not a silent outline
+
+Two finding codes were added, both warnings: `requirements.examples-malformed` and
+`requirements.argument-stranded`. No flag and no payload key was added.
+
+- **Rows written the way a `.feature` file writes a table — a header and rows of equal width with
+  no `|---|` delimiter row — are an unreadable table.** They used to fall through as prose: a
+  Scenario Outline emitted as one plain `Scenario:` with the rows above its `Given` and its
+  `<placeholders>` left literal, `loam gherkin --json` reported empty `malformedExamples` and
+  `strandedBlocks`, and a lenient step definition passed the single run. At the margin they now set
+  `malformedExamples`; indented under a step, `strandedBlocks`. They are still not read as
+  `Examples` — Markdown does not render them as a table — so the fix is to add the delimiter row.
+- **A body line reading `Examples:` (or `Scenarios:`) sets `malformedExamples`.** Kept as
+  description, the keyword ended the scenario early and cucumber refused the emitted file. A
+  readable table after the line is still the outline's.
+- **`loam validate --feature` and `--service` now say what the emission says**, on spec.md and
+  arch.spec.md and their deltas alike: `requirements.examples-malformed` for a scenario in
+  `malformedExamples`, `requirements.argument-stranded` for one in `strandedBlocks`, one detail per
+  scenario. Before, only `loam gherkin` reported either. Under `--strict` a spec with such a table
+  now fails the run.
+
+### Fixed — a hand-edited generated `.feature` file is `gherkin.edited`, and `verify --results` will not confirm it
+
+One finding code was added, `gherkin.edited` (warn). No flag and no payload key was added.
+
+- **`loam validate --service`, run in the service repo, re-emits each generated file in memory and
+  compares it with the file on disk**, scenario by scenario. A `Then` weakened or inverted by hand,
+  an added step or scenario, or a `Background` above them all is `gherkin.edited`, naming the file
+  and, in `details[]`, the scenarios; a suite that used to read `gherkin.current` with such an edit
+  now warns. Scenarios are matched by digest across the whole emission, so renaming or moving the
+  file does not hide an edit. Only files stamped by the running loam version are compared, and
+  `gherkin.current` counts the ones it skipped; a scenario whose spec moved stays `gherkin.stale`'s;
+  and what no digest covers is not an edit — a scenario retitled in the spec, or a reworded
+  requirement body (the feature description, compared by structure only). An in-flight file is
+  compared with its feature's delta — the staleness checks still skip it.
+- **`loam verify <FEAT> --service <id> --results <report>` withholds a runner confirmation of an
+  edited scenario**: the claim is recorded `unconfirmed`, `answered_by: runner`, with a note naming
+  the file and its regeneration. A weakened scenario keeps its digest and its step count, so the
+  report alone could not tell. Step definitions are not compared; the finding says so. A living
+  spec or delta that is not UTF-8 refuses the record with `repository-unavailable`, as
+  `loam gherkin` does, rather than answering from a suite nothing could check.
+- The `loam-implement` protocol said `loam validate` reports the suite stale "by digest", which read
+  as covering edits; it now names `gherkin.edited` and the step-definition gap.
+
+### Changed — `requirements.stepless-scenario` says the keywords must be English
+
+No code, flag or payload key was added.
+
+- **The finding's message, the `loam explain` row, the `loam-authoring` page and SCHEMA.md now say
+  that step keywords must be the English GIVEN, WHEN, THEN, AND or BUT, while the step text may be
+  in any language.** A scenario written `- **Дано** … / - **Когда** … / - **Тогда** …` is still
+  refused under the same code — no Gherkin dialect is read — but the refusal no longer reads as a
+  different problem from the one it has.
+
 ## [0.2.0-alpha.18] - 2026-10-30
 
 Everything on `main` since `0.2.0-alpha.17`. Still a prerelease on the `alpha` line.

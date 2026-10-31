@@ -261,6 +261,7 @@ export function registerVerify(program: Command): void {
               service: config.service,
               repoDir,
               carried: loamCarried(config, repoDir),
+              ...(config.gherkinDir === undefined ? {} : { gherkinDir: config.gherkinDir }),
               previous: existing.state === "ok" ? { verification: existing.verification, files: existing.files } : null,
             },
             opts,

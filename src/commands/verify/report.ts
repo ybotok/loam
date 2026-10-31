@@ -9,6 +9,7 @@
  */
 import { emitJson, repoPath } from "../../core/envelope/json.js";
 import { type CommitRecovery } from "../../core/staging/interrupted.js";
+import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import { type AnsweredBy } from "../../core/verify/answers.js";
 import { type Checklist } from "../../core/verify/checklist.js";
 import { type EvidencePin } from "../../core/verify/pins/pin.js";
@@ -76,7 +77,8 @@ export function statuses(checklist: Checklist, claims: Checklist["claims"], reco
  * what the positional form allowed.
  */
 export interface VerifyTarget {
-  docsDir: string;
+  /** loam.json's resolved docs root — branded, because the record path re-emits a service's suite from it. */
+  docsDir: DocsDir;
   featureDir: string;
   json: boolean;
   /**

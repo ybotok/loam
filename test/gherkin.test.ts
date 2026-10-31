@@ -27,12 +27,15 @@ import {
   type Project,
 } from "./helpers/harness.js";
 import { renderFeature } from "../src/core/gherkin/emit.js";
-import { parseStampedFeature } from "../src/core/gherkin/read.js";
+import { featureSegments, handEdits, parseStampedFeature } from "../src/core/gherkin/read.js";
 import { gherkinStampLine, scenarioDigest } from "../src/core/gherkin/stamp.js";
 import { stepFromLine } from "../src/core/vocabulary/steps.js";
 import { parseRequirements } from "../src/core/document/parse.js";
 import { scenarioBodyHash } from "../src/core/gherkin/digest.js";
 import { LOAM_VERSION } from "../src/core/envelope/version.js";
+import type { Verification } from "../src/core/verify/record.js";
+import { parse } from "yaml";
+import { answersFile, FEAT, serviceClaims, serviceRecord, serviceRepo, SPLIT } from "./helpers/federated.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -886,6 +889,7 @@ interface FindingLike {
   code: string;
   severity: string;
   message: string;
+  details?: string[];
 }
 
 /** The gherkin.* findings validate reports for one service. */
@@ -1235,5 +1239,223 @@ describe("gherkinDir", () => {
     } finally {
       await p.destroy();
     }
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Hand edits                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A generated `.feature` file edited by hand — `gherkin.edited`, and the
+ * runner confirmation `loam verify --results` withholds because of it.
+ *
+ * The defect: a digest is a tag, and nothing about a tag stops the words under
+ * it changing. One edit weakened `Then the answer is 409 with code "copy-held"`
+ * to `Then the answer is 409`; `loam validate --service` still printed
+ * "generated gherkin current", cucumber passed the weaker test with the step
+ * count unchanged, and `--results` confirmed the claim the spec states in full
+ * — while the implement protocol told agents the opposite. Emission is
+ * deterministic, so the check re-emits in memory and compares.
+ *
+ * What must NOT fire is pinned as carefully as what must: a fresh emission, a
+ * spec whose requirement PROSE moved (it is in no digest), a CRLF checkout, a
+ * file another loam version wrote, and an archived feature's files, which keep
+ * their feature tag until regenerated.
+ */
+const HOLD_SPEC = `## Requirements
+
+### Requirement: Hold a copy
+The service SHALL hold a copy for one holder at a time.
+
+#### Scenario: Copy already held
+- **Given** copy C1 is held by M1
+- **When** M2 asks to hold it
+- **Then** the answer is 409 with code "copy-held"
+
+#### Scenario: Copy withdrawn
+- **Given** copy C2 is withdrawn
+- **When** M2 asks to hold it
+- **Then** the answer is 410 with code "copy-gone"
+`;
+
+function emitHold(markdown = HOLD_SPEC): { content: string; digests: string[] } {
+  return renderFeature(parseRequirements(markdown)[0]!, { tags: [], version: "0.0.0" }, "svc");
+}
+
+function editsBetween(disk: string, want: string): ReturnType<typeof handEdits> {
+  const emitted = featureSegments(want)!;
+  return handEdits(featureSegments(disk)!, { file: emitted, all: [emitted] });
+}
+
+describe("hand edits: the comparison, and what is not an edit", () => {
+  it("names the scenario whose Then was weakened, and only that one", () => {
+    const { content, digests } = emitHold();
+    const weakened = content.replace('Then the answer is 409 with code "copy-held"', "Then the answer is 409");
+    expect(editsBetween(weakened, content)).toEqual({ header: false, digests: [digests[0]] });
+  });
+
+  it("a hand-added scenario lands inside the stamped one above it, and a Background is a header edit", () => {
+    const { content, digests } = emitHold();
+    const extra = `${content}\n  Scenario: Added by hand\n    Given anything\n    Then it passes\n`;
+    expect(editsBetween(extra, content)).toEqual({ header: false, digests: [digests[1]] });
+    const background = content.replace("\n\n  @loam-digest", "\n\n  Background:\n    Given the shelf is empty\n\n  @loam-digest");
+    expect(editsBetween(background, content).header).toBe(true);
+  });
+
+  it("is not fooled by line endings or trailing whitespace, and leaves a moved spec to staleness", () => {
+    const { content } = emitHold();
+    expect(editsBetween(content.replace(/\n/g, "\r\n"), content)).toEqual({ header: false, digests: [] });
+    expect(editsBetween(content.replace(/\n/g, "  \n"), content)).toEqual({ header: false, digests: [] });
+    // The requirement's prose is in no digest: a reworded body moves no stamp,
+    // and calling the file edited would blame it for the docs repo's change.
+    const reworded = emitHold(HOLD_SPEC.replace("for one holder at a time", "for exactly one holder"));
+    expect(editsBetween(content, reworded.content)).toEqual({ header: false, digests: [] });
+    // Nor is a scenario's TITLE: a scenario renamed in the spec keeps its digest.
+    const retitled = emitHold(HOLD_SPEC.replace("#### Scenario: Copy withdrawn", "#### Scenario: A withdrawn copy"));
+    expect(editsBetween(content, retitled.content)).toEqual({ header: false, digests: [] });
+    // A reworded SCENARIO has a new digest — gherkin.stale's, never an edit.
+    const moved = emitHold(HOLD_SPEC.replace('code "copy-held"', 'code "copy-taken"'));
+    expect(editsBetween(content, moved.content)).toEqual({ header: false, digests: [] });
+  });
+
+  it("reads back exactly what the old parser did — one walk, two readers", () => {
+    const { content, digests } = emitHold();
+    expect(parseStampedFeature(content)).toEqual({
+      version: "0.0.0",
+      tags: [],
+      featureName: "Hold a copy",
+      scenarios: [
+        { name: "Copy already held", digest: digests[0] },
+        { name: "Copy withdrawn", digest: digests[1] },
+      ],
+    });
+  });
+});
+
+describe("validate --service: gherkin.edited", () => {
+  const EDITED = "features/loam/authorize-a-payment.feature";
+  const living = (): Record<string, string> => ({
+    "architecture/landscape.likec4": LANDSCAPE,
+    "services/payment-service/model.likec4": SERVICE_MODEL,
+    "services/payment-service/spec.md": LIVING_SPEC,
+    "services/payment-service/openapi.yaml": LIVING_OPENAPI,
+  });
+  const edit = async (p: Project, rel: string, from: string, to: string): Promise<void> => {
+    const text = await readWork(p, rel);
+    expect(text).toContain(from);
+    await writeWork(p, rel, text.replace(from, to));
+  };
+
+  it("fires on a weakened Then where `gherkin.current` used to, and regeneration clears it", async () => {
+    const p = await project(living(), { service: "payment-service" });
+    expect((await runLoam(p.workDir, "gherkin")).code).toBe(0);
+    await edit(p, EDITED, "Then the payment is authorized", "Then a response arrives");
+
+    const findings = await gherkinValidate(p, "payment-service");
+    expect(findings.map((f) => [f.code, f.severity])).toEqual([["gherkin.edited", "warn"]]);
+    expect(findings[0]!.details).toEqual(["Successful authorization"]);
+    expect(findings[0]!.message).toContain(EDITED);
+    expect(findings[0]!.message).toContain("loam gherkin --service payment-service");
+    expect(findings[0]!.message).toContain("Step definitions are not compared");
+
+    expect((await runLoam(p.workDir, "gherkin")).code).toBe(0);
+    expect((await gherkinValidate(p, "payment-service")).map((f) => f.code)).toEqual(["gherkin.current"]);
+  });
+
+  it("stays current when only the requirement's prose moved, and leaves another version's file alone", async () => {
+    const p = await project(living(), { service: "payment-service" });
+    await runLoam(p.workDir, "gherkin");
+    await p.write(
+      "services/payment-service/spec.md",
+      LIVING_SPEC.replace("authorize a payment before capture", "authorize every payment before it is captured"),
+    );
+    expect((await gherkinValidate(p, "payment-service")).map((f) => f.code)).toEqual(["gherkin.current"]);
+    // and a scenario retitled in the spec — the title is in no digest either
+    await p.write(
+      "services/payment-service/spec.md",
+      LIVING_SPEC.replace("Scenario: Successful authorization", "Scenario: A valid card is authorized"),
+    );
+    expect((await gherkinValidate(p, "payment-service")).map((f) => f.code)).toEqual(["gherkin.current"]);
+
+    // An older stamp is an older emitter's bytes: comparing them with this
+    // one's would accuse a file nobody touched — and the skip is counted, not silent.
+    const text = await readWork(p, EDITED);
+    await writeWork(
+      p,
+      EDITED,
+      text.replace(/generated by loam v\S+/, "generated by loam v0.0.1").replace("Then the payment is authorized", "Then a response arrives"),
+    );
+    const older = await gherkinValidate(p, "payment-service");
+    expect(older.map((f) => f.code)).toEqual(["gherkin.current"]);
+    expect(older[0]!.message).toContain("1 stamped by another loam version, not compared for hand edits");
+  });
+
+  it("renaming or moving the file does not hide an edit — scenarios are matched by digest, wherever they sit", async () => {
+    const p = await project(living(), { service: "payment-service" });
+    await runLoam(p.workDir, "gherkin");
+    const text = await readWork(p, EDITED);
+    await rm(join(p.workDir, EDITED));
+    await writeWork(p, "features/loam/sub/authorize.feature", text.replace("Then the payment is authorized", "Then a response arrives"));
+    const edited = (await gherkinValidate(p, "payment-service")).filter((f) => f.code === "gherkin.edited");
+    expect(edited.map((f) => f.details)).toEqual([["Successful authorization"]]);
+    expect(edited[0]!.message).toContain("features/loam/sub/authorize.feature");
+  });
+
+  it("grades an in-flight file against its feature's delta, and names that feature's regeneration", async () => {
+    const p = await project(fixtureWithArch(), { service: "payment-split-service" });
+    expect((await runLoam(p.workDir, "gherkin", "FEAT-1")).code).toBe(0);
+    expect((await gherkinValidate(p, "payment-split-service")).map((f) => f.code)).toEqual(["gherkin.current"]);
+
+    await edit(p, "features/loam/split-a-payment.feature", "Then two shares are recorded", "Then a share is recorded");
+    const findings = await gherkinValidate(p, "payment-split-service");
+    expect(findings.map((f) => f.code)).toEqual(["gherkin.edited"]);
+    expect(findings[0]!.message).toContain("loam gherkin FEAT-1");
+    expect(findings[0]!.message).toContain("FEAT-1's delta");
+  });
+
+  it("an in-flight requirement renamed in its delta still has its old file compared", async () => {
+    const p = await project(fixtureWithArch(), { service: "payment-split-service" });
+    await runLoam(p.workDir, "gherkin", "FEAT-1");
+    const delta = "features/FEAT-1-split/specs/payment-split-service/spec.md";
+    await p.write(delta, (await p.read(delta)).replace("Requirement: Split a payment", "Requirement: Split a payment across payees"));
+    await edit(p, "features/loam/split-a-payment.feature", "Then two shares are recorded", "Then a share is recorded");
+    expect((await gherkinValidate(p, "payment-split-service")).map((f) => f.code)).toEqual(["gherkin.edited"]);
+  });
+});
+
+describe("verify --results will not confirm an edited scenario", () => {
+  const digest = (): string => scenarioDigest(SPLIT, parseRequirements(FEATURE_SPEC)[0]!.scenarios[0]!.lines, "business");
+
+  async function recorded(edited: boolean): Promise<Verification["claims"]> {
+    const p = await project(coherentFixture(), { service: SPLIT });
+    const repo = await serviceRepo(p, SPLIT, "primary");
+    expect((await runLoam(repo, "gherkin", FEAT)).code).toBe(0);
+    if (edited) {
+      const file = "features/loam/split-a-payment.feature";
+      await writeWork(p, file, (await readWork(p, file)).replace("Then two shares are recorded", "Then a share is recorded"));
+    }
+    await writeFile(
+      join(repo, "report.json"),
+      JSON.stringify({ loamScenarioReport: 1, results: [{ digest: digest(), status: "passed" }] }),
+      "utf8",
+    );
+    const claims = await serviceClaims(p, SPLIT);
+    const answers = await answersFile(repo, claims.filter((c) => c.kind !== "scenario.tested"));
+    const run = await runLoam(repo, "verify", FEAT, "--service", SPLIT, "--results", "report.json", "--record", answers, "--json");
+    expect(run.code, run.out).toBe(0);
+    const written = parse(await readFile(join(p.docsDir, serviceRecord(SPLIT)), "utf8")) as Verification;
+    return written.claims.filter((c) => c.kind === "scenario.tested");
+  }
+
+  it("confirms the scenario when the generated file is as emitted", async () => {
+    expect((await recorded(false)).map((c) => c.verdict)).toEqual(["confirmed"]);
+  });
+
+  it("withholds it, naming the file and the regeneration, when the file was edited", async () => {
+    const claims = await recorded(true);
+    expect(claims.map((c) => [c.verdict, c.answered_by])).toEqual([["unconfirmed", "runner"]]);
+    expect(claims[0]!.note).toContain("features/loam/split-a-payment.feature was edited by hand");
+    expect(claims[0]!.note).toContain(`loam gherkin ${FEAT}`);
   });
 });

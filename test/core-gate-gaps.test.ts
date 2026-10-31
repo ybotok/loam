@@ -15,6 +15,7 @@ import { mkdir, symlink, writeFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   coherentFixture,
+  FEATURE_SPEC,
   LANDSCAPE,
   LIVING_OPENAPI,
   LIVING_SPEC,
@@ -44,6 +45,7 @@ import {
   steplessScenarios,
 } from "../src/core/document/scenarios.js";
 import { renderFeature } from "../src/core/gherkin/emit.js";
+import { scenarioGherkin } from "../src/core/vocabulary/steps.js";
 import { serviceBrief } from "../src/core/brief/brief.js";
 
 /** The fixture every fleet-shaped case starts from: two services the landscape binds by title. */
@@ -792,5 +794,190 @@ model {
     } finally {
       await p.destroy();
     }
+  });
+});
+
+/**
+ * A table `loam gherkin` cannot read must be said out loud — by the emitter AND
+ * by the gate.
+ *
+ * The shape that motivated this is the commonest one an author with a Gherkin
+ * habit writes: an outline's cases as pipe rows with no `|---|` delimiter row
+ * under the header. It emitted as ONE plain `Scenario:` with the rows pasted
+ * above its `Given` and the `<placeholders>` left literal, neither
+ * `malformedExamples` nor `strandedBlocks` said a word, `loam validate` graded
+ * the document green, and a lenient step definition then passed it — one green
+ * run answering for every row. Two neighbours were just as silent: the same
+ * table indented under a step, and an `Examples:` keyword line, which emits a
+ * file cucumber refuses to parse at all.
+ *
+ * The rows are deliberately NOT accepted as `Examples`: Markdown does not
+ * render them as a table, so the document a reviewer approves and the test the
+ * runner executes would say different things.
+ */
+describe("a table the emitter cannot read is flagged, never silently prose", () => {
+  const STEPS = [
+    "- **Given** copy C1 is in situation <situation>",
+    "- **When** a holder asks to transfer it",
+    '- **Then** the answer is 409 with code "<code>"',
+  ];
+  /** The cases the way a `.feature` file writes them: no `|---|` row. */
+  const GHERKIN_STYLE = ["| situation | code      |", "| withdrawn | copy-gone |", "| held      | copy-held |"];
+  const GFM = [GHERKIN_STYLE[0]!, "|---|---|", ...GHERKIN_STYLE.slice(1)];
+  const requirement = (body: string[]): ReturnType<typeof parseRequirements> =>
+    parseRequirements(
+      ["## Requirements", "", "### Requirement: Transfers that are refused", "Body.", "", "#### Scenario: Refused", ...body].join("\n"),
+    );
+
+  it("rows with no delimiter row at the margin are malformed Examples, not an outline and not silence", () => {
+    const shape = scenarioGherkin([...STEPS, "", ...GHERKIN_STYLE]);
+    expect(shape.examples).toBeNull();
+    expect(shape.malformedExamples).toBe(true);
+    expect(shape.strandedBlocks).toBe(false);
+    // Prose is never dropped: the rows stay as description, exactly as before.
+    expect(shape.description).toEqual(GHERKIN_STYLE);
+
+    const emitted = renderFeature(requirement([...STEPS, "", ...GHERKIN_STYLE])[0]!, { tags: [], version: "0.0.0" }, "svc");
+    expect(emitted.malformedExamples).toEqual(["Refused"]);
+    expect(emitted.content).toContain("  Scenario: Refused");
+    expect(emitted.content).not.toContain("Scenario Outline");
+  });
+
+  it("the same rows indented under a step are a stranded argument", () => {
+    const shape = scenarioGherkin([
+      "- **Given** the shelf holds:",
+      "",
+      "  | copy | state     |",
+      "  | C1   | withdrawn |",
+      "- **Then** nothing moves",
+    ]);
+    expect(shape.steps[0]!.table).toBeUndefined();
+    expect(shape.strandedBlocks).toBe(true);
+    expect(shape.malformedExamples).toBe(false);
+  });
+
+  it("an `Examples:` line is malformed — with no table, and before a readable one alike", () => {
+    expect(scenarioGherkin([...STEPS, "", "Examples:"]).malformedExamples).toBe(true);
+    // A readable table after the keyword is still the outline's — the flag
+    // reports the line the emitter cannot place, not the table it read.
+    const withTable = scenarioGherkin([...STEPS, "", "Examples:", ...GFM]);
+    expect(withTable.malformedExamples).toBe(true);
+    expect(withTable.examples?.rows).toEqual([["withdrawn", "copy-gone"], ["held", "copy-held"]]);
+  });
+
+  it("leaves alone what was never a table: one pipe row, rows of other widths, prose with pipes", () => {
+    expect(scenarioGherkin([...STEPS, "", "| situation | code |"]).malformedExamples).toBe(false);
+    expect(scenarioGherkin([...STEPS, "", "| situation | code |", "| just one cell |"]).malformedExamples).toBe(false);
+    expect(scenarioGherkin([...STEPS, "", "Choose a | b, never both."]).malformedExamples).toBe(false);
+    // and a GFM table with its delimiter row is the outline, as it always was
+    const gfm = scenarioGherkin([...STEPS, "", ...GFM]);
+    expect(gfm.malformedExamples).toBe(false);
+    expect(gfm.examples?.rows).toHaveLength(2);
+    // A pipe line over a readable table does not swallow it: the run stops at
+    // the `|---|` row and hands its header back.
+    const over = scenarioGherkin([...STEPS, "", "| note | here |", ...GFM]);
+    expect(over.examples?.header).toEqual(["situation", "code"]);
+    expect(over.malformedExamples).toBe(false);
+  });
+
+  it("the gate reports both flags as their own warnings, one detail per scenario", () => {
+    const reqs = parseRequirements(
+      [
+        "## Requirements",
+        "",
+        "### Requirement: Transfers that are refused",
+        "Body.",
+        "",
+        "#### Scenario: Refused",
+        ...STEPS,
+        "",
+        ...GHERKIN_STYLE,
+        "",
+        "#### Scenario: Shelf state",
+        "- **Given** the shelf holds:",
+        "",
+        "  | copy | state     |",
+        "  | C1   | withdrawn |",
+        "- **Then** nothing moves",
+      ].join("\n"),
+    );
+    const findings = examplesFindings("svc: requirements", "svc", reqs);
+    expect(findings.map((f) => [f.code, f.severity])).toEqual([
+      ["requirements.examples-malformed", "warn"],
+      ["requirements.argument-stranded", "warn"],
+    ]);
+    expect(findings[0]!.details).toEqual(["Transfers that are refused — Refused"]);
+    expect(findings[0]!.message).toContain("`|---|` delimiter row");
+    expect(findings[1]!.details).toEqual(["Transfers that are refused — Shelf state"]);
+    // and nothing on a well-formed outline
+    expect(examplesFindings("x", "y", requirement([...STEPS, "", ...GFM]))).toEqual([]);
+  });
+
+  it("`validate --feature` warns on a delta written in the Gherkin table style", async () => {
+    const p = await makeProject({
+      ...coherentFixture(),
+      "features/FEAT-1-split/specs/payment-split-service/spec.md":
+        FEATURE_SPEC + ["", "#### Scenario: Refused splits", ...STEPS, "", ...GHERKIN_STYLE, ""].join("\n"),
+    });
+    try {
+      const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
+      const payload = JSON.parse(res.stdout) as { targets: Array<{ findings: Array<{ code: string; severity: string; details?: string[] }> }> };
+      const hit = payload.targets.flatMap((t) => t.findings).filter((f) => f.code === "requirements.examples-malformed");
+      expect(hit.map((f) => [f.severity, f.details])).toEqual([["warn", ["Split a payment — Refused splits"]]]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("`validate --service` warns on the living spec, and an indented table is the stranded code", async () => {
+    const living =
+      LIVING_SPEC +
+      ["", "#### Scenario: Ledger rows", "- **When** it settles", "- **Then** the ledger holds:", "", "  | account | amount |", "  | A1      | 100    |", ""].join("\n");
+    const p = await makeProject({ ...coherentFixture(), "services/payment-service/spec.md": living });
+    try {
+      const res = await runLoam(p.workDir, "validate", "--service", "payment-service", "--json");
+      const payload = JSON.parse(res.stdout) as { targets: Array<{ id: string; findings: Array<{ code: string; details?: string[] }> }> };
+      const findings = payload.targets.find((t) => t.id === "payment-service")!.findings;
+      expect(findings.filter((f) => f.code === "requirements.argument-stranded").map((f) => f.details)).toEqual([
+        ["Authorize a payment — Ledger rows"],
+      ]);
+      expect(findings.some((f) => f.code === "requirements.examples-malformed")).toBe(false);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+/**
+ * Russian step TEXT has always worked; Russian KEYWORDS never have, and the
+ * refusal read as a different problem — "no recognizable steps" about a
+ * perfectly structured scenario. No dialect is read; the refusal now says
+ * which half has to be English.
+ */
+describe("a scenario in another language's keywords is told what to change", () => {
+  it("the stepless refusal says the keywords are English and the step text may be any language", () => {
+    const reqs = parseRequirements(
+      [
+        "## Requirements",
+        "",
+        "### Requirement: Выдача книги",
+        "Тело.",
+        "",
+        "#### Scenario: Читатель берёт книгу",
+        "- **Дано** читатель с действующим билетом",
+        "- **Когда** он берёт книгу",
+        "- **Тогда** книга числится за ним",
+        "",
+        "#### Scenario: Читатель возвращает книгу",
+        "- **Given** читатель с книгой на руках",
+        "- **When** он возвращает книгу",
+        "- **Then** книга снова на полке",
+      ].join("\n"),
+    );
+    const findings = steplessFindings("svc: requirements", "svc", reqs);
+    // Only the scenario in Russian KEYWORDS is stepless; Russian step text works.
+    expect(findings[0]!.details).toEqual(["Выдача книги — Читатель берёт книгу"]);
+    expect(findings[0]!.message).toContain("must be the English GIVEN, WHEN, THEN, AND or BUT");
+    expect(findings[0]!.message).toContain("may be in any language");
   });
 });

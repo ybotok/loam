@@ -30,6 +30,8 @@ import { recordLocation, serviceRecordPath, verificationPath } from "../../core/
 import type { PathableService } from "../../core/kernel/ids/service.js";
 import { plural, sayDiscarded, sayRecovered } from "../policy/format.js";
 import { readContractResults } from "./evidence/contract.js";
+import { withdrawEdited } from "../../core/verify/evidence/edited.js";
+import { FleetContext } from "../../core/fleet-context.js";
 import { claimTokens, pinAnswers } from "./evidence/pins.js";
 import { readResults, repositoryCommit, validateLocalEvidence, validateServiceEvidence } from "./results.js";
 import {
@@ -84,6 +86,8 @@ export interface Attestor {
   repoDir: string;
   /** What loam writes or carries in `repoDir` — left out of the uncommitted-changes check (`loamCarried`). */
   carried: readonly string[];
+  /** loam.json's `gherkinDir` — where this repository's generated suite is, which `--results` holds to its emission. */
+  gherkinDir?: string;
   /**
    * The existing record as ONE read — the union the refusals consult and the
    * files it was added up from, each with the exact bytes it was parsed from —
@@ -162,6 +166,13 @@ export async function record(
     if (!read.ok) return fail(json, read.code, read.message);
     reports.results = read.report;
     fromRunner = runnerAnswers(runnerClaims, read.scenarios, read.report.path);
+    // A green run of a hand-edited generated scenario answers nothing — see core/verify/evidence/edited.ts.
+    if (service !== undefined) {
+      const suite = { docsDir, service, repoDir, gherkinDir: attestor.gherkinDir, fleet: new FleetContext() };
+      const held = await withdrawEdited(fromRunner, runnerClaims, suite);
+      if (!held.ok) return fail(json, "repository-unavailable", held.message);
+      fromRunner = held.answers;
+    }
   }
   if (opts.contractResults !== undefined) {
     // Same resolution rules as the cucumber report, same refusal code: the two

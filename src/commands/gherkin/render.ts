@@ -49,16 +49,17 @@ const LOSSES = [
   {
     of: (a: ActionRow): string[] => (a.action === "kept" ? [] : a.malformedExamples),
     why:
-      "has a table loam could not read as Examples — every row must have the header's column count, " +
-      "and a header needs at least one row under it. It stayed in the description, so this scenario " +
-      "runs ONCE, not once per case",
+      "has a table loam could not read as Examples — the header needs its `|---|` delimiter row, every " +
+      "row the header's column count, and at least one row under it — so it stayed in the description and " +
+      "this scenario runs ONCE, not once per case; or an `Examples:` line, which makes cucumber refuse the " +
+      "file: delete it, the margin table IS the Examples",
   },
   {
     of: (a: ActionRow): string[] => (a.action === "kept" ? [] : a.strandedBlocks),
     why:
       "wrote a fenced block or an indented table where no step precedes it, or a table loam could " +
       "not read — it stayed in the description, so the step definition receives NO payload and no " +
-      "data table; put the block under the step it belongs to and give every row equal columns",
+      "data table; put the block under the step it belongs to, with a `|---|` row and equal columns",
   },
 ];
 

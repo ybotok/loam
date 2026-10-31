@@ -10,9 +10,18 @@
  */
 import { type Requirement } from "../document/spec.js";
 import { scenarioGherkin } from "../vocabulary/steps.js";
-import { type SpecAxis } from "../repo/paths.js";
+import { existsSync } from "node:fs";
+import { featureSpecPaths, SPEC_AXES, type SpecAxis } from "../repo/paths.js";
+import { locateServicePaths } from "../repo/service-target.js";
+import type { FeatureEntry } from "../repo/entries.js";
+import type { FleetContext } from "../fleet-context.js";
+import type { DocsDir } from "../kernel/ids/dirs.js";
+import type { PathableService } from "../kernel/ids/service.js";
 import { type ScenarioAxis } from "./digest.js";
 import { gherkinStampLine, scenarioDigest, scenarioDigestTag } from "./stamp.js";
+
+/** What an emission plan is made from: the requirements of each spec axis. */
+export type ByAxis = Array<{ axis: SpecAxis; reqs: Requirement[] }>;
 
 /** The axis label the machine contract speaks. */
 export function axisLabel(axis: SpecAxis): "business" | "arch" {
@@ -106,7 +115,7 @@ export interface PlannedFeature {
  * defaulted: an emission that guessed it would stamp tags no claim matches.
  */
 export function planEmission(
-  byAxis: Array<{ axis: SpecAxis; reqs: Requirement[] }>,
+  byAxis: ByAxis,
   opts: { service: string; featureTag?: string; version: string },
 ): PlannedFeature[] {
   const used = new Set<string>();
@@ -232,4 +241,27 @@ function tableRow(row: string[], all: readonly string[][]): string {
   const esc = (c: string): string => c.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\n/g, "\\n");
   const widths = row.map((_, i) => Math.max(...all.map((r) => esc(r[i] ?? "").length)));
   return `| ${row.map((c, i) => esc(c).padEnd(widths[i]!)).join(" | ")} |`;
+}
+
+/**
+ * The requirement set per axis exactly as `loam gherkin` takes it — the living
+ * specs minus REMOVED, or one feature's ADDED and MODIFIED for this service —
+ * so the edit check re-emits from the same input the writer read.
+ */
+export async function emissionInput(
+  ctx: { docsDir: DocsDir; service: PathableService; fleet: FleetContext },
+  feature?: FeatureEntry,
+): Promise<ByAxis> {
+  const paths =
+    feature === undefined
+      ? await locateServicePaths(ctx.docsDir, ctx.service, ctx.fleet)
+      : featureSpecPaths(feature.dir, ctx.service);
+  const keep = (r: Requirement): boolean =>
+    feature === undefined ? r.kind !== "REMOVED" : r.kind === "ADDED" || r.kind === "MODIFIED";
+  const out: ByAxis = [];
+  for (const axis of SPEC_AXES) {
+    const path = paths[axis.key];
+    out.push({ axis, reqs: existsSync(path) ? (await ctx.fleet.readRequirements(path)).filter(keep) : [] });
+  }
+  return out;
 }

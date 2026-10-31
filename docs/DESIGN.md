@@ -121,7 +121,7 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/c4/` | `likec4` `arch` `source-mask` `source-scan`, with `parsed/` `project/` `resolve/` `locate/` beneath | envelope, kernel, repo, vocabulary |
 | `core/c4/splice/` | `contract` `landscape-merge` `authored-source` `placement` | c4 |
 | `core/c4/seed/` | `loam seed`'s file grammar and templater: `fleet-file` (`items` reads one node) `template` `stamp` | c4, kernel |
-| `core/gherkin/` | the generated `.feature` files and the step catalogue over them | kernel, repo, vocabulary |
+| `core/gherkin/` | the generated `.feature` files and the step catalogue over them | envelope, kernel, repo, vocabulary |
 | `core/glossary/` | `glossary/<term>.md` as a tree where presence classifies, and the fleet-wide backlinks into it | repo |
 | `core/openapi/` | the synchronous contract axis; `openapi/merge/` is the delta path | kernel, repo |
 | `core/openspec/` | the OpenSpec model (`model/`), the scan, and the decisions over it | document, kernel, repo |

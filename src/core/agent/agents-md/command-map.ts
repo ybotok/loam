@@ -104,6 +104,7 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   \`c4.no-relationships\`, \`requirements.missing-scenarios\`,
   \`requirements.stepless-scenario\`, \`requirements.assertionless-scenario\`,
   \`requirements.examples-unbound\`, \`requirements.examples-unreferenced\`,
+  \`requirements.examples-malformed\`, \`requirements.argument-stranded\`,
   \`spec.merge-conflict\`, \`spec.duplicate-requirement\`, \`spec.no-requirements\`,
   \`spec.repeated-operations\`, \`spec.repeated-covers\`, \`openapi.invalid\`,
   \`openapi.duplicate-operationid\`, \`openapi.response-undescribed\`,
@@ -120,8 +121,9 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   \`health.invalid\`, \`health.uncovered\`, \`health.dependency-unmodelled\`.
   Run inside the service's own repo, once a generated suite exists under
   \`<gherkinDir>/loam/\`, it also grades that suite against the living specs:
-  \`gherkin.missing\`, \`gherkin.stale\`, \`gherkin.orphaned\`. A service that never
-  ran \`loam gherkin\` stays quiet — that whole trio is conditional on the suite
+  \`gherkin.missing\`, \`gherkin.stale\`, \`gherkin.orphaned\`, and \`gherkin.edited\`
+  for a file whose text is not what this loam emits for it. A service that never
+  ran \`loam gherkin\` stays quiet — that whole family is conditional on the suite
   existing here — and a file tagged with a feature still in flight answers to
   that feature, not to the living spec it has not merged into yet.
 - \`loam validate --feature <id>\` grades a change's three axes against each other and

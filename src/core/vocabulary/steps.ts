@@ -103,14 +103,23 @@ export interface ScenarioGherkin {
   examples: Examples | null;
   /**
    * A top-level table was clearly intended as `Examples` and could not be read —
-   * a row whose width disagrees with the header, or a header with no rows under
-   * it.
+   * a row whose width disagrees with the header, a header with no rows under
+   * it, or rows written the way a `.feature` file writes them, with no `|---|`
+   * delimiter row. Also set by a body line reading `Examples:`: that keyword is
+   * the emitter's to write, and one kept as description ends the scenario
+   * early — cucumber refuses the file.
    *
    * Reported rather than guessed at. The rule this whole module holds is that
    * prose is never dropped, so a table loam cannot read stays in the scenario
    * DESCRIPTION and the emission is still valid Gherkin — which is exactly why
    * silence would be wrong: the author wrote twenty cases, cucumber runs one
    * scenario, and both the file and the report look healthy.
+   *
+   * The delimiter-less table is NOT read as `Examples`, though nothing about
+   * its shape is ambiguous. Markdown does not render it as a table — a pull
+   * request shows a paragraph of pipes — so accepting it would make the
+   * document a reviewer approved and the test the runner executes say two
+   * different things, which is the one disagreement loam exists to prevent.
    */
   malformedExamples: boolean;
   /**
@@ -234,8 +243,9 @@ function tableAt(lines: string[], i: number): { indent: number; end: number; row
   // with an empty cell is not a header — it is prose that contains pipes.
   if (header === null || header.length === 0 || header.some((c) => c.length === 0)) return null;
   const sep = cellsOf(lines[i + 1] ?? "");
-  if (sep === null || !isSeparator(sep)) return null;
   const indent = /^\s*/.exec(lines[i]!)![0]!.length;
+  if (sep === null) return null;
+  if (!isSeparator(sep)) return delimiterless(lines, i, header.length, indent);
   if (sep.length !== header.length) return { indent, end: i + 1, rows: null };
   const rows: string[][] = [];
   let end = i + 1;
@@ -251,6 +261,51 @@ function tableAt(lines: string[], i: number): { indent: number; end: number; row
   if (rows.length === 0) return { indent, end, rows: null };
   return { indent, end, rows: [header, ...rows] };
 }
+
+/**
+ * A table written the way a `.feature` file writes one — a named header and
+ * rows of the same width under it, with no `|---|` delimiter row — as an
+ * unreadable table spanning those rows; null when the run is not that shape.
+ *
+ * It used to be null outright, and that is the defect this exists for: the
+ * rows fell through as plain lines, a Scenario Outline's table became prose
+ * above its `Given`, the `<placeholders>` reached the runner as literal text,
+ * and neither flag on {@link ScenarioGherkin} was set — the one shape a Gherkin
+ * habit produces was the one shape nothing reported. Equal widths are the whole
+ * test: a header followed by rows of other widths is not recognisably a table,
+ * and prose that happens to sit between pipes must stay prose.
+ *
+ * The run stops short of a `|---|` row and gives back the line above it: that
+ * line is the HEADER of a readable table, and swallowing it would turn a
+ * working outline into an unreadable one because a pipe line sat over it.
+ */
+function delimiterless(
+  lines: string[],
+  i: number,
+  width: number,
+  indent: number,
+): { indent: number; end: number; rows: null } | null {
+  let end = i;
+  for (let j = i + 1; j < lines.length; j += 1) {
+    const row = cellsOf(lines[j]!);
+    if (row === null || row.length !== width) break;
+    if (isSeparator(row)) {
+      end = j - 2;
+      break;
+    }
+    end = j;
+  }
+  return end > i ? { indent, end, rows: null } : null;
+}
+
+/**
+ * A body line that reads as Gherkin's own `Examples:` keyword (or its synonym
+ * `Scenarios:`). The emitter writes that keyword itself, above the table it
+ * read; one written by the author is kept as description, and a description
+ * line that IS a keyword ends the scenario there — cucumber then meets the
+ * steps after an `Examples:` with no table and refuses the whole file.
+ */
+const EXAMPLES_KEYWORD_RE = /^(?:Examples|Scenarios)\s*:/;
 
 /**
  * A scenario body split for rendering: bullet lines that read as steps become
@@ -287,6 +342,7 @@ export function scenarioGherkin(lines: string[]): ScenarioGherkin {
   let examples: Examples | null = null;
   let malformedExamples = false;
   let strandedBlocks = false;
+  let examplesKeyword = false;
   const keep = (raw: string[]): void => {
     for (const l of raw) if (l.trim().length > 0) description.push(l.trim());
   };
@@ -295,7 +351,13 @@ export function scenarioGherkin(lines: string[]): ScenarioGherkin {
       if (block.text.trim().length === 0) continue;
       const step = stepFromLine(block.text);
       if (step) steps.push({ text: step.text.length > 0 ? `${step.keyword} ${step.text}` : step.keyword });
-      else description.push(block.text.trim());
+      else {
+        // A flag of its own, folded in at the end: `malformedExamples` also
+        // decides whether a later margin table may still become the
+        // `Examples`, and the keyword line says nothing about that table.
+        if (EXAMPLES_KEYWORD_RE.test(block.text.trim())) examplesKeyword = true;
+        description.push(block.text.trim());
+      }
       continue;
     }
     const last = steps[steps.length - 1];
@@ -328,5 +390,5 @@ export function scenarioGherkin(lines: string[]): ScenarioGherkin {
     if (block.indent > 0) strandedBlocks = true;
     keep(block.lines);
   }
-  return { description, steps, examples, malformedExamples, strandedBlocks };
+  return { description, steps, examples, malformedExamples: malformedExamples || examplesKeyword, strandedBlocks };
 }
