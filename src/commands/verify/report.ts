@@ -10,19 +10,24 @@
 import { emitJson, repoPath } from "../../core/envelope/json.js";
 import { type CommitRecovery } from "../../core/staging/interrupted.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
+import type { PathableService } from "../../core/kernel/ids/service.js";
 import { type AnsweredBy } from "../../core/verify/answers.js";
+import { type DiscardedAnswer } from "../../core/verify/build.js";
 import { type Checklist } from "../../core/verify/checklist.js";
 import { type EvidencePin } from "../../core/verify/pins/pin.js";
 import {
   countedAnswers,
   openClaimsNotice,
   tallyAnswers,
+  tallyRecord,
+  type ConsumedReports,
   type RecordedClaim,
   type Verification,
+  type VerifyNotice,
   verificationVerdict,
 } from "../../core/verify/record.js";
-import { verificationDir } from "../../core/verify/location.js";
-import { EXPLAIN_FOOTER, plural } from "../policy/format.js";
+import { recordLocation, verificationDir } from "../../core/verify/location.js";
+import { EXPLAIN_FOOTER, plural, sayDiscarded, sayRecovered } from "../policy/format.js";
 import {
   answeredMark,
   contestedNotices,
@@ -238,6 +243,99 @@ export function report(
   // and the frozen post-archive view (frozen.ts) stays without it on purpose,
   // because shipped history is not a fix-it surface.
   if (notices.length > 0) console.log(`\n${EXPLAIN_FOOTER}`);
+}
+
+/**
+ * What one `--record` run wrote. record.ts adds it up and commits it; this is
+ * the record view, said on both surfaces from one tally.
+ */
+export interface RecordedRun {
+  target: VerifyTarget;
+  /** The file written first — this service's own, or the legacy record. */
+  path: string;
+  verification: Verification;
+  reports: ConsumedReports;
+  /** How many answers the test runner, the contract run and the answers file each gave. */
+  answeredBy: { runner: number; contract: number; file: number };
+  discarded: DiscardedAnswer[];
+  notices: VerifyNotice[];
+  service: PathableService | undefined;
+}
+
+export function sayRecorded(run: RecordedRun, opts: { results?: string; contractResults?: string; record?: string }): void {
+  const { target, path, verification, reports, discarded, notices, service } = run;
+  const { docsDir, featureDir, json } = target;
+  const unconfirmed = verification.claims.filter((c) => c.verdict === "unconfirmed");
+
+  // The same judgment read mode makes (see `report` above): the record just
+  // written IS the current checklist's answer, so `stale` is false by
+  // construction and the remaining question is whether every claim was
+  // confirmed — and, now, by whom. Counted from the claims, not from the
+  // summary the same run wrote. Without these fields an agent that recorded
+  // all-confirmed answers would have to re-run verify just to learn the state
+  // it created.
+  const tally = tallyRecord(verification);
+  const verdict = verificationVerdict(tally);
+  const verified = verdict === "verified";
+
+  if (json) {
+    emitJson({
+      command: "verify",
+      feature: verification.feature,
+      path: repoPath(docsDir, path),
+      ...(target.recovered == null ? {} : { recovered: target.recovered }),
+      digest: verification.checklist,
+      verified,
+      verdict,
+      attested: tally.attested,
+      recorded: verification.recorded,
+      summary: verification.summary,
+      ...(verification.attestations === undefined ? {} : { attestations: verification.attestations }),
+      ...(reports.results === undefined ? {} : { report: reports.results }),
+      ...(reports.contract === undefined ? {} : { contractReport: reports.contract }),
+      unconfirmed: unconfirmed.map((c) => ({ id: c.id, claim: c.claim, ...(c.note === undefined ? {} : { note: c.note }) })),
+      ...(discarded.length === 0 ? {} : { discarded }),
+      ...(notices.length === 0 ? {} : { notices }),
+    });
+    return;
+  }
+
+  if (target.recovered != null) console.log(`${sayRecovered(target.recovered)}\n`);
+  console.log(`${verification.feature} verification recorded — ${repoPath(docsDir, path)}\n`);
+  console.log(`  ${tally.confirmed} of ${plural(tally.claims, "claim")} confirmed with evidence.`);
+  if (reports.results !== undefined) {
+    console.log(`  ${plural(run.answeredBy.runner, "scenario claim")} answered by the test runner (${opts.results}).`);
+    console.log(`  Report read: ${reportLine(reports.results)}.`);
+  }
+  if (reports.contract !== undefined) {
+    console.log(`  ${plural(run.answeredBy.contract, "api.exposes claim")} answered by the contract test run (${opts.contractResults}).`);
+    console.log(`  Contract report read: ${contractReportLine(reports.contract)}.`);
+  }
+  if (opts.record !== undefined && (reports.results !== undefined || reports.contract !== undefined)) {
+    console.log(`  ${plural(run.answeredBy.file, "claim")} answered by ${opts.record}.`);
+  }
+  if (service !== undefined) {
+    const attestation = verification.attestations?.find((item) => item.service === service);
+    if (attestation !== undefined) {
+      console.log(`  ${service} attested at git commit ${attestation.commit}${uncommittedMark(attestation)}.`);
+    }
+  }
+  for (const c of unconfirmed) {
+    console.log(`  ✗ ${c.claim}${c.note === undefined ? "" : ` — ${c.note}`}`);
+  }
+
+  sayDiscarded(discarded, repoPath(docsDir, recordLocation(featureDir)), verification.feature);
+  console.log("");
+  for (const notice of notices) console.log(`  ⚠ ${notice.code}: ${notice.message}`);
+  console.log(
+    tally.unanswered > 0
+      ? `  Partial federation — ${plural(tally.unanswered, "claim")} remain unanswered for their owning service repositories.`
+      : verdict === "attested"
+        ? "  Recorded as attested, not verified: the record travels into features/archive/ saying so."
+        : unconfirmed.length === 0
+          ? "  The record travels with the feature into features/archive/."
+          : "  Recorded as it stands. Nothing gates on this — it is what a reviewer reads later, so leave it true.",
+  );
 }
 
 /**

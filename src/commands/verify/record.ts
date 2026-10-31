@@ -9,7 +9,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { emitJson, fail, repoPath } from "../../core/envelope/json.js";
+import { fail, repoPath } from "../../core/envelope/json.js";
 import { today } from "../../core/provenance/stamp.js";
 import { runnerAnswers } from "../../core/results.js";
 import { checkAnswers, type Answer } from "../../core/verify/answers.js";
@@ -19,16 +19,10 @@ import { contractAnswers } from "../../core/verify/evidence/contract.js";
 import { type RecordFiles } from "../../core/verify/read/file.js";
 import { assembleRecord } from "../../core/verify/read/union.js";
 import { commitVerification, type RecordWrite } from "../../core/verify/store/commit.js";
-import {
-  tallyRecord,
-  type ConsumedReports,
-  type Verification,
-  type VerifyNotice,
-  verificationVerdict,
-} from "../../core/verify/record.js";
+import { type ConsumedReports, type Verification, type VerifyNotice } from "../../core/verify/record.js";
 import { recordLocation, serviceRecordPath, verificationPath } from "../../core/verify/location.js";
 import type { PathableService } from "../../core/kernel/ids/service.js";
-import { plural, sayDiscarded, sayRecovered } from "../policy/format.js";
+import { plural } from "../policy/format.js";
 import { readContractResults } from "./evidence/contract.js";
 import { withdrawEdited } from "../../core/verify/evidence/edited.js";
 import { FleetContext } from "../../core/fleet-context.js";
@@ -37,16 +31,13 @@ import { readResults, repositoryCommit, validateLocalEvidence, validateServiceEv
 import {
   contestedNotices,
   contestedOperationNotices,
-  contractReportLine,
   forkedChecklistNotices,
   noticesFor,
   RECORD_AGAIN,
-  reportLine,
-  uncommittedMark,
   uncommittedNotice,
 } from "./frozen.js";
 import { uncommittedPaths } from "./evidence/worktree.js";
-import { type VerifyTarget } from "./report.js";
+import { sayRecorded, type VerifyTarget } from "./report.js";
 
 /** The flags `loam verify --record` reads. */
 export interface VerifyOptions {
@@ -324,17 +315,6 @@ export async function record(
   const committed = await commitVerification(writes, docsDir);
   if (!committed.ok) return fail(json, committed.code, committed.message);
   const path = writes[0]!.path;
-  const unconfirmed = verification.claims.filter((c) => c.verdict === "unconfirmed");
-
-  // The same judgment read mode makes (see report): the record just written IS
-  // the current checklist's answer, so `stale` is false by construction and the
-  // remaining question is whether every claim was confirmed — and, now, by
-  // whom. Counted from the claims, not from the summary this same call wrote.
-  // Without these fields an agent that recorded all-confirmed answers would
-  // have to re-run verify just to learn the state it created.
-  const tally = tallyRecord(verification);
-  const verdict = verificationVerdict(tally);
-  const verified = verdict === "verified";
   const dirty = uncommittedNotice(verification, RECORD_AGAIN);
   const notices = [
     ...noticesFor(verification.claims, verification.feature),
@@ -348,62 +328,6 @@ export async function record(
     ...(dirty === null ? [] : [dirty]),
   ];
 
-  if (json) {
-    emitJson({
-      command: "verify",
-      feature: verification.feature,
-      path: repoPath(docsDir, path),
-      ...(target.recovered == null ? {} : { recovered: target.recovered }),
-      digest: verification.checklist,
-      verified,
-      verdict,
-      attested: tally.attested,
-      recorded: verification.recorded,
-      summary: verification.summary,
-      ...(verification.attestations === undefined ? {} : { attestations: verification.attestations }),
-      ...(reports.results === undefined ? {} : { report: reports.results }),
-      ...(reports.contract === undefined ? {} : { contractReport: reports.contract }),
-      unconfirmed: unconfirmed.map((c) => ({ id: c.id, claim: c.claim, ...(c.note === undefined ? {} : { note: c.note }) })),
-      ...(discarded.length === 0 ? {} : { discarded }),
-      ...(notices.length === 0 ? {} : { notices }),
-    });
-    return;
-  }
-
-  if (target.recovered != null) console.log(`${sayRecovered(target.recovered)}\n`);
-  console.log(`${verification.feature} verification recorded — ${repoPath(docsDir, path)}\n`);
-  console.log(`  ${tally.confirmed} of ${plural(tally.claims, "claim")} confirmed with evidence.`);
-  if (reports.results !== undefined) {
-    console.log(`  ${plural(fromRunner.length, "scenario claim")} answered by the test runner (${opts.results}).`);
-    console.log(`  Report read: ${reportLine(reports.results)}.`);
-  }
-  if (reports.contract !== undefined) {
-    console.log(`  ${plural(fromContract.length, "api.exposes claim")} answered by the contract test run (${opts.contractResults}).`);
-    console.log(`  Contract report read: ${contractReportLine(reports.contract)}.`);
-  }
-  if (opts.record !== undefined && (reports.results !== undefined || reports.contract !== undefined)) {
-    console.log(`  ${plural(checked.answers.length, "claim")} answered by ${opts.record}.`);
-  }
-  if (service !== undefined) {
-    const attestation = verification.attestations?.find((item) => item.service === service);
-    if (attestation !== undefined) {
-      console.log(`  ${service} attested at git commit ${attestation.commit}${uncommittedMark(attestation)}.`);
-    }
-  }
-  for (const c of unconfirmed) {
-    console.log(`  ✗ ${c.claim}${c.note === undefined ? "" : ` — ${c.note}`}`);
-  }
-
-  sayDiscarded(discarded, repoPath(docsDir, recordLocation(featureDir)), verification.feature);
-  console.log("");
-  for (const notice of notices) console.log(`  ⚠ ${notice.code}: ${notice.message}`);
-  console.log(
-    tally.unanswered > 0
-      ? `  Partial federation — ${plural(tally.unanswered, "claim")} remain unanswered for their owning service repositories.`
-      : verdict === "attested"
-        ? "  Recorded as attested, not verified: the record travels into features/archive/ saying so."
-        : unconfirmed.length === 0
-          ? "  The record travels with the feature into features/archive/."
-          : "  Recorded as it stands. Nothing gates on this — it is what a reviewer reads later, so leave it true.",
-  );
+  const answeredBy = { runner: fromRunner.length, contract: fromContract.length, file: checked.answers.length };
+  sayRecorded({ target, path, verification, reports, answeredBy, discarded, notices, service }, opts);
 }
