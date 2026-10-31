@@ -16,7 +16,7 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { parseRequirements } from "../src/core/document/parse.js";
@@ -187,6 +187,31 @@ describe("what the check leaves out, and how a record holding the flag is read",
     // untracked directory that holds it, as it does for any untracked tree.
     await writeFile(join(repo, "tests", "unit.ts"), "t\n", "utf8");
     expect(await uncommittedPaths(repo, carried, { reports: {} })).toEqual(["tests/"]);
+  });
+
+  it("a generated suite a link carries outside the repository is not loam's to leave out", async () => {
+    // `loamOwnedFiles` names `features/loam/` for the walk check, unchecked.
+    // Spread into the carried list, it left out a suite `gherkinRoot` refuses:
+    // a link to a weakened copy elsewhere, and the tree read as clean. Through
+    // a junction git reports the copy as modified; through a POSIX symlink, the
+    // tracked file as deleted behind it. Either way it is named.
+    const repo = await makeTmpDir();
+    const outside = await makeTmpDir();
+    git(repo, "init", "-q");
+    await writeFile(join(repo, "loam.json"), JSON.stringify({ docsDir: "docs", service: SPLIT }), "utf8");
+    await mkdir(join(repo, "docs"), { recursive: true });
+    await mkdir(join(repo, "features", "loam"), { recursive: true });
+    await writeFile(join(repo, "features", "loam", "a.feature"), "Feature: a\n  Then a split of 100.00 is recorded\n", "utf8");
+    git(repo, "add", "loam.json", "features");
+    git(repo, "commit", "-qm", "base");
+    await writeFile(join(outside, "a.feature"), "Feature: a\n  Then a split is recorded\n", "utf8");
+    await rm(join(repo, "features", "loam"), { recursive: true });
+    await symlink(outside, join(repo, "features", "loam"), process.platform === "win32" ? "junction" : "dir");
+    const load = await loadConfig(repo);
+    if (load.kind !== "loaded") throw new Error(`fixture config did not load: ${load.kind}`);
+    expect(await uncommittedPaths(repo, loamCarried(load.config, repo), { reports: {} })).toContain(
+      "features/loam/a.feature",
+    );
   });
 
   it("an untracked file counts even where git is configured to hide untracked files", async () => {

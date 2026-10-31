@@ -33,10 +33,15 @@ import type { ConsumedReports } from "../../../core/verify/record.js";
  * one a team learns to skip.
  *
  * An unsafe `gherkinDir` is `loam gherkin`'s refusal to make, not this one's:
- * it is left out of the list and the check stays conservative.
+ * it is left out of the list and the check stays conservative. That is why
+ * only the FILES come from `loamOwnedFiles`: it also names the suite's subtree,
+ * unchecked, for the walk check, and taken from there a suite linked outside
+ * the repository — a hand-edited copy anywhere — read as loam's and the tree
+ * as clean. Its other subtree, an in-repo docs dir, is `config.docsDir` here.
  */
 export function loamCarried(config: LoamConfig, repoDir: string): string[] {
-  return [...loamOwnedFiles(config), config.docsDir, ...generatedSuite(repoDir, config.gherkinDir)];
+  const files = loamOwnedFiles(config).filter((path) => !path.endsWith("/"));
+  return [...files, config.docsDir, ...generatedSuite(repoDir, config.gherkinDir)];
 }
 
 function generatedSuite(repoDir: string, gherkinDir: string | undefined): string[] {

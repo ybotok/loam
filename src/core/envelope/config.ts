@@ -158,6 +158,9 @@ function searchDirs(start: string): string[] {
  *   - the docs repo, when it lives INSIDE this one (`init --docs loam-docs
  *     --create`). Nor can it be listed: `loam vouch` stamps the spec beneath
  *     it, which stales a digest taken over it at once.
+ *
+ * Neither subtree is checked against links leaving the repository, so
+ * `verify`'s uncommitted-changes check (`loamCarried`) takes only the files.
  */
 export function loamOwnedFiles(config: LoamConfig): string[] {
   const owned = [CONFIG_FILENAME, ...Object.keys(config.agentFiles ?? {})];

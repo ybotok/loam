@@ -123,8 +123,9 @@ that recorded before refuses now.
   the suite had run against modified files and untracked directories — a commit that need not hold
   one line of the tested code — and recorded `verified` without a word. Recording now asks
   `git status --porcelain` under the directory `loam.json` sits in, leaving out what loam writes or
-  carries there (`loam.json` and its agent files, the generated suite under `<gherkinDir>/loam/`, an
-  in-repo docs dir, the reports the run read and the answers file). Anything else marks the
+  carries there (`loam.json` and its agent files, the generated suite under `<gherkinDir>/loam/`
+  unless a link takes it outside the repository, an in-repo docs dir, the reports the run read and
+  the answers file). Anything else marks the
   attestation `dirty: true` with the paths in `uncommitted`, and the run warns
   `verify.uncommitted-changes` and prints `attested at git commit <sha> + uncommitted changes`.
 - **The read view, `loam gate` and `loam status` carry it beside the verdict** —
