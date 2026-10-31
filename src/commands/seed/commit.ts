@@ -178,25 +178,31 @@ async function classifyLandscape(
   if (isLandscapeStub(text)) return { disposition: "replaced-stub" };
   const provenance = landscapeProvenance(text);
   if (provenance === "seed-stamped") return { disposition: "regenerated" };
-  // The advice used to be "fold the edits into fleet.yaml and delete the
-  // file", which is impossible for the edit every documented next step makes:
-  // the first `metadata { op }` an author or an adopt brief writes onto an edge
-  // has no spelling in fleet.yaml (services, subsystems, plain `a -> b` calls),
-  // so a reader following it would delete the operation links the spine is
-  // graded on. Seed is a day-zero tool; the honest answer names what grows the
-  // map after day zero.
+  // The advice has moved twice, and both earlier versions were wrong for a
+  // reason worth keeping. It first said "fold the edits into fleet.yaml and
+  // delete the file", which was impossible for the edit every documented next
+  // step then made: the first `metadata { op }` an author or an adopt brief
+  // wrote onto an edge had no spelling in fleet.yaml, so a reader following it
+  // deleted the operation links the spine is graded on. It then said seed runs
+  // once, before any operation is drawn — true while fleet.yaml could not say
+  // one. It now can: a call's operations, and the messages under `publishes:`
+  // and `consumes:`, are fleet.yaml statements, so folding the edit back in and
+  // re-seeding is the right answer for exactly those edits — and the only
+  // honest one for a team that hand-wrote ops by following the old header. For
+  // everything fleet.yaml still cannot say (a title, a container, a database,
+  // an adopt brief's elements), the map has outgrown seed, and the sentence
+  // names what grows it after that.
   return {
     refusal:
       `architecture/landscape.likec4 ${
         provenance === "seed-edited"
           ? "was seeded but has been hand-edited since — the line-1 stamp's digest no longer matches the content"
           : "was not written by `loam seed`: it carries no line-1 stamp and is not the scaffold's untouched stub"
-      }. Seed never overwrites human work; nothing was written. Seed runs once, before anyone ` +
-      `draws an operation: fleet.yaml cannot carry \`metadata { op }\`, publishes or consumes, so a map ` +
-      `holding them is past seeding. Grow it from here without seed — \`loam adopt --service <id>\` ` +
-      `briefs the element and edges a new service adds, and a feature's C4 delta carries every other ` +
-      `change. Only if the edits are things fleet.yaml can say (a service, a subsystem, a plain call) ` +
-      `is folding them into fleet.yaml and deleting the file still an option.`,
+      }. Seed never overwrites human work; nothing was written. If every edit is something fleet.yaml ` +
+      `can now say — a service, subsystem, external, a call and its operations (\`- a -> b: op\`), a ` +
+      `\`publishes:\` or \`consumes:\` line — put it in fleet.yaml, delete architecture/landscape.likec4, ` +
+      `and re-run. Otherwise the map has outgrown seed: \`loam adopt --service <id>\` and feature C4 ` +
+      `deltas grow it from here.`,
   };
 }
 

@@ -26,6 +26,7 @@ import { type Requirement } from "../../../../core/document/spec.js";
 import { readAsyncapi, slotsOf } from "../../../../core/asyncapi/read.js";
 import { FleetContext } from "../../../../core/fleet-context.js";
 import { repoPath } from "../../../../core/envelope/json.js";
+import { nearestIds } from "../../../../core/repo/entries.js";
 import { producerFindings } from "./message-producers.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
 
@@ -204,13 +205,20 @@ export async function eventAxisFindings(axis: EventAxis): Promise<Finding[]> {
       direction === "publishes" ? "send" : "receive";
     for (const e of eventEdges) {
       if (declares(e.direction, e.message)) continue;
+      // The nearest name the contract declares FOR THIS DIRECTION — a sent
+      // name for a publish, a received one for a consume — because offering a
+      // name the service sends to fix a consume would turn a typo into a
+      // second wrong join. `nearestIds`, as `spine.op-undefined` uses it
+      // (../spine.ts says why that rule and not `closeIds`).
+      const near = nearestIds(e.message, [...(e.direction === "publishes" ? sentHere : receivedHere)]);
       findings.push({
         severity: "error",
         code: "spine.message-undefined",
         subject: service,
         message:
           `${service}: landscape edge ${e.direction === "publishes" ? `${service} → ${e.other}` : `${e.other} → ${service}`} ` +
-          `${e.direction} '${e.message}', but ${service}'s asyncapi.yaml declares no operation with action: ${action(e.direction)} for it`,
+          `${e.direction} '${e.message}', but ${service}'s asyncapi.yaml declares no operation with action: ${action(e.direction)} for it` +
+          (near.length === 0 ? "" : ` — did you mean ${near.map((n) => `'${n}'`).join(" or ")}?`),
       });
     }
     for (const e of eventLinks) {

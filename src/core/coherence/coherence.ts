@@ -246,7 +246,8 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
   // E2 / W1 / W4: C4 edges vs API + requirements.
   for (const r of taggedRels) {
     if (r.op === undefined) {
-      if ((r.title ?? "").toLowerCase().startsWith("call")) {
+      // A message edge (`publishes`/`consumes`) names no operation by design, whatever its title (consumers.ts's rule).
+      if (r.publishes === undefined && r.consumes === undefined && (r.title ?? "").toLowerCase().startsWith("call")) {
         issues.push({ severity: "warn", code: "c4.op-link-missing", message: `edge ${svcOf(r.source)} → ${svcOf(r.target)} ("${r.title}") has no operation link (metadata { op })` });
       }
       continue;

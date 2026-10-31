@@ -92,16 +92,21 @@ no fleet manifest, deliberately — the wiring is one file per repo, and it is r
    loam seed --from fleet.yaml
    ```
 
-   `fleet.yaml` is service ids, optional `subsystems`, `externals`, and `a -> b` calls — nothing
-   else; [`examples/fleet.yaml`](https://github.com/ybotok/loam/blob/main/examples/fleet.yaml) is a
-   real one for the five-service example fleet. Seed templates `architecture/landscape.likec4` and one `services/<id>/` directory per
-   entry, in one journaled transaction, and guesses nothing: a human stated every fact in the file,
-   which is what keeps seed on the same side of the no-extractor line as `loam new`. Re-running is
-   safe — once the landscape has been hand-edited, seed refuses (`seed-landscape-edited`) rather
-   than overwrite it. That makes seed a day-zero step: list every service id you already know in
-   `fleet.yaml` up front, because the first `metadata { op }` below has no spelling in
-   `fleet.yaml`. From then on the map grows without seed — `loam adopt --service <id>` briefs the
-   element and edges a new service adds, and a feature's C4 delta carries every other change.
+   `fleet.yaml` is service ids, optional `subsystems` and `externals`, `calls:` written
+   `a -> b` with the operations the caller uses (`a -> b: createOrder`, or a list), and the
+   messages under `publishes:` (`producer -> broker: message`) and `consumes:`
+   (`broker -> consumer: message`) — nothing else;
+   [`examples/fleet.yaml`](https://github.com/ybotok/loam/blob/main/examples/fleet.yaml) is a
+   real one for the five-service example fleet. Seed templates `architecture/landscape.likec4` —
+   one edge per stated operation or message — and one `services/<id>/` directory per entry, in one
+   journaled transaction, and guesses nothing: a human stated every fact in the file, which is what
+   keeps seed on the same side of the no-extractor line as `loam new`. Re-running is safe, and it is
+   how the map changes: while nobody has hand-edited it, seed regenerates it from `fleet.yaml`, and
+   once somebody has, seed refuses (`seed-landscape-edited`) rather than overwrite it. So seed keeps
+   the map while `fleet.yaml` can say everything on it. The first title, container, database or
+   adopt brief a human draws onto it is past that, and from then on the map grows without seed —
+   `loam adopt --service <id>` briefs the element and edges a new service adds, and a feature's C4
+   delta carries every other change.
 
    Drawing it by hand instead is entirely legal, and the landscape is a **required** artifact
    either way, not an optional one: `loam validate --all` reports `landscape.missing` as an error
@@ -116,10 +121,14 @@ no fleet manifest, deliberately — the wiring is one file per repo, and it is r
    no service, and a map that draws none owes no file. The scaffolded map's comment and init's
    closing list both name the step.
 
-   What seed deliberately does not write is the operation on each edge. That token —
-   `metadata { op 'createOrder' }` — is what turns a drawn arrow into a checked join, and adding it
-   is what makes the [spine-first first hour](README.md#start-from-the-fleet-spine) pay off before
-   any of the steps below have run.
+   What seed writes for an operation or a message is a token copied from `fleet.yaml` —
+   `metadata { op 'createOrder' }` on a `-[calls]->` edge, `publishes` and `consumes` on the message
+   edges — and never one it guessed. That token is what turns a drawn arrow into a checked join:
+   copy each service's own `openapi.yaml` and `asyncapi.yaml` into its directory, and
+   `loam validate --all --spine` grades every join against the contracts at both ends, green when
+   they are right, which is what makes the
+   [spine-first first hour](README.md#start-from-the-fleet-spine) pay off before any of the steps
+   below have run. A call stated with no operation is drawn and not checked, and the run says so.
 
 3. **Bind each service repo.** Once per service, in that service's own checkout, beside the docs
    repo:
@@ -328,6 +337,17 @@ checks for free, but a green diff is not a valid fleet: run both. For the byte-l
 breaking-change catalogue, use oasdiff on the two states of one contract; [the `loam diff` command
 note](#command-notes) below has the exact invocation, and loam deliberately does not reimplement
 those checks.
+
+**`validate --spine` is not a third gate either — it is a narrowing, like `--base`.** It runs every
+check exactly as the unscoped run does and then shows only the fleet spine: each operation and
+message a map edge names, graded against the contracts at both ends, and whatever would stop that
+grade running — a map or contract that does not parse, a contract a join needs and lacks, an
+interrupted docs commit, a binary older than the docs. Everything on the adoption axes is counted
+in the `--json` `lens` key and on one "not graded" line instead of reported, the scorecard is left
+out because its denominators are adoption measures, and features are not graded (a feature named
+under it is refused). So a green `--spine` run means no join is wrong — the level-1 answer for a
+fleet seeded from `fleet.yaml` — and never that the fleet is healthy; a run that checked no join
+says so in words. `loam validate --all` is still the whole picture.
 
 Severity and gating are also two different questions. A coherence finding marked `gates` stops the
 archive even when it is only a warning; an error in `validate` fails the check without necessarily

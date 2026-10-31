@@ -22,9 +22,10 @@ import {
 } from "../../../core/vocabulary/report.js";
 import { EXPLAIN_FOOTER } from "../../policy/format.js";
 import { groupedWarnCodes, type Adoption, type AdoptionAxis } from "../fleet/scorecard/adoption.js";
+import type { LensReport } from "../lens/joins.js";
 import type { ValidateSummary } from "../report.js";
 import { printRepeats, repeatedFindings } from "./repeats.js";
-import { printErrorIndex, printFooter, summaryLine } from "./rollups.js";
+import { LENS_LEAD, lensTail, printErrorIndex, printFooter, summaryLine } from "./rollups.js";
 
 /** What `renderText` needs of the run beyond the graded targets themselves. */
 export interface RenderOptions {
@@ -43,6 +44,14 @@ export interface RenderOptions {
    * printed individually.
    */
   scorecard: { readonly adoption: Adoption; readonly services: number } | null;
+  /**
+   * The spine lens's account of itself, or null on every run without
+   * `--spine`. When set, `targets` and `summary` are already the lens's shown
+   * half (validate.ts partitions before anything renders), and this module
+   * only adds the lines that say so: the lead, and the tail naming what the
+   * lens set aside and how many joins the map states.
+   */
+  lens: LensReport | null;
 }
 
 /**
@@ -115,6 +124,11 @@ export function renderText(targets: TargetReport[], opts: RenderOptions): void {
   // has distinct codes. Measured: 2.7 ms for all 273 codes, once per report.
   const explainable = pointer ? new Set(listCodes().map((listing) => listing.code)) : new Set<string>();
   const listed = (f: Finding): boolean => !isGrouped(f) && (!errorsOnly || f.severity !== "ok");
+  const { lens } = opts;
+  // Before the first finding, for the scope line's reason (render/emit.ts):
+  // a reader has to know the report below is a partition before reading a
+  // green tick in it as the fleet's.
+  if (lens !== null) console.log(LENS_LEAD);
 
   if (!all) {
     for (const t of targets) printTarget(t, listed, explainable);
@@ -124,11 +138,16 @@ export function renderText(targets: TargetReport[], opts: RenderOptions): void {
     if (errorsOnly && targets.every((t) => t.findings.every((f) => f.severity === "ok"))) {
       console.log(`${targets.map((t) => t.id).join(", ")}: no errors or warnings`);
     }
+    if (lens !== null) for (const line of lensTail(lens, false)) console.log(line);
     if (pointer) console.log(`\n${EXPLAIN_FOOTER}`);
     return;
   }
-  printFleet(targets, { listed, explainable, summary: opts.summary });
-  printFooter(targets, { summary: opts.summary, unverifiable: opts.unverifiable, card, grouped, isGrouped });
+  const lensed = lens !== null;
+  printFleet(targets, { listed, explainable, summary: opts.summary, lensed });
+  printFooter(targets, { summary: opts.summary, unverifiable: opts.unverifiable, card, grouped, isGrouped, lensed });
+  // Right under the footer it qualifies, and like the footer printed under
+  // --errors-only and on a green run (rollups.ts says why).
+  if (lens !== null) for (const line of lensTail(lens, true)) console.log(line);
   if (pointer) console.log(`\n${EXPLAIN_FOOTER}`);
 }
 
@@ -138,6 +157,8 @@ interface FleetView {
   listed: (f: Finding) => boolean;
   explainable: ReadonlySet<string>;
   summary: ValidateSummary;
+  /** Under `--spine`: the counts line names the lens (`summaryLine`). */
+  lensed: boolean;
 }
 
 /**
@@ -171,7 +192,7 @@ function printFleet(targets: readonly TargetReport[], view: FleetView): void {
   if (targets.some((t) => t.findings.some(listed))) {
     const leads = targets.flatMap((t) => t.findings.filter((f) => lead(f) && listed(f)));
     for (const f of leads) printFinding(f, explainable);
-    console.log(summaryLine(view.summary));
+    console.log(summaryLine(view.summary, view.lensed));
     printErrorIndex(targets);
     if (featuresPrint || fleetPrints) console.log("");
   }

@@ -1,8 +1,10 @@
 /**
  * fleet.yaml — the tiny human-authored file `loam seed` templates the fleet
- * map from. A human states the facts (which services exist, who calls whom);
- * loam does mechanical templating and guesses nothing, which is what keeps
- * seed on the same side of the no-extractor line as `loam new`.
+ * map from. A human states the facts (which services exist, who calls whom,
+ * and — when they choose to — which operation a call uses and which messages
+ * a service publishes or consumes); loam does mechanical templating and
+ * guesses nothing, which is what keeps seed on the same side of the
+ * no-extractor line as `loam new`.
  *
  * Parsed with the AST (`parseDocument` + `LineCounter`) rather than `parse`,
  * deliberately: every refusal names `file:line`, because the file is edited by
@@ -10,7 +12,9 @@
  * an unknown key, a non-string entry, a malformed call all refuse before the
  * caller writes a single byte; a partially-understood fleet file must never
  * become a partially-right landscape. The node-level readers live in
- * `./items.ts`; this module owns what their answers must amount to.
+ * `./items.ts` and the join statements (`calls:`, `publishes:`, `consumes:`)
+ * in `./joins.ts`; this module owns the declarations and what the whole file
+ * must amount to.
  *
  * The grammars are the shared ones and never a private copy: service ids
  * through `parseServiceId`, subsystem names through `parseSubsystemName`,
@@ -24,6 +28,7 @@ import { isMap, isScalar, LineCounter, parseDocument, type Pair } from "yaml";
 import { dirNameHazard, parseServiceId, type ServiceId } from "../../kernel/ids/service.js";
 import { parseSubsystemName, type SubsystemName } from "../../kernel/ids/subsystem.js";
 import { at, hint, listOf, serviceEntry, stringOf, type SeedCtx } from "./items.js";
+import { readJoins } from "./joins.js";
 
 export interface SeedService {
   readonly id: ServiceId;
@@ -31,10 +36,28 @@ export interface SeedService {
   readonly subsystem: SubsystemName | null;
 }
 
-/** One `a -> b` line. Endpoints are declared names (service ids or externals), not element ids. */
+/** One distinct `a -> b` pair under `calls:`. Endpoints are declared names (service ids or externals), not element ids. */
 export interface SeedCall {
   readonly from: string;
   readonly to: string;
+}
+
+/**
+ * The metadata key a join is drawn under — `op` from `calls:`, `publishes`
+ * and `consumes` from the sections of those names. Ids stay plain strings, as
+ * `Rel.op`/`Rel.publishes`/`Rel.consumes` already are: the token rule that
+ * guards them is seed's own, because only seed writes a human's token into a
+ * LikeC4 string.
+ */
+export type JoinKey = "op" | "publishes" | "consumes";
+
+/** One edge seed draws. `join` null = a call stated with no operation. */
+export interface SeedEdge {
+  readonly from: string;
+  readonly to: string;
+  readonly join: { readonly key: JoinKey; readonly id: string } | null;
+  /** 1-based fleet.yaml line the id (or, for a bare call, the entry) was written on. */
+  readonly line: number;
 }
 
 /** The whole fleet file, validated: what the templater renders from. */
@@ -42,7 +65,10 @@ export interface FleetSeed {
   readonly services: readonly SeedService[];
   readonly subsystems: readonly SubsystemName[];
   readonly externals: readonly string[];
+  /** Distinct call pairs under `calls:`, bare or joined — the count `--json` has always reported. */
   readonly calls: readonly SeedCall[];
+  /** What the templater draws: one per bare call no join subsumes, one per stated id. */
+  readonly edges: readonly SeedEdge[];
 }
 
 /**
@@ -63,7 +89,7 @@ export type FleetFileRead =
   | { readonly ok: true; readonly seed: FleetSeed }
   | { readonly ok: false; readonly problem: SeedFileProblem };
 
-const TOP_KEYS = ["services", "subsystems", "externals", "calls"] as const;
+const TOP_KEYS = ["services", "subsystems", "externals", "calls", "publishes", "consumes"] as const;
 
 function invalid(message: string): FleetFileRead {
   return { ok: false, problem: { kind: "invalid", message } };
@@ -85,7 +111,7 @@ export function readFleetFile(text: string, file: string): FleetFileRead {
   if (!isMap(doc.contents)) {
     return invalid(
       `${file} must be a YAML mapping with a \`services:\` list (and optional ` +
-        `\`subsystems:\`, \`externals:\`, \`calls:\`) — the whole document is ` +
+        `\`subsystems:\`, \`externals:\`, \`calls:\`, \`publishes:\`, \`consumes:\`) — the whole document is ` +
         `${doc.contents === null ? "empty" : "not a mapping"}.`,
     );
   }
@@ -99,7 +125,7 @@ export function readFleetFile(text: string, file: string): FleetFileRead {
       const spelled = key ?? String(pair.key);
       return invalid(
         `${at(ctx, pair.key)} — unknown key '${spelled}': the fleet file's keys are ` +
-          `services, subsystems, externals and calls.${hint(spelled, TOP_KEYS)}`,
+          `services, subsystems, externals, calls, publishes and consumes.${hint(spelled, TOP_KEYS)}`,
       );
     }
     sections.set(key, pair.value);
@@ -199,55 +225,20 @@ export function readFleetFile(text: string, file: string): FleetFileRead {
     subsystem: filed.get(s.id) ?? null,
   }));
 
-  const endpointProblem = (raw: string, name: string, where: string): SeedFileProblem => {
-    if (subNames.has(name)) {
-      return {
-        kind: "unknown-endpoint",
-        message:
-          `${where} — call '${raw}' names the subsystem '${name}': a subsystem is a place ` +
-          `services live, never a call endpoint. Name one of its services instead.`,
-      };
-    }
-    return {
-      kind: "unknown-endpoint",
-      message:
-        `${where} — call '${raw}' names '${name}', which no services: or externals: entry ` +
-        `declares.${hint(name, [...services.map((s) => s.id), ...externals])} Declare it, ` +
-        `or fix the spelling, then re-run.`,
-    };
-  };
-  const callable = new Set<string>([...services.map((s) => s.id), ...externals]);
-  const calls: SeedCall[] = [];
-  const seenCalls = new Set<string>();
-  for (const item of listOf(sections.get("calls"))) {
-    const raw = stringOf(item);
-    if (raw === null) return invalid(`${at(ctx, item)} — a calls entry must be a string of the form 'caller -> callee'.`);
-    const m = /^(\S+)\s*->\s*(\S+)$/.exec(raw.trim());
-    if (m === null) {
-      return invalid(`${at(ctx, item)} — a call is written 'caller -> callee' (got '${raw}').`);
-    }
-    const [from, to] = [m[1]!, m[2]!];
-    for (const end of [from, to]) {
-      if (!callable.has(end)) return { ok: false, problem: endpointProblem(raw, end, at(ctx, item)) };
-    }
-    // LikeC4 has no self-edge: it reads `a -> a` as a parent-child
-    // relationship and refuses the whole file. Caught HERE, with the line,
-    // because the alternative is the self-check refusing `internal` over a
-    // fleet file whose fault it is not — and a copy-paste inside `calls:` is
-    // exactly how this line gets written.
-    if (from === to) {
-      return invalid(
-        `${at(ctx, item)} — call '${raw}' names '${from}' at both ends, and LikeC4 has no ` +
-          `self-edge (it reads 'a -> a' as a parent-child relationship). Name the other ` +
-          `endpoint, or drop the line.`,
-      );
-    }
-    const key = `${from} ${to}`;
-    // A repeated line is the same fact stated twice, not a second edge.
-    if (seenCalls.has(key)) continue;
-    seenCalls.add(key);
-    calls.push({ from, to });
-  }
+  // The statements between declared names — calls, and the joins on them —
+  // read only now, because an endpoint must resolve into the flat namespace
+  // above. The endpoint, self-edge and merge rules live with the grammar they
+  // police (`./joins.ts`); the did-you-mean pool keeps declaration order,
+  // services before externals, as it always has.
+  const joins = readJoins(ctx, sections, {
+    services: new Set<string>(services.map((s) => s.id)),
+    externals: new Set(externals),
+    subsystems: subNames,
+  });
+  if (!joins.ok) return joins;
 
-  return { ok: true, seed: { services: seededServices, subsystems, externals, calls } };
+  return {
+    ok: true,
+    seed: { services: seededServices, subsystems, externals, calls: joins.calls, edges: joins.edges },
+  };
 }

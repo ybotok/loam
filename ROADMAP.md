@@ -18,11 +18,11 @@ acceptance tests, and implementation evidence remain ordinary files in repositor
 state inside a service. The CLI is small enough to audit, and every writer — not only archive — now
 commits through a locked, journaled transaction that a crash cannot leave half-applied.
 
-The tree contains **574 TypeScript modules in 183 source packages**, with an acyclic package graph
+The tree contains **578 TypeScript modules in 184 source packages**, with an acyclic package graph
 checked by
 [scripts/package-graph.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-graph.mjs). The
 CLI exposes **31 commands** from [src/cli.ts](https://github.com/ybotok/loam/blob/main/src/cli.ts),
-and the suite stands at **223 test files**. Those four counts are deliberately stated OUTSIDE the
+and the suite stands at **225 test files**. Those four counts are deliberately stated OUTSIDE the
 dated snapshot below: each derives from the tree in one readdir, so
 [test/docs-facts.test.ts](https://github.com/ybotok/loam/blob/main/test/docs-facts.test.ts) grades
 them live and this paragraph cannot quietly trail the code the way its predecessor did.
@@ -101,13 +101,63 @@ The strongest foundations to preserve are:
 
 ## Now
 
-One item is queued behind code: [the platform picture](#the-platform-picture--the-two-altitudes-above-a-subsystem),
-decided on 2026-10-29 from pilot evidence. Every integrity, enforcement and lifecycle item that
+One item is queued behind code: [spine-lite](#spine-lite--the-fleet-spine-without-adoption), decided
+on 2026-10-30. [The platform picture](#the-platform-picture--the-two-altitudes-above-a-subsystem),
+decided on 2026-10-29 from pilot evidence, landed in 0.2.0-alpha.17 (`9267b09`, `loam views`); its
+record below waits to move to Recently landed. Every integrity, enforcement and lifecycle item that
 preceded it has landed (see [Recently landed](#recently-landed)) — the authored business axis, the
 use-case axis, and as of 2026-09-02 the deployment axis, which is the first item this file ever wrote
 directly into this section rather than promoting from [Later](#later--promote-only-from-evidence).
 The last one through this section was [the hop join](#the-hop-join--what-a-fleet-flows-step-is-inside-its-service),
 promoted from pilot evidence and landed on 2026-10-27.
+
+### spine-lite — the fleet spine without adoption
+
+Decided by the maintainer on 2026-10-30 and recorded before any of it was written.
+
+**The evidence, and its limit.** A study run on 2026-10-30 — agent-driven, two real e2e builds plus
+a per-claim verification pass, no second operator — measured the spine-first entry giving its first
+real finding in about ten minutes, and then losing the reader three ways: the first
+`validate --all` is red with `service.no-model` for every seeded service even when every join is
+right; the operation on each call has to be hand-written into `architecture/landscape.likec4`,
+which `fleet.yaml` cannot carry, and that hand edit locks `seed` out of its own file
+(`seed-landscape-edited`); and wiring the result into CI takes per-repo jq. This is one operator's
+decision on agent evidence, not the two-operator bar, and it is recorded as that.
+
+**The decision.** The cheapest useful check gets a cost like a single-repo spec tool's: state who
+calls whom with which operation, and who publishes and consumes which message, in `fleet.yaml`;
+copy the contracts the services already have; get a verdict. No `adopt`, `vouch`, Gherkin,
+`model.likec4` or `spec.md`. Five increments, each its own reviewable change:
+
+1. **Joins in `fleet.yaml`, and `validate --spine`.** A `calls:` item may name its operations
+   (`- a -> b: op` or a list), and two new sections, `publishes:` and `consumes:`, name messages
+   with the arrow following the message. `seed` draws one titled edge per id with its
+   `metadata { op | publishes | consumes }`, in a fixed order, and stays re-appliable while its
+   stamp holds; a `fleet.yaml` that 0.2.0-alpha.18 accepts draws the same edges in the same order.
+   `loam validate --spine` grades the spine and what stops a join being checked, hides the adoption
+   findings through a list that fails visible (an unlisted code shows), and always says what it
+   hid and how many joins it checked. No new code.
+2. **First-run legibility.** A new ok code, spine.message-resolved, the contract files the stated
+   joins need, plainer spine messages, and an executable QUICKSTART.
+3. **`fleet.yaml` as the recorded source.** A new error, landscape.seed-stale, compares facts,
+   never bytes; spine findings point at the `fleet.yaml` line.
+4. **Native CI output.** `--format github|codequality` on `validate` and `diff`, rendered from the
+   `--json` envelope so a renderer can never move an exit code.
+5. **The PR gate sees message joins.** `--base` grades changed publishes/consumes edges — a
+   false-green fix for every user, announced as one.
+
+**Rejected, each with its reason.** `--lens spine` (the CLI's first choice-valued flag, for one
+value) and a `loam.json` key (invisible at the call site) for choosing the lens; messages inside
+`calls:` (draws a publish as a call, and the arrow direction stops being checkable); a byte compare
+for the seed-stale check (any template rewording would turn every re-seeded repo red with no
+human edit); hiding `docs.binary-behind` under the lens (it changes what a pass means).
+
+**Acceptance criterion for increment 1, declared before the code.** From the shipped
+`examples/fleet.yaml`, which states its joins, and the example fleet's own contracts: `seed`, then
+`validate --all --spine` exits 0, `--strict` included, and names how many joins it checked; one
+letter wrong in one operation is `spine.op-undefined` and exit 1; a branch removing a consumed
+operation fails `loam diff --base` naming the consumer; and a join-free `fleet.yaml` draws
+byte-identical edges to 0.2.0-alpha.18's.
 
 ### The platform picture — the two altitudes above a subsystem
 

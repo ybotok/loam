@@ -936,11 +936,14 @@ changes what the renderer draws and nothing loam decides. The convention loam te
 `delivers` from topic to consumer, `reads`, `writes` and `readsWrites` with a store edge always
 written service `->` store and the kind's style placing the arrowhead, `calls` for a request, and
 `connects` wherever no evidence gives a direction yet. The fleet map `loam init --create`
-scaffolds and the one `loam seed` templates both declare those seven kinds. Seed draws each
-`fleet.yaml` call as `-[calls]->` and uses no other kind: the list is named `calls` and every entry
-is written `caller -> callee`, so the person who wrote it stated the kind. Through 0.2.0-alpha.16
-seed drew them plain, on the reading that choosing a kind was a guess — and the first map a new user
-copied from taught the bare arrow the `loam-feature` protocol tells an agent never to draw. One
+scaffolds and the one `loam seed` templates both declare those seven kinds. Seed draws three of
+them, each because a `fleet.yaml` section states it — `calls:` as `-[calls]->`, `publishes:` as
+`-[publishes]->` and `consumes:` as `-[delivers]->`, one edge per id
+([Stating joins in `fleet.yaml`](#stating-joins-in-fleetyaml)) — and chooses no other: the list is
+named `calls` and every entry is written `caller -> callee`, so the person who wrote it stated the
+kind, and the message sections are named for the same reason. Through 0.2.0-alpha.16 seed drew
+calls plain, on the reading that choosing a kind was a guess — and the first map a new user copied
+from taught the bare arrow the `loam-feature` protocol tells an agent never to draw. One
 consequence is mechanical rather than a convention. `loam archive` splices a delta's
 edge into the map verbatim and never copies a `specification` declaration, so a kind the living
 map does not declare would leave the merged map unparseable. **Declare a kind in the map before,
@@ -991,6 +994,100 @@ declares no group, and `loam instructions loam-drawing` shows the one to write, 
 technology rules after `#external` because the later rule wins. No check reads a colour. A
 custom colour a delta uses is still vocabulary the living map must declare
 (`delta.specification-not-merged`), which is the other reason every map declares the same names.
+
+### Stating joins in `fleet.yaml`
+
+`loam seed --from fleet.yaml` templates the fleet map from a file a human writes, and that file can
+state the joins as well as the calls: the operations a call uses, and the messages each service
+publishes and consumes. Seed draws each one as the edge and metadata key the table above joins on,
+so a fleet whose contracts are copied in is graded by `loam validate --all --spine` without anybody
+editing LikeC4. The grammar, additive over everything 0.2.0-alpha.18 accepted:
+
+```text
+fleet      := a YAML mapping; keys ⊆ { services, subsystems, externals, calls, publishes, consumes }; services required
+calls      := [ callItem ]
+callItem   := "<from> -> <to>"               # a call whose operation is not stated: drawn, not checked
+            | { "<from> -> <to>" : ids }     # exactly ONE pair per item; one edge per id
+publishes  := [ { "<from> -> <to>" : ids } ] # <from> is the producer: a service, or an external (an outside producer)
+consumes   := [ { "<from> -> <to>" : ids } ] # <to> is the consumer: always a declared service
+ids        := id | [ id, … ]                 # non-empty; a flow list or a block list
+id         := a YAML string, 1–200 characters, with no whitespace, quotes, backticks, backslashes,
+              commas or control characters
+<from>, <to> := a declared service id or external, in the one namespace services and externals share
+```
+
+```yaml
+calls:
+  - customer -> checkout-web                                   # drawn, not checked
+  - checkout-web -> order-service: [createOrder, getOrder]
+  - checkout-web -> payment-service: authorizePayment
+publishes:
+  - payment-service -> kafka: [payment.PaymentAuthorized, payment.PaymentCaptured]
+consumes:
+  - kafka -> order-service: payment.PaymentAuthorized
+```
+
+What each statement means, and the codes that grade it — every one of them a code that already
+graded a hand-drawn map:
+
+| Statement | Means | Graded by |
+|---|---|---|
+| `- a -> b` under `calls:` | a calls b; the operation is not stated | nothing — the `--spine` run lists it as drawn only |
+| `- a -> b: createOrder` under `calls:` | a calls b's `createOrder` | `spine.op-undefined` or `spine.op-deprecated` against b's `openapi.yaml`; `service.no-openapi` (error) when b has none |
+| `- a -> stripe: createCharge`, an external callee | drawn | never — the external's contract is not in the docs repo; the `--spine` run counts it as a call into an external |
+| `- p -> kafka: m` under `publishes:` | p sends m | `spine.message-undefined` when p's `asyncapi.yaml` has no `action: send` for m; `service.no-asyncapi` when p has none. An external p states an outside producer |
+| `- kafka -> c: m` under `consumes:` | c receives m | `spine.message-undefined` when c's `asyncapi.yaml` has no `action: receive` for m; `spine.message-unproduced` when nobody sends m and no external is stated publishing it |
+
+**Why sections, and not an arrow loam reads.** In a seeded map a broker and an outside producer are
+both a `softwareSystem` tagged `#external`, so the arrow alone cannot tell "kafka delivers to the
+consumer" from "an outside party produces". The section names are the metadata keys, and the arrow
+follows the message, as [Which way an edge points](#which-way-an-edge-points) draws it. For the
+same reason a `consumes:` line whose consumer is an external is refused, with the arrow turned
+round in the message: it would check nothing, because only a service's contract can be graded, and
+an outside system consuming a message the fleet sends needs no line.
+
+**Merging, silently**, as a repeated `a -> b` always was: an identical statement (section, ends and
+id) is one edge, and a bare `a -> b` under `calls:` is not drawn at all when the same ordered pair
+names an operation under `calls:` — a bare twin of a checked edge would make every removal from b
+read as a doubt about an unnamed caller in `loam diff` — or states a message with an external at
+one end, the broker hop an older `fleet.yaml` could only write as a bare call. A message between
+two services subsumes nothing: it is not a call, so a bare `a -> b` beside it is a second fact,
+drawn, and `loam diff` keeps reading it as a caller whose operation nobody named.
+
+**What seed draws.** One edge per id: `calls:` as `-[calls]->` with `metadata { op '<id>' }`,
+`publishes:` as `-[publishes]->` with `metadata { publishes '<id>' }`, `consumes:` as
+`-[delivers]->` with `metadata { consumes '<id>' }`, each titled with its id so parallel arrows
+between one pair stay legible and `loam diff` names a victim as `edge a → b ("refundPayment")`. One
+edge per id, never one edge listing several, because the model reader keeps only the first value of
+a repeated metadata key. A bare call stays an untitled `-[calls]->`. The edges are drawn in one
+total order — section (calls, publishes, consumes), then the two ends by declared name in codepoint
+order, then the id, a bare call before any id — because the line-1 stamp digests the bytes, and
+input order leaking into them would make an untouched map read as hand-edited after somebody merely
+reordered `fleet.yaml`. A file with no join therefore draws exactly the edges 0.2.0-alpha.18 drew,
+in its order.
+
+**Refusals** name the `fleet.yaml` line, write nothing, and use the codes seed already had.
+`seed-file-invalid`: two pairs in one item; a pair with no id (`a -> b:` or `[]`); an id that is not
+a string (a number, a boolean or a mapping — quote an id YAML reads as a number); an id holding a
+forbidden character, since it is matched byte for byte against `operationId` and the message name;
+a `publishes:` or `consumes:` entry with no message; a `consumes:` line pointing at an external; a
+key that is not `caller -> callee`; a self-edge; and an unknown top-level key, with a did-you-mean
+(`consume:` is answered with `consumes`). `unknown-service`: an endpoint nothing declares, or a
+subsystem used as one, with a did-you-mean.
+
+**Re-running.** The map stays seed's while every fact on it lives in `fleet.yaml`: change a join
+and re-run, and an unedited map is `regenerated`, because its stamp still matches. The first hand
+edit makes it yours (`seed-landscape-edited`). A team that hand-wrote operations onto a seeded map,
+as earlier documentation told it to, moves them into `fleet.yaml`, deletes
+`architecture/landscape.likec4` and re-seeds. A map sealed by an earlier loam carries an older
+header comment; its stamp still verifies, and its first re-seed rewrites the comment once.
+`fleet.yaml` itself is input: `--from` resolves against the working directory, and seed records
+nothing about it in the docs repo.
+
+**`loam seed --json`** carries `joins` — `{operations, publishes, consumes}`, the drawn edges by the
+key they carry, always present and all zero for a file that states none. `calls` keeps its meaning,
+the distinct call pairs under `calls:`, bare or joined. When at least one join is stated, `next`
+leads with `loam validate --all --spine`.
 
 ## `loam.json` — the wiring, one file per repository
 
@@ -4139,6 +4236,92 @@ through the forge, not through loam features:
   one shared workspace and answers in **~0.7 s median** on the committed 120-service benchmark
   (measured 2026-08-19, method and runs in docs/BENCHMARKS.md, canonically restated in the README's
   "Fleet scale" section). It is the docs repo's own CI job, and it is nobody's inner loop.
+
+### The spine lens
+
+`loam validate --spine` answers one question: does every operation and message a map edge names
+exist in the contracts at both ends? It is level 1 of adoption — a fleet that has stated its joins
+in `fleet.yaml` and copied its contracts in, and written nothing else — and it is a narrowing, like
+`--base`, never a second opinion:
+
+1. **Every check runs exactly as it does without the flag**, at the same severity. Nothing is
+   re-graded.
+2. **Each target's findings are then partitioned.** A finding is hidden when its code is on the
+   hide list below, and shown otherwise — so a code nobody has classified, including the next one
+   a later loam adds, is shown. The lens can make a run noisier than it should be, never greener.
+3. **`valid`, `summary`, `fixes`, `sourcesUnverifiableFromHere`, the text report and the
+   `--strict` count are computed over the shown findings only**, so `valid` means "no spine
+   error". `sources.` is a hidden family, so `sourcesUnverifiableFromHere` is 0 under the lens: the
+   provenance axis is not graded there, and its blind spot is not reported either.
+   `targets[].findings` hold the shown findings; every target graded is kept, even one with
+   nothing shown.
+4. **The scorecard is absent** (no `scorecard` key, no table), for the reason `--base` leaves it
+   out: its denominators are adoption measures.
+5. **Features are not graded.** Under `--all` they are not built, and the payload counts them; a
+   feature named by `--feature`, by a positional id, or as the only home of a bound service is
+   refused (`invalid-option`). The lens combines with `--all`, `--base <ref>`, `--service <id>`, a
+   positional service id, `--strict`, `--errors-only` and `--json`.
+
+Hidden — the adoption axes level 1 does not ask about:
+
+| By exact code | By family prefix |
+|---|---|
+| `service.no-model`, `service.no-spec`, `service.no-requirement-delta`, `service.likec4-config-missing`, `service.likec4-config-stray`, `service.model-excluded`, `service.model-unexcluded`, `landscape.datastore-shared`, `landscape.platform-candidate`, `landscape.service-isolated`, `subsystem.views-stale`, `subsystem.view-id-collision`, `openapi.response-undescribed`, `asyncapi.payload-undescribed`, `agents.stale`, `content.stale`, `coherence.ok`, `scaffold.placeholder` | `api.`, `event.`, `spec.`, `spec-api.`, `spec-event.`, `requirements.`, `living.`, `frontmatter.`, `intent.`, `delta.`, `sources.`, `evidence.`, `gherkin.`, `verify.`, `cross.`, `permissions.`, `capability.`, `obligation.`, `glossary.`, `health.`, `covers.`, `archedge.`, `usecase.`, `deployment.`, `link.`, `c4-api.`, `c4-event.`, and `c4.` except `c4.fleet-project-invalid` |
+
+Always shown, and pinned by name in the suite because each one means a join was suspended or never
+checked: every `spine.*` code; `landscape.invalid`, `landscape.missing`, `landscape.merge-conflict`,
+`landscape.matched`, `landscape.binding-unknown`, `landscape.binding-duplicate`,
+`landscape.service-undocumented`, `landscape.service-unmodelled`, `landscape.excluded`,
+`landscape.kind-tag-graded`; `c4.fleet-project-invalid`; `openapi.invalid`, `asyncapi.invalid`,
+`openapi.duplicate-operationid`, `asyncapi.duplicate-message`, `asyncapi.message-contested`,
+`openapi.ref-unresolved`, `asyncapi.ref-unresolved`, `openapi.remove-marker-living`,
+`asyncapi.remove-marker-living`, `openapi.generated-stale`, `contracts.source-missing`,
+`contracts.source-invalid`; both forms of `service.no-openapi`, and `service.no-asyncapi`,
+`service.unknown`, `service.unreadable`, `service.id-invalid`; `docs.commit-interrupted` and
+`docs.binary-behind` (a directive the binary cannot parse is read as prose, which changes what a
+pass means); `subsystem.invalid`, `subsystem.name-collision`, `subsystem.name-invalid`,
+`subsystem.unmarked`, `subsystem.marker-misplaced`; `target.ambiguous`. The whole hidden set is
+also pinned as a snapshot, so a new code that lands under a hidden prefix fails the suite until
+somebody decides the lens should hide it.
+
+A lensed run always says what it set aside, and how many joins it checked. `--json` gains a `lens`
+key, present only under the flag:
+
+```json
+"lens": {
+  "name": "spine",
+  "joins": { "operations": 7, "messages": 6, "drawnOnly": ["customer → checkout-web"], "toExternals": 1 },
+  "hidden": { "errors": 5, "warnings": 11,
+              "byCode": { "api.ungoverned": 3, "event.ungoverned": 3, "service.no-model": 5, "service.no-spec": 5 } },
+  "featuresSkipped": 0
+}
+```
+
+`joins` counts the joins this run graded, read off the parsed map, and is absent when the map is
+missing or does not parse: `operations` counts edges into a graded service carrying `op`,
+`messages` the `publishes` or `consumes` keys bound to a graded service, `drawnOnly` the edges into
+a graded service carrying no key (listed, capped at ten), and `toExternals` a graded service's
+edges into an `#external` with no event key, which are never graded. Under `--all` every service is
+graded, so it counts the whole map; under `--service` or a service id, the one service's joins;
+under `--all --base`, the joins of the services in scope plus the edges the branch wrote, whose
+operations the landscape target grades. A count of the whole map beside a scope line naming a
+narrower run would say joins were checked that nothing graded. `hidden` counts the hidden errors and warnings, by code;
+hidden `ok` confirmations are not counted. The text report opens with a line naming the lens and
+closes with two more, printed even under `--errors-only` and on a green run, because silence never
+means fine there:
+
+```text
+joins: 7 calls name an operation · 6 message joins · drawn only, not checked: customer → checkout-web · 1 call into an external, not graded
+not graded under --spine: 5 errors, 11 warnings — service.no-model ×5, service.no-spec ×5, api.ungoverned ×3, event.ungoverned ×3; `loam validate --all` reports them
+```
+
+A map that states no join gets `joins: none stated — nothing was checked`, in words, and exits 0:
+an unstated join is not a wrong one, which is the answer `--base` gives an empty scope. A narrower
+run names what it counted: `joins on checkout-web: none — nothing was checked` for a service no
+join names, `joins in this run's scope: …` under `--base`. A map that does not parse says the joins
+were not counted. A green `--spine` run is the level-1 answer and
+never a healthy fleet; `loam validate --all` is still the whole picture, and once services are
+adopted the lens hides their own findings too, so a partly adopted fleet runs both.
 
 ### The fleet scorecard
 

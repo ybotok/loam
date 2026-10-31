@@ -201,23 +201,44 @@ describe("the stamp: regenerate while provably untouched, refuse the moment it i
     }
   });
 
-  it("after the first op is drawn, the refusal points at adopt and the C4 delta — not at fleet.yaml", async () => {
-    // The documented next step after seeding is writing `metadata { op }` on an
-    // edge, which fleet.yaml has no spelling for. The refusal used to advise
-    // "fold the edits into fleet.yaml and delete the file, then re-run" —
-    // followed literally, that deletes the operation links the spine grades.
+  it("after an op is hand-drawn, the refusal names both routes — fold it into fleet.yaml, or adopt and the C4 delta — and the first one works", async () => {
+    // The advice moved twice. "Fold the edits into fleet.yaml and delete the
+    // file" was impossible while fleet.yaml had no spelling for `metadata { op }`
+    // — followed literally, it deleted the operation links the spine grades —
+    // so it became "seed runs once, before any op is drawn". fleet.yaml can say
+    // an op now, so a map whose only hand edit is one is NOT past seeding, and
+    // a refusal that said it was would strand every team that hand-wrote ops by
+    // following the old header. Both routes are named, and the fold-in route is
+    // followed below to the end, because advice nobody ran is a guess.
     const p = await makeProject({ ...EMPTY_REPO, "architecture/landscape.likec4": scaffoldLandscape() });
     try {
       await writeFleet(p, FLEET);
       expect((await runLoam(p.workDir, "seed", "--json")).code).toBe(0);
       const seeded = await p.read("architecture/landscape.likec4");
+      // The first edge in the drawn order is billing -> payment-service.
       const withOp = seeded.replace(/(-> svc_\w+)\n/, "$1 'Calls' {\n    metadata { op 'authorizePayment' }\n  }\n");
       expect(withOp).not.toBe(seeded);
+      expect(withOp).toContain("svc_billing -[calls]-> svc_payment_service 'Calls' {");
       await p.write("architecture/landscape.likec4", withOp);
       const { message } = await refusedSeed(p, "seed-landscape-edited");
+      expect(message).toContain("put it in fleet.yaml");
+      expect(message).toContain("`- a -> b: op`");
+      expect(message).toContain("`publishes:` or `consumes:`");
       expect(message).toContain("loam adopt --service <id>");
       expect(message).toContain("C4 delta");
-      expect(message).not.toContain("Either fold the edits into fleet.yaml");
+      expect(message).not.toContain("cannot carry");
+
+      // The fold-in route, as the sentence gives it: state the op in
+      // fleet.yaml, delete the map, re-run.
+      await writeFleet(p, FLEET.replace("  - billing -> payment-service\n", "  - billing -> payment-service: authorizePayment\n"));
+      await rm(join(p.docsDir, "architecture/landscape.likec4"));
+      const rerun = await runLoam(p.workDir, "seed", "--json");
+      expect(rerun.code, rerun.stdout).toBe(0);
+      expect(JSON.parse(rerun.stdout).landscape).toBe("created");
+      const folded = (await p.read("architecture/landscape.likec4")).replace(/\r\n/g, "\n");
+      expect(folded).toContain(
+        "  svc_billing -[calls]-> svc_payment_service 'authorizePayment' {\n    metadata { op 'authorizePayment' }\n  }\n",
+      );
     } finally {
       await p.destroy();
     }
@@ -545,8 +566,9 @@ describe("element-id sanitizing and the views tripwire", () => {
       subsystems: [],
       externals: [],
       calls: [],
+      edges: [],
     });
-    const viewsBlock = (text: string): string => {
+    const viewsBlock =(text: string): string => {
       const start = text.indexOf("views {");
       expect(start, "no views block to compare — the tripwire must not pass vacuously").toBeGreaterThanOrEqual(0);
       return text.slice(start).trimEnd();
@@ -568,8 +590,9 @@ describe("element-id sanitizing and the views tripwire", () => {
       subsystems: [],
       externals: [],
       calls: [],
+      edges: [],
     });
-    const kindsBlock = (text: string): string => {
+    const kindsBlock =(text: string): string => {
       const start = text.indexOf("  // One kind per kind of traffic");
       const end = text.indexOf("    tail odot\n  }\n");
       expect(start, "no kinds block to compare — the tripwire must not pass vacuously").toBeGreaterThanOrEqual(0);
@@ -622,8 +645,9 @@ describe("element-id sanitizing and the views tripwire", () => {
       subsystems: [],
       externals: [],
       calls: [],
+      edges: [],
     });
-    const paletteBlock = (text: string): string => {
+    const paletteBlock =(text: string): string => {
       const start = text.indexOf("  // The technology palette");
       const end = text.indexOf("\n}\n", start);
       expect(start, "no palette to compare — the tripwire must not pass vacuously").toBeGreaterThanOrEqual(0);

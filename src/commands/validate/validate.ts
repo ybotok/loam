@@ -5,8 +5,8 @@
  * The checks themselves live beside it, one module per target kind
  * (`landscape.ts`, `service/`, `feature/`) over the document checks they share
  * (`requirements.ts`). Every one of them produces findings and none of them
- * print: printing is `report.ts`'s, and it happens once, after the last target
- * is graded.
+ * print: printing is `render/emit.ts`'s, and it happens once, after the last
+ * target is graded.
  */
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
@@ -18,31 +18,31 @@ import { resolveServiceTarget } from "../../core/repo/service-target.js";
 import type { LoadedDoc } from "../../core/c4/likec4.js";
 import type { FeatureEntry } from "../../core/repo/entries.js";
 import { loamOwnedFiles } from "../../core/envelope/config.js";
-import { configOrRefuse, emitJson, fail, NO_VALIDATE_TARGET_MESSAGE } from "../../core/envelope/json.js";
+import { configOrRefuse, fail, NO_VALIDATE_TARGET_MESSAGE } from "../../core/envelope/json.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { agentsPath as agentsFile, landscapePath as landscapeFile } from "../../core/repo/paths.js";
 import { listFeatures, listServices, missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
-import { countSeverity, reportValid, targetJson, type TargetReport } from "../../core/vocabulary/report.js";
+import { countSeverity, reportValid, type TargetReport } from "../../core/vocabulary/report.js";
 import { LOAM_VERSION } from "../../core/envelope/version.js";
 import { FleetContext } from "../../core/fleet-context.js";
-import { fixesFor } from "../policy/format.js";
 import {
   docsRepoReady,
   reportDocsRepoError,
   reportRepositoryUnavailable,
 } from "../policy/gate.js";
 import { interruptedCommitFinding } from "../../core/staging/recovery/finding.js";
-import { scopeJson, scopeLine, scopeSince, type ValidateScope } from "../../core/diff/scope/changed-paths.js";
+import { scopeSince, type ValidateScope } from "../../core/diff/scope/changed-paths.js";
 import { validateLandscape } from "./fleet/landscape.js";
 import { prefetchFleetDocuments, readLandscape } from "./fleet/load.js";
 import { buildScorecard } from "./fleet/scorecard/scorecard.js";
-import { printScorecard } from "./fleet/scorecard/print.js";
 import { validateFeature } from "./feature.js";
 import { validateService } from "./service/service.js";
 import { scopedLandscapeFindings } from "./scope.js";
-import { introducedBinding, introducedJson, introducedLead, type IntroducedBinding } from "./checks/introduced.js";
+import { introducedBinding, type IntroducedBinding } from "./checks/introduced.js";
 import { ambiguousTarget, capDetails, guarded, summary, unverifiableSubjects } from "./report.js";
-import { renderText } from "./render/text.js";
+import { emitValidateReport } from "./render/emit.js";
+import { applySpineLens, SPINE_REFUSES_FEATURE } from "./lens/spine.js";
+import { spineMeter } from "./lens/joins.js";
 
 interface ValidateOptions {
   service?: string;
@@ -51,6 +51,7 @@ interface ValidateOptions {
   base?: string;
   strict?: boolean;
   errorsOnly?: boolean;
+  spine?: boolean;
   json?: boolean;
 }
 
@@ -65,9 +66,23 @@ export function registerValidate(program: Command): void {
     .option("--base <ref>", "with --all: grade only the targets changed since a base git ref of the docs repo — the adoption ratchet")
     .option("--strict", "exit 1 on any warning too — a per-invocation CI lever; the report and --json payload do not change")
     .option("--errors-only", "print only errors and warnings — a rendering lever; the --json payload does not change")
+    .option(
+      "--spine",
+      "grade only the fleet spine — every operation and message a map edge names, against the contracts at both ends, " +
+        "and whatever would stop that check running; findings on the adoption axes are counted, not graded, and features are not graded",
+    )
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (target: string | undefined, opts: ValidateOptions) => {
       const json = opts.json === true;
+      // The lens grades the LIVING map's joins. A feature is a proposal its own
+      // gate grades in full, and a feature graded through a partition built for
+      // a fleet that has adopted nothing would pass deltas that gate refuses.
+      // The positional and the bound-service spellings of a feature are refused
+      // where they resolve, below, with the same sentence.
+      if (opts.spine === true && opts.feature !== undefined) {
+        fail(json, "invalid-option", SPINE_REFUSES_FEATURE);
+        return;
+      }
 
       if (target !== undefined && (opts.all || opts.service || opts.feature)) {
         fail(json, "invalid-option", `'${target}' already names the target; drop --all/--service/--feature.`);
@@ -153,6 +168,8 @@ export function registerValidate(program: Command): void {
       let scope: ValidateScope | null = null;
       /** The features a bare run validated in place of a bound service they introduce. Null on every other run. */
       let introduced: IntroducedBinding | null = null;
+      /** Under --spine on --all: the active (or, under --base, changed) features the lens did not build. */
+      let featuresSkipped = 0;
 
       try {
         if (opts.all) {
@@ -177,7 +194,10 @@ export function registerValidate(program: Command): void {
           }
           const services = scope === null ? enumerated : scope.services;
           const features = scope === null ? active : scope.features;
-          await prefetchFleetDocuments({ docsDir, fleet, services, features });
+          // No feature delta is parsed under the lens: none is graded, and the
+          // fleet checks reach a feature only for a service no directory holds,
+          // which an enumerated fleet never has.
+          await prefetchFleetDocuments({ docsDir, fleet, services, features: opts.spine === true ? [] : features });
           // Read whether or not the landscape is a TARGET: every service check
           // below joins against it, so a scoped run needs the map in hand even
           // when it does not grade the map itself. Through the fleet index, so
@@ -216,7 +236,10 @@ export function registerValidate(program: Command): void {
             }
           }
           targets.push(...(await inOrder(services, (svc) => serviceTarget(svc.id, land, landscapeIsTarget))));
-          targets.push(...(await inOrder(features, (feat) => featureTarget(feat, land))));
+          // A feature is a proposal its own gate grades (the refusals above), so
+          // the lens builds none — and counts them, so the skip is said, not silent.
+          if (opts.spine === true) featuresSkipped = features.length;
+          else targets.push(...(await inOrder(features, (feat) => featureTarget(feat, land))));
         } else if (opts.feature) {
           const feature = await resolveFeature(docsDir, opts.feature, "exclude", fleet);
           if (!feature) {
@@ -233,6 +256,7 @@ export function registerValidate(program: Command): void {
           const feature = await resolveFeature(docsDir, target, "exclude", fleet);
           const isService = (await listServices(docsDir, fleet)).some((s) => s.id === target);
           if (feature) {
+            if (opts.spine === true) return fail(json, "invalid-option", SPINE_REFUSES_FEATURE);
             resolvedKind = "feature";
             const report = await featureTarget(feature);
             if (isService) report.findings.unshift(ambiguousTarget(target, "feature"));
@@ -258,6 +282,7 @@ export function registerValidate(program: Command): void {
           // A bound service a feature in flight introduces has no services/ directory yet, so its documents are
           // validated where they are — the binding's reading only, since `--service` forces a service target.
           introduced = opts.service === undefined ? await introducedBinding(docsDir, resolved, fleet) : null;
+          if (introduced !== null && opts.spine === true) return fail(json, "invalid-option", SPINE_REFUSES_FEATURE);
           if (introduced === null) targets.push(await serviceTarget(resolved.id));
           else targets.push(...(await inOrder(introduced.features, (feat) => featureTarget(feat))));
         }
@@ -283,8 +308,6 @@ export function registerValidate(program: Command): void {
         return;
       }
 
-      // By subject, not by finding — the rule lives with the rollup in report.ts.
-      const unverifiable = unverifiableSubjects(targets);
       // A journal in the repo outranks everything graded above: the docs may
       // be half-merged, and in CI a green over them merges. Led, not appended
       // — it is the reason nothing below can be trusted — and attached to the
@@ -296,6 +319,24 @@ export function registerValidate(program: Command): void {
       if (interrupted !== null && targets.length > 0) {
         targets[0]!.findings.unshift({ ...interrupted, text: { ...interrupted.text, lead: true } });
       }
+      // `--spine` PARTITIONS what was graded — every check above ran exactly as
+      // it runs without the flag, at the same severity — and from here on every
+      // rollup reads the shown half: `valid`, the summary, `fixes`, the
+      // unverifiable count, the text report and `--strict` (lens/spine.ts). The
+      // journal finding above is partitioned too, and the lens always shows it.
+      const lensed = opts.spine === true ? applySpineLens(targets) : null;
+      const graded = lensed?.targets ?? targets;
+      // How many joins THIS run graded (lens/joins.ts): the whole map's on an
+      // unscoped `--all`; otherwise those bound to a service it graded, plus
+      // under `--base` the edges the branch wrote — never the map's total
+      // beside a scope line saying something narrower was looked at.
+      const whole = opts.all === true && scope === null;
+      const gradedServices = graded.filter((t) => t.kind === "service").map((t) => t.id);
+      const joins = lensed === null ? null : await spineMeter({
+        docsDir, fleet, graded: whole ? null : new Set(gradedServices), changed: scope?.edges ?? new Set<string>(),
+      });
+      // By subject, not by finding — the rule lives with the rollup in report.ts.
+      const unverifiable = unverifiableSubjects(graded);
 
       // The fleet scorecard, --all only: recomputed per invocation off the same
       // memoized reads this run already made — loam stores no history — and it
@@ -305,94 +346,38 @@ export function registerValidate(program: Command): void {
       // over a narrowed set it reads "2 of 2 services documented" for a fleet
       // where ten more are not — and its axes license report.ts's grouping,
       // which would drop real warnings because an unlooked-at axis reads zero.
+      // Suppressed under `--spine` for the same reason one level up: every one
+      // of its denominators is an adoption measure, the axes the lens counts
+      // instead of grading, so beside a lensed green it would grade them anyway.
       const scorecard =
-        opts.all && scope === null
+        opts.all && scope === null && lensed === null
           ? await buildScorecard({ docsDir, targets, fleet, boundService: config.service })
           : null;
 
-      const valid = reportValid(targets);
-      const capped = targets.map(capDetails);
+      const valid = reportValid(graded);
+      // Printing is a phase of its own (render/emit.ts): every target is
+      // graded by now, and nothing it does can move a finding or the exit code.
       // One rollup for both views: the --json summary and the text footer
       // print this object, never a count of their own.
-      const totals = summary(targets);
-      if (json) {
-        emitJson({
-          command: "validate",
-          valid,
-          summary: totals,
-          ...(resolvedKind === undefined ? {} : { resolvedKind }),
-          // What this run looked at. Only under `--base`, so an unscoped payload
-          // is today's document and its ABSENCE says `summary` counts the whole
-          // fleet — scopeJson has why a scoped one may not stay silent.
-          ...(scope === null ? {} : { scope: scopeJson(scope) }),
-          // Only when a bare run validated the features introducing the bound service: why `targets` holds no service.
-          ...(introduced === null ? {} : { boundService: introducedJson(introduced) }),
-          // Emitted in every mode now that it is derived per service: a
-          // single-service run knows exactly as much about its own blind spot
-          // as `--all` knows about the fleet's.
-          sourcesUnverifiableFromHere: unverifiable,
-          ...(scorecard === null ? {} : { scorecard }),
-          // What to do about every code this run raised — the one thing the
-          // payload could not previously answer. `validate` is step 1 of every
-          // generated protocol and the command an agent reads first, and until
-          // now it replied in prose: a finding names a code and says what is
-          // wrong, and nothing in it said that `loam explain <code>` knows what
-          // to do next.
-          //
-          // A top-level MAP, not a field on each finding, for the reason
-          // report.ts's DETAIL_LIMIT gives about evidence: a hundred-service
-          // fleet raising one code a hundred times would ship the same
-          // sentence a hundred times, in the interface an agent pipes into a
-          // context window. The consumer joins `findings[].code` to
-          // `fixes[code]` — one lookup, no round trip, no repetition.
-          //
-          // Keyed ONLY by codes a non-`ok` finding raised. A confirmation has
-          // nothing to fix, and on a clean fleet the `ok` codes are the
-          // overwhelming majority of findings; attaching fixes to them would
-          // pay the whole vocabulary's byte cost to tell a reader that nothing
-          // is wrong. `targets` is read here rather than `capped` because
-          // capping truncates evidence, not findings — the two raise the same
-          // codes, and reading the uncapped set keeps this rollup computed off
-          // the same targets as `summary()`.
-          //
-          // Not behind a flag, deliberately. It is additive, so no consumer
-          // that ignores it is affected; it is small, because it carries only
-          // the handful of codes this run actually raised rather than the
-          // 227-row vocabulary; and a flag would mean an agent has to already
-          // know the fixes exist in order to ask for them — which is the exact
-          // gap being closed. It is emitted on a green run too, as `{}`, so a
-          // consumer never has to branch on the key's presence before looking
-          // a code up in it.
-          fixes: fixesFor(
-            targets.flatMap((t) => t.findings.filter((f) => f.severity !== "ok").map((f) => f.code)),
-          ),
-          targets: capped.map(targetJson),
-        });
-      } else {
-        // The scope FIRST: a reader has to know what the report below is a
-        // report ABOUT, and in the zero-target case there is nothing below at
-        // all — printed after the findings, the one run that most needs words
-        // would read as a green over the whole system.
-        if (scope !== null) console.log(scopeLine(scope));
-        // First for the same reason: what follows is a feature's report, not the service's.
-        if (introduced !== null) console.log(`${introducedLead(introduced).join("\n")}\n`);
-        renderText(capped, {
-          all: opts.all === true,
-          errorsOnly: opts.errorsOnly === true,
-          summary: totals,
-          unverifiable,
-          scorecard,
-        });
-        if (scorecard !== null) printScorecard(scorecard);
-      }
+      emitValidateReport({
+        json, all: opts.all === true, errorsOnly: opts.errorsOnly === true,
+        targets: graded, capped: graded.map(capDetails), totals: summary(graded),
+        valid, resolvedKind, scope, introduced, unverifiable, scorecard,
+        lens: lensed === null ? null : {
+          hidden: lensed.hidden, joins, featuresSkipped,
+          over: whole ? null : opts.all === true ? "in this run's scope" : `on ${gradedServices.join(", ")}`,
+        },
+      });
       // --strict is a per-invocation CI lever: it fails the run on any error or
       // warning (ok-severity confirmations never trip it — virtually every
       // clean target emits some), and changes nothing else — `valid` keeps meaning "no
       // errors" in text and JSON alike, so two pipelines reading the same repo
       // may grade the same report differently and both are telling the truth.
+      // Under `--spine` it counts what the lens SHOWS, so `--spine --strict`
+      // fails on a deprecated join and never on an adoption warning.
       const strictFailed =
         opts.strict === true &&
-        countSeverity(targets, "error") + countSeverity(targets, "warn") > 0;
+        countSeverity(graded, "error") + countSeverity(graded, "warn") > 0;
       if (!valid || strictFailed) process.exitCode = 1;
     });
 }

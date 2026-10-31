@@ -1,20 +1,25 @@
-# The whole input to `loam seed` — the fleet map's first hour, stated by a human.
+# The whole input to `loam seed` — the fleet map's first hour, stated by a human,
+# templated by loam, guessed by nobody.
 #
 # This is the file the spine-first entry starts from (README's "Start from the
 # fleet spine", WORKFLOW.md's day zero step 2). It names the five services of
 # `examples/docs`, the one subsystem they are filed under, the externals they
-# reach, and who calls whom. `loam seed --from examples/fleet.yaml` templates
+# reach, who calls whom with which operation, and who publishes and consumes
+# which message. `loam seed --from examples/fleet.yaml` templates
 # `architecture/landscape.likec4` and one `services/<id>/` directory per entry
 # from exactly these facts and guesses nothing else.
 #
-# What it deliberately does NOT carry is the operation on each edge. `seed`
-# draws the call; a human writes `metadata { op 'createOrder' }` on it, and
-# that token is what turns a drawn arrow into a checked join against the
-# provider's `openapi.yaml`. That is the labour the spine-first entry asks for,
-# and it is the artifact nothing else produces.
+# Then copy each service's own openapi.yaml / asyncapi.yaml into its
+# services/<id>/ directory and run `loam validate --all --spine`. Every
+# operation and message named below is a join, checked token for token against
+# the contracts at both ends, so that run is green when the joins are right and
+# names the one that is not when one letter is wrong. Nobody edits LikeC4 by
+# hand to get there.
 #
-# Re-running is safe: seed refuses (`seed-landscape-edited`) rather than
-# overwrite a landscape a human has touched.
+# Re-running is safe, and it is how the map changes: edit this file and run
+# `loam seed` again, and an untouched map is regenerated. Once somebody
+# hand-edits the map it is theirs, and seed refuses (`seed-landscape-edited`)
+# rather than overwrite it.
 
 services:
   - checkout-web
@@ -40,18 +45,36 @@ externals:
   - stripe
   - kafka
 
-# `a -> b`, where each endpoint is a service id or an external declared above.
-# Every one of these becomes an edge in the landscape with no operation on it;
-# the follow-up work is naming the operation each call actually makes.
+# `caller -> callee`, where each endpoint is a service id or an external
+# declared above, then the operationId(s) the caller uses — one, or a list —
+# spelled exactly as the callee's openapi.yaml spells it. Seed draws one edge
+# per operation, and each is checked against that contract. A call with no
+# operation, like `customer -> checkout-web`, is drawn and not checked; one
+# into an external, like `payment-service -> stripe`, has no contract here to
+# check it against.
+#
+# identity-service's contract still defines `validateToken`, marked deprecated.
+# Both callers name `introspectToken`, its replacement: a join on the deprecated
+# one would be `spine.op-deprecated`, a warning that fails only `--strict`.
 calls:
   - customer -> checkout-web
-  - checkout-web -> order-service
-  - checkout-web -> payment-service
-  - order-service -> payment-service
-  - order-service -> identity-service
-  - payment-service -> identity-service
+  - checkout-web -> order-service: [createOrder, getOrder]
+  - checkout-web -> payment-service: authorizePayment
+  - order-service -> payment-service: [capturePayment, refundPayment]
+  - order-service -> identity-service: introspectToken
+  - payment-service -> identity-service: introspectToken
   - payment-service -> stripe
-  - payment-service -> kafka
-  - order-service -> kafka
-  - kafka -> order-service
-  - kafka -> notification-service
+
+# `producer -> broker`: a message the producer's asyncapi.yaml sends
+# (`action: send`). The arrow follows the message out of the service.
+publishes:
+  - order-service -> kafka: order.OrderPlaced
+  - payment-service -> kafka: [payment.PaymentAuthorized, payment.PaymentCaptured]
+
+# `broker -> consumer`: a message the consumer's asyncapi.yaml receives
+# (`action: receive`). The arrow follows the message into the service, so the
+# consumer must be a service declared above — seed refuses a line that points
+# at an external, because it would check nothing.
+consumes:
+  - kafka -> order-service: payment.PaymentAuthorized
+  - kafka -> notification-service: [order.OrderPlaced, payment.PaymentCaptured]

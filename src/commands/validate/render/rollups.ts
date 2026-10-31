@@ -6,11 +6,15 @@
  * Every one of them is tallied off the UNFILTERED findings — the same walk the
  * `--json` summary counts — and none of them is a finding, which is why they
  * all print under `--errors-only` and why no rendering lever (axis grouping,
- * repeat grouping) can move a number in any of them.
+ * repeat grouping) can move a number in any of them. Under `--spine` the
+ * findings they tally are the lens's SHOWN half, the same set `valid` and the
+ * `--json` summary read, and the lens's own lines (`LENS_LEAD`, `lensTail`)
+ * live here for the same reason: they describe the run, not a finding.
  */
 import { SEVERITY_MARK, type Finding, type TargetReport } from "../../../core/vocabulary/report.js";
 import { plural } from "../../policy/format.js";
 import { ADOPTION_AXES, type Adoption, type AdoptionAxis } from "../fleet/scorecard/adoption.js";
+import type { JoinsMeter, LensReport } from "../lens/joins.js";
 import type { ValidateSummary } from "../report.js";
 
 /**
@@ -30,12 +34,71 @@ export function cappedNames(names: readonly string[]): string {
   return names.length > NAME_LIMIT ? `${shown} +${names.length - NAME_LIMIT} more` : shown;
 }
 
-/** The counts line, printed above a fleet report and again as its footer. */
-export function summaryLine(s: ValidateSummary): string {
-  return (
-    `${plural(s.services, "service")}, ${plural(s.features, "feature")} — ` +
-    `${plural(s.errors, "error")}, ${plural(s.warnings, "warning")}`
-  );
+/**
+ * The counts line, printed above a fleet report and again as its footer.
+ *
+ * Under the spine lens it drops the feature count and says which lens it
+ * counts through: the lens never builds a feature, so "0 features" would read
+ * as a fleet with no work in flight, and a bare "0 errors" over a partition
+ * is the exact green the lens must not be mistaken for.
+ */
+export function summaryLine(s: ValidateSummary, lensed = false): string {
+  const counts = `${plural(s.errors, "error")}, ${plural(s.warnings, "warning")}`;
+  if (lensed) return `${plural(s.services, "service")} — ${counts} (spine lens)`;
+  return `${plural(s.services, "service")}, ${plural(s.features, "feature")} — ${counts}`;
+}
+
+/** The line a text report opens with under `--spine`, below the scope line when there is one. */
+export const LENS_LEAD =
+  "spine lens — grading only the fleet's joins: each call's operation against its provider's openapi.yaml, " +
+  "each message against both ends' asyncapi.yaml, and whatever would stop that check running";
+
+/**
+ * The lines a text report closes with under `--spine`, printed even under
+ * `--errors-only` and on a green run: a lensed green that did not say what it
+ * set aside, or that it checked no join at all, would be read as a healthy
+ * fleet. Both print on every run, one service's included — its joins line
+ * counts the joins bound to that service, so a service nothing names says
+ * "nothing was checked" instead of the green a resolved one prints. `all`
+ * picks which command the hidden line points at — the full picture of one
+ * service is not `--all`.
+ */
+export function lensTail(lens: LensReport, all: boolean): string[] {
+  const lines = [joinsLine(lens.joins, lens.over)];
+  const { errors, warnings, byCode } = lens.hidden;
+  const counted = `not graded under --spine: ${plural(errors, "error")}, ${plural(warnings, "warning")}`;
+  if (errors + warnings === 0) return [...lines, counted];
+  // Most frequent first, ties in code order — the error index's rule above,
+  // so the two code lists a reader holds side by side read alike.
+  const codes = Object.entries(byCode)
+    .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : 1))
+    .map(([raised, n]) => `${raised} ×${n}`);
+  const where = all ? "`loam validate --all` reports them" : "the same run without --spine reports them";
+  return [...lines, `${counted} — ${cappedNames(codes)}; ${where}`];
+}
+
+/**
+ * One line for the meter, or the sentence that says no join was checked.
+ * `over` names a narrower run's joins (`LensReport`), so a zero on one service
+ * or one branch never reads as "the map states none".
+ */
+function joinsLine(joins: JoinsMeter | null, over: string | null): string {
+  const head = over === null ? "joins" : `joins ${over}`;
+  if (joins === null) {
+    return `${head}: not counted — architecture/landscape.likec4 is missing or does not parse, so no join was checked`;
+  }
+  if (joins.operations + joins.messages === 0) {
+    return over === null
+      ? "joins: none stated — nothing was checked; name operations in fleet.yaml ('- a -> b: operationId')"
+      : `${head}: none — nothing was checked`;
+  }
+  const parts = [
+    `${plural(joins.operations, "call")} ${joins.operations === 1 ? "names" : "name"} an operation`,
+    plural(joins.messages, "message join"),
+  ];
+  if (joins.drawnOnly.length > 0) parts.push(`drawn only, not checked: ${cappedNames(joins.drawnOnly)}`);
+  if (joins.toExternals > 0) parts.push(`${plural(joins.toExternals, "call")} into an external, not graded`);
+  return `${head}: ${parts.join(" · ")}`;
 }
 
 /**
@@ -92,6 +155,8 @@ export interface Footer {
    * listing left out — two spellings of one rule are two rules.
    */
   isGrouped: (f: Finding) => boolean;
+  /** Under `--spine`: the summary names the lens (`summaryLine`). */
+  lensed: boolean;
 }
 
 /**
@@ -100,7 +165,7 @@ export interface Footer {
  */
 export function printFooter(targets: readonly TargetReport[], footer: Footer): void {
   const { unverifiable, card, grouped, isGrouped } = footer;
-  console.log(`\n${summaryLine(footer.summary)}`);
+  console.log(`\n${summaryLine(footer.summary, footer.lensed)}`);
   // One line for the whole fleet, never one per service: honest about the blind
   // spot without drowning the report in a hundred copies of it.
   if (unverifiable > 0) {

@@ -10,6 +10,85 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Added — level 1: the fleet spine without adoption
+
+One flag was added, `loam validate --spine`, and two payload keys: `joins` on `loam seed --json`
+and `lens` on `loam validate --json`, present only under `--spine`. `fleet.yaml` accepts two new
+top-level keys, `publishes` and `consumes`, and a `calls:` entry may now name operations. No stable
+code was added, renamed or retired, and `ErrorCode` is byte-identical to alpha.18.
+
+- **fleet.yaml states the joins.** A `calls:` entry may name the operation the caller uses —
+  `- checkout-web -> order-service: createOrder`, or a list, `[createOrder, getOrder]`. Two new
+  sections state messages, the arrow following the message: `publishes:`
+  (`- payment-service -> kafka: payment.PaymentCaptured`) and `consumes:`
+  (`- kafka -> order-service: payment.PaymentAuthorized`). `loam seed` draws one edge per operation
+  or message — `-[calls]->` with `metadata { op }`, `-[publishes]->` with `metadata { publishes }`,
+  `-[delivers]->` with `metadata { consumes }` — titled with the id, in a fixed order, so the
+  stamp is the same whatever order the file states things in. A bare `a -> b` is not drawn when the
+  same pair names an operation, or states a message with an external at one end (the broker hop an
+  older file wrote as a bare call); beside a message two services exchange directly it is still
+  drawn, because it is a call. Re-running seed after you change a join regenerates the map. A
+  `consumes:` line whose consumer is an outside system is refused (`seed-file-invalid`) with the
+  arrow turned round, because it would check nothing; so are two pairs in one entry, a pair naming
+  no id, an id that is not a string, and an id holding whitespace, a quote, a backtick, a
+  backslash, a comma or a control character. Every refusal names its `fleet.yaml` line and writes
+  nothing. `examples/fleet.yaml` states the example fleet's joins.
+- **`loam validate --spine`** grades only the fleet spine: every operation and message a map edge
+  names, against the contracts at both ends, plus anything that stops that check running — an
+  unparsable map or contract, a contract a join needs and lacks (`service.no-openapi` as an error,
+  `service.no-asyncapi`), an interrupted commit (`docs.commit-interrupted`), a binary older than
+  the docs (`docs.binary-behind`). Every check still runs at its own severity; the adoption
+  findings — `service.no-model`, `service.no-spec`, ungoverned operations and messages, and the
+  requirement, provenance, evidence and model families — are counted under the `lens` key's
+  `hidden` (errors, warnings, and `byCode`) and on one "not graded" line instead of reported, and a
+  code no rule names is shown. `valid`, `summary`, `fixes`, `sourcesUnverifiableFromHere` and
+  `--strict` count the shown findings only, so `sourcesUnverifiableFromHere` is 0 under `--spine`;
+  the `scorecard` key and table are left out, and features are not graded
+  (`lens.featuresSkipped` counts them under `--all`). The `lens` key's `joins` counts the joins the
+  run graded — `operations`, `messages`, `drawnOnly` (the calls naming nothing, listed) and
+  `toExternals` — over the whole map under `--all`, over one service's joins under `--service`, and
+  over the scope's under `--base`; the text says how many were checked —
+  `joins: none stated — nothing was checked` when none is, which exits 0, and
+  `joins on <service>: none — nothing was checked` for a service no join names. It combines with
+  `--all`, `--base`, `--service`, `--strict`, `--errors-only` and `--json`; with `--feature`, an id
+  that names a feature, or a bare run whose bound service only an in-flight feature introduces, it
+  is refused (`invalid-option`). A seeded fleet whose joins are right exits 0 on its first run. The
+  MCP server's `loam_validate` tool advertises it as `spine`.
+- **`loam seed --json` gains `joins`** — `{operations, publishes, consumes}`, always present and all
+  zero for a file that states none; `calls` still counts the distinct pairs under `calls:`. When
+  `fleet.yaml` states a join, `next` leads with `loam validate --all --spine`, and the text summary
+  counts the operation and message joins.
+- **`spine.op-undefined` and `spine.message-undefined` suggest the nearest name** — the closest
+  operationId the provider's `openapi.yaml` defines, or message the service sends or receives —
+  as ` — did you mean '…'?` at the end of the message, in every mode.
+- README gains a GitHub job for a seeded fleet (`validate --all --spine`, `diff --base`, and a
+  re-seed that must leave the tree clean) and a GitLab merge-request recipe; QUICKSTART's first ten
+  minutes and WORKFLOW's day zero state the operation in `fleet.yaml` instead of the map, and
+  SCHEMA gains "Stating joins in `fleet.yaml`" and "The spine lens".
+
+**What a repository notices.**
+
+- Without `--spine` nothing gates differently: `loam validate --all` on a seeded fleet still reports
+  `service.no-model` per service and exits 1. The one change to a default run is prose — the
+  did-you-mean suffix above, on a message a step may have matched by text.
+- A seeded `architecture/landscape.likec4` has a new header comment, which tells a reader to name
+  operations in `fleet.yaml` rather than on the map. The first re-seed after upgrading rewrites
+  that comment once; the stamp of a map seeded earlier is still recognised. A map whose operations
+  were hand-written onto it, as the old header advised, is hand-owned: move them into `fleet.yaml`,
+  delete the map and re-seed. The `seed-landscape-edited` refusal now names that route.
+- A CI step that re-seeds and requires a clean tree, like README's new job, fails once on a map
+  seeded by an earlier loam, because that one-time header rewrite changes the file: run
+  `loam seed --from fleet.yaml` and commit the rewritten map in the PR that moves the pinned
+  version.
+- **`spine.op-link-missing` and `c4.op-link-missing` no longer fire on a message edge** — one
+  carrying `publishes` or `consumes` — whose title starts with "call". A message edge never names an
+  operation, and seed titles a message edge with its id, so a correct `consumes:` line for
+  `calls.CallEnded` used to fail `--spine --strict`. A hand-drawn message edge titled "Calls…" loses
+  the same false warning in a default run.
+- **A loam older than this release refuses a `fleet.yaml` that uses the new forms**
+  (`seed-file-invalid`) and refuses `--spine` (`invalid-option`). Move every pinned version
+  together.
+
 ## [0.2.0-alpha.18] - 2026-10-30
 
 Everything on `main` since `0.2.0-alpha.17`. Still a prerelease on the `alpha` line.

@@ -1,18 +1,19 @@
 /**
  * One fleet.yaml item, read off the AST: the section-item and scalar readers,
- * the `file:line` addressing every refusal opens with, and the one composite
- * entry shape (`services:`'s string-or-mapping item). Split from
- * `./fleet-file.ts` on the phase seam — this module answers "what does this
- * NODE say, and where is it", while fleet-file owns what the answers must
- * amount to (grammar, the flat namespace, reference resolution).
+ * the `file:line` addressing every refusal opens with, and the two composite
+ * entry shapes (`services:`'s string-or-mapping item, and the one-pair mapping
+ * a join statement is written as). Split from `./fleet-file.ts` on the phase
+ * seam — this module answers "what does this NODE say, and where is it",
+ * while fleet-file and `./joins.ts` own what the answers must amount to
+ * (grammar, the flat namespace, reference resolution, what a join draws).
  *
  * `serviceEntry` reports its refusals as a plain `invalid` sentence rather
  * than the reader's discriminated problem union, deliberately: every shape
  * failure at item level maps to `seed-file-invalid`, and returning the
- * sentence keeps this module free of the domain union — the import points
- * fleet-file → items only, never back.
+ * sentence keeps this module free of the domain union — the imports point
+ * fleet-file → items and joins → items only, never back.
  */
-import { isMap, isScalar, isSeq, type LineCounter, type Pair } from "yaml";
+import { isMap, isScalar, isSeq, type LineCounter, type Pair, type YAMLMap } from "yaml";
 import { closeIds } from "../arch.js";
 
 /** What the readers walk with: the display path and the offset→line map. */
@@ -21,11 +22,23 @@ export interface SeedCtx {
   readonly lines: LineCounter;
 }
 
+/**
+ * The 1-based line a node starts on, or null when it carries no range. A
+ * number of its own, beside `at`'s sentence prefix, because a drawn edge
+ * remembers the line its statement was written on — the place a human edits
+ * when a check later convicts that join.
+ */
+export function lineOf(ctx: SeedCtx, node: unknown): number | null {
+  if (node === null || typeof node !== "object") return null;
+  const range = (node as { range?: readonly [number, number, number] | null }).range;
+  if (range === undefined || range === null) return null;
+  return ctx.lines.linePos(range[0]).line;
+}
+
 /** `file:line` for a node, or just the file when the node carries no range. */
 export function at(ctx: SeedCtx, node: unknown): string {
-  const range = (node as { range?: readonly [number, number, number] | null }).range;
-  if (range === undefined || range === null) return ctx.file;
-  return `${ctx.file}:${ctx.lines.linePos(range[0]).line}`;
+  const line = lineOf(ctx, node);
+  return line === null ? ctx.file : `${ctx.file}:${line}`;
 }
 
 /** A did-you-mean clause over real names, or the empty string. */
@@ -95,4 +108,25 @@ export function serviceEntry(ctx: SeedCtx, item: unknown): ServiceEntryRead {
     return { invalid: `${where} — a services mapping entry must carry \`id\`.` };
   }
   return { id, subsystem, where };
+}
+
+/**
+ * A mapping entry read as ONE statement: the key's string (null when the key
+ * is not a string), the key node for `at()`, and the value node. Any other
+ * number of pairs comes back as the keys it holds, spelled — YAML happily
+ * reads `- {a -> b: x, c -> d: y}` as one item, and the caller refuses it by
+ * naming both, because silently drawing the first would drop a stated join.
+ */
+type PairRead =
+  | { readonly one: true; readonly key: string | null; readonly keyNode: unknown; readonly value: unknown }
+  | { readonly one: false; readonly keys: readonly string[] };
+
+export function pairOf(item: YAMLMap): PairRead {
+  const pairs = item.items as Pair[];
+  const only = pairs.length === 1 ? pairs[0] : undefined;
+  if (only === undefined) {
+    return { one: false, keys: pairs.map((p) => (isScalar(p.key) ? String(p.key.value) : String(p.key))) };
+  }
+  const key = isScalar(only.key) && typeof only.key.value === "string" ? only.key.value : null;
+  return { one: true, key, keyNode: only.key, value: only.value };
 }

@@ -19,6 +19,7 @@ import { type DocsDir } from "../../../core/kernel/ids/dirs.js";
 import { type PathableService } from "../../../core/kernel/ids/service.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
 import { brokenDocumentPaths, errorText } from "../../../core/c4/likec4.js";
+import { nearestIds } from "../../../core/repo/entries.js";
 import { type ServiceContract } from "./api.js";
 
 /** What the service target hands the spine check. */
@@ -147,7 +148,9 @@ export function spineFindings(spine: Spine): Finding[] {
             findings.push({
               severity: "error",
               code: "spine.op-undefined",
-              message: `${service}: landscape edge ${svcOf(r.source)} → ${service} calls '${r.op}', not defined in ${service}'s OpenAPI`,
+              message:
+                `${service}: landscape edge ${svcOf(r.source)} → ${service} calls '${r.op}', not defined in ${service}'s OpenAPI` +
+                didYouMean(r.op, contract.ops),
             });
           } else if (contract.deprecated.has(r.op)) {
             // The contract holds — the op is defined — but it is marked
@@ -160,7 +163,15 @@ export function spineFindings(spine: Spine): Finding[] {
               message: `${service}: landscape edge ${svcOf(r.source)} → ${service} calls '${r.op}', which ${service}'s OpenAPI marks deprecated — the consumer should migrate off it`,
             });
           }
-        } else if ((r.title ?? "").toLowerCase().startsWith("call")) {
+        } else if (r.publishes === undefined && r.consumes === undefined && (r.title ?? "").toLowerCase().startsWith("call")) {
+          // A "Calls…" title on an edge with no operation is a call nobody
+          // linked. An edge carrying `publishes`/`consumes` said what it carries
+          // — a message, graded by the event spine — whatever its title reads:
+          // `loam seed` titles every message edge with its id, so a correct
+          // `consumes:` line for `calls.CallEnded` was read as an HTTP call with
+          // its operation missing, failed `--spine --strict`, and the fix it
+          // advised was a hand edit that took the map away from seed. The
+          // consumer census (core/consumers/consumers.ts) reads the same rule.
           findings.push({
             severity: "warn",
             code: "spine.op-link-missing",
@@ -179,4 +190,21 @@ export function spineFindings(spine: Spine): Finding[] {
   }
 
   return findings;
+}
+
+/**
+ * ` — did you mean 'authorizePayment'?`, or nothing. A join is a token
+ * compared byte for byte, so the commonest way to break one is a letter — the
+ * British spelling, a dropped plural — and the contract it missed is already in
+ * hand. `nearestIds` (core/repo/entries.ts) is the edit-distance "did you
+ * misspell" rule the CLI's other near-miss hints use; `closeIds` answers
+ * "which element could this be" and would offer every operation sharing a
+ * prefix. Appended AFTER the sentence the existing pins read, so the code's
+ * prose only grows. The event axis spells the same hint for
+ * `spine.message-undefined` itself (events/events.ts): it sits in a
+ * sub-package this one imports, so it cannot import back.
+ */
+function didYouMean(missed: string, declared: readonly string[]): string {
+  const near = nearestIds(missed, [...new Set(declared)]);
+  return near.length === 0 ? "" : ` — did you mean ${near.map((n) => `'${n}'`).join(" or ")}?`;
 }

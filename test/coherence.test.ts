@@ -596,6 +596,20 @@ describe("W1: tagged 'Calls …' edge without metadata op", () => {
     expect(issues).toEqual([]);
   });
 
+  it("a tagged message edge whose title starts with 'Call' is a message, never a call missing its operation", async () => {
+    // `metadata { publishes }` says what the edge carries; the title is the
+    // message's own name, the way `loam seed` titles every message edge.
+    const issues = await coherenceOf({
+      [`${FEATURE_REL}/delta.likec4`]: delta(`  a = softwareSystem 'svc-a'
+  b = softwareSystem 'svc-b'
+  a -> b 'CallEnded' {
+    #FEAT-1
+    metadata { publishes 'CallEnded' }
+  }`),
+    });
+    expect(issues.map((i) => i.code)).not.toContain("c4.op-link-missing");
+  });
+
   it("tagged untitled edge with no op is silent", async () => {
     const issues = await coherenceOf({
       [`${FEATURE_REL}/delta.likec4`]: delta(`  a = softwareSystem 'svc-a'

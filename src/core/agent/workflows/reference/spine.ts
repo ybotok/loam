@@ -3,8 +3,9 @@
  *
  * Operation and message ids, coverage and permission references, the
  * capability tree and its `Realizes:` join, the requirement baseline pins
- * (`Based-On:` / `x-loam-based-on`), how to draw a shared broker, and how to
- * declare a message produced outside the fleet.
+ * (`Based-On:` / `x-loam-based-on`), how to draw a shared broker, how to
+ * declare a message produced outside the fleet, and where those joins are
+ * written instead when the map is still `loam seed`'s.
  *
  * This is the grammar a reader consults while writing ONE document, which is
  * why it is a printed page rather than a section of AGENTS.md: it is consulted
@@ -16,7 +17,10 @@
  *
  * The text is the AGENTS.md section verbatim; nothing was rewritten to move
  * it, so a cross-reference from the remaining file still names the same
- * headings. See ./reference.ts for why these four pages exist.
+ * headings. The one section written here since, the seeded map's, was added
+ * when fleet.yaml learned to state joins: it is the answer to "where does
+ * this join go" that the other sections' landscape snippets would get wrong on
+ * a map seed still owns. See ./reference.ts for why these four pages exist.
  */
 import type { CommandContent } from "../../contract.js";
 
@@ -36,6 +40,7 @@ export const LOAM_SPINE: CommandContent = {
     "The requirement baseline — `Based-On:`",
     "Drawing a shared broker",
     "A message produced outside the fleet",
+    "A seeded map: state the joins in fleet.yaml",
   ],
   body: `The ID spine: how the artifacts join, and what pins a change to the version it was written against.
 
@@ -356,5 +361,32 @@ answer it: the consuming service's own asyncapi.yaml. While that file declares
 no shape for the message, \`spine.message-external\` (warn) says so; once the
 consumer declares the payload, the axis is quiet. A truthful map and a green
 build no longer exclude each other, which is the exact choice this used to force.
+
+## A seeded map: state the joins in fleet.yaml
+
+A landscape \`loam seed\` wrote carries a stamp on line 1, and while the stamp
+holds, fleet.yaml is its source: every edge on it is a statement there. So on a
+seeded map every join on this page is written in fleet.yaml, never in the
+landscape — a hand edit, even a correct one, makes the map hand-owned, and seed
+refuses it (\`seed-landscape-edited\`) from then on.
+
+    calls:                       # caller -> provider, drawn -[calls]-> with metadata { op }
+      - checkout-web -> payment-service: authorizePayment
+      - order-service -> payment-service: [capturePayment, refundPayment]
+    publishes:                   # producer -> broker, drawn with metadata { publishes }
+      - payment-service -> kafka: payment.PaymentCaptured
+      - external-config -> kafka: config.ConfigRefreshed   # an outside producer, declared under externals:
+    consumes:                    # broker -> consumer, drawn -[delivers]-> with metadata { consumes }
+      - kafka -> order-service: payment.PaymentAuthorized
+
+Re-running \`loam seed --from fleet.yaml\` regenerates the map, one titled edge
+per id, and \`loam validate --all --spine\` grades each join against the
+contracts copied into services/<id>/. A \`consumes:\` line ends at a service: one
+pointing at an external is refused with the arrow turned round, because it would
+check nothing. A call into an external may name its operation; it is drawn and
+never graded, because that contract is not in the docs repo. What fleet.yaml
+cannot say — a title, a container, a nested topic like the broker section above
+draws, a database — is past seeding: drawing it makes the map yours, and adopt
+briefs and feature C4 deltas grow it from there.
 `,
 };

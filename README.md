@@ -215,45 +215,70 @@ that needs neither.
 ### Start from the fleet spine
 
 The path that pays off first, because it is the only one whose checks have two sides to compare.
-It needs **no requirement Markdown, no `loam adopt`, and no `loam vouch`** — just the map and the
-contracts you already have.
+It needs **no requirement Markdown, no `loam adopt`, no `loam vouch`, and no hand-edited LikeC4** —
+one `fleet.yaml` and the contracts you already have.
 
-Write a `fleet.yaml` naming your services and who calls whom
+Write a `fleet.yaml` naming your services, who calls whom with which operation, and who publishes
+and consumes which message
 ([`examples/fleet.yaml`](https://github.com/ybotok/loam/blob/main/examples/fleet.yaml) is a real
-one), then:
+one, and this is part of it):
 
-```bash
-loam init --docs . --create        # in an empty directory: the docs repo
-loam seed --from fleet.yaml        # the fleet map + one services/<id>/ per service
+```yaml
+services:
+  - checkout-web
+  - order-service
+  - payment-service
+externals:
+  - kafka
+calls:        # caller -> provider: the operationId(s) the caller uses, as its openapi.yaml spells them
+  - checkout-web -> order-service: [createOrder, getOrder]
+  - checkout-web -> payment-service: authorizePayment
+publishes:    # producer -> broker: a message the producer's asyncapi.yaml sends
+  - payment-service -> kafka: payment.PaymentAuthorized
+consumes:     # broker -> consumer: a message the consumer's asyncapi.yaml receives
+  - kafka -> order-service: payment.PaymentAuthorized
 ```
 
-Now do the two things only you can do:
-
-1. **Drop each service's existing `openapi.yaml`** into `services/<id>/`. Copy the one your build
-   already produces — loam never generates it and never reads your code.
-2. **Name the operation on each call edge** in `architecture/landscape.likec4`:
-   `metadata { op 'createOrder' }`. This is the labour, and it is also the artifact nothing else
-   produces — a drawn arrow becomes a checked join.
+Put it in an empty directory, which becomes the docs repo — commit `fleet.yaml` there with
+everything else, since it is where the joins are stated from now on — and run:
 
 ```bash
-loam validate --all
+loam init --docs . --create        # the docs repo
+loam seed --from fleet.yaml        # the fleet map, one edge per operation and message + one services/<id>/ per service
 ```
 
-That already convicts the fleet's real edges: a call naming an operation its provider does not
-define is `spine.op-undefined`, an **error**, and one letter is enough — `authorisePayment` against
-a contract spelling it `authorizePayment` fails here and nowhere else a team normally runs.
+Now do the one thing only you can do: **drop each service's existing `openapi.yaml` and
+`asyncapi.yaml`** into `services/<id>/`. Copy the ones your build already produces — loam never
+generates them and never reads your code.
 
-**Expect a red run, and read it correctly.** Five seeded services with no C4 centre report
-`service.no-model` (error) five times, and `service.no-spec` (warn) five times. Those are not
-misconfiguration: they are a truthful reading of a fleet where adoption has not started, and they
-stay until you write those documents. The finding you came for is the spine one. Under the `--base`
-PR gate [below](#guard-the-fleets-edges-on-every-pr), a PR that adds a service's `openapi.yaml`
-stays red until that service has a `model.likec4` — the gate grades the service the PR touched, and
-`service.no-model` is that ratchet working as designed — while a PR that only names operations on
-the map is graded on those edges alone.
+```bash
+loam validate --all --spine
+```
+
+That grades every join `fleet.yaml` states against the contracts at both ends, and it is **green
+when the joins are right**. A call naming an operation its provider does not define is
+`spine.op-undefined`, an **error**, and one letter is enough — `authorisePayment` against a contract
+spelling it `authorizePayment` fails here, with a did-you-mean, and nowhere else a team normally
+runs; a message the producer does not send or the consumer does not receive is
+`spine.message-undefined`. The run ends by saying how many joins it checked and what it did not
+grade. You fix a join where you stated it: edit `fleet.yaml` and run `loam seed` again, which
+regenerates the map for as long as nobody has hand-edited it.
+
+**Without `--spine`, read the red run correctly.** `loam validate --all` also reports the adoption
+ladder — `service.no-model` (error) for every seeded service, `service.no-spec` (warn), and the
+operations and messages no requirement governs — which is the next level, not a misconfiguration.
+Those findings are a truthful reading of a fleet where adoption has not started, and they stay until
+you write those documents; `--spine` counts them on its last line instead of reporting them.
 [`test/spine-first.test.ts`](https://github.com/ybotok/loam/blob/main/test/spine-first.test.ts)
-pins this whole sequence against the shipped `examples/fleet.yaml`, so the recipe cannot drift from
-the binary.
+pins this whole sequence against the shipped `examples/fleet.yaml` and the example fleet's own
+contracts, so the recipe cannot drift from the binary.
+
+**When you outgrow `fleet.yaml`.** It can say services, subsystems, externals, calls with their
+operations, and the messages each service publishes and consumes — nothing else. The first title,
+container, database or `loam adopt` brief a human draws onto `architecture/landscape.likec4` makes
+the map hand-owned: seed sees the edit through the stamp on its first line and refuses
+(`seed-landscape-edited`) rather than overwrite it, and from then on adopt briefs and feature C4
+deltas grow the map instead.
 
 From here, [WORKFLOW.md's day zero](WORKFLOW.md#day-zero-onboarding-a-fleet) is the rest: bind each
 service repo, adopt, grade, promote. Bind each one with the service profile:
@@ -282,6 +307,49 @@ returns. That question — *who is joined to this?* — is the one a fleet answe
 answerable only from a document that knows the whole fleet. **`loam validate --all --base <ref>`
 grades only the boundaries the branch touched**, which is what lets a strict gate go in on the
 first day of adoption and tighten as the system gets written down.
+
+**At level 1 — a map seeded from `fleet.yaml`, nothing adopted yet — the gate is the spine.** The
+unscoped `validate --all --spine` re-grades every join on the map against the contracts on every
+PR, which takes seconds and needs no scoping: a branch that edits one contract is checked against
+every caller and consumer of it, wherever they are drawn.
+
+```yaml
+# .github/workflows/fleet-joins.yml — in the docs repo
+name: fleet joins
+on: pull_request
+jobs:
+  joins:
+    runs-on: ubuntu-latest
+    env:
+      LOAM: "@ybotok/loam@0.2.0-alpha.18"   # an exact version: bump it in a PR of its own, re-seeded
+      BASE: origin/${{ github.base_ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }          # diff reads the base out of git history
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }        # loam's floor is Node 22.22.3; `22` is the newest 22.x
+      # every join on the map against the contracts at both ends (fails on a wrong one)
+      - run: npx -y "$LOAM" validate --all --spine
+      # a removed operation or message somebody still consumes (fails, naming them)
+      - if: ${{ !cancelled() }}
+        run: npx -y "$LOAM" diff --base "$BASE"
+      # fleet.yaml and the committed map say the same thing (drop this step once the map is hand-owned)
+      - if: ${{ !cancelled() }}
+        run: npx -y "$LOAM" seed --from fleet.yaml && test -z "$(git status --porcelain)"
+```
+
+The last step keeps `fleet.yaml` in the docs repo honest: re-seeding an unedited map from the same
+file with the same loam version writes the same bytes, so a PR that changed one without the other
+leaves a dirty tree. A loam release may reword the comment seed writes at the top of the map, so
+the PR that moves the pinned version re-seeds and commits the map with it. A
+`--spine` run that checked no join says so in words (`joins: none stated`) rather than reading as a
+pass. Once services are adopted, `--spine` also sets aside their own findings, so a partly adopted
+fleet adds the scoped gate below for what it has written down.
+
+**Once adoption starts, the scoped gate grades what each PR touched.** A PR that adds a service's
+`openapi.yaml` stays red under `--base` until that service has a `model.likec4` — the gate grades
+the service the PR touched, and `service.no-model` is that ratchet working as designed — while a PR
+that only changes joins on the map is graded on those edges alone.
 
 ```yaml
 # .github/workflows/fleet-edges.yml — in the docs repo
@@ -347,6 +415,31 @@ scope, so the one-letter `authorisePayment` above fails on the PR that introduce
 [WORKFLOW.md](WORKFLOW.md#what-actually-gates) has what each does and
 does not grade — including the oasdiff invocation for the byte-level OpenAPI breaking-change
 catalogue, which loam deliberately does not reimplement.
+
+#### GitLab merge requests
+
+The same level-1 gate as a merge-request job. Every command exits 1 on what it fails, which is all
+a GitLab job needs; `--json` is there when a later step wants the findings.
+
+```yaml
+# .gitlab-ci.yml — in the docs repo
+fleet-joins:
+  image: node:24                  # loam's floor is Node 22.22.3
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  variables:
+    GIT_DEPTH: "0"                # --base reads history; a shallow clone may not hold the base commit
+    LOAM: "@ybotok/loam@0.2.0-alpha.18"
+  script:
+    - npx -y "$LOAM" validate --all --spine
+    - npx -y "$LOAM" diff --base "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
+    - npx -y "$LOAM" seed --from fleet.yaml && test -z "$(git status --porcelain)"
+```
+
+A base commit the clone does not hold refuses with `unknown-target` rather than comparing against
+nothing. Unlike the GitHub job, a failing script line stops the ones after it. On an air-gapped
+runner, point `NPM_CONFIG_REGISTRY` at the internal npm proxy and `image:` at the registry mirror;
+loam itself makes no network call.
 
 ### Check each service repo on its own pull requests
 
@@ -560,7 +653,7 @@ cannot hold.
 | Command | Flags | What it does |
 |---|---|---|
 | `loam init` | `--docs <dir>` `--service <id>` `--create` `--force` `--tools <ids>` `--agent-profile <full\|service\|docs>` `--example <dir>` `--no-commands` `--no-skills` `--mcp` `--mcp-author` `--copilot-setup` | Bind this repository to the single shared docs repo: a committed local `loam.json`, plus command and Agent Skill pointers for detected AI tools. Profiles narrow the six lifecycle workflows to a repo's role; the support-only `loam-report` stays in every profile. Re-running init refreshes only unchanged loam-owned pointers; edited files are preserved. `--mcp` writes the read-only host entry (and Codex's or OpenCode's config when those are selected), while `--mcp-author` opts into the bounded authoring tools. `--copilot-setup` writes the workflow that installs loam for Copilot's cloud agent. `--create` scaffolds the docs repo; `--example` copies the packaged example and stops |
-| `loam seed` | `--from <file>` | Template the fleet map and one `services/<id>/` directory per service from a tiny human-authored `fleet.yaml`. Mechanical, never a guess: a human stated every fact. Refuses once the landscape has been hand-edited |
+| `loam seed` | `--from <file>` | Template the fleet map and one `services/<id>/` directory per service from a tiny human-authored `fleet.yaml` — services, subsystems, externals, the calls with the operations they use, and the messages under `publishes:` and `consumes:`, one edge per operation or message. Mechanical, never a guess: a human stated every fact. Re-running regenerates an unedited map; refuses once the landscape has been hand-edited |
 | `loam list [services\|features\|capabilities\|glossary\|suites]` | `--archived` `--needs-work` `--review-order` `--subsystem <name>` `--owners <path>` | What is in the docs repo, and what is missing from it. `capabilities` rolls up who realizes each promise; `glossary` rolls up each term with the documents that cite it; `suites` groups the use cases by `#suite-` tag and names the services each suite needs up (`loam list suites <name>` shows one) |
 | `loam status [<FEAT>]` | `--service <id>` | Where the work stands and what to do next, as a projection over the two gates. Each `next[]` row has an `execution` object that says whether it is runnable, where, and what input or edit is still needed. Derived every run; writes nothing |
 | `loam doctor` | — | Read-only preflight for runtime, config, docs-repo access, fleet roots, counts, and the current service binding. Blockers exit 1; incomplete optional bindings stay warnings |
@@ -582,7 +675,7 @@ cannot hold.
 | `loam tasks <FEAT>` | `--service <id>` `--next` `--intent-ref` | The same checklist `loam verify` grades, read forwards: one work unit per promise the feature makes, each carrying the step it waits on (`describe`, `generate`, `implement`, `attested`) and the fact that closes it — only a confirmed claim in a non-stale verification record retires one, and an attested scenario stays visible. Derived every run and writes nothing. `--service` is a pure lens that adds what this service is waiting on elsewhere, and in a service repository it defaults to that service when the feature touches it; the frontier orders providers before consumers as advice, never a lock. The per-unit work packet, and `--next` is the single leaf packet an orchestrator hands a coding agent. `--intent-ref` carries the feature's `intent.md` by reference instead of verbatim, so the leaf is the size of the unit rather than of the intent |
 | `loam gherkin [<FEAT>]` | `--service <id>` `--dry-run` | Emit spec scenarios as digest-stamped Gherkin `.feature` files into the service repo's `<gherkinDir>/loam/` |
 | `loam rebase [<FEAT>]` | `--service <id>` `--dry-run` `--living` | Pin the feature to the living versions it was written against, on the requirement axis and the contract axis. `--living` takes no feature: it pins the living corpus's `Realizes:` entries to the capability requirements they name, which is what makes `capability.realizes-stale` able to fire later |
-| `loam validate [<id>]` | `--service <id>` `--feature <id>` `--all` `--base <ref>` `--strict` `--errors-only` | Validate one service or feature, or the whole fleet in one run. JSON findings carry `locations[]`: an exact primary location when the check knows one, otherwise the narrowest proved scope. `--base` is the adoption ratchet, not a substitute for `loam diff`; `--strict` exits 1 on warnings; `--errors-only` drops the `ok` confirmations from the text view, keeping every warning |
+| `loam validate [<id>]` | `--service <id>` `--feature <id>` `--all` `--base <ref>` `--strict` `--errors-only` `--spine` | Validate one service or feature, or the whole fleet in one run. JSON findings carry `locations[]`: an exact primary location when the check knows one, otherwise the narrowest proved scope. `--base` is the adoption ratchet, not a substitute for `loam diff`; `--strict` exits 1 on warnings; `--errors-only` drops the `ok` confirmations from the text view, keeping every warning; `--spine` grades only the fleet's joins — every operation and message a map edge names, against the contracts at both ends — counting the adoption findings in a `lens` key instead of grading them, and refuses a feature |
 | `loam verify <FEAT>` | `--record <file>` `--results <file>` `--contract-results <file>` `--diff-answers <files...>` `--service <id>` | The done-check: derive a checklist of the feature's own promises, and record the answers with their evidence. `--results`/`--contract-results` answer claims from a test report; `--diff-answers` cross-examines two blind answer sets |
 | `loam vouch` | `--service <id>` `--yes` `--pack` `--sample <n>` | The human promotion `draft` → `verified`: stamp a living spec against the code it was written from. `--pack` prints the re-vouch reading pack; `--sample <n>` records a partial read as one. Run in the service's own repo |
 | `loam gate` | `--service <id>` `--since <ref>` `--strict` | Can this service deploy? A pure query over recorded evidence for deploy pipelines outside loam's lifecycle. Executes nothing, writes nothing; errors exit 1, warnings stay advisory. Without `--since` it grades in-flight features only; `--since` (the docs commit the last deploy recorded) adds every feature archived after it |
@@ -761,7 +854,7 @@ authored-capability axes with the `Realizes:` join, use cases graded as `dynamic
 `stability` job ran green once (2026-09-21) and was then cancelled by its own time limit on every
 weekly run from 2026-10-05, so it has yet to be observed green at the budget it was given on
 2026-10-28. Speculative `render`, health composition and UI
-generation come later. Behind that status stand **223 test files** (counted 2026-10-30): the count is graded
+generation come later. Behind that status stand **225 test files** (counted 2026-10-30): the count is graded
 against a live readdir by `test/docs-facts.test.ts`, so this sentence fails the suite the moment it
 trails the tree.
 

@@ -168,9 +168,10 @@ export function fleetNext(fleet: Fleet, binding: Binding | null): NextStep[] {
             ? "architecture/landscape.likec4 does not exist — the fleet map is the one artifact every " +
               "cross-service check reads. Run `loam init --create` to scaffold it, then draw the first service."
             : "architecture/landscape.likec4 is still the scaffold's untouched map — no service is drawn. " +
-              "State the facts in a fleet.yaml (service ids, `a -> b` calls) and run " +
-              "`loam seed --from fleet.yaml` to template the map mechanically — or open the file " +
-              "and follow its own comments. Either way loam never guesses who calls whom.",
+              "State the facts in a fleet.yaml (service ids, `a -> b` calls, `a -> b: operationId` for the " +
+              "operation a call uses) and run `loam seed --from fleet.yaml` to template the map mechanically; " +
+              "`loam validate --all --spine` then checks each named operation against its provider's contract. " +
+              "Or open the file and follow its own comments. Either way loam never guesses who calls whom.",
         // The command each arm's own prose already names, and for a while it
         // was neither: both arms carried the gate. WORKFLOW.md documents the
         // agent loop as "read next[0], run the command it names, repeat" and

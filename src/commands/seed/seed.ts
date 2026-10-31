@@ -1,7 +1,8 @@
 /**
  * `loam seed` — the fleet map's first hour, mechanically: a tiny
- * human-authored fleet.yaml (service ids, optional subsystems, externals and
- * `a -> b` calls) templated into architecture/landscape.likec4 plus one
+ * human-authored fleet.yaml (service ids, optional subsystems, externals,
+ * `a -> b` calls with the operations they use, and the messages services
+ * publish and consume) templated into architecture/landscape.likec4 plus one
  * services/<id>/ directory per service, in one journaled transaction.
  *
  * NOT an extractor, deliberately: a human stated every fact in the file —
@@ -16,7 +17,7 @@
 import type { Command } from "commander";
 import { resolve } from "node:path";
 import { errorText, loadSource } from "../../core/c4/likec4.js";
-import { readFleetFile, type SeedFileProblem } from "../../core/c4/seed/fleet-file.js";
+import { readFleetFile, type FleetSeed, type JoinKey, type SeedFileProblem } from "../../core/c4/seed/fleet-file.js";
 import { sealLandscape } from "../../core/c4/seed/stamp.js";
 import { renderLandscape } from "../../core/c4/seed/template.js";
 import { configOrRefuse, emitJson, emitJsonError, fail, repoPath } from "../../core/envelope/json.js";
@@ -65,8 +66,10 @@ export function registerSeed(program: Command): void {
             json,
             "seed-file-invalid",
             `${fromArg} does not exist — write the fleet file (a services: list of ids, plus ` +
-              `optional subsystems:, externals: and calls: like 'checkout -> payments'), or ` +
-              `point --from at where it lives. Nothing was written.`,
+              `optional subsystems:, externals:, calls: like 'checkout -> payments' or ` +
+              `'checkout -> payments: authorizePayment', and publishes:/consumes: like ` +
+              `'payments -> kafka: payment.PaymentCaptured'), or point --from at where it lives. ` +
+              `Nothing was written.`,
           );
         }
         // An errno is a filesystem answer (EISDIR, EACCES, …) about the named
@@ -117,7 +120,14 @@ export function registerSeed(program: Command): void {
       const written = committed.written.map((w) => repoPath(docsDir, w));
       const removed = committed.removed.map((w) => repoPath(docsDir, w));
       const firstCreated = committed.services.created[0];
+      const joins = joinCounts(seed);
+      const stated = joins.operations + joins.publishes + joins.consumes > 0;
       const next = [
+        // A stated join is a claim about two contracts, and the spine lens is
+        // the run that grades exactly those claims and nothing a seeded,
+        // unadopted fleet cannot yet have — so it leads. Without a join there
+        // is nothing for it to check, and the list stays what it always was.
+        ...(stated ? ["loam validate --all --spine"] : []),
         "loam validate --all",
         "loam list --needs-work",
         // Interpolation is agent-safe: the id already passed the grammar.
@@ -135,6 +145,10 @@ export function registerSeed(program: Command): void {
           subsystems: [...seed.subsystems].sort(),
           externals: [...seed.externals].sort(),
           calls: seed.calls.length,
+          // Always present, zeros for a join-free file, so a consumer reads one
+          // shape. Counts DRAWN edges — a statement repeated or subsumed is
+          // counted once, as it is drawn once.
+          joins,
           next,
           ...(committed.recovered === null ? {} : { recovered: committed.recovered }),
         });
@@ -143,9 +157,13 @@ export function registerSeed(program: Command): void {
       if (committed.recovered !== null && committed.recovered.outcome !== "consistent") {
         console.log(`note: ${sayRecovered(committed.recovered)}`);
       }
+      // A join-free file keeps the sentence it always printed, word for word.
+      const joinClause = stated
+        ? ` ${joins.operations} operation join(s), ${joins.publishes + joins.consumes} message join(s),`
+        : "";
       console.log(
         `architecture/landscape.likec4 ${LANDSCAPE_SENTENCE[committed.landscape]} — ` +
-          `${seed.services.length} service(s), ${seed.calls.length} call(s), from ${fromArg}`,
+          `${seed.services.length} service(s), ${seed.calls.length} call(s),${joinClause} from ${fromArg}`,
       );
       for (const w of written) console.log(`  + ${w}`);
       // Only ever the generated views file, and only when the resulting tree
@@ -166,6 +184,12 @@ export function registerSeed(program: Command): void {
       console.log("\nNext:");
       for (const n of next) console.log(`  ${n}`);
     });
+}
+
+/** The drawn joins by the metadata key they carry — seed's `joins` payload key. */
+function joinCounts(seed: FleetSeed): { operations: number; publishes: number; consumes: number } {
+  const count = (key: JoinKey): number => seed.edges.filter((e) => e.join?.key === key).length;
+  return { operations: count("op"), publishes: count("publishes"), consumes: count("consumes") };
 }
 
 const LANDSCAPE_SENTENCE: Record<LandscapeDisposition, string> = {

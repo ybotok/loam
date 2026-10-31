@@ -21,8 +21,9 @@ with `npx loam`.
 
 ## 2. Ten minutes, CLI only: the fleet spine
 
-Nothing here needs requirement Markdown, `loam adopt` or `loam vouch` — only the map and a contract
-you already have. In an empty directory, write `fleet.yaml`: the services, and who calls whom.
+Nothing here needs requirement Markdown, `loam adopt`, `loam vouch` or a hand-edited diagram — only
+a `fleet.yaml` and a contract you already have. In an empty directory, write `fleet.yaml`: the
+services, who calls whom, and the operation the call uses — spelled the British way on purpose.
 
 ```yaml
 services:
@@ -30,7 +31,7 @@ services:
   - payment-service
 
 calls:
-  - order-service -> payment-service
+  - order-service -> payment-service: authorisePayment
 ```
 
 Make the docs repo there, and let `seed` draw the map from that file:
@@ -41,19 +42,31 @@ loam seed --from fleet.yaml
 ```
 
 ```text
-architecture/landscape.likec4 written (replaced the scaffold's untouched stub) — 2 service(s), 1 call(s), from fleet.yaml
+architecture/landscape.likec4 written (replaced the scaffold's untouched stub) — 2 service(s), 1 call(s), 1 operation join(s), 0 message join(s), from fleet.yaml
   + architecture/landscape.likec4
   + services/order-service/.gitkeep
   + services/payment-service/.gitkeep
   + architecture/services.likec4
 
 Next:
+  loam validate --all --spine
   loam validate --all
   loam list --needs-work
   loam adopt --service order-service
 ```
 
-Now the two things only you can do. First, put the provider's existing contract at
+`seed` drew the call with its operation on it — a join, which is what a check can compare. The
+`-[calls]->` is the edge's relationship kind: every edge on a loam map says what it carries, and the
+map declares the seven kinds (`loam instructions loam-drawing`). You never write this by hand;
+`fleet.yaml` is where it is stated, and re-running `seed` redraws it.
+
+```likec4
+  svc_order_service -[calls]-> svc_payment_service 'authorisePayment' {
+    metadata { op 'authorisePayment' }
+  }
+```
+
+Now the one thing only you can do: put the provider's existing contract at
 `services/payment-service/openapi.yaml` — copy the one its build produces; loam never generates it
 and never reads the code. For this walk-through, one operation is enough:
 
@@ -74,46 +87,43 @@ paths:
               schema: { type: object }
 ```
 
-Second, name the operation on the call edge in `architecture/landscape.likec4`. `seed` drew the
-call with no operation; replace that line with this one, spelled the British way on purpose. The
-`-[calls]->` is the edge's relationship kind — every edge on a loam map says what it carries, and
-the map declares the seven kinds (`loam instructions loam-drawing`):
-
-```likec4
-  svc_order_service -[calls]-> svc_payment_service 'Authorises the order' {
-    metadata { op 'authorisePayment' }
-  }
-```
-
 ```bash
-loam validate --all --errors-only
+loam validate --all --spine
 ```
 
 ```text
-2 services, 0 features — 3 errors, 3 warnings
+spine lens — grading only the fleet's joins: each call's operation against its provider's openapi.yaml, each message against both ends' asyncapi.yaml, and whatever would stop that check running
+2 services — 1 error, 0 warnings (spine lens)
 errors by code:
-  ✗ service.no-model ×2: order-service, payment-service
   ✗ spine.op-undefined ×1: payment-service
 
-✗ No C4 model at services/order-service/model.likec4. Run `loam adopt` for 'order-service' first.  (service.no-model)
-✗ No C4 model at services/payment-service/model.likec4. Run `loam adopt` for 'payment-service' first.  (service.no-model)
-⚠ payment-service: 1 operation(s) not governed by any requirement — authorizePayment  (api.ungoverned)
-✗ payment-service: landscape edge order-service → payment-service calls 'authorisePayment', not defined in payment-service's OpenAPI  (spine.op-undefined)
+✓ landscape: 2 service(s) modelled — architecture/landscape.likec4 and services/ agree
+✗ payment-service: landscape edge order-service → payment-service calls 'authorisePayment', not defined in payment-service's OpenAPI — did you mean 'authorizePayment'?  (spine.op-undefined)
 
-2 services, 0 features — 3 errors, 3 warnings
-⚠ requirements axis not started fleet-wide (0 of 2 services), expected during staged adoption — 2 warning(s) grouped: service.no-spec×2; every finding is unchanged in --json
+2 services — 1 error, 0 warnings (spine lens)
+joins: 1 call names an operation · 0 message joins
+not graded under --spine: 2 errors, 3 warnings — service.no-model ×2, service.no-spec ×2, api.ungoverned ×1; `loam validate --all` reports them
 
 → `loam explain <code>` says what a code means and how to fix it
 ```
 
-(A fleet scorecard follows, cut here.) The last `✗` line is the one you came for: one letter between the map and the provider's contract, an
-**error**, and no other check a team normally runs would see it. `loam explain spine.op-undefined`
-says what it means and what to do. The two `service.no-model` errors are not misconfiguration:
-they are a truthful reading of a fleet where adoption has not started, and they stay until each
-service has a model. Spell the operation `authorizePayment` and the `✗` line is gone — the edge now
-reads `spine.resolved` in `--json`. Committed, this directory is a docs repo, and README's
-[PR recipe](README.md#guard-the-fleets-edges-on-every-pr) guards these edges on every pull request
-from here on — `loam diff --base` names who still calls an operation a branch removes.
+It exits 1, and the `✗` line is the one you came for: one letter between the map and the
+provider's contract, an **error**, and no other check a team normally runs would see it.
+`loam explain spine.op-undefined` says what it means and what to do. Fix it where you stated it —
+`order-service -> payment-service: authorizePayment` in `fleet.yaml` — and run
+`loam seed --from fleet.yaml` again. Nobody has touched the map, so seed says it was `regenerated`
+rather than refusing, and `loam validate --all --spine` now exits 0, the edge reading
+`spine.resolved` in `--json`.
+
+`--spine` grades the joins and whatever would stop them being checked, and its last line counts
+what it set aside. `loam validate --all` is the full picture: the same run without the lens also
+reports `service.no-model` for both services, `service.no-spec` and the ungoverned operation, and
+exits 1. Those are not misconfiguration — they are a truthful reading of a fleet where adoption has
+not started, the next rung rather than a fault, and they stay until each service has a model.
+Committed, this directory is a docs repo, and README's
+[PR recipe](README.md#guard-the-fleets-edges-on-every-pr) guards these joins on every pull request
+from here on — `loam validate --all --spine` re-grades every one, and `loam diff --base` names who
+still calls an operation a branch removes.
 
 A change can start before any adoption, too. A feature that only states requirements needs no C4
 delta and no contract change:

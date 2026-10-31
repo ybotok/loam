@@ -197,6 +197,19 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   Text mode folds the warnings such an axis alone causes under one banner per
   axis and says so; \`--json\` carries every finding unchanged, and the summary
   counts, exit codes and \`--strict\` are identical either way.
+- \`loam validate --all --spine\` is level 1 of adoption: the same checks, run
+  exactly as above, with only the fleet spine shown — every \`spine.*\` code and
+  whatever stops a join being checked (the map or a contract unreadable, a
+  contract a join needs and lacks, \`docs.commit-interrupted\`,
+  \`docs.binary-behind\`). Everything on the adoption axes is counted in the
+  additive \`lens\` key (\`lens.hidden.byCode\`) instead of reported; \`valid\`,
+  \`summary\`, \`fixes\` and \`--strict\` count what is shown, there is no
+  \`scorecard\`, features are not built (\`lens.featuresSkipped\`), and
+  \`lens.joins\` counts the joins the run graded (one service's under
+  \`--service\`, the scope's under \`--base\`) — zero means nothing was checked. A
+  feature under \`--spine\`, by \`--feature\` or by id, is \`invalid-option\`. A
+  green \`--spine\` run is a narrowing, like \`--base\`: \`loam validate --all\`
+  is still the whole picture.
 - \`loam doctor\` is read-only local/fleet preflight — the first thing to run in a
   repo that behaves as though the fleet were empty. Every finding carries a
   \`fix\` field naming the exact command or edit, so this is the one family you
@@ -270,20 +283,28 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   \`loam list capabilities\`, the rollup those seeds are read from.
 - \`loam seed --from fleet.yaml\` is the onboarding entry point for an empty
   fleet: a tiny human-authored YAML — a \`services:\` list of ids, optional
-  \`subsystems:\`, \`externals:\` and \`calls:\` lines like
-  \`checkout -> payments\` — templated mechanically into
-  architecture/landscape.likec4 (one bound element per service, plain edges, no
-  guessed operationIds) plus one services/<id>/ directory per service, in one
-  journaled transaction. Not an extractor: the human stated every fact, and
-  "who calls whom" is the one thing no generator can read off a repository.
-  The seeded landscape carries a line-1 stamp; while it stands unedited,
-  editing fleet.yaml and re-running regenerates the map, and the first hand
-  edit anywhere in the file, including above the stub, makes it yours — seed
-  then refuses \`seed-landscape-edited\`
-  rather than overwrite. So seed is a day-zero step: fleet.yaml has no spelling
-  for \`metadata { op }\`, and once an edge carries one the map grows through
-  adopt briefs and feature C4 deltas, not through seed. Then adopt each
-  service: \`loam adopt --service <id>\`.
+  \`subsystems:\` and \`externals:\`, \`calls:\` lines like
+  \`checkout -> payments\` or, naming the operations the caller uses,
+  \`checkout -> payments: authorizePayment\` (or a list), and messages under
+  \`publishes:\` (\`payments -> kafka: <message>\`) and \`consumes:\`
+  (\`kafka -> orders: <message>\`, the arrow following the message to its
+  consumer) — templated mechanically into architecture/landscape.likec4 (one
+  bound element per service, one edge per stated operation or message carrying
+  its \`metadata { op | publishes | consumes }\`, nothing guessed) plus one
+  services/<id>/ directory per service, in one journaled transaction. Not an
+  extractor: the human stated every fact, and "who calls whom" is the one thing
+  no generator can read off a repository. \`--json\` counts the drawn joins in
+  \`joins\`, and when there is one \`next\` leads with
+  \`loam validate --all --spine\`, which grades every join against the
+  contracts once they are copied into services/<id>/. The seeded landscape
+  carries a line-1 stamp; while it stands unedited, editing fleet.yaml and
+  re-running regenerates the map, and the first hand edit anywhere in the file,
+  including above the stub, makes it yours — seed then refuses
+  \`seed-landscape-edited\` rather than overwrite. So the joins of a seeded map
+  are fixed in fleet.yaml, never in the landscape: seed keeps the map while
+  fleet.yaml can say everything on it, and once a title, container, database or
+  adopt brief is drawn there, the map grows through adopt briefs and feature C4
+  deltas instead. Then adopt each service: \`loam adopt --service <id>\`.
 - \`loam instructions [<page>] [args...]\` prints one of the six workflow
   protocols — \`loam-adopt\`, \`loam-feature\`, \`loam-implement\`, \`loam-check\`,
   \`loam-verify\`, \`loam-ship\` — with \`$1\`, \`$2\` filled in from the arguments you

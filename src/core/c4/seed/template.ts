@@ -7,13 +7,14 @@
  * The DSL shape is deliberately minimal: one bound `softwareSystem` per
  * service (the `metadata { service '<id>' }` binding is what every loam join
  * reads — element ids are cosmetic), `#external` systems for the externals,
- * and PLAIN edges. No operationIds: those arrive with contracts, and a
- * templated guess would be the extractor this command exists not to be. No
- * relationship kinds on the edges either, for the same reason — but the kinds
- * themselves are DECLARED, as the scaffold's stub declares them, so whatever
- * draws the next edge can name one.
+ * and one edge per statement fleet.yaml makes. An edge carries an operationId
+ * or a message name ONLY when fleet.yaml states it, copied token for token —
+ * a templated guess would be the extractor this command exists not to be —
+ * and its kind is the one the statement's section names, so drawing it
+ * chooses nothing. All seven kinds are DECLARED, as the scaffold's stub
+ * declares them, so whatever draws the next edge can name one.
  */
-import type { FleetSeed } from "./fleet-file.js";
+import type { FleetSeed, JoinKey, SeedEdge } from "./fleet-file.js";
 
 /** Which kind of declared name an element id is being built for. */
 type ElementKind = "svc" | "ext";
@@ -78,25 +79,76 @@ function elementIds(seed: FleetSeed): Map<string, string> {
   return ids;
 }
 
+/** The kind each join is drawn as; a call with no operation is drawn `calls` as well. */
+const KIND_OF: Record<JoinKey, string> = { op: "calls", publishes: "publishes", consumes: "delivers" };
+
+/** The section rank of the total order: calls (named or not) < publishes < consumes. */
+const RANK_OF: Record<JoinKey, number> = { op: 0, publishes: 1, consumes: 2 };
+
+/**
+ * The total order edges are drawn in: section, then `from`, then `to` (the
+ * declared names in codepoint order — the order 0.2.0-alpha.18 drew its bare
+ * calls in, which is what keeps a join-free fleet.yaml's edges byte-identical),
+ * then the id, a bare call before any id. TOTAL is the point: the stamp digests
+ * these bytes, so input order leaking into output order would make an
+ * untouched map read as hand-edited after somebody merely reordered
+ * fleet.yaml. The old comparator answered "greater" both ways for an identical
+ * pair, which was safe only because pairs were deduplicated first; once a pair
+ * carries one edge per id, the id has to break the tie. Two edges equal under
+ * this order are the same edge, which the reader has already merged.
+ */
+function edgeOrder(a: SeedEdge, b: SeedEdge): number {
+  const rank = (e: SeedEdge): number => (e.join === null ? 0 : RANK_OF[e.join.key]);
+  if (rank(a) !== rank(b)) return rank(a) - rank(b);
+  if (a.from !== b.from) return a.from < b.from ? -1 : 1;
+  if (a.to !== b.to) return a.to < b.to ? -1 : 1;
+  if (a.join === null || b.join === null) return a.join === b.join ? 0 : a.join === null ? -1 : 1;
+  if (a.join.id !== b.join.id) return a.join.id < b.join.id ? -1 : 1;
+  return 0;
+}
+
+/**
+ * One edge's DSL. A joined edge is titled with its id (decision D6): parallel
+ * arrows between one pair stay legible, and `loam diff` names a victim as
+ * `edge a → b ("refundPayment")` rather than an anonymous arrow. One edge per
+ * id rather than one edge listing several, because the model reader keeps
+ * only the FIRST value of a repeated metadata key (`core/c4/parsed/values.ts`'s
+ * `metaKey`) — a second op on one edge would be drawn and never checked. The id
+ * is safe inside the quotes because the reader refused every character that
+ * could end the string (`./joins.ts`'s `idHazard`).
+ */
+function edgeLines(e: SeedEdge, el: (name: string) => string): string[] {
+  const arrow = `  ${el(e.from)} -[${e.join === null ? "calls" : KIND_OF[e.join.key]}]-> ${el(e.to)}`;
+  if (e.join === null) return [arrow];
+  return [`${arrow} '${e.join.id}' {`, `    metadata { ${e.join.key} '${e.join.id}' }`, "  }"];
+}
+
 /** Render the landscape body (unstamped — `sealLandscape` adds line 1). */
 export function renderLandscape(seed: FleetSeed): string {
   const ids = elementIds(seed);
-  // Every name reaching `el` was declared (calls are validated against
-  // services ∪ externals before rendering), so the fallback is unreachable —
-  // it exists so a future caller cannot get a silent `undefined` into the DSL.
+  // Every name reaching `el` was declared (every statement's endpoints are
+  // validated against services ∪ externals before rendering), so the fallback
+  // is unreachable — it exists so a future caller cannot get a silent
+  // `undefined` into the DSL.
   const el = (name: string): string => ids.get(name) ?? foldName(name, "svc");
 
   const lines: string[] = [
+    // ONE header for every seeded file, join-free or not (decision D7). The
+    // old one told the reader to hand-write `metadata { op }` on an edge HERE,
+    // which — now that fleet.yaml can say it — is advice that locks seed out
+    // of its own file for nothing. Each stamp's digest covers its own file's
+    // body, header included, so a map sealed under the old header still
+    // verifies against itself, and its first re-seed rewrites the comment once.
     "// Generated from fleet.yaml by `loam seed` — edit fleet.yaml and re-run to",
     "// regenerate. Hand edits make this file yours: the stamp on line 1 is how",
     "// seed tells, and it will then refuse to touch the file again.",
     "//",
-    "// As contracts arrive, give each call the operationId it uses, so",
-    "// requirements, C4 and OpenAPI can be cross-checked:",
+    "// Name the operation a call uses in fleet.yaml, not here, and seed draws it as",
+    "// a join `loam validate --all --spine` checks against the provider's",
+    "// openapi.yaml; messages go under fleet.yaml's publishes: and consumes:.",
     "//",
-    "//   svc_checkout -[calls]-> svc_payment_service 'Calls authorizePayment' {",
-    "//     metadata { op 'authorizePayment' }",
-    "//   }",
+    "//   calls:",
+    "//     - checkout-web -> payment-service: authorizePayment",
     "",
     "specification {",
     "  element person",
@@ -112,13 +164,15 @@ export function renderLandscape(seed: FleetSeed): string {
     "  tag external",
     // The relationship kinds are DUPLICATED from core/scaffold/landscape.ts's
     // LANDSCAPE_STUB for the views block's reason below, and test/seed.test.ts
-    // compares the two byte for byte the same way. One of them is used: the
-    // calls below are drawn `-[calls]->`. They were plain edges, on the reading
-    // that fleet.yaml has no spelling for what an edge carries and choosing a
-    // kind would be a guess — but its list is named `calls` and each entry is
-    // written 'caller -> callee', so the person who wrote it stated the kind,
-    // and the plain arrow taught the one spelling `loam instructions
-    // loam-feature` tells an agent never to draw (QUICKSTART walk, 2026-10-28).
+    // compares the two byte for byte the same way. Three of them are used, each
+    // because a fleet.yaml section states it: `calls:` is drawn `-[calls]->`,
+    // `publishes:` `-[publishes]->` and `consumes:` `-[delivers]->`. Calls were
+    // plain edges once, on the reading that fleet.yaml has no spelling for what
+    // an edge carries and choosing a kind would be a guess — but the list is
+    // named `calls` and each entry is written 'caller -> callee', so the person
+    // who wrote it stated the kind, and the plain arrow taught the one spelling
+    // `loam instructions loam-feature` tells an agent never to draw (QUICKSTART
+    // walk, 2026-10-28). The message sections are named for the same reason.
     // No other kind is ever chosen here. Declaring all seven is what lets the
     // adoptions and feature deltas that follow draw kinded edges into this map,
     // and lets an archive that copies one in still parse.
@@ -197,15 +251,13 @@ export function renderLandscape(seed: FleetSeed): string {
     lines.push("    #external");
     lines.push("  }");
   }
-  const calls = [...seed.calls].sort((a, b) =>
-    a.from === b.from ? (a.to < b.to ? -1 : 1) : a.from < b.from ? -1 : 1,
-  );
-  if (calls.length > 0) lines.push("");
+  const edges = [...seed.edges].sort(edgeOrder);
+  if (edges.length > 0) lines.push("");
   // Drawn with its kind, as `loam instructions loam-feature` tells an agent to
-  // draw every edge: fleet.yaml's `calls:` list states that kind, so this
-  // chooses nothing, and a bare `->` on the first map a new user copies from
-  // taught the one spelling the protocol forbids.
-  for (const c of calls) lines.push(`  ${el(c.from)} -[calls]-> ${el(c.to)}`);
+  // draw every edge: the fleet.yaml section a statement sits in states that
+  // kind, so this chooses nothing, and a bare `->` on the first map a new user
+  // copies from taught the one spelling the protocol forbids.
+  for (const e of edges) lines.push(...edgeLines(e, el));
   lines.push("}");
 
   // The views block below is DUPLICATED from core/docs.ts's LANDSCAPE_STUB

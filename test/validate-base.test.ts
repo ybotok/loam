@@ -93,41 +93,46 @@ async function exampleFleet(): Promise<Project> {
 }
 
 /**
- * payment-service's contract cut to the one operation README's spine-first
- * example names — spelled the American way, test/spine-first.test.ts's own
- * fixture, so the misspelling below is the README's one letter exactly.
+ * The six contracts the shipped example fleet's joins are checked against,
+ * relative to services/ — what README's spine-first path has a reader copy in.
  */
-const PAYMENT_OPENAPI = `openapi: 3.1.0
-info:
-  title: payment-service
-  version: 1.0.0
-paths:
-  /payments:
-    post:
-      operationId: authorizePayment
-      responses:
-        "201":
-          description: Authorized
-`;
-
-/** The edge `loam seed` writes with no operation, and what naming its operation turns it into. */
-const BARE_EDGE = "  svc_order_service -[calls]-> svc_payment_service\n";
-const namedEdge = (op: string): string =>
-  `  svc_order_service -[calls]-> svc_payment_service 'Authorises' {\n    metadata { op '${op}' }\n  }\n`;
+const EXAMPLE_CONTRACTS = [
+  "order-service/openapi.yaml",
+  "order-service/asyncapi.yaml",
+  "payment-service/openapi.yaml",
+  "payment-service/asyncapi.yaml",
+  "platform/identity-service/openapi.yaml",
+  "platform/notification-service/asyncapi.yaml",
+];
 
 /**
- * A freshly seeded spine-first fleet — README's "Start from the fleet spine",
- * from the shipped `examples/fleet.yaml` — with payment-service's contract
- * dropped in. No service has a model.likec4, so every service target would be
- * red on `service.no-model`; that is what makes it the fleet where grading the
- * PROVIDER rather than the EDGE would be the wrong fix.
+ * The join README's spine-first example misspells, as the shipped fleet.yaml
+ * states it — spelled the American way, as payment-service's contract spells
+ * it, so the misspelling below is the README's one letter exactly.
  */
-async function seededFleet(): Promise<Project> {
-  const p = await makeProject({ "services/.gitkeep": "" });
-  await writeFile(join(p.workDir, "fleet.yaml"), await readFile(FLEET_FILE, "utf8"), "utf8");
+const SPELLED_RIGHT = "checkout-web -> payment-service: authorizePayment";
+
+/** Seed `fleet` from the working directory, as the README has a reader do it — first run or re-run. */
+async function seedFrom(p: Project, fleet: string): Promise<void> {
+  await writeFile(join(p.workDir, "fleet.yaml"), fleet, "utf8");
   const seeded = await runLoam(p.workDir, "seed", "--from", "fleet.yaml");
   if (seeded.code !== 0) throw new Error(`seed failed: ${seeded.out}`);
-  await p.write("services/payment-service/openapi.yaml", PAYMENT_OPENAPI);
+}
+
+/**
+ * A freshly seeded spine-first fleet — README's "Start from the fleet spine" —
+ * from `fleet` (the shipped `examples/fleet.yaml` unless a case states its
+ * own), with each service's own contracts copied in. No service has a
+ * model.likec4, so every service target would be red on `service.no-model`;
+ * that is what makes it the fleet where grading the PROVIDER rather than the
+ * EDGE would be the wrong fix.
+ */
+async function seededFleet(fleet?: string): Promise<Project> {
+  const p = await makeProject({ "services/.gitkeep": "" });
+  await seedFrom(p, fleet ?? (await readFile(FLEET_FILE, "utf8")));
+  for (const contract of EXAMPLE_CONTRACTS) {
+    await p.write(`services/${contract}`, await readFile(join(EXAMPLES, "services", contract), "utf8"));
+  }
   return p;
 }
 
@@ -368,13 +373,15 @@ describe("loam validate --all --base — a call edge the branch edited is graded
   });
 
   it("the same misspelling on a freshly seeded spine-first fleet fails — even under --strict it used to be green", async () => {
-    const p = await seededFleet();
+    // The branch edits fleet.yaml and re-seeds, which is how a seeded map
+    // changes: the regenerated edge is what the branch wrote, and it is graded
+    // against its provider exactly as a hand-drawn one is.
+    const fleet = await readFile(FLEET_FILE, "utf8");
+    expect(fleet).toContain(SPELLED_RIGHT);
+    const p = await seededFleet(fleet);
     try {
-      const map = await p.read("architecture/landscape.likec4");
-      expect(map).toContain(BARE_EDGE);
-      await p.write("architecture/landscape.likec4", map.replace(BARE_EDGE, namedEdge("authorizePayment")));
       commitBase(p.docsDir);
-      await p.write("architecture/landscape.likec4", map.replace(BARE_EDGE, namedEdge("authorisePayment")));
+      await seedFrom(p, fleet.replace(SPELLED_RIGHT, "checkout-web -> payment-service: authorisePayment"));
       const { code, payload } = await validateJson(p, "--all", "--base", "main", "--strict");
       expect(code).toBe(1);
       expect(raised(payload).map((f) => f.code)).toEqual(["spine.op-undefined"]);
@@ -384,11 +391,13 @@ describe("loam validate --all --base — a call edge the branch edited is graded
   });
 
   it("naming the op correctly on a seeded fleet is graded and green — the provider's missing model is not the branch's", async () => {
-    const p = await seededFleet();
+    // The base states the call and not its operation; the branch names it.
+    const fleet = await readFile(FLEET_FILE, "utf8");
+    expect(fleet).toContain(SPELLED_RIGHT);
+    const p = await seededFleet(fleet.replace(SPELLED_RIGHT, "checkout-web -> payment-service"));
     try {
       commitBase(p.docsDir);
-      const map = await p.read("architecture/landscape.likec4");
-      await p.write("architecture/landscape.likec4", map.replace(BARE_EDGE, namedEdge("authorizePayment")));
+      await seedFrom(p, fleet);
       const { code, payload } = await validateJson(p, "--all", "--base", "main", "--strict");
       // Five un-adopted services each carry `service.no-model`; pulling the
       // provider into scope would have reddened exactly the labour README's

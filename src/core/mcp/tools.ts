@@ -84,7 +84,7 @@ export const MCP_TOOLS: readonly McpTool[] = [
     command: "validate",
     description:
       "Validate a service (C4 + requirement coverage), a feature (delta + coverage), or the whole fleet. " +
-      "CLI equivalent: loam validate [target] [--service <id>] [--feature <id>] [--all] [--strict] [--errors-only] --json",
+      "CLI equivalent: loam validate [target] [--service <id>] [--feature <id>] [--all] [--strict] [--errors-only] [--spine] --json",
     positionals: [
       {
         property: "target",
@@ -99,6 +99,18 @@ export const MCP_TOOLS: readonly McpTool[] = [
       { property: "all", flag: "--all", kind: "boolean", description: "validate every service and every active feature" },
       { property: "strict", flag: "--strict", kind: "boolean", description: "exit 1 on any warning too; the payload does not change" },
       { property: "errorsOnly", flag: "--errors-only", kind: "boolean", description: "print only errors and warnings; the payload does not change" },
+      // Advertised because the lens changes the PAYLOAD, unlike the two levers
+      // above: `valid`, `summary` and `targets` count the shown half, and the
+      // `lens` key says what was set aside. An MCP client that could not ask for
+      // it could not run the level-1 check the README's CI recipe runs.
+      {
+        property: "spine",
+        flag: "--spine",
+        kind: "boolean",
+        description:
+          "grade only the fleet spine — the operation and message joins on the map and what would stop them being checked; " +
+          "adoption findings are counted in the lens key, not graded, and features are refused",
+      },
     ],
   },
   {
