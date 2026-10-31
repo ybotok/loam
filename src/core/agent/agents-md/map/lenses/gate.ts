@@ -23,7 +23,11 @@ export const GATE_COMMAND = `- \`loam gate [--service <id>] [--since <ref>]\` is
   merge; gate's verdict is advice to a pipeline loam does not own). In a bound
   service repo the invocation is literally \`loam gate --json\`; \`--service\`
   names any other adopted service, and one nobody adopted refuses
-  \`unknown-service\` — recorded evidence cannot answer for it. Four checks, and
+  \`unknown-service\` — recorded evidence cannot answer for it. So does a service
+  a feature in flight introduces, until that feature archives, and its refusal
+  says so in \`loam doctor\`'s words: nothing to adopt, the feature's
+  \`specs/<id>/\` are its documents, \`loam status <FEAT>\` says what is owed —
+  never run \`loam adopt\` for it. Four checks, and
   the code tells you which one spoke. \`partners\` derives the direct joins from
   the LIVING landscape: \`gate.service-undocumented\`,
   \`gate.partner-undocumented\` and \`gate.partners-unknown\` — the last one

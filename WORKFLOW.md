@@ -161,7 +161,8 @@ no fleet manifest, deliberately — the wiring is one file per repo, and it is r
    in the docs repo then grades the whole fleet on the presence ladder
    `empty → partial → documented → sourced → vouched`, and `loam list --needs-work` is the remaining
    worklist — including any vouched service whose spec moved after the vouch (`vouched (stale)`,
-   missing a re-vouch), which `loam status` names as `next.revouch`.
+   missing a re-vouch), which `loam status` names as `next.revouch`. `loam status` names each
+   service still owed its first vouch as `next.vouch`, so a draft fleet never reads as clean.
 
 Steps 3–6 repeat per service and are independent — no ordering, no lock, no shared state between two
 services' runs — so ten services can be onboarded by ten people in parallel. The one file they all

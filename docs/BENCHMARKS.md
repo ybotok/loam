@@ -245,7 +245,7 @@ loam `0.2.0-alpha.18` · fleet `examples/docs` · service `payment-service` · b
 | page | invocation | bytes | ~tokens | with `--no-fix-tables` | with `--fix-tables` |
 |---|---|---|---|---|---|
 | `loam-adopt` | `loam instructions loam-adopt payment-service` | 20,289 | ~5,072 | same bytes | same bytes |
-| `loam-feature` | `loam instructions loam-feature FEAT-101 "Split payments"` | 15,963 | ~3,991 | same bytes | same bytes |
+| `loam-feature` | `loam instructions loam-feature FEAT-101 "Split payments"` | 16,153 | ~4,038 | same bytes | same bytes |
 | `loam-implement` | `loam instructions loam-implement FEAT-101 payment-service` | 13,619 | ~3,405 | same bytes | same bytes |
 | `loam-check` | `loam instructions loam-check FEAT-101` | 4,430 | ~1,108 | same bytes | 142,702 (~35,676) |
 | `loam-verify` | `loam instructions loam-verify FEAT-101` | 13,594 | ~3,399 | 9,771 (~2,443) | same bytes |

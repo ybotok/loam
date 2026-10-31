@@ -194,6 +194,69 @@ No code, flag or payload key was added.
   refused under the same code — no Gherkin dialect is read — but the refusal no longer reads as a
   different problem from the one it has.
 
+### Fixed — `loam status` asks for the first vouch
+
+- **A fleet of draft services no longer reads as clean.** With every service written down and
+  nobody's vouch behind any of them, `loam status` ended on `next.fleet-clean` — "Nothing is in
+  flight and every service is written down" — while `loam list --needs-work` on the same tree said
+  every service still owed `loam vouch --service <id>`. The fleet form now emits a new step,
+  **`next.vouch`**, for each service whose spec.md and model.likec4 are written (and not
+  `adoption: partial`) and that carries no vouch stamp. Like `next.revouch`, its `execution` is
+  `kind: "human-review"`, `runnable: false`, `cwd: "service-repo"`: an agent prepares
+  `loam vouch --pack --service <id>` and a person vouches. A spec naming no `sources:` says so in the
+  step's sentence, since `loam vouch` refuses without them; so does a service with no openapi.yaml,
+  since status does not read the fleet map that says whether a caller makes the contract owed first
+  (`loam list --needs-work` does). The steps ride in `serviceSteps[]` like
+  every other rung, and the human view folds many into one counted line
+  (`next.vouch ×N: N services documented and never vouched`).
+- **What moves after upgrading.** A fleet with any unvouched, complete service now ends its
+  `next[]` on `next.fleet-gate` instead of `next.fleet-clean`, exactly as one with a stale vouch
+  already did — a script that waited for `next.fleet-clean` before starting a feature waits for the
+  vouches too. `loam explain next.vouch` answers. No flag, exit code or payload key changed.
+
+### Fixed — an untouched requirement delta is not written, and a feature of nothing does not archive
+
+- **A `specs/<svc>/spec.md` that is still only the scaffold's template comment now says so.** With
+  intent.md written and the spec delta untouched, `loam validate --feature` said the requirements
+  were covered (0 of them) and the axes agreed, `loam status` listed the spec as written and the
+  docs as ready, and `loam archive` merged nothing at exit 0. A new warning,
+  **`delta.no-requirements`** (subject: the service), fires on every service whose requirement
+  delta — spec.md, arch.spec.md, or both — holds no `### Requirement:` block and whose delta carries
+  no flow: the feature-side twin of `spec.no-requirements`. It never gates.
+- **`loam status` grades such a document as it grades an absent one, per document.** Its artifact
+  row is `status: "missing"` where the spec is owed, keeps `exists: true`, and carries a new key,
+  **`empty: true`** (on `spec`, `arch-spec` and `capabilities` rows); the human table says
+  `not written`, the feature's stage is `missing` and `next.author-spec` is the step. An untouched
+  spec.md beside a written arch.spec.md, or an untouched capability template beside real work,
+  reads `not written` and owes nothing. The repository-wide form lists `<svc>/spec` under the
+  feature's `missing` exactly when the feature form owes it. A delta loam cannot decode is never
+  called empty.
+- **`loam archive` refuses a feature that changes nothing.** A new warning that gates,
+  **`delta.changes-nothing`**, fires when delta.likec4 tags no element or relationship, no
+  requirement delta (a service's or a capability's) holds a requirement, and the feature carries no
+  other delta document. `--approve` overrides it, as it does `intent.empty`. Any other file in the
+  feature — a contract, a flow, a glossary term, a deployment document, an ADR — counts as a
+  change; the intent and the verification record do not.
+- **What moves after upgrading.** A feature whose every axis is empty now exits 1 at archive with
+  `not-coherent` where it used to merge nothing at exit 0; one that only carries an untouched
+  template beside real work archives as before, with a warning. A `--strict` validate run over such
+  a feature fails on the new warnings. `loam explain delta.no-requirements` and
+  `loam explain delta.changes-nothing` answer. Not changed: a MODIFIED requirement that drops
+  scenarios still validates clean, by design — SCHEMA's "What a replacement takes away is named, not
+  just counted": the archive plan and `loam delta` name the drop, and nothing gates it.
+
+### Fixed — `loam gate` no longer tells a feature's new service to adopt itself
+
+- **In the repository of a service an in-flight feature introduces, `loam gate` now says what that
+  service is.** It still refuses with `unknown-service` and exit 1 — nothing living records the
+  service until the feature archives, so no recorded evidence answers the deploy question — but
+  the message no longer calls it "a service nobody adopted" and no longer says to run
+  `loam adopt`, which wrote a baseline that collided with the feature's own archive. It names the
+  feature that introduces the service, says there is nothing to adopt and that the feature's
+  `specs/<id>/` are its documents, and points at `loam status <FEAT>` — the clause `loam doctor`
+  gives in the same repository, now from one source. No code, flag, exit code or payload key
+  changed.
+
 ## [0.2.0-alpha.18] - 2026-10-30
 
 Everything on `main` since `0.2.0-alpha.17`. Still a prerelease on the `alpha` line.

@@ -1483,7 +1483,15 @@ two checked files:
   read them; `loam validate`, run in that repo, recomputes it and reports `sources.current`,
   `sources.stale` (the code moved since anyone looked), or `sources.unvouched` (`sources` with no
   digest — nobody has ever stamped it). All warnings: staleness is a signal, and only a person can
-  say whether the doc is still right.
+  say whether the doc is still right. A service whose spec.md and model.likec4 are written and that
+  carries no stamp is owed its FIRST vouch, and every fleet readout says so: `loam list` grades it
+  below `vouched` and `--needs-work` names what stands before the stamp, and `loam status` emits one
+  `next.vouch` per such service — a human review, never a runnable step, whose sentence names a
+  missing `sources:` list first because `loam vouch` refuses without one — instead of
+  `next.fleet-clean`. A service still owed `next.adopt` or `next.complete-service` is not asked for
+  a vouch yet. Whether a service with no `openapi.yaml` owes one turns on who calls it, which only
+  the fleet map says and `loam status` does not parse; its `next.vouch` sentence carries that
+  caveat, and `--needs-work`, which reads the map, names the contract first where it is owed.
 - `content_digest` — written by `loam vouch`, never by hand, like its siblings: a hash of the
   document's OWN body, so the stamp covers the words as well as the code. Editing a spec after it
   was vouched used to leave `status: verified` standing over prose nobody read — the exact forgery
@@ -2117,11 +2125,12 @@ the source for tests.
   Severity and gating answer two different questions — severity says whether the *document* is valid
   (`validate` fails on errors), gating says whether the *merge* is safe — and they usually agree:
   errors gate, warnings do not. Where they diverge, the finding says so (`gates` in `--json`); the
-  warn-that-gates set holds five codes today — `delta.requirement-not-merged` (the shape is legal
+  warn-that-gates set holds six codes today — `delta.requirement-not-merged` (the shape is legal
   OpenSpec, but the merge would silently drop the requirement), `delta.baseline-missing` and
   `openapi.baseline-missing` (an unpinned delta is the silent-rollback shape — the baseline bullets
-  below), and `scaffold.placeholder` and `intent.empty` (an unedited scaffold must not become living
-  truth) — each a legal document whose merge would publish or destroy something nobody chose.
+  below), `scaffold.placeholder` and `intent.empty` (an unedited scaffold must not become living
+  truth), and `delta.changes-nothing` (a feature that would merge nothing at all must not report a
+  merge) — each a legal document whose merge would publish, destroy or claim something nobody chose.
   Advisory warnings are printed with the plan and never block. `--approve` overrides the gating
   issues only, and names each one it overrode. An operation that is missing from the provider's
   OpenAPI but defined by another feature still in flight is graded down to a warning
@@ -2619,7 +2628,22 @@ emptiness-by-accident:
   a grouping) — that no `services/<id>/` answers for and the living map does not already draw. A
   delta's `#external` producer owes no requirement delta, and neither does the stub of a living
   element (whose living tags the merge keeps, so a re-declared `#external` system stays external
-  whatever the stub says).
+  whatever the stub says). The line is drawn at content here too: a `specs/<svc>/spec.md` or
+  `arch.spec.md` holding no `### Requirement:` block — typically the scaffold's untouched template
+  comment — is a delta in name only. When neither of a service's documents holds one, it gets
+  `delta.no-requirements`, a warning that never gates (the
+  feature-side twin of the living `spec.no-requirements`, and silent where the service's delta
+  carries a flow instead), and `loam status` grades the document as it grades an absent one: the
+  row is `missing` where the spec is owed, `empty: true` beside `exists: true`, and the human view
+  says `not written`.
+
+When every axis is empty at once — `delta.likec4` tags nothing, no requirement delta (a service's or
+a capability's) holds a requirement, and the feature carries no other delta document — the feature
+is the "no feature at all" above, and the archive refuses it: `delta.changes-nothing`, a warning
+that gates, `--approve` overridable like `intent.empty`. Anything else in the directory counts as a
+change — a contract delta, a flow, a glossary term, a deployment document, an ADR — so an axis this
+check does not know can only quiet it. The intent and the verification record are not changes: one
+says why, the other answers claims, and an empty record does not make an empty feature archivable.
 
 `intent.md` is where the "why" lives — the delta says what changed, and nothing else says what for —
 and the archive gate holds it to that: `intent.empty` (a warning that gates, `--approve`
@@ -4416,9 +4440,12 @@ repairing anything:
   about code or evidence, and an archived feature is `done` whatever its record says — so the human
   view prints the stage as a sentence with the claims counted, and the payload carries
   `feature.title` (intent.md's title) and `checklist.claims` (what the checklist asks now; null once
-  archived). The fleet form lists every feature in flight before any service's adoption rung — and
-  carries every rung uncapped in `serviceSteps[]` (`{code, services, command}` per code), which the
-  human view folds into one counted line per code. After the rungs comes one `next.archived` per
+  archived). The fleet form lists every feature in flight before any service's adoption rung —
+  `next.adopt`, `next.complete-service`, `next.vouch`, `next.revouch`, one rung per service at a
+  time — and carries every rung uncapped in `serviceSteps[]` (`{code, services, command}` per code),
+  which the human view folds into one counted line per code. The two vouch rungs are a person's:
+  their `execution` is a human review in the service's own repository, and either one turns
+  `next.fleet-clean` into `next.fleet-gate`, because a vouch owed is something owed. After the rungs comes one `next.archived` per
   archived feature whose verification verdict is not `verified`, all of them also listed uncapped in
   `unverifiedArchived[]` (`{id, title, dirName, path, services, verification}`): open claims do not
   disappear at archive. The record is frozen — `loam verify` refuses an archived feature — so that

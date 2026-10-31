@@ -11,7 +11,7 @@
  * `--json`, a section in text, one `next.archived` step each — and the worklist
  * names them instead of denying them.
  */
-import { cp, rm } from "node:fs/promises";
+import { cp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -31,6 +31,19 @@ interface FleetPayload {
   features: Array<{ id: string }>;
   unverifiedArchived: Array<{ id: string; verification: { state: string; verdict: string } }>;
   next: Step[];
+}
+
+/**
+ * Stamp every living spec.md the way `loam vouch` leaves it, so a fleet with
+ * nothing else owed reads as one: a spec nobody vouched for is owed its first
+ * vouch (`next.vouch`), which would keep the fleet from being quiet at all.
+ */
+async function vouchAll(docsDir: string): Promise<void> {
+  for (const id of await readdir(join(docsDir, "services"))) {
+    const path = join(docsDir, "services", id, "spec.md");
+    const text = await readFile(path, "utf8");
+    await writeFile(path, text.replace(/\nstatus: [a-z]+\r?\n/, "\nstatus: verified\nsources:\n  - src/\nsources_digest: abc123\n"));
+  }
 }
 
 async function fleetStatus(dir: string, ...args: string[]): Promise<FleetPayload> {
@@ -69,6 +82,7 @@ describe("an archived feature nobody verified stays on the repository-wide statu
     const p = await makeProject(coherentFixture());
     try {
       expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+      await vouchAll(p.docsDir);
       const fleet = (await fleetStatus(p.workDir)) as FleetPayload & {
         next: Array<Step & { execution: { kind: string; runnable: boolean } }>;
       };

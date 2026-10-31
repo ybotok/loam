@@ -963,14 +963,16 @@ describe("broken or missing inputs", () => {
     expect(issues.some((i) => i.severity === "error")).toBe(true);
   });
 
-  it("feature with no delta.likec4 and no specs dir has nothing to check — exactly no issues", async () => {
+  it("feature with no delta.likec4 and no specs dir has nothing to check — only that it changes nothing", async () => {
     // The intent carries a prose sentence: a heading-only intent.md now draws
     // the gating `intent.empty` warn, which would hide what this test pins —
-    // that the three coherence axes themselves have nothing to say here.
+    // that the three coherence axes themselves have nothing to say here. What
+    // IS said is the one thing true of such a feature: archiving it would
+    // merge nothing (`delta.changes-nothing`, a warning that gates).
     const issues = await coherenceOf({
       [`${FEATURE_REL}/intent.md`]: intentProse(),
     });
-    expect(issues).toEqual([]);
+    expect(issues).toEqual([expect.objectContaining({ code: "delta.changes-nothing", severity: "warn", gates: true })]);
   });
 });
 
@@ -1037,7 +1039,9 @@ describe("tag scoping: only #<featureId>-tagged model parts are checked", () => 
     const issues = await coherenceOf({
       [`${FEATURE_REL}/delta.likec4`]: delta(""),
     });
-    expect(issues).toEqual([]);
+    // Declaring nothing is a legible "the architecture is unchanged" — and with
+    // nothing else in the feature, the feature itself changes nothing.
+    expect(issues.map((i) => i.code)).toEqual(["delta.changes-nothing"]);
   });
 });
 

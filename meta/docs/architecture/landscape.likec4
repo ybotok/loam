@@ -304,6 +304,7 @@ model {
   loam.commands.gate -> loam.core.envelope
   loam.commands.gate -> loam.core.fleet_context
   loam.commands.gate -> loam.core.gate
+  loam.commands.gate -> loam.core.projection
   loam.commands.gate -> loam.core.repo
   loam.commands.gate -> loam.core.verify
   loam.commands.gate -> loam.core.vocabulary
@@ -565,6 +566,7 @@ model {
   loam.core.coherence -> loam.core.repo
   loam.core.coherence -> loam.core.staging
   loam.core.coherence -> loam.core.usecases
+  loam.core.coherence -> loam.core.verify
   loam.core.coherence -> loam.core.vocabulary
 
   // The one consumer index — who still calls an operation, still consumes a

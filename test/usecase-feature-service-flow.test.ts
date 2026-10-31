@@ -512,8 +512,13 @@ describe("a feature carries its services' flows", () => {
     };
     const spec = status.artifacts.find((a) => a.id === "spec" && a.service === "order-service");
     expect(spec, JSON.stringify(status.artifacts)).toMatchObject({ required: false, status: "done" });
-    const fleetStatus = await runLoam(p.workDir, "status", "--json");
-    expect(fleetStatus.stdout).not.toContain("order-service/spec");
+    // The feature's own `missing` list, not the whole payload: the fleet's
+    // living order-service is unvouched, and its `next.vouch` sentence names
+    // services/order-service/spec.md — a different file, rightly.
+    const fleetStatus = JSON.parse((await runLoam(p.workDir, "status", "--json")).stdout) as {
+      features: Array<{ id: string; missing: string[] }>;
+    };
+    expect(fleetStatus.features.find((f) => f.id === FEAT)!.missing).not.toContain("order-service/spec");
   });
 
   it("grades a flow beside a STANDALONE model against that model's own project", async () => {

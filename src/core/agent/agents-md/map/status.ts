@@ -43,11 +43,12 @@ export const STATUS_COMMAND = `- \`loam status [<FEAT>]\` is the orientation sur
   flight introduces the service this repository is bound to, that feature's
   \`next.feature\` instead — there is no code to adopt yet), every feature in
   flight — \`next.feature\`, \`next.archive\` — and then each service's
-  adoption rungs: \`next.adopt\`, \`next.complete-service\`, \`next.revouch\` (a
-  vouched document's words moved under its stamp — \`content.stale\`; its
-  \`execution\` is a human review, never yours to run: prepare
-  \`loam vouch --pack --service <id>\` and hand the vouch to a person), every one
-  of them also listed uncapped in \`serviceSteps[]\` grouped by code; then
+  adoption rungs: \`next.adopt\`, \`next.complete-service\`, \`next.vouch\` (the
+  documents are written and nobody has vouched for them yet) and \`next.revouch\`
+  (a vouched document's words moved under its stamp — \`content.stale\`) — the
+  two vouch steps' \`execution\` is a human review, never yours to run: prepare
+  \`loam vouch --pack --service <id>\` and hand the vouch to a person. Every rung
+  is also listed uncapped in \`serviceSteps[]\` grouped by code; then
   \`next.archived\` for each archived feature whose verdict is not \`verified\`
   (also listed, uncapped, in \`unverifiedArchived[]\`; its \`execution\` is a human
   review, never yours to run: the record is frozen, \`loam verify\` refuses an

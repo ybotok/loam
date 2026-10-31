@@ -119,6 +119,13 @@ export interface Grading {
    * keeps the rows out of those payloads entirely.
    */
   capabilities: readonly CapabilityDoc[];
+  /**
+   * The requirement documents on disk that hold no requirement, by
+   * repo-relative path (`emptyDocuments`, ../scan.ts). Their rows say so
+   * rather than "written": an untouched scaffold is the same nothing as an
+   * absent file, and the row used to be the one place it read as done.
+   */
+  emptyDocs: ReadonlySet<string>;
 }
 
 export function featureArtifacts(
@@ -127,7 +134,7 @@ export function featureArtifacts(
   services: readonly PathableService[],
   grading: Grading,
 ): ArtifactState[] {
-  const { blocking, verification, contracted, evidence, living, capabilities } = grading;
+  const { blocking, verification, contracted, evidence, living, capabilities, emptyDocs } = grading;
   const paths = featurePaths(feature.dir);
   const rel = (abs: string): string => repoPath(docsDir, abs);
   const faults = blocking.map((f) => ({ artifact: faultedArtifact(f.code, f.subject), subject: f.subject }));
@@ -147,7 +154,7 @@ export function featureArtifacts(
   // the capability id in `subject` with nothing saying it is not a service, so
   // the membership test is the resolution the code family cannot give.
   for (const doc of capabilities) {
-    out.push({
+    const row: ArtifactState = {
       id: "capabilities",
       service: null,
       capability: doc.id,
@@ -156,7 +163,9 @@ export function featureArtifacts(
       required: false,
       status: faulted("capabilities", doc.id) || faulted("spec", doc.id) ? "draft" : "done",
       blockedBy: [],
-    });
+    };
+    // An untouched capability template is the same nothing as an untouched spec.md.
+    out.push(emptyDocs.has(row.path) ? emptied(row) : row);
   }
 
   for (const svc of services) {
@@ -183,9 +192,18 @@ export function featureArtifacts(
     // this feature draws for the service (`specs/<svc>/usecases/`, a promise the
     // service already makes, kept by a new drawing) is a delta every gate grades
     // and none asks a requirement of.
-    const owesSpec = !archExists && !carriesServiceFlows(feature.dir, svc);
-    out.push(fileState("spec", { service: svc, path: rel(p.spec), exists: existsSync(p.spec) }, owesSpec, specFault));
-    out.push(fileState("arch-spec", { service: svc, path: rel(p.archSpec), exists: archExists }, false, specFault));
+    //
+    // And neither document counts while it holds no requirement: the scaffold's
+    // template comment is not a delta, so each row grades as the absent file
+    // grades — owed and `missing` for spec.md when nothing else carries the
+    // service's change — with `empty: true` saying the file IS there (`exists`
+    // stays the disk's answer). Per document, so an untouched spec.md beside a
+    // written arch.spec.md reads `not written` and owes nothing.
+    const archWritten = archExists && !emptyDocs.has(rel(p.archSpec));
+    const owesSpec = !archWritten && !carriesServiceFlows(feature.dir, svc);
+    const specRow = fileState("spec", { service: svc, path: rel(p.spec), exists: existsSync(p.spec) }, owesSpec, specFault);
+    const archRow = fileState("arch-spec", { service: svc, path: rel(p.archSpec), exists: archExists }, false, specFault);
+    for (const row of [specRow, archRow]) out.push(emptyDocs.has(row.path) ? emptied(row) : row);
     out.push(
       fileState(
         "openapi",
@@ -225,7 +243,8 @@ export function featureArtifacts(
   // spec, openapi, asyncapi` and `next.verify` said there was nothing to derive
   // a checklist from, about a command that derives one — which is the failure
   // `blocked` is supposed to prevent, pointed the wrong way.
-  const feeders = out.filter((a) => a.id !== "intent" && a.id !== "capabilities" && a.exists);
+  // An `empty` document feeds nothing either: zero requirements derive zero claims.
+  const feeders = out.filter((a) => a.id !== "intent" && a.id !== "capabilities" && a.exists && a.empty !== true);
   out.push({
     id: "verification",
     service: null,
@@ -236,6 +255,17 @@ export function featureArtifacts(
     blockedBy: feeders.length === 0 ? ["delta", "spec", "arch-spec", "openapi", "asyncapi"] : [],
   });
   return out;
+}
+
+/**
+ * A requirement document on disk that holds no requirement, graded as the
+ * absent file would be — `missing` where owed, `done` (not owed) otherwise —
+ * and marked `empty`. A row a check faulted keeps `draft`: whatever is wrong in
+ * it is still the thing its reader must see first.
+ */
+function emptied(row: ArtifactState): ArtifactState {
+  if (row.status === "draft") return { ...row, empty: true };
+  return { ...row, status: row.required ? "missing" : "done", empty: true };
 }
 
 /** Where an artifact is and whether it is there — the three facts a grade reads. */

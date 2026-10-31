@@ -27,6 +27,7 @@ import {
   FEATURE_DELTA,
   FEATURE_OPENAPI,
   FEATURE_SPEC,
+  LANDSCAPE,
   LIVING_ASYNCAPI,
   LIVING_OPENAPI,
   LIVING_SPEC,
@@ -821,11 +822,13 @@ describe("the fleet payload", () => {
     // the command CI runs, which the fleet form never used to mention. The
     // feature leads the adoption backlog — the other order is how a fleet
     // mid-adoption buried its one feature in flight under ten adopt rungs.
-    expect(codes(payload.next)).toEqual(["next.feature", "next.adopt", "next.fleet-gate"]);
+    // The one draft service is owed its first vouch, after the adoption rung.
+    expect(codes(payload.next)).toEqual(["next.feature", "next.adopt", "next.vouch", "next.fleet-gate"]);
     expect((payload.next as NextStep[])[0]!.command).toBe("loam status FEAT-1 --json");
     expect((payload.next as NextStep[])[1]!.command).toBe("loam adopt --service orphan-service --json");
     expect(payload.serviceSteps).toEqual([
       { code: "next.adopt", services: ["orphan-service"], command: "loam adopt --service orphan-service --json" },
+      { code: "next.vouch", services: ["payment-service"], command: "loam vouch --service payment-service" },
     ]);
     expect((payload.next as NextStep[]).at(-1)!.command).toBe("loam validate --all --json");
     await p.destroy();
@@ -889,7 +892,8 @@ describe("the fleet payload", () => {
     await recordVerification(p, "FEAT-1");
     const payload = await statusJson(p);
 
-    expect(codes(payload.next)).toEqual(["next.archive", "next.feature", "next.fleet-gate"]);
+    // payment-service carries no vouch stamp, so its first vouch follows the features.
+    expect(codes(payload.next)).toEqual(["next.archive", "next.feature", "next.vouch", "next.fleet-gate"]);
     expect((payload.next as NextStep[])[0]!.command).toBe("loam archive FEAT-1 --dry-run --json");
     const later = (payload.features as Array<Record<string, any>>).find((f) => f.id === "FEAT-9")!;
     expect(later.stage).toBe("missing");
@@ -900,7 +904,12 @@ describe("the fleet payload", () => {
   it("says so explicitly when there is nothing outstanding", async () => {
     const p = await makeProject({
       "architecture/landscape.likec4": coherentFixture()["architecture/landscape.likec4"]!,
-      "services/payment-service/spec.md": LIVING_SPEC,
+      // Stamped the way `loam vouch` leaves it: a spec nobody vouched for is
+      // owed its first vouch (`next.vouch`), which is outstanding work too.
+      "services/payment-service/spec.md": LIVING_SPEC.replace(
+        "status: verified",
+        "status: verified\nsources:\n  - src/\nsources_digest: abc123",
+      ),
       // A spec with no model.likec4 is an incomplete service, which is itself
       // outstanding work (`next.complete-service`) — so the fixture has to be
       // complete for "nothing outstanding" to be the thing under test.
@@ -1561,5 +1570,141 @@ describe("status is a projection, not a second opinion", () => {
     const node = (deps.nodes as Array<Record<string, any>>).find((n) => n.id === "FEAT-2")!;
     expect(later.blockedBy).toEqual(node.dependsOn);
     await p.destroy();
+  });
+});
+
+/**
+ * `next.vouch` — the first vouch, as `loam status` asks for it.
+ *
+ * The fleet form had a step for a vouch going STALE (`next.revouch`) and none
+ * for a vouch never given, so a fleet of draft services with nothing in flight
+ * got `next.fleet-clean` — "Nothing is in flight and every service is written
+ * down … start the next feature" — while `loam list --needs-work` on the same
+ * tree said every one of them owed `loam vouch --service <id>`. QUICKSTART calls
+ * status "the reliable way to resume", so the newcomer's first hour ended on a
+ * green sentence over five documents nobody had read (study 2026-10-30, I23).
+ */
+describe("next.vouch — a draft fleet is owed its first vouch", () => {
+  interface VouchStep {
+    code: string;
+    statement: string;
+    command: string;
+    service?: string;
+    execution: { kind: string; runnable: boolean; cwd: string; command?: string };
+  }
+
+  const IDS = ["ledger-service", "payment-service", "refund-service"];
+
+  /** LIVING_SPEC's body under one service's own frontmatter. */
+  function spec(id: string, frontmatter: string): string {
+    const body = LIVING_SPEC.slice(LIVING_SPEC.indexOf("\n---\n") + 5).replace(/payment-service/g, id);
+    return `---\nservice: ${id}\n${frontmatter}\n---\n${body}`;
+  }
+
+  /**
+   * Three adopted services — spec.md and model.likec4 each, no feature in flight.
+   * payment-service also keeps the contract LANDSCAPE says it is called through,
+   * so `loam list` grades all three on the same rung.
+   * `frontmatter` decides what stands behind each spec: a draft, or the stamp
+   * `loam vouch` leaves (sources declared and digested).
+   */
+  function fleet(frontmatter: (id: string) => string): Record<string, string> {
+    const files: Record<string, string> = { "architecture/landscape.likec4": LANDSCAPE };
+    for (const id of IDS) {
+      files[`services/${id}/spec.md`] = spec(id, frontmatter(id));
+      files[`services/${id}/model.likec4`] = SERVICE_MODEL;
+    }
+    files["services/payment-service/openapi.yaml"] = LIVING_OPENAPI;
+    return files;
+  }
+
+  const DRAFT = (): string => "status: draft\nowner: team\nsources:\n  - src/";
+  const VOUCHED = (): string => "status: verified\nowner: team\nsources:\n  - src/\nsources_digest: 0123456789abcdef";
+
+  async function status(files: Record<string, string>, ...args: string[]): Promise<{ next: VouchStep[]; serviceSteps: Array<{ code: string; services: string[] }>; services: { draft: number } }> {
+    const p = await makeProject(files);
+    try {
+      return JSON.parse((await runLoam(p.workDir, "status", ...args, "--json")).stdout);
+    } finally {
+      await p.destroy();
+    }
+  }
+
+  it("asks a person for each draft service's vouch, and never calls the fleet clean", async () => {
+    const payload = await status(fleet(DRAFT));
+    expect(payload.services.draft).toBe(3);
+    expect(payload.next.map((s) => s.code)).toEqual(["next.vouch", "next.vouch", "next.vouch", "next.fleet-gate"]);
+    expect(payload.next.map((s) => s.service)).toEqual([...IDS, undefined]);
+    const first = payload.next[0]!;
+    expect(first.command).toBe("loam vouch --service ledger-service");
+    expect(first.statement).toContain("services/ledger-service/spec.md has no vouch behind it");
+    expect(first.statement).toContain("`loam vouch --pack --service ledger-service`");
+    // Status does not read the fleet map, so it cannot tell whether a service
+    // with no contract owes one: the sentence says so, and only there.
+    expect(first.statement).toContain("It has no openapi.yaml: if anything calls ledger-service, that contract is owed first");
+    expect(payload.next[1]!.statement).not.toContain("openapi.yaml");
+    // A person's act, never an agent's: no runnable command is handed over.
+    expect(first.execution).toMatchObject({ kind: "human-review", runnable: false, cwd: "service-repo" });
+    expect(first.execution.command).toBeUndefined();
+    // The uncapped roll-up beside the list carries every one of them.
+    expect(payload.serviceSteps).toEqual([{ code: "next.vouch", services: IDS, command: "loam vouch --service ledger-service" }]);
+  });
+
+  it("agrees with list --needs-work about who owes the vouch", async () => {
+    const p = await makeProject(fleet(DRAFT));
+    try {
+      const work = JSON.parse((await runLoam(p.workDir, "list", "--needs-work", "--json")).stdout) as {
+        services: Array<{ id: string; missing: string[] }>;
+      };
+      const owed = work.services.filter((s) => s.missing.some((m) => m.includes("loam vouch"))).map((s) => s.id);
+      const payload = JSON.parse((await runLoam(p.workDir, "status", "--json")).stdout) as { next: VouchStep[] };
+      expect(payload.next.filter((s) => s.code === "next.vouch").map((s) => s.service)).toEqual(owed);
+      expect(owed).toEqual(IDS);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("folds many into one counted line in the human view", async () => {
+    const p = await makeProject(fleet(DRAFT));
+    try {
+      const out = (await runLoam(p.workDir, "status")).stdout;
+      expect(out).toContain("next.vouch ×3: 3 services documented and never vouched");
+      expect(out).toContain("ledger-service, payment-service, refund-service.");
+      expect(out).not.toContain("next.fleet-clean");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("leaves a vouched fleet clean — the twin every assertion above is a difference from", async () => {
+    const payload = await status(fleet(VOUCHED));
+    expect(payload.services.draft).toBe(0);
+    expect(payload.next.map((s) => s.code)).toEqual(["next.fleet-clean"]);
+    expect(payload.serviceSteps).toEqual([]);
+  });
+
+  it("names the missing sources first, since loam vouch refuses without them", async () => {
+    const payload = await status(fleet((id) => (id === "payment-service" ? "status: draft\nowner: team" : VOUCHED())));
+    const step = payload.next.find((s) => s.code === "next.vouch")!;
+    expect(step.service).toBe("payment-service");
+    expect(step.statement).toContain("names no `sources:` for one to stamp");
+    expect(step.statement).not.toContain("--pack");
+  });
+
+  it("asks one rung at a time: an incomplete service owes its model before its vouch", async () => {
+    const files = fleet(VOUCHED);
+    files["services/refund-service/spec.md"] = spec("refund-service", DRAFT());
+    delete files["services/refund-service/model.likec4"];
+    const payload = await status(files);
+    expect(payload.next.map((s) => s.code)).toEqual(["next.complete-service", "next.fleet-gate"]);
+  });
+
+  it("answers the narrowed question about one service the same way", async () => {
+    const payload = await status(fleet(DRAFT), "--service", "payment-service");
+    expect(payload.next.map((s) => [s.code, s.service])).toEqual([
+      ["next.vouch", "payment-service"],
+      ["next.fleet-gate", undefined],
+    ]);
   });
 });
