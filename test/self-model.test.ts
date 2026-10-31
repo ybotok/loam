@@ -123,10 +123,13 @@ describe("meta/docs vs loam validate --all", () => {
     // A standing finding about the PRODUCT, pinned so it cannot change
     // unnoticed. The landscape draws 70 containers of `src/`; the fleet
     // scorecard counts drawn SYSTEMS, so it reports one. Nothing is wrong with
-    // either number — but `c4: { elements: 1, covered: 0 }` must never be read
-    // as "loam's architecture is one box and nothing covers it".
+    // that number — but `c4: { elements: 1 }` must never be read as "loam's
+    // architecture is one box". It is covered: services/loam/arch.spec.md's
+    // `Covers:` lines land on containers inside it, and the census counts a
+    // system's own requirements on its interior. It read `covered: 0` while
+    // the census counted only entries naming the system itself.
     const payload = await validateAll();
-    expect(payload.scorecard.c4).toEqual({ elements: 1, covered: 0 });
+    expect(payload.scorecard.c4).toEqual({ elements: 1, covered: 1 });
   });
 
   it("has no feature in flight, so the whole delta axis is silent — and it has SHIPPED one", async () => {

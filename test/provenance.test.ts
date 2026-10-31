@@ -570,6 +570,125 @@ describe("sources — the tie to the code", () => {
     }
   });
 
+  it("leaves the generated suite out — `<gherkinDir>/loam/` is loam's, the team's step code beside it is not", async () => {
+    // Straight after the first committed `loam gherkin`, `features` joined the
+    // unread list of a service whose specs had just been vouched: the suite is
+    // a projection OF those specs, rewritten wholesale on every run.
+    const p = await trackedRepoProject("sources:\n  - src/", ["src/payment.ts", "features/loam/payment.feature"]);
+    try {
+      const codes = (await findingsOf(p)).map((x) => x.code);
+      expect(codes).toContain("sources.walked");
+      expect(codes).not.toContain("sources.unwalked");
+
+      // The subtree is `loam/` exactly: the team's own glue beside it is code
+      // somebody wrote, and a spec may owe it a reading.
+      await mkdir(join(p.workDir, "features/steps"), { recursive: true });
+      await writeFile(join(p.workDir, "features/steps/payment.ts"), "// steps\n", "utf8");
+      execFileSync("git", ["add", "-A"], { cwd: p.workDir });
+      expect((await findingsOf(p)).find((x) => x.code === "sources.unwalked")?.details).toEqual(["features"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("follows a configured gherkinDir to the suite it owns", async () => {
+    const p = await makeProject(fixtureWith(`service: ${SVC}\nstatus: verified\nsources:\n  - src/`), {
+      service: SVC,
+      gherkinDir: "test/acceptance",
+    });
+    try {
+      await writeFiles(p.workDir, {
+        "src/payment.ts": "// code\n",
+        "test/acceptance/loam/payment.feature": "Feature: x\n",
+        "features/loam/stray.feature": "Feature: not loam's here\n",
+      });
+      execFileSync("git", ["init", "-q"], { cwd: p.workDir });
+      execFileSync("git", ["add", "-A"], { cwd: p.workDir });
+      // Only the CONFIGURED suite is loam's: `features/loam/` under a repo
+      // whose gherkinDir points elsewhere is a file somebody else put there.
+      expect((await findingsOf(p)).find((x) => x.code === "sources.unwalked")?.details).toEqual(["features"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("leaves a docs repo that lives inside the service repo out — QUICKSTART's single-repo layout", async () => {
+    // `loam init --docs loam-docs --create`: the docs repo is a tracked
+    // directory of the service repo. Listing it in `sources` cannot work — the
+    // vouch writes its stamp into the spec beneath it and stales the digest at
+    // once — so before, `--strict` failed on it straight after a vouch.
+    const root = await makeTmpDir();
+    try {
+      await writeFiles(join(root, "loam-docs"), fixtureWith(`service: ${SVC}\nstatus: verified\nsources:\n  - src/`));
+      await writeFiles(root, {
+        "loam.json": JSON.stringify({ docsDir: "loam-docs", service: SVC }, null, 2) + "\n",
+        "src/payment.ts": "// code\n",
+      });
+      execFileSync("git", ["init", "-q"], { cwd: root });
+      execFileSync("git", ["add", "-A"], { cwd: root });
+      const res = await runLoam(root, "validate", "--service", SVC, "--json");
+      const codes = codesOf(JSON.parse(res.stdout));
+      expect(codes).toContain("sources.walked");
+      expect(codes).not.toContain("sources.unwalked");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("grades the walk once per service, over every document's sources together", async () => {
+    // A person reads the repository once and writes two documents from it.
+    // Graded per document, arch.spec.md listed the tests spec.md had read, and
+    // spec.md the infrastructure arch.spec.md had — two warnings over a
+    // service read end to end, which only padding a list could clear.
+    const files = fixtureWith(`service: ${SVC}\nstatus: verified\nsources:\n  - src/\n  - test/`);
+    files[`services/${SVC}/arch.spec.md`] = archSpec("sources:\n  - src/\n  - deploy/");
+    const p = await makeProject(files, { service: SVC });
+    try {
+      await writeFiles(p.workDir, {
+        "src/payment.ts": "// code\n",
+        "test/payment.test.ts": "// test\n",
+        "deploy/values.yaml": "replicas: 2\n",
+      });
+      execFileSync("git", ["init", "-q"], { cwd: p.workDir });
+      execFileSync("git", ["add", "-A"], { cwd: p.workDir });
+      const findings = await findingsOf(p);
+      expect(findings.map((x) => x.code)).not.toContain("sources.unwalked");
+      const walked = findings.filter((x) => x.code === "sources.walked");
+      expect(walked).toHaveLength(1);
+      expect(walked[0]?.message).toContain(`${SVC}: spec.md + arch.spec.md`);
+      expect(walked[0]?.message).toContain("3 of 3 tracked file(s)");
+
+      // Pooled, the paths NEITHER document reached are still named, once.
+      await writeFile(join(p.workDir, "Dockerfile"), "FROM node:22\n", "utf8");
+      execFileSync("git", ["add", "-A"], { cwd: p.workDir });
+      const unwalked = (await findingsOf(p)).filter((x) => x.code === "sources.unwalked");
+      expect(unwalked).toHaveLength(1);
+      expect(unwalked[0]?.details).toEqual(["Dockerfile"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("does not grade the walk while one document's list names a path that does not exist", async () => {
+    // The pooled reading would be short by whatever the broken list meant to
+    // name; the error gates on its own, and a walk finding beside it would send
+    // the author to read paths they may well have read.
+    const files = fixtureWith(`service: ${SVC}\nstatus: verified\nsources:\n  - src/`);
+    files[`services/${SVC}/arch.spec.md`] = archSpec("sources:\n  - deploy/gone.yaml");
+    const p = await makeProject(files, { service: SVC });
+    try {
+      await writeFiles(p.workDir, { "src/payment.ts": "// code\n", "deploy/values.yaml": "replicas: 2\n" });
+      execFileSync("git", ["init", "-q"], { cwd: p.workDir });
+      execFileSync("git", ["add", "-A"], { cwd: p.workDir });
+      const codes = (await findingsOf(p)).map((x) => x.code);
+      expect(codes).toContain("sources.path-missing");
+      expect(codes).not.toContain("sources.unwalked");
+      expect(codes).not.toContain("sources.walked");
+    } finally {
+      await p.destroy();
+    }
+  });
+
   it("catches every pattern character — `*`, `?` and `[` alike, literal paths untouched", () => {
     expect(patternSources(["src/*.ts", "src/a?.ts", "pages/[id].tsx", "src/lib/", "notes.md"])).toEqual([
       "src/*.ts",

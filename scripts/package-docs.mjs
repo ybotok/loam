@@ -220,7 +220,8 @@ export function classifyLink(target) {
  * Every audited page sat at the tarball root until `examples/` shipped, so the
  * target and the path were the same string and this function did not exist.
  * They stopped being the same the moment a page sat in a subdirectory:
- * `examples/README.md`'s `../SCHEMA.md` resolves at the tarball root and is a
+ * `examples/README.md`'s `../SCHEMA.md` (canonical since `init --example`
+ * copies that page where nothing sits above it) resolved at the tarball root, a
  * shipped file, while the literal target `../SCHEMA.md` is a path the tarball
  * never contains — an audit reading it literally would report the one correct
  * link on that page as broken, and would resolve

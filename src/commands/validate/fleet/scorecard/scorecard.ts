@@ -13,7 +13,8 @@
  */
 import { existsSync } from "node:fs";
 import { inOrder } from "../../../../core/kernel/concurrency.js";
-import { coversElement } from "../../../../core/c4/arch.js";
+import { coversElement, type CoversEntry } from "../../../../core/c4/arch.js";
+import { type Elem } from "../../../../core/c4/likec4.js";
 import { serviceResolver } from "../../../../core/c4/resolve/service.js";
 import { type FleetContext } from "../../../../core/fleet-context.js";
 import { type DocsDir } from "../../../../core/kernel/ids/dirs.js";
@@ -139,7 +140,12 @@ export interface Scorecard {
   c4: {
     /** The drawn SYSTEMS — `drawnSystems`, the fleet map's own census, so the map's exemptions (actors, INFRA kinds the fleet runs rather than adopts, `#external`, groupings, containers) and this count cannot drift. An INFRA-kind element that DOES stand for a `services/<id>/` stays in, so adopting a store never shrinks the denominator. */
     elements: number;
-    /** Of them, the ones some living arch requirement's `Covers:` entry names. */
+    /**
+     * Of them, the ones a living arch requirement covers: a `Covers:` entry in
+     * any arch.spec.md naming the system itself, or one in the system's OWN
+     * arch.spec.md naming an element inside it or an edge with an endpoint in
+     * it (`systemCovered`).
+     */
     covered: number;
   };
   /**
@@ -245,11 +251,13 @@ async function derive(input: ScorecardInput): Promise<Scorecard> {
   const adoption = adoptionOf(perService);
 
   // C4 coverage: the fleet map's own system census (`drawnSystems` — the set
-  // the undocumented pass walks) against every living arch.spec.md's `Covers:`
-  // entries. Element entries only — an edge entry names no element.
+  // the undocumented pass walks) against the living arch.spec.md `Covers:`
+  // entries, by `systemCovered`'s rule.
   const covers = perService.flatMap((c) => c.covers);
+  const coversOf = new Map<string, CoversEntry[]>(services.map((s, i) => [s.id, perService[i]?.covers ?? []]));
   const eligible = proven ? drawnSystems(land.elements, known) : [];
-  const covered = eligible.filter((e) => covers.some((c) => coversElement(c, e))).length;
+  const svcOf = proven ? serviceResolver(land.elements, known) : (id: string): string => id;
+  const covered = eligible.filter((e) => systemCovered(e, coversOf.get(svcOf(e.id)) ?? [], covers, svcOf)).length;
 
   // Verification: `list`'s own cells, so the two commands cannot disagree
   // about a record's verdict. Active features only — an archived record is
@@ -312,4 +320,40 @@ async function derive(input: ScorecardInput): Promise<Scorecard> {
     adoption,
     features: { active: status.features.length, stages },
   };
+}
+
+/**
+ * Is this drawn system covered by an architecture requirement?
+ *
+ * Two ways, and the second is how SCHEMA and the example write `Covers:`. An
+ * entry in ANY living arch.spec.md naming the system itself — its id, or the
+ * service it stands for — still counts. And an entry in the system's OWN
+ * arch.spec.md (`own`) counts when it lands anywhere inside it: an element the
+ * resolver files under this system's service — the system, or a container or
+ * module nested in it — or an edge with an endpoint there. This used to read
+ * element entries naming the system alone, so a fleet whose requirements cover
+ * their services' interiors and edges — every fleet SCHEMA teaches, the
+ * packaged example included — read `N elements → 0 covered` however thoroughly
+ * it was covered.
+ *
+ * Interior and edge entries count only from the system's own document: under
+ * "any edge touching it", checkout's spec covering `checkout -> payment` would
+ * mark payment-service covered by a requirement payment-service never wrote.
+ * Resolution is by ancestor (`serviceResolver`), against the map alone, so an
+ * entry naming a container nobody declared still files under its system — the
+ * run grades that entry `covers.unknown`, and this census does not repeat it.
+ */
+function systemCovered(
+  system: Elem,
+  own: readonly CoversEntry[],
+  every: readonly CoversEntry[],
+  svcOf: (id: string) => string,
+): boolean {
+  if (every.some((c) => coversElement(c, system))) return true;
+  const owner = svcOf(system.id);
+  return own.some((c) =>
+    c.form === "element"
+      ? svcOf(c.id) === owner
+      : c.form === "edge" && (svcOf(c.source) === owner || svcOf(c.target) === owner),
+  );
 }

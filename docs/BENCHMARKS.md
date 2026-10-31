@@ -259,10 +259,10 @@ loam `0.2.0-alpha.18` · fleet `examples/docs` · service `payment-service` · b
 
 | brief | invocation | bytes | ~tokens | with `--intent-ref` |
 |---|---|---|---|---|
-| `tasks` | `loam tasks FEAT-101 --service payment-service --next --json` | 4,488 | ~1,122 | 3,130 (~783) |
-| `tasks` | `loam tasks FEAT-101 --json` | 22,278 | ~5,570 | 20,920 (~5,230) |
-| `delta` | `loam delta FEAT-101 --service payment-service --json` | 6,631 | ~1,658 | 5,273 (~1,318) |
-| `context` | `loam context payment-service --feature FEAT-101 --json` | 19,306 | ~4,827 | 18,108 (~4,527) |
+| `tasks` | `loam tasks FEAT-101 --service payment-service --next --json` | 4,124 | ~1,031 | 3,130 (~783) |
+| `tasks` | `loam tasks FEAT-101 --json` | 21,914 | ~5,479 | 20,920 (~5,230) |
+| `delta` | `loam delta FEAT-101 --service payment-service --json` | 6,267 | ~1,567 | 5,273 (~1,318) |
+| `context` | `loam context payment-service --feature FEAT-101 --json` | 18,942 | ~4,736 | 18,108 (~4,527) |
 
 <!-- payload-sizes:end -->
 

@@ -104,9 +104,11 @@ describe("working-tree link integrity for the shipped pages", () => {
     // the "intentionally canonical" escape hatch is checked, not trusted.
     //
     // Targets are resolved against the page's own directory, which is what
-    // shipping a subdirectory made necessary: examples/README.md's
-    // `../SCHEMA.md` is the root page, and examples/docs/glossary/order.md's
+    // shipping a subdirectory made necessary: examples/docs/glossary/order.md's
     // `payments/authorization.md` is its own neighbour, not a root file.
+    // (examples/README.md's `../SCHEMA.md` was the other case until
+    // `init --example` began copying that page into a fleet where nothing sits
+    // above it; it links canonically now.)
     const shippedMarkdown = REVIEWED_PACKAGE_FILES.filter((path) => path.endsWith(".md"));
     const linkable = new Set([
       ...shippedMarkdown,

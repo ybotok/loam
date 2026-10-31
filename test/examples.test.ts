@@ -181,6 +181,16 @@ describe("examples/docs vs loam validate --all", () => {
     const res = await runLoam(workDir, "validate", "--all", "--json");
     expect(JSON.parse(res.stdout).sourcesUnverifiableFromHere).toBe(4);
   });
+
+  it("scores three of the five drawn systems covered — the three with an arch.spec.md", async () => {
+    // order-, payment- and identity-service each cover their own interiors and
+    // edges (`marketplace.orderService.db`, `payment-service -> stripe`), the way
+    // SCHEMA teaches; checkout-web and notification-service write no
+    // arch.spec.md. The scorecard used to count only entries naming a system
+    // itself, so the first fleet a new user saw read `5 elements → 0 covered`.
+    const res = await runLoam(workDir, "validate", "--all", "--json");
+    expect(JSON.parse(res.stdout).scorecard.c4).toEqual({ elements: 5, covered: 3 });
+  });
 });
 
 describe("examples/docs vs the subsystem tree", () => {

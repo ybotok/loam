@@ -257,6 +257,43 @@ No code, flag or payload key was added.
   gives in the same repository, now from one source. No code, flag, exit code or payload key
   changed.
 
+### Fixed — the first hour: a fresh vouch stays green, the example can be joined, and its scorecard counts
+
+No code, flag or payload key was added, renamed or removed. Three things a script may see move:
+`sources.unwalked` and `sources.walked` arrive once per service instead of once per document,
+`covered` in the `scorecard` key's `c4` pair on `loam validate --all --json` reads higher on most
+fleets, and `loam init --example --json` lists two more paths in `created`.
+
+- **`sources.unwalked`** no longer counts loam's own subtrees toward its denominator: the generated
+  suite under `<gherkinDir>/loam/` (the team's own files beside it stay in), and a docs repo that
+  lives inside the service repo, as in QUICKSTART's `loam init --docs loam-docs --create` layout.
+  Straight after `loam vouch`, `loam validate --service <id> --strict` exited 1 listing `loam-docs`,
+  and again after the first committed `loam gherkin` listing `features` — neither could be listed in
+  `sources` honestly, since `vouch` writes into the docs repo and `gherkin` rewrites its suite.
+- **`sources.unwalked` / `sources.walked`** grade the service, not each document: one finding over
+  the files every document's `sources` reach together, labelled `<service>: spec.md + arch.spec.md`
+  (or the one document that names any). `arch.spec.md` used to list the `tests/` that `spec.md`
+  beside it had read. While any document's list names a path that does not resolve
+  (`sources.path-missing`, `sources.path-outside`), no walk finding is reported — that error
+  already gates. Build tooling (a Dockerfile, pytest.ini, run.sh) still counts; a way to declare a
+  file not owed is not in this release.
+- **`loam init --example <dir>`** writes the docs repo's `AGENTS.md` — generated at copy time, so
+  its stamp is the running binary's — and copies `examples/README.md` in as the fleet's
+  `README.md`. Every other file is still a byte-identical copy of the shipped tree. The copy used to
+  have no `AGENTS.md`, so `loam init --docs <dir> --service <id>` from a service repo refused it as
+  "not a docs repo", and the page explaining its ten deliberate warnings was only on GitHub.
+- **The example's `FEAT-101` intent** no longer carries a paragraph about the `intent.empty` gate in
+  its `## Why`; `loam delta FEAT-101` and `loam context … --feature FEAT-101` printed it as the
+  feature's business reason. The paragraph is in `examples/README.md` now, whose link to SCHEMA.md
+  is canonical so it resolves from the copy too.
+- **The scorecard's `c4` `covered` count** (and the `c4  N elements → M covered` row of the `--all`
+  text report) counts a drawn system as covered when its own `arch.spec.md` has a `Covers:` entry
+  on an element nested inside it or on an edge with an endpoint in it, as well as on the system
+  itself. Entries in other services' specs count only when they name the system itself, so a
+  caller's requirement on `checkout -> payment` never covers `payment`. The shipped example reads
+  `5 elements → 3 covered` where it read `→ 0`, as did every fleet that writes `Covers:` the way
+  SCHEMA teaches.
+
 ## [0.2.0-alpha.18] - 2026-10-30
 
 Everything on `main` since `0.2.0-alpha.17`. Still a prerelease on the `alpha` line.

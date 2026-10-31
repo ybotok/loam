@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { dirname, join, parse as parsePath, resolve } from "node:path";
+import { dirname, isAbsolute, join, parse as parsePath, posix, relative, resolve, sep } from "node:path";
 import { resolveInside } from "../kernel/path-safety.js";
 import { docsDirOf, type DocsDir } from "../kernel/ids/dirs.js";
 import { parseServiceId, type ServiceId } from "../kernel/ids/service.js";
@@ -148,9 +148,25 @@ function searchDirs(start: string): string[] {
  * records. `sources.unwalked` leaves them out of its denominator — a check
  * that counted loam's own bookkeeping as a part of the service nobody read
  * fired in every service repo the moment `loam init` had run.
+ *
+ * Two whole SUBTREES join them, spelled with a trailing `/`:
+ *   - `<gherkinDir>/loam/`, the generated suite — a projection OF the specs
+ *     that `loam gherkin` rewrites wholesale, so `features` landed on the
+ *     unread list the first time anybody committed one. The default is the one
+ *     `gherkinRoot` (core/gherkin/stamp.ts) resolves, respelled because the
+ *     envelope sits below gherkin/; the team's own step code beside it stays in.
+ *   - the docs repo, when it lives INSIDE this one (`init --docs loam-docs
+ *     --create`). Nor can it be listed: `loam vouch` stamps the spec beneath
+ *     it, which stales a digest taken over it at once.
  */
 export function loamOwnedFiles(config: LoamConfig): string[] {
-  return [CONFIG_FILENAME, ...Object.keys(config.agentFiles ?? {})];
+  const owned = [CONFIG_FILENAME, ...Object.keys(config.agentFiles ?? {})];
+  owned.push(`${posix.join((config.gherkinDir ?? "features").replaceAll("\\", "/"), "loam")}/`);
+  const docs = config.root === undefined ? "" : relative(config.root, config.docsDir);
+  if (docs !== "" && docs !== ".." && !docs.startsWith(`..${sep}`) && !isAbsolute(docs)) {
+    owned.push(`${docs.split(sep).join("/")}/`);
+  }
+  return owned;
 }
 
 /** Where a config written HERE goes — never a discovered one. `init` and `saveConfig` use this. */
