@@ -25,3 +25,15 @@ the page you are on is the advisory form above before typing anything you would 
 Please allow the maintainers time to confirm receipt and coordinate remediation before public
 disclosure. Never include production credentials, customer data, or proprietary fleet documents in a
 report; use a reduced fixture.
+
+## A shared docs repo writes into every reader's agent
+
+This is a property of the design rather than a vulnerability to report. Loam's briefs quote the
+docs repo verbatim — intent, requirement bodies, scenarios, model titles — so anyone who can merge a
+change there writes into the context of every agent, on every team, that reads it. Loam labels that
+text as data in its text views, its workflow protocols, the generated `AGENTS.md` and the MCP
+server's instructions, and it does not filter it: it cannot tell an instruction from a requirement.
+Treat merge rights on the docs repo as you treat merge rights on code that runs, and require
+`CODEOWNERS` review on `services/<svc>/` and `features/` so a spec change passes its owning team
+first — [WORKFLOW.md](WORKFLOW.md#driving-it-from-an-agent) has the rules. A Loam surface that
+hands an agent authored text without that label is worth a report.

@@ -7,6 +7,7 @@
  * a continuation line indented past its marker cannot be misread as a second
  * bullet, which is what a hand-followed checklist gets wrong first.
  */
+import { QUOTED_NOTICE } from "../../core/envelope/quoted.js";
 import { SEVERITY_MARK } from "../../core/vocabulary/report.js";
 import { type Brief } from "../../core/brief/brief.js";
 import { VIA_ALL, type BriefCheck } from "../../core/brief/checks/check.js";
@@ -290,6 +291,10 @@ function printLandscape(b: Brief): void {
     console.log(wrap(l.instruction ?? "", "    "));
     return;
   }
+  // The titles below are the map authors' words — often another team's — and
+  // this brief's reader is about to write into the shared repo from them
+  // (core/envelope/quoted.ts).
+  console.log(`    ${QUOTED_NOTICE}\n`);
   for (const e of l.elements) {
     const bound = e.bound ? "bound" : "matched by title — bind it";
     console.log(`    ${e.id} = ${e.kind} '${e.title}'   (${bound})`);

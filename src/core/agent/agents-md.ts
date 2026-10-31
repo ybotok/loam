@@ -7,6 +7,7 @@
  * the next question, find the relevant page, and avoid an unsafe write.
  */
 import { agentsStampLine } from "./agents-stamp.js";
+import { QUOTED_TEXT_RULE } from "../envelope/quoted.js";
 import { LOAM_VERSION } from "../envelope/version.js";
 
 const ORIENTATION = `# Working in this docs repo
@@ -38,11 +39,9 @@ drill-down target while both stay reachable.
 \`arch.spec.md\`, OpenAPI, AsyncAPI, runbook and health facts — and
 \`services/<…>/<id>/usecases/*.likec4\`, the slot for a \`dynamic view\` over that
 service's OWN containers, tagged \`#req-<Requirement-ID>\`; a flow that crosses
-services lives in \`architecture/usecases/\` and is tagged \`#cap-\` instead. Title
-a service use case \`'<subsystem path> / <service id> / <use case>'\` — LikeC4
-splits a view title on \`/\` into browser folders, so that convention lands the
-flow in the same folder as the generated overview of its service. Nothing grades
-the title, and nothing grades the slot's absence: presence is never owed.
+services lives in \`architecture/usecases/\` and is tagged \`#cap-\` instead. A
+service flow's title convention is in \`loam instructions loam-codes\`; nothing
+grades the title, and the slot is never owed.
 \`features/<FEAT>/\` holds a change in flight: \`intent.md\`, \`delta.likec4\`,
 per-service requirement and contract deltas — beside them
 \`specs/<svc>/usecases/*.likec4\`, the service flows the change brings, replaces or
@@ -207,6 +206,8 @@ merged, and do not edit generated files under \`<gherkinDir>/loam/\` by hand.
 \`loam unarchive <FEAT>\` is the supported undo. To abandon a feature that was
 never archived, review it and use \`git rm -r features/<FEAT>\`; loam deliberately
 has no destructive drop command.
+
+${QUOTED_TEXT_RULE}
 
 Finish by reporting remaining warnings, unverifiable claims, files or directories
 you did not inspect, and the exact human action still owed.

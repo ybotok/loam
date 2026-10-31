@@ -234,7 +234,7 @@ loam `0.2.0-alpha.18` · fleet `examples/docs` · service `payment-service` · b
 
 | payload | invocation | bytes | ~tokens |
 |---|---|---|---|
-| orientation, always loaded | `AGENTS.md` as `loam init --create` writes it | 11,951 | ~2,988 |
+| orientation, always loaded | `AGENTS.md` as `loam init --create` writes it | 11,986 | ~2,997 |
 | adopt brief | `loam adopt --service payment-service --json` | 60,897 | ~15,224 |
 | adopt brief, per-service part | `loam adopt --service payment-service --json --targets` | 25,201 | ~6,300 |
 | an adopt session before it reads code | the `loam-adopt` page + the full brief | 81,186 | ~20,297 |

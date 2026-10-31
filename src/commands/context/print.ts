@@ -11,6 +11,7 @@
  * `#### Scenario:` heading levels; the in-flight blocks print the same lines
  * one level deeper, because each sits under its feature's own `###` heading.
  */
+import { QUOTED_NOTICE } from "../../core/envelope/quoted.js";
 import { type ContextPack, type IntroducedPack } from "../../core/pack/pack.js";
 import { type PackItem } from "../../core/pack/requirement.js";
 import { type PackFeature } from "../../core/pack/features.js";
@@ -52,6 +53,11 @@ export function printPack(pack: ContextPack | IntroducedPack): void {
   }
   for (const s of pack.frontmatter.sources) console.log(`sources: ${s}`);
   console.log();
+  // Once, under the badge and above every section that quotes the docs repo —
+  // requirement bodies, scenarios, each in-flight feature's intent — since
+  // this document is made to be pasted into an agent's context, and the fence
+  // has to travel with it (core/envelope/quoted.ts).
+  console.log(`${QUOTED_NOTICE}\n`);
 
   // Unreadable documents are said FIRST and without hedging (explore's print
   // discipline): every empty section below could otherwise be read as "nothing
