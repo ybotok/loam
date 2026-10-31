@@ -27,7 +27,6 @@ describe("mutable release facts", () => {
     const readme = flat(await read("README.md"));
     const current = await version();
     expect(readme).toContain(`**Pre-release: \`${current}\`** is the version this checkout's \`package.json\` names`);
-    expect(readme).toContain(`This checkout is \`${current}\``);
   });
 
   /**
@@ -64,22 +63,26 @@ describe("mutable release facts", () => {
     expect(section).not.toMatch(/`npm i @ybotok\/loam@\w+` installs it/);
   });
 
-  it("pins the fleet-edges recipe to the version README names, and runs no unpinned loam", async () => {
-    // The recipe is the first gate a fleet installs, and an unpinned `npx`
-    // resolves `latest` on the day the job runs, so a release can move what
-    // gates every PR mid-review. A pin is only worth having if it cannot trail
-    // the version this README describes.
-    const readme = await read("README.md");
-    expect(readme).toContain(`LOAM: "@ybotok/loam@${await version()}"`);
-    expect(readme).not.toMatch(/npx -y @ybotok\/loam (?:diff|validate)\b/);
+  it("pins the CI recipes to the version this checkout names, and runs no unpinned loam", async () => {
+    // The fleet-edges recipe is the first gate a fleet installs, and an
+    // unpinned `npx` resolves `latest` on the day the job runs, so a release
+    // can move what gates every PR mid-review. A pin is only worth having if it
+    // cannot trail the version this checkout describes. The recipes moved from
+    // README to CI.md; README is still read, so a recipe copied back to the
+    // front page is held to the same pin.
+    const [readme, ci] = await Promise.all([read("README.md"), read("CI.md")]);
+    expect(ci).toContain(`LOAM: "@ybotok/loam@${await version()}"`);
+    for (const page of [readme, ci]) {
+      expect(page).not.toMatch(/npx -y @ybotok\/loam (?:diff|validate)\b/);
+    }
     // The service-repo recipe and the cloud-agent setup pin the same way, and
     // a fleet bumps all of them in one change or its service repos gate on a
-    // different loam from its docs repo. So EVERY exact version README names
-    // must be this checkout's — a dist-tag such as `@alpha` is not a pin and
-    // is left alone.
-    const pinned = [...readme.matchAll(/@ybotok\/loam@(\d[^\s"'`]*)/g)].map((match) => match[1]);
-    expect(pinned.length, "README carries no pinned loam version at all").toBeGreaterThan(0);
-    expect(new Set(pinned), "a README recipe pins a loam other than this checkout's").toEqual(new Set([await version()]));
+    // different loam from its docs repo. So EVERY exact version either page
+    // names must be this checkout's — a dist-tag such as `@alpha` is not a pin
+    // and is left alone.
+    const pinned = [...(readme + ci).matchAll(/@ybotok\/loam@(\d[^\s"'`]*)/g)].map((match) => match[1]);
+    expect(pinned.length, "CI.md carries no pinned loam version at all").toBeGreaterThan(0);
+    expect(new Set(pinned), "a recipe pins a loam other than this checkout's").toEqual(new Set([await version()]));
   });
 
   it("does not restore superseded publication claims", async () => {

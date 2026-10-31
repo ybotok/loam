@@ -14,7 +14,7 @@ loam doctor
 Commit `loam.json` and the agent files it writes. `--agent-profile service` installs the five
 entry points that run in a service repo and leaves out feature authoring and shipping, which happen
 in the docs repo. CI runs the same checks on every pull request: the
-[service-repo recipe](../README.md#check-each-service-repo-on-its-own-pull-requests).
+[service-repo recipe](../CI.md#check-each-service-repo-on-its-own-pull-requests).
 
 | Command | When |
 |---|---|

@@ -1,7 +1,7 @@
 /**
  * Public prose carries facts code can derive, and this file pins every one of
  * them: counted facts are live or sit under a dated assessment context, the
- * README command table matches the registered CLI, SCHEMA's permissions
+ * command table in WORKFLOW.md matches the registered CLI, SCHEMA's permissions
  * example actually parses through the real reader, every dotted code the
  * packaged docs name is one loam emits, and every known-gap sentence has its
  * owner heading on the roadmap. test/docs-drift.test.ts pins the RELEASE
@@ -232,19 +232,21 @@ describe("counted facts are live or dated", () => {
     expect(design, `docs/DESIGN.md must carry the live "${live}" sentence`).toContain(live);
   });
 
-  it("the adopt brief's check count is live where README and WORKFLOW name it", async () => {
-    // Both pages said "52" against a brief of 53 — a count nothing derived,
-    // in the one sentence that tells an evaluator what --targets leaves out.
+  it("the adopt brief's check count is live where WORKFLOW names it", async () => {
+    // README and WORKFLOW both said "52" against a brief of 53 — a count
+    // nothing derived, in the one sentence that tells an evaluator what
+    // --targets leaves out. README's copy left with the command table, whose
+    // adopt row now points at WORKFLOW's note instead of repeating the count.
     // toHaveLength first, so a reworded sentence fails here instead of
     // passing by not matching.
-    const pages = ["README.md", "WORKFLOW.md"];
+    const pages = ["WORKFLOW.md"];
     const found: string[] = [];
     for (const page of pages) {
       for (const m of flat(await read(page)).matchAll(/the (\d+) (?:named )?checks and the seventeen statements/g)) {
         found.push(`${page}: ${m[1]}`);
       }
     }
-    expect(found, "README and WORKFLOW must each name the brief's check count once").toHaveLength(pages.length);
+    expect(found, "WORKFLOW must name the brief's check count once").toHaveLength(pages.length);
     expect(found).toEqual(pages.map((page) => `${page}: ${VALIDATE_CHECKS.length}`));
   });
 
@@ -297,15 +299,18 @@ describe("counted facts are live or dated", () => {
   });
 });
 
-describe("README command table matches buildProgram()", () => {
+describe("WORKFLOW's command table matches buildProgram()", () => {
   it("one row per registered command, set-equal by name", async () => {
-    const readme = await read("README.md");
-    // Bounded by the NEXT h2, not by a named sibling heading: the per-command
-    // notes moved to WORKFLOW.md, and a slice keyed to a heading that has left
-    // the page reads as "to the end of the file" rather than failing.
-    const from = readme.indexOf("## Commands");
-    const to = readme.indexOf("\n## ", from + 1);
-    const table = readme.slice(from, to === -1 ? undefined : to);
+    // The table moved from README to WORKFLOW.md, beside the per-command notes
+    // it indexes. Bounded by the NEXT h2, not by a named sibling heading: a
+    // slice keyed to a heading that has left the page reads as "to the end of
+    // the file" rather than failing. The leading newline keeps the probe off a
+    // `### Commands` anywhere above.
+    const workflow = await read("WORKFLOW.md");
+    const from = workflow.indexOf("\n## Commands");
+    expect(from, "WORKFLOW.md has no `## Commands` section").toBeGreaterThan(-1);
+    const to = workflow.indexOf("\n## ", from + 1);
+    const table = workflow.slice(from, to === -1 ? undefined : to);
     const rows = [...table.matchAll(/^\| `loam ([a-z-]+)/gm)].map((match) => match[1]!);
     const registered = commandNames();
     // Set equality both ways, then row count: a parse miss (a reformatted row
@@ -500,11 +505,6 @@ describe("known gaps carry owners", () => {
    */
   const KNOWN_GAPS: { doc: string; gap: string; owner: string }[] = [
     {
-      doc: "README.md",
-      gap: "has yet to be observed green at the budget it was given on 2026-10-28",
-      owner: "still release evidence to collect",
-    },
-    {
       doc: "SCHEMA.md",
       gap: "has yet to be observed green at the budget it was given on 2026-10-28",
       owner: "still release evidence to collect",
@@ -563,14 +563,15 @@ describe("known gaps carry owners", () => {
   });
 });
 
-describe("the README names every flag the binary registers", () => {
+describe("WORKFLOW names every flag the binary registers", () => {
   it("each long flag appears in its command's row or the prose around it", async () => {
     // Flags were the biggest hole the pins left: the command NAME set was
     // set-equal to the CLI while thirteen shipped flags — `vouch --pack`,
     // `verify --diff-answers`, `new --capability` among them — appeared on no
     // page at all. --json is excluded because one sentence covers it for every
     // command; every other long flag must be spelled where a reader can find it.
-    const readme = flat(await read("README.md"));
+    // The page is WORKFLOW.md since the command table moved there from README.
+    const workflow = flat(await read("WORKFLOW.md"));
     const missing: string[] = [];
     for (const command of buildProgram().commands) {
       for (const option of command.options) {
@@ -579,12 +580,12 @@ describe("the README names every flag the binary registers", () => {
         // Whole-token match: a prefix test would let `--package` vouch for
         // `--pack`, and `--services` for `--service`.
         const named = new RegExp(`\`${long}(?![\\w-])`);
-        if (!named.test(readme)) missing.push(`${command.name()} ${long}`);
+        if (!named.test(workflow)) missing.push(`${command.name()} ${long}`);
       }
     }
     expect(
       missing,
-      `flag(s) the CLI registers and README never names: ${missing.join(", ")} — add each to its row, or drop the flag`,
+      `flag(s) the CLI registers and WORKFLOW never names: ${missing.join(", ")} — add each to its row, or drop the flag`,
     ).toEqual([]);
   });
 
@@ -592,9 +593,9 @@ describe("the README names every flag the binary registers", () => {
     // The row is an argument list, not a command name, so the set-equality test
     // above cannot see it: `loam list glossary` shipped and worked while the
     // table still offered three sections.
-    const readme = await read("README.md");
-    const row = /^\| `loam list \[([^\]]+)\]`/m.exec(readme);
-    expect(row, "README has no `loam list [sections]` row").not.toBeNull();
+    const workflow = await read("WORKFLOW.md");
+    const row = /^\| `loam list \[([^\]]+)\]`/m.exec(workflow);
+    expect(row, "WORKFLOW has no `loam list [sections]` row").not.toBeNull();
     const documented = row![1]!.split("\\|").map((section) => section.trim()).sort();
     const declared = /"\[section\]", "([^"]+)"/.exec(await read("src/commands/list/list.ts"));
     expect(declared, "list.ts's [section] argument description no longer parses").not.toBeNull();
@@ -604,7 +605,7 @@ describe("the README names every flag the binary registers", () => {
       .map((section) => section.trim())
       .filter(Boolean)
       .sort();
-    expect(documented, "README's list sections and the CLI's disagree").toEqual(real);
+    expect(documented, "WORKFLOW's list sections and the CLI's disagree").toEqual(real);
   });
 });
 

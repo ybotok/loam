@@ -392,12 +392,12 @@ function profileOf(tokens: readonly string[]): string | undefined {
 
 describe("every service bind loam prints names the service profile", () => {
   it("a printed `loam init … --service <id>` carries `--agent-profile service`", () => {
-    // README, QUICKSTART and SERVICE-TEAMS tell a fleet to bind each service
+    // QUICKSTART, WORKFLOW and SERVICE-TEAMS tell a fleet to bind each service
     // checkout with `--agent-profile service`, because the default is `full`
     // and `full` writes loam-feature and loam-ship into every service repo.
     // Every bind line the binary printed left the flag out — the init epilogue,
     // `next.bind-service`, its explain entry, AGENTS.md and two protocols —
-    // and agents type what loam prints, not what the README says. The parse
+    // and agents type what loam prints, not what the docs say. The parse
     // suite above could not see it: the bare line parses perfectly.
     //
     // `--create` is the single-repo trial, whose one checkout holds the docs

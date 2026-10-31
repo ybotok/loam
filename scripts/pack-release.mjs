@@ -98,6 +98,7 @@ const publicationInputs = spawnSync(
     "README.md",
     "LICENSE",
     "CHANGELOG.md",
+    "CI.md",
     "COMPARISON.md",
     "CONTRIBUTING.md",
     "MIGRATING-from-OpenSpec.md",

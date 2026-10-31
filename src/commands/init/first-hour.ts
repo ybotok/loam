@@ -45,8 +45,8 @@ export function firstHour(service: string): Array<[command: string, why: string]
  * SERVICE checkout of a fleet whose features are authored and archived here,
  * in this docs repo: the profile defaults to `full`, and `full` puts
  * `loam-feature` and `loam-ship` into every service repo — the outcome
- * README's "Pass the profile explicitly" warns against. Agents type the
- * command loam prints, not the README.
+ * QUICKSTART's "Wire one project" warns against. Agents type the
+ * command loam prints, not the docs.
  *
  * The sync line is for the "draw it by hand" half of the first row. The map
  * this run scaffolds draws no service, so it owes no generated views file and

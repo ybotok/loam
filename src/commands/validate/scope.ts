@@ -19,7 +19,7 @@
  * IT GRADED TOO LITTLE. `spine.op-undefined` is graded on the PROVIDER's
  * service target, so an edge the branch drew or re-spelled on the map was
  * graded by no scoped run unless the provider happened to change too —
- * README's own `authorisePayment` example merged green through both PR gates.
+ * the docs' own `authorisePayment` example merged green through both PR gates.
  * Those edges are now graded here, against their providers' contracts, and
  * ONLY those edges: pulling the provider into scope instead would grade every
  * document it already has, which on a spine-first fleet means

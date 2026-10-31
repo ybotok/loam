@@ -16,6 +16,17 @@ The one-shot `npm run setup` command performs installation, build, and a CLI smo
 changes scoped, add tests for behavior changes, and do not commit generated `dist/`, coverage, local
 `loam.json`, fleet data, or command outputs containing internal paths.
 
+To work on loam itself — or to run an unreleased commit — install from a clone:
+
+```sh
+git clone https://github.com/ybotok/loam.git && cd loam
+./scripts/setup.sh --link     # checks node >= 22.22.3, npm ci, build, smoke-test, npm link
+```
+
+Drop `--link` to build without a global `loam`. `npm run setup` is `bash scripts/setup.sh`, so on
+Windows run `npm ci && npm run build` by hand. `npm run dev -- --help` runs the CLI from source
+without building.
+
 Read [AGENTS.md](https://github.com/ybotok/loam/blob/main/AGENTS.md) before changing Loam itself.
 [docs/DESIGN.md](https://github.com/ybotok/loam/blob/main/docs/DESIGN.md) explains the module
 boundaries and dependency direction, while

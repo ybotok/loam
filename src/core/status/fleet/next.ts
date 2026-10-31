@@ -194,8 +194,8 @@ export function fleetNext(fleet: Fleet, binding: Binding | null): NextStep[] {
           "loam.json it writes.",
         // `--agent-profile service`, because the default is `full`, and `full`
         // writes loam-feature and loam-ship into the service checkout — the two
-        // workflows this docs repo keeps, which README tells every service
-        // repo to leave out. An agent runs this literal, not the README.
+        // workflows this docs repo keeps, which QUICKSTART tells every service
+        // repo to leave out. An agent runs this literal, not the docs.
         command: "loam init --docs <path-to-this-docs-repo> --service <service-id> --agent-profile service",
       });
       steps.push({

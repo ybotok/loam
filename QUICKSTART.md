@@ -19,6 +19,12 @@ loam --version
 A project-local install works too: `npm install --save-dev @ybotok/loam`, then replace `loam` below
 with `npx loam`.
 
+C4 modeling uses [LikeC4](https://likec4.dev), an ordinary npm dependency loaded in process: no JVM
+and no external CLI. The one outside binary loam ever calls is `git` — read-only questions about
+history, plus staging the renames of a `loam subsystem move` — and it never calls the network. `loam doctor` is the wiring check, not the install check: run where no
+`loam.json` is in scope, it reports `doctor.config-missing` and exits 1 by design, so save it for
+after `loam init`.
+
 ## 2. Ten minutes, CLI only: the fleet spine
 
 Nothing here needs requirement Markdown, `loam adopt`, `loam vouch` or a hand-edited diagram — only
@@ -120,8 +126,8 @@ what it set aside. `loam validate --all` is the full picture: the same run witho
 reports `service.no-model` for both services, `service.no-spec` and the ungoverned operation, and
 exits 1. Those are not misconfiguration — they are a truthful reading of a fleet where adoption has
 not started, the next rung rather than a fault, and they stay until each service has a model.
-Committed, this directory is a docs repo, and README's
-[PR recipe](README.md#guard-the-fleets-edges-on-every-pr) guards these joins on every pull request
+Committed, this directory is a docs repo, and the
+[PR recipe](CI.md#guard-the-fleets-edges-on-every-pr) guards these joins on every pull request
 from here on — `loam validate --all --spine` re-grades every one, and `loam diff --base` names who
 still calls an operation a branch removes.
 

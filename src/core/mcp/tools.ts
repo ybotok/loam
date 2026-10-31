@@ -102,7 +102,7 @@ export const MCP_TOOLS: readonly McpTool[] = [
       // Advertised because the lens changes the PAYLOAD, unlike the two levers
       // above: `valid`, `summary` and `targets` count the shown half, and the
       // `lens` key says what was set aside. An MCP client that could not ask for
-      // it could not run the level-1 check the README's CI recipe runs.
+      // it could not run the level-1 check CI.md's recipe runs.
       {
         property: "spine",
         flag: "--spine",

@@ -31,6 +31,7 @@ export const REVIEWED_PACKAGE_FILES = [
   "dist",
   "examples",
   "CHANGELOG.md",
+  "CI.md",
   "COMPARISON.md",
   "CONTRIBUTING.md",
   "MIGRATING-from-OpenSpec.md",

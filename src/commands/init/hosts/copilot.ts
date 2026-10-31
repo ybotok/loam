@@ -75,7 +75,7 @@ function setupSteps(cwd: string, docsDir: string, stored: string): string {
     : `      - name: Install loam\n        run: npm install --global @ybotok/loam@${LOAM_VERSION}\n`;
   const repo = docs?.repo ?? "OWNER/DOCS-REPO";
   // The token is an Agents secret, which reaches these steps as an environment
-  // variable (README's "Cloud agents in a service repo"); the second command
+  // variable (CI.md's "Cloud agents in a service repo"); the second command
   // takes it back out of the clone's config, so the agent never reads it there.
   const clone = docs === null
     ? ""

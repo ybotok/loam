@@ -61,8 +61,9 @@ code was added, renamed or retired, and `ErrorCode` is byte-identical to alpha.1
 - **`spine.op-undefined` and `spine.message-undefined` suggest the nearest name** — the closest
   operationId the provider's `openapi.yaml` defines, or message the service sends or receives —
   as ` — did you mean '…'?` at the end of the message, in every mode.
-- README gains a GitHub job for a seeded fleet (`validate --all --spine`, `diff --base`, and a
-  re-seed that must leave the tree clean) and a GitLab merge-request recipe; QUICKSTART's first ten
+- CI.md (see "README is a front page" below) gains a GitHub job for a seeded fleet
+  (`validate --all --spine`, `diff --base`, and a re-seed that must leave the tree clean) and a
+  GitLab merge-request recipe; QUICKSTART's first ten
   minutes and WORKFLOW's day zero state the operation in `fleet.yaml` instead of the map, and
   SCHEMA gains "Stating joins in `fleet.yaml`" and "The spine lens".
 
@@ -76,7 +77,7 @@ code was added, renamed or retired, and `ErrorCode` is byte-identical to alpha.1
   that comment once; the stamp of a map seeded earlier is still recognised. A map whose operations
   were hand-written onto it, as the old header advised, is hand-owned: move them into `fleet.yaml`,
   delete the map and re-seed. The `seed-landscape-edited` refusal now names that route.
-- A CI step that re-seeds and requires a clean tree, like README's new job, fails once on a map
+- A CI step that re-seeds and requires a clean tree, like CI.md's new job, fails once on a map
   seeded by an earlier loam, because that one-time header rewrite changes the file: run
   `loam seed --from fleet.yaml` and commit the rewritten map in the PR that moves the pinned
   version.
@@ -318,6 +319,28 @@ JSON meets the rule in the protocol page or the MCP server's instructions instea
   another team's briefs only after that team has read it.
 - To keep `AGENTS.md` under its 12,000-byte ceiling, its sentence on titling a service use case is
   now a pointer to `loam instructions loam-codes`, which states the convention in full.
+
+### Changed — README is a front page; the reference moved out
+
+No code, flag, path or payload key changed. README now says what loam is, how it works, how to
+install it and where to read on, in about 140 lines instead of 883. What it used to carry moved,
+unchanged in substance:
+
+- the CI recipes — the docs repo's spine and fleet-edges jobs, the GitLab job, the service-repo job,
+  the deploy `loam gate` and the cloud-agent setup — to a new page, **CI.md**, which the npm package
+  now ships;
+- the command table and the `--json` envelope paragraph to WORKFLOW.md's new "Commands" section,
+  beside the per-command notes it indexes;
+- "Working with AI agents" to WORKFLOW.md's "Agent entry points", the modular-monolith example to
+  its "Topology and the governed boundary", and "What green means here" to its "Presence is not
+  trust";
+- installing from a clone to CONTRIBUTING.md, and the `git`-only and `loam doctor` notes to
+  QUICKSTART.md's install step. The spine-first walk-through was already QUICKSTART.md's step 2.
+
+**What a repository notices.** A link into one of README's old sections — `#commands`,
+`#guard-the-fleets-edges-on-every-pr`, `#check-each-service-repo-on-its-own-pull-requests`,
+`#working-with-ai-agents`, `#start-from-the-fleet-spine` — now lands at the top of the page; the
+section is where the list above says.
 
 ## [0.2.0-alpha.18] - 2026-10-30
 

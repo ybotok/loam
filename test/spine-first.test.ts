@@ -1,6 +1,6 @@
 /**
- * Pins the spine-first entry — README's "Start from the fleet spine",
- * QUICKSTART's step 2 and WORKFLOW.md's day zero step 2 — against the real
+ * Pins the spine-first entry — QUICKSTART's step 2 and WORKFLOW.md's day
+ * zero step 2 — against the real
  * commands, from the real `examples/fleet.yaml` and the example fleet's own
  * contracts.
  *
@@ -30,7 +30,7 @@
  * The `service.no-model` errors of the default run are asserted too, and
  * exactly. They are NOT a blemish to be tuned away: five seeded directories with
  * no C4 centre is a truthful reading of a fleet where adoption has not started,
- * and the README block tells the reader to expect them by name when they drop
+ * and QUICKSTART's step 2 tells the reader to expect them by name when they drop
  * `--spine`. Asserting the count is what stops that promise drifting from the
  * binary.
  */

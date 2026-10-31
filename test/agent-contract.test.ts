@@ -883,16 +883,17 @@ describe("the brief promises only what a check can keep", () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* 6. README — day zero for eleven repositories                        */
+/* 6. README and WORKFLOW — day zero for eleven repositories           */
 /* ------------------------------------------------------------------ */
 
-describe("README describes the fleet that exists", () => {
+describe("README and WORKFLOW describe the fleet that exists", () => {
   it("spells init with its optional service binding", async () => {
-    // The command table carries the flags in a column of their own now, and
-    // the per-command notes live in WORKFLOW.md — the binding sentence with
-    // them. Both halves still have to be somewhere a reader will find them.
-    const row = (await readRepo("README.md")).split("\n").find((line) => line.startsWith("| `loam init`"));
-    expect(row, "README has no `loam init` row").toBeDefined();
+    // The command table carries the flags in a column of their own, and it
+    // moved from README to WORKFLOW.md, beside the per-command notes and the
+    // binding sentence among them. Both halves still have to be somewhere a
+    // reader will find them.
+    const row = (await readRepo("WORKFLOW.md")).split("\n").find((line) => line.startsWith("| `loam init`"));
+    expect(row, "WORKFLOW has no `loam init` row").toBeDefined();
     expect(row).toContain("--docs <dir>");
     expect(row).toContain("--service <id>");
     expect(flat(await readRepo("WORKFLOW.md"))).toMatch(/`--service <id>` is what a \*\*service\*\* repo needs/);
@@ -900,7 +901,7 @@ describe("README describes the fleet that exists", () => {
 
   it("carries a numbered day-zero section covering all eleven repos", async () => {
     // Day zero moved to WORKFLOW.md, where the rest of the protocol lives;
-    // README keeps the five-minute trial and links here. Bounded by the next
+    // README keeps the five-minute trial as its Quick start. Bounded by the next
     // h2 rather than by a named sibling, so a heading added after it cannot
     // silently widen the slice to the rest of the file.
     const workflow = flat(await readRepo("WORKFLOW.md"));
@@ -928,8 +929,11 @@ describe("README describes the fleet that exists", () => {
     const pkg = JSON.parse(await readRepo("package.json")) as { engines: { node: string } };
     const version = pkg.engines.node.replace(/^[^\d]*/, "");
     expect(version).toMatch(/^\d+\.\d+\.\d+$/);
-    // three claims: the badge, setup.sh's description, the prerequisite
-    expect(readme.split(version).length - 1).toBeGreaterThanOrEqual(3);
+    // two claims: the badge and the prerequisite. setup.sh's description, the
+    // third, moved to CONTRIBUTING.md with the rest of the from-source setup,
+    // and is held to the same floor there.
+    expect(readme.split(version).length - 1).toBeGreaterThanOrEqual(2);
+    expect(await readRepo("CONTRIBUTING.md")).toContain(`node >= ${version}`);
     for (const stale of ["node-%3E%3D20-", "Node ≥ 20", "node >= 20"]) {
       expect(readme, `README still claims "${stale}"`).not.toContain(stale);
     }
@@ -946,8 +950,8 @@ describe("README describes the fleet that exists", () => {
   });
 
   it("describes what `loam delta` actually prints", async () => {
-    const readme = await readRepo("README.md");
-    const row = readme.split("\n").find((l) => l.startsWith("| `loam delta"))!;
+    const workflow = await readRepo("WORKFLOW.md");
+    const row = workflow.split("\n").find((l) => l.startsWith("| `loam delta"))!;
     expect(row).toMatch(/verbatim/);
     expect(row).toMatch(/Given\/When\/Then/);
   });
@@ -958,12 +962,13 @@ describe("README describes the fleet that exists", () => {
     // confirmations and keeps every warning. Measured on the example fleet,
     // `validate --all --errors-only` printed the same warning lines as the
     // unfiltered run. The flag's own `--help` string was honest and so was the
-    // generated AGENTS.md; only this page lied, and a table is what a reader
-    // consults instead of running `--help`. The wording pinned here is the one
-    // src/core/agent/workflows/check.ts already uses, so a reader who meets the
-    // flag on either surface meets the same sentence.
-    const readme = await readRepo("README.md");
-    const row = readme.split("\n").find((l) => l.startsWith("| `loam validate"))!;
+    // generated AGENTS.md; only the README table lied, and a table is what a
+    // reader consults instead of running `--help`. That table is WORKFLOW.md's
+    // now. The wording pinned here is the one src/core/agent/workflows/check.ts
+    // already uses, so a reader who meets the flag on either surface meets the
+    // same sentence.
+    const workflow = await readRepo("WORKFLOW.md");
+    const row = workflow.split("\n").find((l) => l.startsWith("| `loam validate"))!;
     expect(row).toMatch(/drops the `ok` confirmations from the text view/);
     expect(row).not.toMatch(/just the errors/);
   });

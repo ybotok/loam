@@ -7,7 +7,7 @@
  * `validate --feature` printed "requirements covered (0 requirements, all with
  * scenarios)", `loam status` called the file written and the feature's docs
  * ready, and `loam archive` planned a merge of nothing and went through
- * (study 2026-10-30, I16). README's rule is that a check silent for want of
+ * (study 2026-10-30, I16). WORKFLOW's rule is that a check silent for want of
  * anything to ask must never read as a check that passed, and SCHEMA's
  * smallest legal feature says a change touching no requirement is no feature
  * at all. The living side already had the answer — `spec.no-requirements`

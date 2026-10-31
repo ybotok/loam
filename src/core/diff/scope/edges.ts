@@ -5,7 +5,7 @@
  * The defect this exists for: `spine.op-undefined` is graded on the PROVIDER's
  * service target, and an `architecture/` change only ever put the landscape in
  * scope. So the hand edit the spine-first path is built on — naming the
- * operation on a call edge — was graded by no gate a PR runs: README's own
+ * operation on a call edge — was graded by no gate a PR runs: the docs' own
  * one-letter example (`authorisePayment` against a contract spelling it
  * `authorizePayment`) merged green through `loam diff --base` and through
  * `validate --all --base --strict`, on the adopted example fleet and on a

@@ -268,16 +268,18 @@ describe("init: the first-hour epilogue on the single-repo trial composition", (
   });
 
   it("README's Quick start reprints the exact table init prints — the two copies cannot drift", async () => {
-    // The trial section claims "`init` ends by printing the first hour, which
+    // The Quick start claims "`init` ends by printing the first hour, which
     // is this loop:" and then shows the four lines. Nothing else couples that
     // fence to the source table — docs-facts pins only the command TABLE — so
     // a reworded command or why-comment here would quietly make the README's
-    // "this loop" false for the reader who just ran init.
+    // "this loop" false for the reader who just ran init. Bounded by the next
+    // h2, and the start is asserted, so a renamed heading fails here instead of
+    // slicing from the end of the file.
     const readme = await readFile(join(import.meta.dirname, "..", "README.md"), "utf8");
-    const section = readme.slice(
-      readme.indexOf("### Try loam on one governed system in five minutes"),
-      readme.indexOf("### Explore the example fleet"),
-    );
+    const from = readme.indexOf("\n## Quick start");
+    expect(from, "README has no `## Quick start` section").toBeGreaterThan(-1);
+    const to = readme.indexOf("\n## ", from + 1);
+    const section = readme.slice(from, to === -1 ? undefined : to);
     const fences = [...section.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]!);
     const loop = fences.find((fence) => fence.includes("loam adopt"));
     expect(loop, "the trial section must carry its first-hour fence").toBeDefined();

@@ -773,7 +773,7 @@ describe("a fresh scaffold validates without errors, and cannot archive", () => 
  * --feature` said "requirements covered (0 requirements, all with scenarios)"
  * and "coherence: ✓", `loam status` listed the spec as written and the docs as
  * ready, and `loam archive` merged nothing at exit 0 — the vacuous green
- * README's own rule forbids (study 2026-10-30, I16 part b).
+ * WORKFLOW's own rule forbids (study 2026-10-30, I16 part b).
  */
 describe("an untouched requirement delta is not written, and a feature of nothing does not archive", () => {
   const FEAT = "features/FEAT-1-split";

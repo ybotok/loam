@@ -4284,9 +4284,9 @@ through the forge, not through loam features:
 - **What it costs, measured.** On a generated 120-service fleet with 400 and 800 op-linked landscape
   edges (measured 2026-08: compiled binary, 8-core laptop, wall clock including Node startup):
   `loam list --json` ~0.45 s, and `loam validate --service <id> --json` — the command above, the one
-  every service repo runs — ~0.6 s at either edge count. (The README's "Fleet scale" section is the
-  canonical home of these numbers and the measurement method; this bullet restates them for the
-  operating model and must move with it.) Both are flat in edge count because loam reads LikeC4's
+  every service repo runs — ~0.6 s at either edge count. (docs/BENCHMARKS.md is the canonical home
+  of these numbers and the measurement method; this bullet restates them for the operating model
+  and must move with it.) Both are flat in edge count because loam reads LikeC4's
   **parsed** model and never computes a view — it reads what a view **declares** (a `dynamic view`'s
   tags and ordered steps, already materialized by the parse loam pays for) and never what a view
   **shows**. It renders nothing, and view *computation* is what is superlinear in edges. (If you
@@ -4315,8 +4315,7 @@ through the forge, not through loam features:
   `loam validate --all --json` over the same 120 services used to be the outlier at ~13–14 s — one
   fresh LikeC4 workspace per service; since the batched loader it parses the run's C4 documents in
   one shared workspace and answers in **~0.7 s median** on the committed 120-service benchmark
-  (measured 2026-08-19, method and runs in docs/BENCHMARKS.md, canonically restated in the README's
-  "Fleet scale" section). It is the docs repo's own CI job, and it is nobody's inner loop.
+  (measured 2026-08-19, method and runs in docs/BENCHMARKS.md). It is the docs repo's own CI job, and it is nobody's inner loop.
 
 ### The spine lens
 

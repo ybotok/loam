@@ -94,7 +94,7 @@ async function exampleFleet(): Promise<Project> {
 
 /**
  * The six contracts the shipped example fleet's joins are checked against,
- * relative to services/ — what README's spine-first path has a reader copy in.
+ * relative to services/ — what the spine-first path has a reader copy in.
  */
 const EXAMPLE_CONTRACTS = [
   "order-service/openapi.yaml",
@@ -106,9 +106,10 @@ const EXAMPLE_CONTRACTS = [
 ];
 
 /**
- * The join README's spine-first example misspells, as the shipped fleet.yaml
- * states it — spelled the American way, as payment-service's contract spells
- * it, so the misspelling below is the README's one letter exactly.
+ * The join the spine-first docs misspell on purpose (`authorisePayment`), as
+ * the shipped fleet.yaml states it — spelled the American way, as
+ * payment-service's contract spells it, so the misspelling below is the docs'
+ * one letter exactly.
  */
 const SPELLED_RIGHT = "checkout-web -> payment-service: authorizePayment";
 
@@ -120,7 +121,7 @@ async function seedFrom(p: Project, fleet: string): Promise<void> {
 }
 
 /**
- * A freshly seeded spine-first fleet — README's "Start from the fleet spine" —
+ * A freshly seeded spine-first fleet — QUICKSTART's step 2 —
  * from `fleet` (the shipped `examples/fleet.yaml` unless a case states its
  * own), with each service's own contracts copied in. No service has a
  * model.likec4, so every service target would be red on `service.no-model`;
@@ -267,11 +268,11 @@ describe("loam validate --all --base — what lands in scope", () => {
 describe("loam validate --all --base — a call edge the branch edited is graded against its provider", () => {
   // The defect: `spine.op-undefined` is graded on the PROVIDER's service
   // target, and an architecture/ change only ever put the landscape in scope,
-  // so README's own one-letter example — the payoff the spine-first path is
+  // so the docs' own one-letter example — the payoff the spine-first path is
   // sold on — merged green through both PR gates, on an adopted fleet and on a
   // seeded one alike. Only the unscoped run, red for other reasons on a fleet
   // mid-adoption, ever named it.
-  it("README's misspelt op on the examples fleet fails, with the provider still out of scope", async () => {
+  it("the docs' misspelt op on the examples fleet fails, with the provider still out of scope", async () => {
     const p = await exampleFleet();
     try {
       commitBase(p.docsDir);
@@ -400,7 +401,7 @@ describe("loam validate --all --base — a call edge the branch edited is graded
       await seedFrom(p, fleet);
       const { code, payload } = await validateJson(p, "--all", "--base", "main", "--strict");
       // Five un-adopted services each carry `service.no-model`; pulling the
-      // provider into scope would have reddened exactly the labour README's
+      // provider into scope would have reddened exactly the labour the
       // spine-first path asks for.
       expect(code).toBe(0);
       expect(raised(payload)).toEqual([]);

@@ -53,7 +53,7 @@ export const END = "<!-- payload-sizes:end -->";
 const DATE_LINE = /^Measured \d{4}-\d{2}-\d{2} by `npx tsx scripts\/payload-sizes\.ts --write`\.$/m;
 /** What the brief's absolute docsDir is counted as — see the module comment. */
 const DOCS_PLACEHOLDER = "/work/docs";
-/** The example fleet's service the README's adopt figures have always named. */
+/** The example fleet's service the adopt figures have always named. */
 const SERVICE = "payment-service";
 
 /**
