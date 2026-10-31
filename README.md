@@ -854,7 +854,7 @@ authored-capability axes with the `Realizes:` join, use cases graded as `dynamic
 `stability` job ran green once (2026-09-21) and was then cancelled by its own time limit on every
 weekly run from 2026-10-05, so it has yet to be observed green at the budget it was given on
 2026-10-28. Speculative `render`, health composition and UI
-generation come later. Behind that status stand **225 test files** (counted 2026-10-30): the count is graded
+generation come later. Behind that status stand **228 test files** (counted 2026-10-31): the count is graded
 against a live readdir by `test/docs-facts.test.ts`, so this sentence fails the suite the moment it
 trails the tree.
 
