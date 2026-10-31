@@ -1562,6 +1562,20 @@ The digest recipe (stable, and part of the contract): expand `sources` to repo-r
 a file is itself, a directory means everything beneath it, dot-entries are skipped while walking
 (though a path naming one outright is honoured) — sort them, hash each file's bytes with sha256,
 feed `<path>\0<sha256-hex>\n` per file into an outer sha256, and keep the first 16 hex characters.
+A file git would treat as text — no NUL byte in its first 8000 bytes, git's own heuristic — is
+hashed with every CRLF read as LF; any other file is hashed exactly as it is, and a lone CR is
+content. The fold is what makes the stamp mean the code rather than one checkout's rendering of
+it: Git for Windows checks out with `core.autocrlf=true` by default, and so does a plain
+`git checkout <rev> -- <file>` there, so a raw-bytes stamp made on an LF machine read
+`sources.stale` on every Windows clone with nothing changed. Stamps written before the fold —
+raw bytes throughout — stay readable: `loam validate`, `loam gate` and `loam vouch --pack` accept
+the folded `sources_digest` or the raw one, and each `sources_files` entry under either recipe, so
+no stamp went stale by the change. The raw digest is rebuilt file by file — each file's raw hash,
+unless the stamp's own `sources_files` shows it was stamped as it now folds — because a raw
+stamp's files need not have moved together: one made on an LF checkout over a file committed CRLF
+(`*.bat eol=crlf`) and read on an autocrlf clone has every LF file rewritten and that one
+untouched. The one stamp this cannot rescue is a raw one past 100 files — no per-file index to
+rebuild from — over such an uneven tree: it reads `sources.stale` once, and the re-vouch folds it.
 
 Two exclusions are part of that expansion, because a digest is a *staleness signal* and both of
 these turned it into noise:
@@ -1597,11 +1611,13 @@ signal in both directions. (The literal-path expansion is unchanged from when pa
 documents vouched with literal paths keep their digests.) Content, not mtime: git does not preserve
 modification times, so an mtime check would call every file stale after a fresh clone.
 
-The body digest recipe (`content_digest`, same discipline): sha256 of the artifact's body bytes
+The body digest recipe (`content_digest`, same discipline): sha256 of the artifact's body
 AFTER the frontmatter block — the closing `---` line and its newline belong to the header, every
-byte below them is body — first 16 hex characters kept. Byte-exact, no normalization, and body-only
-on purpose: vouch itself rewrites the frontmatter as it stamps, so a header-only edit (a later
-vouch, a corrected `owner`) must not read as the document moving.
+byte below them is body — with every CRLF read as LF, first 16 hex characters kept. Line endings
+are the one normalization, for the sources recipe's reason (a body is text by definition, so there
+is no binary case), and a stamp written before it, byte-exact, is accepted too. Body-only on
+purpose: vouch itself rewrites the frontmatter as it stamps, so a header-only edit (a later vouch,
+a corrected `owner`) must not read as the document moving.
 
 **Sampling** (`loam vouch --sample <n>`) is the same act over less of the document, recorded
 honestly. Its recipe is part of the contract too, because the value is written into documents and
@@ -3851,6 +3867,19 @@ and its answered claims) and nothing of anybody else's. **The directory is the r
 the verdict and the counts are computed from the union at read time — exactly as they always were,
 since nothing ever trusted a stored `summary`. Each file's own `summary` counts the whole checklist,
 with the claims other services own honestly `unanswered` in it.
+
+**The commit names the tested code only when the tree is clean.** An attestation names `HEAD`, but
+a suite runs against the working tree. So recording also asks `git status --porcelain` under the
+directory `loam.json` sits in — untracked files included whatever `status.showUntrackedFiles` says,
+`.gitignore`d ones not — leaving out what
+loam itself writes or carries there: `loam.json` and the agent files it records, the generated suite
+under `<gherkinDir>/loam/`, a docs repo that lives inside the service repo, the reports the run read
+and its answers file. Anything else marks the attestation `dirty: true`, with the paths git reported
+in `uncommitted` (absent when git could not list them — a check that could not run is not read as
+clean). The run warns `verify.uncommitted-changes`; `loam verify`'s read view, `loam gate` (a
+`features[]` row's `uncommitted`, naming the services) and `loam status` (`verification.uncommitted`)
+all print "+ uncommitted changes" beside the verdict. Nothing refuses on it yet: commit the tested
+code and record again, and the clean re-record replaces the flagged attestation.
 
 **Why one file per service.** The record used to be ONE `verification.yaml` for every service, and
 every attestation rewrote its `summary`, its `recorded` date and its checklist-ordered `claims`. Two

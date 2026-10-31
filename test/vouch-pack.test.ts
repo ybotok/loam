@@ -380,12 +380,12 @@ describe("loam vouch --pack — the body delta", () => {
 
 describe("loam vouch --pack — line endings", () => {
   it("a CRLF working tree whose blob was committed LF still finds its vouched ancestor", async () => {
-    // The stamp is byte-exact over the WORKING TREE (CRLF); the blob behind
-    // the commit is LF once the eol filter cleans it. Without the pack's
-    // checkout-rendering candidate hash (gitq/vouched-ancestor.ts), every
-    // vouched ancestor would be invisible on exactly the checkouts whose eol
-    // config differs from the repo's — degrading every Windows re-vouch to a
-    // full read.
+    // The working tree is CRLF; the blob behind the commit is LF once the eol
+    // filter cleans it. The stamp folds line endings, so the blob as it is
+    // matches it; before the fold the stamp was byte-exact over the CRLF tree
+    // and only the pack's checkout-rendering candidate hash
+    // (gitq/vouched-ancestor.ts, still there for such stamps) found the
+    // ancestor. Either way a Windows re-vouch must not degrade to a full read.
     const crlfBody = BODY.replace(/\n/g, "\r\n");
     const p = await makeProject({ [SPEC]: specFile(DRAFT_FM, crlfBody) }, { service: SVC });
     await writeFiles(p.workDir, CODE);

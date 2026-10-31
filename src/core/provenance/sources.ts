@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { listField, stringField, type Frontmatter } from "../document/frontmatter.js";
 import type { Finding } from "../vocabulary/report.js";
 import { resolveInside } from "../kernel/path-safety.js";
-import { decodeSourceIndex, movedSources, sourcesDigest } from "./stamp.js";
+import { decodeSourceIndex, holdsSourcesStamp, movedSources, sourcesDigest } from "./stamp.js";
 import type { SkippedSource } from "./walk.js";
 import { gitTrackedFiles } from "./git.js";
 
@@ -98,7 +98,8 @@ export async function sourceFindings(
   // a hole in the tie to the code whether or not anybody has vouched yet, and
   // an unvouched service is exactly where a reader is about to decide the
   // sources list is honest.
-  const { digest, files, index, skipped } = await sourcesDigest(repoDir, sources);
+  const now = await sourcesDigest(repoDir, sources);
+  const { files, index, skipped } = now;
   const findings: Finding[] = [
     resolved,
     ...skippedFindings(skipped, label),
@@ -120,13 +121,14 @@ export async function sourceFindings(
   }
 
   const since = stringField(fm, "last_verified") ?? "it was stamped";
-  if (digest === stamped) {
+  const recorded = decodeSourceIndex(stringField(fm, "sources_files"));
+  if (holdsSourcesStamp(now, stamped, recorded)) {
     return [
       ...findings,
       {
         severity: "ok",
         code: "sources.current",
-        message: `${label}: sources unchanged since ${since} (${files.length} file(s), digest ${digest})`,
+        message: `${label}: sources unchanged since ${since} (${files.length} file(s), digest ${stamped})`,
       },
     ];
   }
@@ -136,7 +138,7 @@ export async function sourceFindings(
   // before `sources_files` existed — answers a question nobody asked: they wrote
   // that list, and "one of these five directories changed somehow" is where the
   // search starts, not where it ends.
-  const moved = movedSources(decodeSourceIndex(stringField(fm, "sources_files")), index);
+  const moved = movedSources(recorded, index);
   return [
     ...findings,
     {

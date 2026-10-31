@@ -8,6 +8,7 @@
  */
 import { SEVERITY_MARK, type Finding } from "../../core/vocabulary/report.js";
 import type { GateReport, GateVerdict } from "../../core/gate/report.js";
+import { uncommittedClause } from "../../core/verify/record.js";
 import { plural } from "../policy/format.js";
 
 function printFindings(findings: Finding[]): void {
@@ -74,7 +75,10 @@ export function printGate(
   console.log(since === null ? "\nverification" : `\nverification — in flight, and archived since ${since.ref}`);
   for (const f of report.features) {
     const shipped = f.archived === true ? " · archived" : "";
-    console.log(`  ${f.id} · ${f.verdict} (${countClause(f)})${shipped}`);
+    // A record made over uncommitted changes names a commit that need not hold
+    // the tested code — the deploy log says so on the row, not only in verify.
+    const dirty = f.uncommitted === undefined ? "" : uncommittedClause(f.uncommitted);
+    console.log(`  ${f.id} · ${f.verdict}${dirty} (${countClause(f)})${shipped}`);
     // A record read as frozen history because its archive captured no
     // checklist (`checklistAtArchive: null`) was not held to the feature that
     // shipped; a deploy log must not read that row as one that was.

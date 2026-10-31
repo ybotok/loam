@@ -86,6 +86,14 @@ export interface Attestation {
   reports: ConsumedReports;
   /** The docs-repo HEAD the checklist was derived from, when git could answer. */
   docsCommit?: string;
+  /**
+   * The working tree against `commit`: the uncommitted paths git reported
+   * (empty when clean), or null when git could not say. Anything but an empty
+   * list marks the attestation `dirty` — see `ServiceAttestation.dirty`.
+   * Required, so a recording path cannot write a clean attestation by never
+   * asking: the compiler holds every caller to an answer.
+   */
+  uncommitted: string[] | null;
 }
 
 /**
@@ -137,7 +145,7 @@ export function buildServiceRecord(
   answers: Answer[],
   previous: PreviousFiles,
 ): ServiceBuild {
-  const { service, recorded, commit, reports, docsCommit } = attestation;
+  const { service, recorded, commit, reports, docsCommit, uncommitted } = attestation;
   const byId = new Map(answers.map((answer) => [answer.id, answer]));
   const currentIds = new Set(checklist.claims.map((claim) => claim.id));
   for (const answer of answers) {
@@ -196,6 +204,11 @@ export function buildServiceRecord(
         // from.
         checklist: checklist.digest,
         ...(docsCommit === undefined ? {} : { docsCommit }),
+        // Not shown clean is flagged the same as shown dirty: an unanswered
+        // check is not a passed one (`validateServiceEvidence`'s doctrine).
+        ...(uncommitted !== null && uncommitted.length === 0
+          ? {}
+          : { dirty: true, ...(uncommitted === null ? {} : { uncommitted }) }),
         // Each report is one repository's run, filed with that repository's
         // attestation — the contract report under the same rule as the
         // cucumber one.

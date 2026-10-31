@@ -89,6 +89,57 @@ code was added, renamed or retired, and `ErrorCode` is byte-identical to alpha.1
   (`seed-file-invalid`) and refuses `--spine` (`invalid-option`). Move every pinned version
   together.
 
+### Fixed — a vouch survives a line-ending rewrite
+
+No code, flag or payload key was added. The stamp recipe changed: SCHEMA.md's sources and body
+digest recipes say how.
+
+- **A spec vouched on one checkout reads fresh on another whose line endings differ.**
+  `sources_digest`, each `sources_files` entry and `content_digest` hashed raw bytes, so a service
+  vouched on an LF machine read `sources.stale` and `content.stale` on every clone made with Git for
+  Windows' default `core.autocrlf=true` — and on any checkout after a plain
+  `git checkout <rev> -- <file>` over a file written LF — with nothing changed, while
+  `loam vouch --pack` printed "body changed" over an empty diff. A vouch made on Windows never read
+  fresh on Linux CI. `loam vouch` now hashes a text file (no NUL in its first 8000 bytes, git's own
+  heuristic) and the document body with every CRLF read as LF; a binary file keeps its exact bytes.
+  `loam validate`, `loam gate` and `loam vouch --pack` read a stamp under either recipe — the raw
+  one rebuilt file by file from the stamp's own `sources_files`, so a tree whose files' line
+  endings moved unevenly (an LF checkout's stamp over one file committed CRLF, read on an autocrlf
+  clone) still matches — and no existing stamp goes stale by the upgrade: one made raw on a CRLF
+  checkout still reads current there. The exception is a raw stamp past 100 files, which carries no
+  per-file index, over such an uneven tree: it reads `sources.stale` once, until re-vouched. A real
+  edit still reads stale, and `sources.stale` still names only the files that moved.
+
+### Fixed — `loam verify --service` says when it attests a commit that is not the tested code
+
+One code was added, `verify.uncommitted-changes` (warn) — 367, counted with
+`loam explain --codes --json` — and two keys on a federated record's attestation, `dirty` and
+`uncommitted`, which also ride `verify --json`'s `attestations`; `loam gate --json`'s `features[]`
+rows and `loam status --json`'s `verification` gain `uncommitted`. No flag was added, and nothing
+that recorded before refuses now.
+
+- **An attestation recorded over uncommitted changes says so.** `loam verify <FEAT> --service <id>`
+  with `--results` or `--record` named the repository's HEAD as "attested at git commit …" even when
+  the suite had run against modified files and untracked directories — a commit that need not hold
+  one line of the tested code — and recorded `verified` without a word. Recording now asks
+  `git status --porcelain` under the directory `loam.json` sits in, leaving out what loam writes or
+  carries there (`loam.json` and its agent files, the generated suite under `<gherkinDir>/loam/`, an
+  in-repo docs dir, the reports the run read and the answers file). Anything else marks the
+  attestation `dirty: true` with the paths in `uncommitted`, and the run warns
+  `verify.uncommitted-changes` and prints `attested at git commit <sha> + uncommitted changes`.
+- **The read view, `loam gate` and `loam status` carry it beside the verdict** —
+  `+ uncommitted changes (<services>)` on the gate's feature row and on `loam status <FEAT>`'s
+  verification line (and its headline, once the feature reads verified, and after it is archived),
+  `+ uncommitted changes` on `loam verify`'s "Attested by" line, and the same notice in
+  `loam verify --json`'s `notices[]`. A clean re-record replaces the flagged attestation and clears
+  it; an archived feature's record keeps the flag, and its notice names `loam unarchive <FEAT>`.
+- Commit the tested code first: the `loam-verify` protocol now says so at its recording step. Nothing
+  refuses on a dirty tree yet.
+- **`loam subsystem move` sees untracked files under `status.showUntrackedFiles=no` too.** The
+  uncommitted-work question both commands ask spells `--untracked-files=normal` instead of obeying
+  that setting, under which new untracked files read as no change: `subsystem move` now refuses
+  `move-uncommitted` over them where it used to proceed, and `verify` flags them.
+
 ## [0.2.0-alpha.18] - 2026-10-30
 
 Everything on `main` since `0.2.0-alpha.17`. Still a prerelease on the `alpha` line.

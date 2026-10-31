@@ -220,7 +220,8 @@ export function withFrontmatterFields(
  * The document's body, byte-exact: everything after the frontmatter block —
  * the closing `---` line and its newline belong to the HEADER, every byte
  * after them (blank lines included) is body. A document with no frontmatter is
- * all body. This is what `content_digest` hashes, and it deliberately does NOT
+ * all body. This is what `content_digest` hashes (line endings folded — see
+ * `contentDigest`), and it deliberately does NOT
  * go through `parseFrontmatter` (whose `body` is trimmed for callers that want
  * text): the digest's writer and its checker must slice the same bytes, so
  * both go through here.
@@ -233,11 +234,21 @@ export function rawBody(source: string): string {
 
 /**
  * The stamp `loam vouch` writes into `content_digest`: sha256 of the
- * document's own BODY — every byte after the frontmatter block (below the
+ * document's own BODY — everything after the frontmatter block (below the
  * closing `---` line and its newline; `rawBody` is the one definition of that
- * cut) — first 16 hex characters, the sources recipe's length.
+ * cut) with every CRLF read as LF — first 16 hex characters, the sources
+ * recipe's length.
  *
- * Byte-exact, no normalization. Body-only is load-bearing: vouch itself
+ * Line endings are folded and nothing else is. It used to be byte-exact, on
+ * the belief that bytes survive a clone; they do not — Git for Windows checks
+ * out with `core.autocrlf=true`, so a spec vouched on an LF machine read
+ * `content.stale` on every Windows clone, and on any checkout after a plain
+ * `git checkout <rev> -- spec.md`, with no word of it changed. A body is text
+ * by definition (the reader refuses a NUL in one), so the sources recipe's
+ * binary carve-out has nothing to do here. Stamps from before the fold stay
+ * readable: `holdsContentStamp` accepts either recipe.
+ *
+ * Body-only is load-bearing: vouch itself
  * rewrites the frontmatter as it stamps, and a later frontmatter-only edit
  * (another vouch, a corrected owner) must not read as the document moving.
  *
@@ -248,7 +259,24 @@ export function rawBody(source: string): string {
  * core/repo. Here, beside the cut it hashes, both can reach it.
  */
 export function contentDigest(source: string): string {
-  return createHash("sha256").update(rawBody(source), "utf8").digest("hex").slice(0, 16);
+  return bodyHash(rawBody(source).replace(/\r\n/g, "\n"));
+}
+
+function bodyHash(body: string): string {
+  return createHash("sha256").update(body, "utf8").digest("hex").slice(0, 16);
+}
+
+/**
+ * Does this body still hash to the stamped `content_digest`? Under either
+ * recipe: the folded one `contentDigest` writes now, or the byte-exact one
+ * vouch wrote before — so no existing stamp goes stale by the change, and one
+ * made on a CRLF checkout before it still reads current where it was made.
+ * Every reader that compares a body against a stamp asks through here.
+ */
+export function holdsContentStamp(source: string, stamped: string): boolean {
+  // Through the writer itself, so the fold is spelled once: widened in one
+  // place only, every new stamp would read `content.stale`.
+  return contentDigest(source) === stamped || bodyHash(rawBody(source)) === stamped;
 }
 
 /**
@@ -285,7 +313,7 @@ export function contentStamp(fm: Frontmatter): string | undefined {
  */
 export function movedUnderVouch(fm: Frontmatter, raw: string): boolean {
   const stamped = contentStamp(fm);
-  return stamped !== undefined && contentDigest(raw) !== stamped;
+  return stamped !== undefined && !holdsContentStamp(raw, stamped);
 }
 
 /**

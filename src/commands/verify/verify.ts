@@ -12,6 +12,7 @@ import { reportFrozen } from "./frozen.js";
 import { record } from "./record.js";
 import { type VerifyOptions } from "./record.js";
 import { diffAnswers, type AnswerFiles } from "./cross/diff.js";
+import { loamCarried } from "./evidence/worktree.js";
 
 
 export function registerVerify(program: Command): void {
@@ -252,12 +253,14 @@ export function registerVerify(program: Command): void {
           // reader validated it against the id grammar — and that brand is
           // what `serviceRecordPath` demands before it joins the id into a
           // file name. The raw flag never reaches the join.
+          const repoDir = config.root ?? process.cwd();
           await record(
             { docsDir, featureDir: feature.dir, json, recovered },
             checklist,
             {
               service: config.service,
-              repoDir: config.root ?? process.cwd(),
+              repoDir,
+              carried: loamCarried(config, repoDir),
               previous: existing.state === "ok" ? { verification: existing.verification, files: existing.files } : null,
             },
             opts,

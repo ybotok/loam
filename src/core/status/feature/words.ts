@@ -17,6 +17,7 @@
  * misleading.
  */
 import type { ArtifactStatus, VerificationState } from "../report.js";
+import { uncommittedClause } from "../../verify/record.js";
 import type { FleetFeatureState } from "../fleet/report.js";
 
 /**
@@ -65,12 +66,16 @@ export function stageWords(f: StageFacts): string {
       return `the docs need fixing — ${f.blocking ?? "some"} finding(s) stop it`;
     case "ready":
       return `docs ready — ${openVerification(f.verification, f.asked)}`;
-    case "done":
+    case "done": {
       // The fleet form grades nothing, so it cannot say archive will take it —
-      // only that the record is verified. The feature's own status can.
+      // only that the record is verified. The feature's own status can. A
+      // record made over uncommitted changes is still `verified` (nothing
+      // gates on it), but the headline must not read as a clean one.
+      const verified = `verified${dirtyClause(f.verification)}`;
       return f.blocking === null
-        ? "verified — every claim confirmed by evidence; its own status says whether archive will take it"
-        : "verified — every claim confirmed by evidence; ready to archive";
+        ? `${verified} — every claim confirmed by evidence; its own status says whether archive will take it`
+        : `${verified} — every claim confirmed by evidence; ready to archive`;
+    }
   }
 }
 
@@ -131,9 +136,17 @@ function openVerification(v: VerificationState, asked: number | null): string {
 export function archivedVerification(v: VerificationState): string {
   if (v.state === "absent") return "never verified (no verification record)";
   if (v.state === "unreadable") return "its verification record does not read";
-  if (v.verdict === "verified") return `verified (${v.confirmed} of ${v.claims} claim(s) confirmed)`;
+  // A record that shipped over uncommitted changes keeps saying so: the gate
+  // marks the same archived row, and the headline must not read cleaner.
+  const dirty = dirtyClause(v);
+  if (v.verdict === "verified") return `verified${dirty} (${v.confirmed} of ${v.claims} claim(s) confirmed)`;
   if (v.verdict === "attested") {
-    return `attested, not verified: ${v.attested} scenario(s) rest on an agent's word (${v.confirmed} of ${v.claims} claim(s) confirmed)`;
+    return `attested${dirty}, not verified: ${v.attested} scenario(s) rest on an agent's word (${v.confirmed} of ${v.claims} claim(s) confirmed)`;
   }
-  return `not fully verified (${v.confirmed} of ${v.claims} claim(s) confirmed)`;
+  return `not fully verified${dirty} (${v.confirmed} of ${v.claims} claim(s) confirmed)`;
+}
+
+/** The uncommitted-changes flag beside a verdict, or nothing over a record made from committed code. */
+function dirtyClause(v: VerificationState): string {
+  return v.uncommitted === undefined ? "" : uncommittedClause(v.uncommitted);
 }

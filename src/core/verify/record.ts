@@ -135,6 +135,16 @@ export interface ServiceAttestation {
    * a git checkout, and a missing pin is not a defect.
    */
   docsCommit?: string;
+  /**
+   * True when the working tree was not shown clean as this was recorded — git
+   * reported uncommitted changes under the service root (listed in
+   * `uncommitted`), or could not say. `commit` then names HEAD, which need not
+   * hold the code the evidence was read from. Absent on a clean tree, so a
+   * record made from committed code reads exactly as it always has.
+   */
+  dirty?: boolean;
+  /** The paths git reported, repo-relative; absent when git could not list them. */
+  uncommitted?: string[];
   /** The report that answered this service's scenario claims, when `--results` did. */
   report?: ConsumedReport;
   /** The report that answered this service's api.exposes claims, when `--contract-results` did. */
@@ -156,6 +166,21 @@ export interface Verification {
   /** The all-at-once form's consumed contract report — filed per attestation when federated. */
   contractReport?: ConsumedContractReport;
   attestations?: ServiceAttestation[];
+}
+
+/** The attestations recorded over uncommitted changes — what `verify`, `gate` and `status` flag. */
+export function uncommittedAttestations(v: Verification): ServiceAttestation[] {
+  return (v.attestations ?? []).filter((a) => a.dirty === true);
+}
+
+/**
+ * The words that flag it, beside a verdict or a commit: ` + uncommitted
+ * changes`, naming the services when there are any to name. One spelling for
+ * the gate's row, status's line and headline and verify's attestation line —
+ * each pinned by its own test, so copies would drift apart unnoticed.
+ */
+export function uncommittedClause(services: readonly string[]): string {
+  return services.length === 0 ? " + uncommitted changes" : ` + uncommitted changes (${services.join(", ")})`;
 }
 
 /**

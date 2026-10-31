@@ -6,19 +6,30 @@
  * `subsystem move` must know before renaming (`gitDirtyPaths`), what
  * `subsystem history` asks after (`gitRenameHops`), and the ONE write the
  * roadmap blesses (`gitStageRenames` — "move stages renames without
- * committing"). The doctrine is unchanged: every way git can decline reads as
- * "git will not say", never as an error a caller must handle.
+ * committing"). `verify --service` asks `gitDirtyPaths` too, about the tree
+ * an attestation is recorded from. The doctrine is unchanged: every way git
+ * can decline reads as "git will not say", never as an error a caller must
+ * handle — and what that MEANS is each caller's to say.
  */
 import { gitText } from "../git.js";
 
 /**
- * Which of these repo-relative paths carry UNCOMMITTED work — anything
+ * Which paths under these pathspecs (cwd-relative, magic allowed — verify
+ * passes `.` and `:(exclude,literal)…`) carry UNCOMMITTED work — anything
  * `git status --porcelain` reports beneath them, untracked files included: an
- * untracked file is exactly a change no commit records. Null for every way
- * git declines (not a repository, not installed, a timeout, a non-zero exit),
- * and the one caller — `subsystem move`'s only refusal — treats null as
- * "proceed": a refusal needs positive evidence, and a fleet that does not use
- * git must not be refused a move over it.
+ * untracked file is exactly a change no commit records. Paths come back as
+ * git spells them, from the repository's top. Null for every way git declines
+ * (not a repository, not installed, a timeout, a non-zero exit), and the two
+ * callers read null in opposite directions on purpose: `subsystem move`'s
+ * only refusal proceeds (a refusal needs positive evidence, and a fleet that
+ * does not use git must not be refused a move over it), while
+ * `verify --service` flags the attestation (a binding check that could not
+ * run is not a passed one).
+ *
+ * `--untracked-files=normal` is spelled, not defaulted: porcelain v1 obeys
+ * the user's `status.showUntrackedFiles`, and `no` — a common speed setting
+ * in a large monorepo — made a tree of new, untracked code read as clean to
+ * both callers.
  *
  * `-z` for the same reason `gitTrackedFiles` uses it: line output QUOTES
  * paths with spaces or non-ASCII bytes. A rename entry (`R ` when something
@@ -27,7 +38,7 @@ import { gitText } from "../git.js";
  */
 export async function gitDirtyPaths(repoDir: string, rels: string[]): Promise<string[] | null> {
   if (rels.length === 0) return [];
-  const a = await gitText(repoDir, ["status", "--porcelain", "-z", "--", ...rels]);
+  const a = await gitText(repoDir, ["status", "--porcelain", "-z", "--untracked-files=normal", "--", ...rels]);
   if (a.code !== 0 || a.overflowed) return null;
   const tokens = a.out.split("\0").filter((t) => t !== "");
   const paths: string[] = [];

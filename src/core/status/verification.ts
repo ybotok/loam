@@ -13,6 +13,7 @@ import {
   attestedNotice,
   confirmedProvenance,
   tallyRecord,
+  uncommittedAttestations,
   type VerificationVerdict,
   type VerifyNotice,
   verificationVerdict,
@@ -128,6 +129,7 @@ export async function verificationState(
   const v = against === null ? read.verification : (answering(read.files, against) ?? read.verification);
   const stale = against !== null && against !== v.checklist;
   const tally = tallyRecord(v);
+  const dirty = uncommittedAttestations(v).map((a) => a.service);
   return {
     state: {
       state: stale ? "stale" : "recorded",
@@ -139,6 +141,7 @@ export async function verificationState(
       unanswered: tally.unanswered,
       attested: tally.attested,
       answered: confirmedProvenance(v.claims),
+      ...(dirty.length === 0 ? {} : { uncommitted: dirty }),
     },
     notice: attestedNotice(v.claims, feature.id),
   };
